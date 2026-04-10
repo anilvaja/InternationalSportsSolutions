@@ -84,7 +84,16 @@ if [ -d "$DEPLOY_PATH/.git" ]; then
     git pull origin "$GIT_BRANCH"
 else
     print_warning "Repository doesn't exist, cloning..."
-    git clone --branch "$GIT_BRANCH" "$GIT_REPO" "$DEPLOY_PATH"
+    # Clean up directory if it has temp files
+    cd "$DEPLOY_PATH"
+    rm -rf temp .git
+    # Clone into current directory (since it's already the target path)
+    cd ..
+    git clone --branch "$GIT_BRANCH" "$GIT_REPO" temp_clone
+    # Move files from temp_clone to public_html
+    mv temp_clone/* "$DEPLOY_PATH/" 2>/dev/null || true
+    mv temp_clone/.* "$DEPLOY_PATH/" 2>/dev/null || true
+    rmdir temp_clone
     cd "$DEPLOY_PATH"
 fi
 print_success "Repository updated/cloned successfully"
