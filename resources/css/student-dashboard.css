@@ -1,0 +1,340 @@
+/* Student Dashboard Custom Styles */
+
+/* Smooth animations for all elements */
+* {
+    transition: all 0.2s ease-in-out;
+}
+
+/* Height Management for Equal Widget Heights */
+.equal-height-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 350px;
+}
+
+.equal-height-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    align-items: stretch;
+}
+
+.equal-height-grid > * {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* Filament Widget Height Fixes */
+.fi-wi {
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.fi-wi-content,
+.fi-section-content {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.fi-wi-body,
+.fi-section-content-ctn {
+    flex: 1 !important;
+}
+
+/* Enhanced card hover effects */
+.dashboard-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.dashboard-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    border-color: #cbd5e0;
+}
+
+/* Dark mode card styles */
+.dark .dashboard-card {
+    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    border-color: #374151;
+}
+
+.dark .dashboard-card:hover {
+    border-color: #4b5563;
+}
+
+/* Gradient text effects */
+.gradient-text {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Floating animation for icons */
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+}
+
+.floating-icon {
+    animation: float 3s ease-in-out infinite;
+}
+
+/* Pulse animation for active indicators */
+@keyframes pulse-glow {
+    0%, 100% { 
+        opacity: 1;
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+    }
+    50% { 
+        opacity: 0.8;
+        box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+    }
+}
+
+.pulse-glow {
+    animation: pulse-glow 2s infinite;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: linear-gradient(45deg, #667eea, #764ba2);
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(45deg, #5a6fd8, #6a4190);
+}
+
+/* Enhanced button styles */
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    color: white;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 14px 0 rgba(102, 126, 234, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px 0 rgba(102, 126, 234, 0.4);
+    color: white;
+    text-decoration: none;
+}
+
+/* Glass morphism effect */
+.glass-card {
+    background: rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+}
+
+.dark .glass-card {
+    background: rgba(31, 41, 55, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Stats card animations */
+.stats-card {
+    position: relative;
+    overflow: hidden;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.stats-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.6s;
+}
+
+.stats-card:hover::before {
+    left: 100%;
+}
+
+/* Progress bars */
+.progress-bar {
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    border-radius: 3px;
+    transition: width 1s ease-in-out;
+}
+
+/* Typography enhancements */
+.heading-gradient {
+    background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Widget Content Flex Management */
+.widget-content-flex {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Table container height fix */
+.fi-ta-ctn {
+    min-height: 200px;
+    flex: 1;
+}
+
+/* Quick Actions Height Management */
+.quick-actions-container {
+    flex-shrink: 0;
+    min-height: auto;
+}
+
+/* Profile Widget Height */
+.profile-widget-container {
+    min-height: 350px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Responsive height management */
+@media (min-width: 1024px) {
+    .lg-equal-height {
+        min-height: 400px;
+    }
+}
+
+@media (min-width: 1280px) {
+    .xl-grid-equal {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        align-items: stretch;
+    }
+    
+    .xl-grid-equal > * {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+    .dashboard-card {
+        border-radius: 8px;
+        min-height: 250px;
+    }
+    
+    .btn-primary {
+        padding: 10px 20px;
+        font-size: 14px;
+    }
+    
+    .equal-height-container {
+        min-height: 250px;
+    }
+}
+
+/* Loading states */
+.skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Focus states for accessibility */
+.focus-ring:focus {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+/* Custom badge styles */
+.badge-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.badge-warning {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Enhanced shadows */
+.shadow-soft {
+    box-shadow: 0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04);
+}
+
+.shadow-medium {
+    box-shadow: 0 4px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.shadow-strong {
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.2), 0 2px 10px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* Card Footer Management */
+.card-footer {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.dark .card-footer {
+    border-top-color: #374151;
+}

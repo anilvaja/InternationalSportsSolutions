@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Student Login Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        .step { margin: 20px 0; padding: 10px; border-left: 4px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>Student Login Test</h1>
+    
+    <div class="step">
+        <h3>Step 1: Login to Student Panel</h3>
+        <p><a href="http://internationalsportssolutions.test/student/login" target="_blank">Open Student Login Page</a></p>
+        <p>Use credentials: <strong>alysha08@example.org</strong> / <strong>123456</strong></p>
+    </div>
+    
+    <div class="step">
+        <h3>Step 2: Access Dashboard</h3>
+        <p><a href="http://internationalsportssolutions.test/student" target="_blank">Open Dashboard</a></p>
+        <p>Should show beautiful dashboard with no errors</p>
+    </div>
+    
+    <div class="step">
+        <h3>Step 3: Access Profile Page</h3>
+        <p><a href="http://internationalsportssolutions.test/student/profile" target="_blank">Open Profile Page</a></p>
+        <p>Should show profile form with no htmlspecialchars errors</p>
+    </div>
+    
+    <div class="step">
+        <h3>Expected Results:</h3>
+        <ul>
+            <li class="success">✅ Login should work with provided credentials</li>
+            <li class="success">✅ Dashboard should display with beautiful row-based layout</li>
+            <li class="success">✅ Profile page should load without htmlspecialchars errors</li>
+            <li class="success">✅ All form actions should render properly</li>
+        </ul>
+    </div>
+    
+    <script>
+        console.log('Student Panel Test Page Loaded');
+        console.log('Test Credentials: alysha08@example.org / 123456');
+    </script>
+</body>
+</html>
