@@ -24,12 +24,91 @@ class BatchResource extends Resource
     {
         return $form->schema([
             Forms\Components\TextInput::make('name')->required(),
-            Forms\Components\TextInput::make('academy_id')->required()->numeric(),
-            Forms\Components\TextInput::make('branch_id')->required()->numeric(),
-            Forms\Components\TextInput::make('description'),
-            Forms\Components\DatePicker::make('start_date'),
+            Forms\Components\TextInput::make('batch_code')->required()->unique(ignoreRecord: true),
+            Forms\Components\Select::make('branch_id')
+                ->relationship('branch', 'name')
+                ->searchable()
+                ->required(),
+            Forms\Components\Select::make('coach_id')
+                ->relationship('coach', 'name')
+                ->searchable()
+                ->label('Primary Coach'),
+            Forms\Components\Textarea::make('description')->rows(3),
+            
+            // Schedule Information
+            Forms\Components\Select::make('days_of_week')
+                ->options([
+                    'monday' => 'Monday',
+                    'tuesday' => 'Tuesday', 
+                    'wednesday' => 'Wednesday',
+                    'thursday' => 'Thursday',
+                    'friday' => 'Friday',
+                    'saturday' => 'Saturday',
+                    'sunday' => 'Sunday',
+                ])
+                ->multiple()
+                ->required(),
+            Forms\Components\TimePicker::make('start_time')->required(),
+            Forms\Components\TimePicker::make('end_time')->required(),
+            Forms\Components\TextInput::make('schedule')
+                ->label('Schedule Text')
+                ->helperText('Auto-generated from days and times')
+                ->disabled(),
+                
+            // Batch Details
+            Forms\Components\Select::make('skill_level')
+                ->options([
+                    'beginner' => 'Beginner',
+                    'intermediate' => 'Intermediate', 
+                    'advanced' => 'Advanced',
+                ])
+                ->required(),
+            Forms\Components\Select::make('age_group')
+                ->options([
+                    'Kids (5-12)' => 'Kids (5-12)',
+                    'Teens (13-17)' => 'Teens (13-17)',
+                    'Adults (18+)' => 'Adults (18+)',
+                    'Mixed Age' => 'Mixed Age',
+                ])
+                ->required(),
+            Forms\Components\TextInput::make('max_students')
+                ->label('Maximum Students')
+                ->numeric()
+                ->default(20)
+                ->required(),
+            Forms\Components\TextInput::make('duration_minutes')
+                ->label('Duration (minutes)')
+                ->numeric()
+                ->default(90)
+                ->required(),
+                
+            // Dates
+            Forms\Components\DatePicker::make('start_date')->required(),
             Forms\Components\DatePicker::make('end_date'),
-            Forms\Components\TextInput::make('status'),
+            
+            // Pricing
+            Forms\Components\TextInput::make('monthly_fee')
+                ->label('Monthly Fee')
+                ->numeric()
+                ->step(0.01)
+                ->required(),
+            Forms\Components\TextInput::make('registration_fee')
+                ->label('Registration Fee')
+                ->numeric()
+                ->step(0.01)
+                ->default(0),
+                
+            // Additional Info
+            Forms\Components\TextInput::make('room_location')
+                ->label('Room Location'),
+            Forms\Components\Toggle::make('is_active')
+                ->label('Active')
+                ->default(true),
+            Forms\Components\Textarea::make('notes')->rows(3),
+            
+            // Hidden fields for auto-generation
+            Forms\Components\Hidden::make('academy_id')
+                ->default(fn() => auth()->user()->academy_id),
         ]);
     }
 

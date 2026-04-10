@@ -88,6 +88,7 @@ class Batch extends Model
         'is_active' => 'boolean',
         'max_students' => 'integer',
         'duration_minutes' => 'integer',
+        'schedule' => 'string', // Cast schedule as string instead of JSON
     ];
 
     // Relationships
