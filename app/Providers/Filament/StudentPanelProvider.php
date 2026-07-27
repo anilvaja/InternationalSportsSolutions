@@ -22,14 +22,17 @@ class StudentPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
+        $primaryColorHex = \App\Models\Setting::get('primary_color', '#4f46e5');
+
         return $panel
             ->id('student')
             ->path('student')
             ->login()
-            ->brandName('Student Portal')
+            ->brandName(fn () => \App\Models\Setting::get('system_name', 'Student Portal'))
+            ->brandLogo(fn () => view('components.dynamic-brand-logo'))
             ->favicon(public_path('favicon.ico'))
             ->colors([
-                'primary' => Color::Indigo,
+                'primary' => Color::hex($primaryColorHex),
                 'secondary' => Color::Purple,
                 'danger' => Color::Rose,
                 'success' => Color::Emerald,

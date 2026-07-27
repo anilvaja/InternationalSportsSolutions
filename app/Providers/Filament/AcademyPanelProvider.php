@@ -23,14 +23,16 @@ class AcademyPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
+        $primaryColorHex = \App\Models\Setting::get('primary_color', '#0284c7');
+
         return $panel
             ->id('academy')
             ->path('academy')
             ->login()
             ->colors([
-                'primary' => Color::Blue,
+                'primary' => Color::hex($primaryColorHex),
             ])
-            ->brandName('Academy Dashboard')
+            ->brandName(fn () => \App\Models\Setting::get('system_name', 'Academy Dashboard'))
             ->brandLogo(fn (): \Illuminate\View\View => view('filament.academy.components.brand'))
             ->favicon(public_path('favicon.ico'))
             ->discoverResources(in: app_path('Filament/Academy/Resources'), for: 'App\\Filament\\Academy\\Resources')

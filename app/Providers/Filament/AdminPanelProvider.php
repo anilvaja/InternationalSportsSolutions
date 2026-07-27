@@ -22,14 +22,17 @@ class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
+        $primaryColorHex = \App\Models\Setting::get('primary_color', '#0284c7');
+
         return $panel
             ->default()
             ->id('admin')
             ->path('admin')
             ->login()
-            ->brandName('Sports Solutions Admin')
+            ->brandName(fn () => \App\Models\Setting::get('system_name', 'Sports Solutions Admin'))
+            ->brandLogo(fn () => view('components.dynamic-brand-logo'))
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::hex($primaryColorHex),
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')

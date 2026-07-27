@@ -142,7 +142,21 @@ class User extends Authenticatable implements FilamentUser
             ->forAcademy($academyId)
             ->first();
 
-        return $userRole?->academyRole;
+        if ($userRole?->academyRole) {
+            return $userRole->academyRole;
+        }
+
+        // Fallback for users when activeAcademyRoles pivot is empty
+        $targetRoleName = match ($this->role) {
+            'academy_admin' => 'admin',
+            'coach' => 'coach',
+            'manager' => 'manager',
+            default => 'staff',
+        };
+
+        return AcademyRole::where('academy_id', $academyId)
+            ->where('name', $targetRoleName)
+            ->first();
     }
 
     public function assignAcademyRole(AcademyRole $role): UserAcademyRole
@@ -305,9 +319,23 @@ class User extends Authenticatable implements FilamentUser
     // FilamentUser interface implementation
     public function canAccessPanel(Panel $panel): bool
     {
-        // Allow access to academy panel if user has academy_id
+        // Must be active user
+        if ($this->is_active === false || ($this->status && $this->status !== 'active')) {
+            return false;
+        }
+
+        // Allow access to academy panel for academy users and super admins
         if ($panel->getId() === 'academy') {
-            return !is_null($this->academy_id) && !$this->is_super_admin;
+            if ($this->is_super_admin) {
+                return true;
+            }
+            if (is_null($this->academy_id)) {
+                return false;
+            }
+            if ($this->academy && $this->academy->status !== 'active') {
+                return false;
+            }
+            return true;
         }
         
         // Allow access to admin panel for super admins
@@ -329,13 +357,12 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Handle automatic academy role assignment for academy_admin users
+     * Handle automatic academy role assignment for academy users
      * Made public so it can be called from commands
      */
     public function handleAcademyRoleAssignment(): void
     {
-        // Only process academy_admin role
-        if (!$this->academy_id || $this->role !== 'academy_admin') {
+        if (!$this->academy_id) {
             return;
         }
 
@@ -347,19 +374,33 @@ class User extends Authenticatable implements FilamentUser
         // Ensure academy has default roles first
         $academy->ensureDefaultRoles();
 
-        // Find the admin role
-        $adminRole = $academy->roles()
-            ->where('name', 'admin')
+        // Determine target role name based on user's role column
+        $targetRoleName = match ($this->role) {
+            'academy_admin' => 'admin',
+            'coach' => 'coach',
+            'manager' => 'manager',
+            default => 'staff',
+        };
+
+        // Find the target role
+        $targetRole = $academy->roles()
+            ->where('name', $targetRoleName)
             ->first();
 
-        if (!$adminRole) {
-            Log::warning("Admin role not found for academy {$academy->id}");
+        if (!$targetRole) {
+            // Fallback to admin or staff if specific role not found
+            $targetRole = $academy->roles()->where('name', 'admin')->first()
+                       ?? $academy->roles()->first();
+        }
+
+        if (!$targetRole) {
+            Log::warning("No suitable role found for academy {$academy->id}");
             return;
         }
 
-        // Check if user already has admin role assigned
+        // Check if user already has this role assigned
         $existingAssignment = $this->userAcademyRoles()
-            ->where('academy_role_id', $adminRole->id)
+            ->where('academy_role_id', $targetRole->id)
             ->where('academy_id', $this->academy_id)
             ->first();
 
@@ -370,19 +411,13 @@ class User extends Authenticatable implements FilamentUser
                 'assigned_at' => now(),
             ]);
         } else {
-            // Create new admin role assignment
+            // Create new role assignment
             $this->userAcademyRoles()->create([
-                'academy_role_id' => $adminRole->id,
+                'academy_role_id' => $targetRole->id,
                 'academy_id' => $this->academy_id,
                 'is_active' => true,
                 'assigned_at' => now(),
             ]);
         }
-
-        // Remove other academy role assignments for this academy
-        $this->userAcademyRoles()
-            ->where('academy_id', $this->academy_id)
-            ->where('academy_role_id', '!=', $adminRole->id)
-            ->update(['is_active' => false]);
     }
 }

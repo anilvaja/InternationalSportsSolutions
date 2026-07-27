@@ -1,61 +1,260 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# International Sports & Hospital Solutions — Multi-Tenant SaaS Platform
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+[![Laravel](https://img.shields.io/badge/Laravel-12.x-FF2D20?style=for-the-badge&logo=laravel&logoColor=white)](https://laravel.com)
+[![Filament](https://img.shields.io/badge/Filament-3.x-D97706?style=for-the-badge&logo=laravel&logoColor=white)](https://filamentphp.com)
+[![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
-## About Laravel
+**International Sports & Hospital Solutions** is an enterprise-grade, multi-tenant SaaS platform built with **Laravel 12** and **Filament PHP 3**. It provides a multi-panel SaaS system designed to streamline operations, student & patient management, coach & doctor schedules, leave tracking, room & facility allocations, pharmacy stock imports, fee installment management, event registrations, and dynamic theme customization.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## 🌟 Recent System Improvements & Feature Upgrades
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+### 🎨 1. Dynamic Branding, Logo & Theme Colors System
+- **Super Admin System Settings (`/admin/system-settings`)**:
+  - Super Admins can dynamically change the **Hospital / System Name**, upload a custom **System Logo**, and configure the **Primary & Secondary Theme Accent Colors** via an interactive Color Picker.
+- **Cross-Panel Dynamic Theme Synchronization**:
+  - Automatically propagates dynamic branding, custom logos, and primary theme colors across all three panels (`/admin`, `/academy`, `/student`) and the public welcome landing page (`/`).
 
-## Learning Laravel
+### 🍃 2. Leaves Management Module
+- **Comprehensive Leave Request Tracking**:
+  - Track leave applications for staff, coaches, and students/patients.
+  - Supports multiple leave types (Sick Leave, Casual Leave, Medical Leave, Unpaid Leave).
+- **Approval & Workflow Status**:
+  - Role-based approval/rejection workflows (`Pending`, `Approved`, `Rejected`).
+  - Automated leave balance calculations and conflict checking for batch/class assignments.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### 🏢 3. Rooms & Facilities Management Module
+- **Facility & Room Allocations**:
+  - Manage rooms, training halls, courts, wards, and facility capacities.
+  - Track room status (`Available`, `Occupied`, `Under Maintenance`, `Reserved`).
+- **Batch & Event Scheduling Assignments**:
+  - Assign specific rooms or facilities to batches, training sessions, or events to eliminate scheduling double-bookings.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+### 💊 4. Pharmacy & Supplies Import Options
+- **Bulk Pharmacy Data Ingestion**:
+  - Import medicine stock, pharmaceutical supplies, and inventory data via CSV, Excel, or JSON import options.
+- **Validation & Inventory Tracking**:
+  - Automated column mapping, data validation checks (batch numbers, expiry dates, stock quantities, unit prices), and inventory adjustment logs.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### 🧪 5. Automated UI Testing Agent & Visual UI Impact Diagnostic Runner
+- **UI Testing Agent Skill (`ui-testing-agent`)**:
+  - Built-in agent skill and workspace instructions (`.agents/AGENTS.md`) for automated UI regression checks.
+- **CLI Visual UI Impact Diagnostic Runner**:
+  - Run `php scripts/ui_test_runner.php` to inspect rendered HTML DOM structure, count UI components (buttons, inputs, forms, cards), and detect missing elements or layout regressions.
+- **Feature UI Assertion Suite**:
+  - Execute `php artisan test --filter=UiPanelTestingTest` to verify 100% clean rendering across all panels.
 
-## Laravel Sponsors
+---
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## 🏛️ System Architecture & Multi-Panels
 
-### Premium Partners
+The application is structured into **3 specialized panels**:
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+```mermaid
+graph TD
+    SA[Super Admin] -->|Manages System Settings, Logos, Themes & Tenants| CP[Central Admin Panel /admin]
+    AO[Academy / Hospital Admin & Staff] -->|Manages Operations, Leaves, Rooms & Pharmacy| AP[Academy Tenant Panel /academy]
+    ST[Student / Parent / Patient] -->|Views Records & Receipts| SP[Student Portal /student]
+```
 
-## Contributing
+### 1. Central Admin Panel (`/admin`)
+- **System & UI Settings**: Dynamic Hospital/System Name, Logo Upload, Primary Theme Color Picker (`Color::hex`), and Support Contacts.
+- **Tenant & Academy Management**: Create, onboard, activate, and configure tenant academies/facilities.
+- **Subscription Limits Control**: Set maximum branches, users, coaches, and student capacity limits per tenant.
+- **Global User Management**: Manage platform super admins and tenant administrators.
+- **System Audit Logs**: Global audit trail tracking operational changes.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 2. Academy Tenant Panel (`/academy`)
+- **Leaves Management**: Staff, coach, and student leave requests, leave approvals, and balance logs.
+- **Rooms & Facilities**: Manage room capacities, status allocations, and batch scheduling assignments.
+- **Pharmacy & Stock Imports**: CSV/Excel bulk import options for pharmacy inventory, medicine batches, and stock management.
+- **Branch Management**: Multi-branch support per tenant with location, contact, and manager details.
+- **Student Management**: Profiles, emergency contacts, medical history, guardian details, and document uploads.
+- **Coach & Staff Management**: Professional profiles, certifications, hourly/monthly pay rates, and batch availability.
+- **Batches & Scheduling**: Flexible recurring schedule management with room allocation and coach assignments.
+- **Attendance Tracking**: Real-time batch-wise attendance marking, present/absent history, and exports.
+- **Fee Management**: Installment payments, monthly fee rates, receipt generation, advance payments, discounts, and overdue tracking.
+- **Granular Roles & Permissions**: Tenant-level custom roles, per-user extra permissions, and resource authorization.
 
-## Code of Conduct
+### 3. Student Portal (`/student`)
+- **Personal Dashboard**: Overview of enrolled batches, next due date, and attendance summaries.
+- **Fee History**: View past payment receipts, breakdown of fees, and upcoming installment dates.
+- **Attendance Record**: Track class presence and make-up session records.
+- **Syllabus & Event Progress**: View completed techniques, belt progression milestones, and upcoming events.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+---
 
-## Security Vulnerabilities
+## 🛠️ Technology Stack
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+| Layer | Technology / Package | Purpose |
+|---|---|---|
+| **Framework** | Laravel `12.x` | Core application framework |
+| **PHP Version** | `PHP 8.2+` | Runtime environment |
+| **Admin UI & Forms** | Filament PHP `v3.3` | Panel builder, Livewire 3, Tailwind CSS, Alpine.js |
+| **Multi-Tenancy** | `stancl/tenancy` | Tenant data isolation & tenant management |
+| **Permissions & Roles** | `spatie/laravel-permission` + Custom `user_academy_roles` | Granular role-based authorization |
+| **PDF Generation** | `barryvdh/laravel-dompdf` | Fee receipts and attendance reports |
+| **Media Management** | `spatie/laravel-medialibrary` | Student documents, logos, certificates |
+| **Database** | SQLite (Default for Dev) / MySQL / PostgreSQL | Relational database storage |
+| **Testing** | PHPUnit / Pest PHP | Feature, unit, and UI impact testing |
 
-## License
+---
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## 🗄️ Database Schema & Models Overview
+
+The core domain model comprises primary Eloquent models including:
+
+- **Setting**: Key-value system settings table handling dynamic system name, logo, primary theme color, and support details.
+- **Academy**: Core tenant model containing status, domain, subscription limits (`max_branches`, `max_students`, `max_coaches`), and metadata.
+- **Branch**: Physical tenant branches/locations.
+- **User**: Multi-tenant user model handling super admin, academy admin, coach, and staff access.
+- **Student**: Comprehensive student/patient profile linked to tenant and branch.
+- **Coach**: Professional coach/staff profile with specializations, certifications, and salary structure.
+- **Batch**: Class batches with room allocations, schedule definitions, coach assignments, and student enrollments.
+- **Attendance / BatchAttendance**: Batch attendance logs and individual presence status.
+- **StudentFee / Fee / FeeStructure**: Fee collection records, auto-generated receipt numbers, installment details, and fee structure templates.
+- **AcademyRole / UserAcademyRole / AcademyPermission**: Tenant-level custom roles and user permission assignments.
+- **Audit / OverdueFeeNotification**: Audit trails and overdue notices.
+
+---
+
+## 🚀 Installation & Local Setup
+
+### Prerequisites
+- **PHP** >= 8.2 (with `pdo_sqlite` or `pdo_mysql`, `mbstring`, `fileinfo`, `gd` extensions enabled)
+- **Composer** >= 2.0
+- **Node.js** >= 18.x & NPM
+
+### Step-by-Step Setup
+
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/your-org/InternationalSportsSolutions.git
+   cd InternationalSportsSolutions
+   ```
+
+2. **Install PHP Dependencies**
+   ```bash
+   composer install
+   ```
+
+3. **Configure Environment File**
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
+
+4. **Initialize Database**
+   Ensure SQLite file exists or configure MySQL credentials in `.env`:
+   ```bash
+   # For SQLite (default)
+   php -r "file_exists('database/database.sqlite') || touch('database/database.sqlite');"
+   ```
+
+5. **Run Migrations & Seed Sample Data**
+   ```bash
+   php artisan migrate:fresh --seed
+   ```
+
+6. **Serve the Application**
+   ```bash
+   php artisan serve
+   ```
+   The application will be accessible at `http://127.0.0.1:8000`.
+
+---
+
+## 🔑 Accessing Panels & Default Credentials
+
+When running `php artisan db:seed`, sample academies, users, students, and settings are automatically populated:
+
+| Panel | URL Path | Role | Sample Credentials |
+|---|---|---|---|
+| **Central Admin** | `/admin` | Super Admin | **Email:** `anilvaja.007@gmail.com`<br>**Password:** `password` |
+| **System Settings** | `/admin/system-settings` | Super Admin | Access from System Settings menu item in Admin Panel |
+| **Academy Panel** | `/academy` | Academy Owner / Admin | **Email:** `admin@mahavirsports.com`<br>**Password:** `password123` |
+| **Academy Panel** | `/academy` | Staff User | **Email:** `john.smith@mahavirsportsacademy.com`<br>**Password:** `password123` |
+| **Student Portal** | `/student` | Student | Log in using registered student email / password |
+
+---
+
+## 🧪 Running Automated UI & Unit Tests
+
+### 1. CLI Visual UI Diagnostic Test Runner
+Inspect rendered HTML DOM elements, button/input counts, and layout health:
+```bash
+php scripts/ui_test_runner.php
+```
+
+### 2. Feature & Unit Test Suite
+Execute the full Laravel test suite:
+```bash
+php artisan test
+```
+
+### Example Test Suite Output:
+```text
+   PASS  Tests\Unit\ExampleTest
+  ✓ that true is true
+
+   PASS  Tests\Feature\ExampleTest
+  ✓ the application returns a successful response
+
+   PASS  Tests\Feature\FeeManagementTest
+  ✓ student fee record creation and status
+
+   PASS  Tests\Feature\TenantIsolationTest
+  ✓ user can only access own academy data
+  ✓ super admin can access any academy
+
+   PASS  Tests\Feature\UiPanelTestingTest
+  ✓ welcome page renders successfully
+  ✓ admin panel login page renders
+  ✓ super admin can access admin dashboard
+  ✓ academy panel login page renders
+  ✓ academy user can access academy dashboard
+  ✓ student portal login page renders
+
+  Tests:    11 passed (16 assertions)
+  Duration: 7.40s
+```
+
+---
+
+## 📄 Directory Structure
+
+```text
+InternationalSportsSolutions/
+├── .agents/
+│   ├── AGENTS.md             # Workspace rules & UI testing guidelines
+│   └── skills/
+│       └── ui-testing-agent/ # UI Testing Agent skill instructions
+├── app/
+│   ├── Filament/
+│   │   ├── Academy/          # Tenant Academy Panel Resources & Pages (/academy)
+│   │   ├── CentralPanel/     # Super Admin Central Panel Resources (/admin)
+│   │   ├── Pages/            # SystemSettings.php for dynamic Super Admin config
+│   │   └── Student/          # Student Portal Pages & Components (/student)
+│   ├── Models/               # Eloquent Models (Setting, Academy, Student, Coach, Batch...)
+│   └── Providers/            # Panel Providers (AdminPanelProvider, AcademyPanelProvider...)
+├── database/
+│   ├── migrations/           # Database Migration files
+│   └── seeders/              # Comprehensive Seeders (Academies, Roles, Settings)
+├── resources/
+│   └── views/
+│       ├── components/       # dynamic-brand-logo.blade.php component
+│       ├── filament/         # Filament custom page views
+│       └── welcome.blade.php # Landing page with dynamic branding & colors
+├── scripts/
+│   └── ui_test_runner.php    # CLI visual UI impact diagnostic tool
+└── tests/
+    └── Feature/              # Feature & UI Test Suites (UiPanelTestingTest.php)
+```
+
+---
+
+## 📝 License
+
+This software is proprietary and developed for **International Sports & Hospital Solutions**. All rights reserved.

@@ -95,12 +95,15 @@ class Academy extends Model
      */
     public function createDefaultRoles(): void
     {
+        \App\Models\AcademyPermission::seedPermissions();
+        $allPermissions = \App\Models\AcademyPermission::pluck('name')->toArray();
+
         $defaultRoles = [
             [
                 'name' => 'admin',
                 'display_name' => 'Admin',
                 'description' => 'Full access to academy management',
-                'permissions' => \App\Models\AcademyPermission::pluck('name')->toArray(),
+                'permissions' => $allPermissions,
                 'is_default' => true,
                 'is_removable' => false,
             ],
@@ -109,8 +112,10 @@ class Academy extends Model
                 'display_name' => 'Manager',
                 'description' => 'Academy operations management',
                 'permissions' => [
-                    'view_dashboard', 'manage_students', 'manage_coaches', 'view_reports',
-                    'manage_batches', 'manage_attendance', 'view_payments'
+                    'view_dashboard', 'view_students', 'create_students', 'edit_students',
+                    'view_batches', 'create_batches', 'edit_batches',
+                    'view_attendances', 'create_attendances', 'edit_attendances', 'take_attendance',
+                    'view_reports', 'generate_reports', 'view_fees', 'collect_payments'
                 ],
                 'is_default' => true,
                 'is_removable' => false,
@@ -120,8 +125,10 @@ class Academy extends Model
                 'display_name' => 'Coach',
                 'description' => 'Student training and development',
                 'permissions' => [
-                    'view_dashboard', 'view_students', 'manage_attendance', 'view_batches',
-                    'manage_syllabus', 'view_student_progress'
+                    'view_dashboard', 'view_students', 'view_student_details', 'view_student_progress',
+                    'view_batches', 'view_batch_schedules',
+                    'view_attendances', 'create_attendances', 'edit_attendances', 'take_attendance',
+                    'view_syllabus_categories', 'view_syllabus_techniques', 'manage_technique_progress'
                 ],
                 'is_default' => true,
                 'is_removable' => false,
@@ -131,7 +138,10 @@ class Academy extends Model
                 'display_name' => 'Staff',
                 'description' => 'Basic academy operations',
                 'permissions' => [
-                    'view_dashboard', 'view_students', 'view_attendance'
+                    'view_dashboard', 'view_students', 'create_students', 'edit_students',
+                    'view_batches', 'view_batch_schedules',
+                    'view_attendances', 'create_attendances', 'take_attendance',
+                    'view_fees', 'create_fees', 'collect_payments'
                 ],
                 'is_default' => true,
                 'is_removable' => false,
@@ -139,7 +149,7 @@ class Academy extends Model
         ];
 
         foreach ($defaultRoles as $roleData) {
-            \App\Models\AcademyRole::firstOrCreate(
+            $role = \App\Models\AcademyRole::firstOrCreate(
                 [
                     'academy_id' => $this->id,
                     'name' => $roleData['name'],
@@ -153,6 +163,11 @@ class Academy extends Model
                     'is_removable' => $roleData['is_removable'],
                 ]
             );
+
+            // If role existed but had empty permissions (e.g. admin role created before permissions seeded), update permissions
+            if (empty($role->permissions) || ($role->name === 'admin' && count($role->permissions) < count($allPermissions))) {
+                $role->update(['permissions' => $roleData['permissions']]);
+            }
         }
     }
 

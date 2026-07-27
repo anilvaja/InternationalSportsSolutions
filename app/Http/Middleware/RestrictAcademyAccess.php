@@ -23,12 +23,9 @@ class RestrictAcademyAccess
 
         $user = Auth::user();
 
-        // Only allow non-super-admin users (users with is_super_admin = false) to access academy panel
+        // Allow super admins to access the academy panel
         if ($user->is_super_admin) {
-            // Redirect super admins to their panel
-            Auth::logout();
-            return redirect()->route('filament.admin.auth.login')
-                ->withErrors(['email' => 'You do not have permission to access the academy panel. Please use the super admin login.']);
+            return $next($request);
         }
 
         // Additional check: ensure user has an academy assigned
@@ -36,6 +33,13 @@ class RestrictAcademyAccess
             Auth::logout();
             return redirect()->route('filament.academy.auth.login')
                 ->withErrors(['email' => 'You are not assigned to any academy. Please contact support.']);
+        }
+
+        // Additional check: ensure user status is active
+        if ($user->is_active === false || ($user->status && $user->status !== 'active')) {
+            Auth::logout();
+            return redirect()->route('filament.academy.auth.login')
+                ->withErrors(['email' => 'Your user account is inactive or suspended. Please contact support.']);
         }
 
         // Additional check: ensure user's academy is active

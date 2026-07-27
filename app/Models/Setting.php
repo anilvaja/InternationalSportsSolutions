@@ -33,7 +33,11 @@ class Setting extends Model
         $cacheKey = "setting.{$key}";
         
         return Cache::rememberForever($cacheKey, function () use ($key, $default) {
-            $setting = static::where('key', $key)->first();
+            try {
+                $setting = static::where('key', $key)->first();
+            } catch (\Throwable $e) {
+                return $default;
+            }
             
             if (!$setting) {
                 return $default;
