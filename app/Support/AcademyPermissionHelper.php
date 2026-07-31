@@ -68,7 +68,7 @@ class AcademyPermissionHelper
     public static function can(string $permission): bool
     {
         $user = Auth::user();
-        if ($user && $user->is_super_admin) {
+        if ($user && ($user->is_super_admin || $user->role === 'academy_admin')) {
             return true;
         }
         
@@ -101,7 +101,7 @@ class AcademyPermissionHelper
      */
     public static function canForUser($user, string $permission): bool
     {
-        if ($user && $user->is_super_admin) {
+        if ($user && ($user->is_super_admin || $user->role === 'academy_admin')) {
             return true;
         }
         if (!$user || !$user->academy_id) {

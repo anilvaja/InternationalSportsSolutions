@@ -38,7 +38,10 @@
 - **Validation & Inventory Tracking**:
   - Automated column mapping, data validation checks (batch numbers, expiry dates, stock quantities, unit prices), and inventory adjustment logs.
 
-### 🧪 5. Automated UI Testing Agent & Visual UI Impact Diagnostic Runner
+### 🧪 5. Automated UI Testing and Application Agent Workflow
+- **Application Development Agent Skill (`application-development-agent`)**:
+  - Use this agent for feature implementation, incremental updates, and repository-guided development tasks.
+  - The agent reviews current models, Filament resources, routes, and tests before generating code.
 - **UI Testing Agent Skill (`ui-testing-agent`)**:
   - Built-in agent skill and workspace instructions (`.agents/AGENTS.md`) for automated UI regression checks.
 - **CLI Visual UI Impact Diagnostic Runner**:

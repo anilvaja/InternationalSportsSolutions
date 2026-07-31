@@ -10,5 +10,10 @@
    - **Academy Panel (`/academy`)**: Must be accessible by active Academy users (`is_super_admin = false`, `academy_id` set, `status = active`).
    - **Student Panel (`/student`)**: Must be accessible by active Student accounts using `student` auth guard.
 
-3. **Validation & Verification**:
+3. **Application Development Agent**:
+   - Use the `application-development-agent` for feature implementation, incremental updates, and repository-guided coding tasks.
+   - The agent should review current models, Filament resources, routes, and tests before generating new code.
+   - For any UI-facing change, also invoke the `ui-testing-agent`.
+
+4. **Validation & Verification**:
    - Always run the UI test suite before declaring UI or access control tasks completed.
