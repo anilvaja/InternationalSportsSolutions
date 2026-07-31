@@ -1,212 +1,314 @@
 # Application Documentation — InternationalSportsSolutions
 
-Last updated: 2026-07-30
+Last updated: 2026-07-31
 
 ## Purpose
-A single consolidated reference document describing the entire application: architecture, key components, setup, common workflows, and refactor recommendations to help you plan and perform a safe refactor.
+This single document captures the current project structure, architecture, technology stack, development workflow, deployment guidance, and recommended next steps for the InternationalSportsSolutions application.
 
 ---
 
-## 1. High-level Overview
-- Name: InternationalSportsSolutions (project folder root)
-- Framework: Laravel (PHP) with Filament/Livewire admin UIs
-- Languages: PHP (backend), JavaScript (Vite, frontend assets)
-- Testing: Pest / PHPUnit
-- Packaging: Composer, NPM
-- Dev tooling: Vite, artisan commands, various project scripts in `scripts/`
+## 1. Project Summary
+**InternationalSportsSolutions** is a Laravel 12 multi-tenant SaaS platform built with Filament 3. It targets academy, sports, and hospital operations with separate panels for:
+- **Central Admin** (`/admin`)
+- **Academy Tenant** (`/academy`)
+- **Student Portal** (`/student`)
 
-## 2. Tech Stack
-- PHP 8.x (verify exact version in `composer.json` / `platform` config)
-- Laravel (app structure, `artisan` commands)
-- Filament (admin panels in `app/Filament`)
-- Livewire / Blade UI components
-- MySQL / MariaDB or other RDBMS (configured in `config/database.php` and `.env`)
-- Queues: configured in `config/queue.php` (use Redis or database drivers)
-- Storage: local, S3 (see `config/filesystems.php`)
-- Frontend: Vite, Tailwind/CSS assets under `resources/`
-- Tests: Pest (`tests/`)
+The platform supports student/patient management, fee collections, attendance tracking, room/facility scheduling, pharmacy inventory imports, leave workflows, event management, and dynamic branding.
 
-## 3. Repository Layout (key folders)
-- `app/` — Application code (Models, Http controllers, Services, Filament panels, Traits, Helpers, Notifications, Channels)
-  - `app/Models` — Eloquent models
-  - `app/Http` — Controllers, Middleware, Requests
-  - `app/Services` — Domain/service layer (business logic)
-  - `app/Filament` — Filament resources, panels (admin UI)
-  - `app/Notifications` — Notification classes
-  - `app/Channels` — Custom messaging channels (e.g., `SmsChannel.php`)
-  - `app/Console/Commands` — Artisan custom commands
-- `bootstrap/` — Laravel bootstrap files
-- `config/` — Application configuration files
-- `database/` — Migrations, seeders, factories
-- `resources/` — Blade views, JS/CSS source
-- `public/` — Publicly served assets
-- `routes/` — Route definitions (`web.php`, `tenant.php`, `console.php`)
-- `scripts/` — Helpers and test runners (`ui_test_runner.php`, `prepare_test_users.php`)
-- `tests/` — Pest/PHPUnit tests
-- `vendor/` — Composer dependencies
+---
 
-Files of interest:
-- `composer.json` — PHP dependencies and scripts
-- `package.json` / `vite.config.js` — Frontend tooling
-- `phpunit.xml` — Test config
-- `deploy.sh`, `update.sh` — Deployment helpers
+## 2. Technology Stack
+### Backend
+- PHP 8.2+
+- Laravel 12.x
+- `stancl/tenancy` ^3.9
+- `spatie/laravel-permission` ^6.21
+- `barryvdh/laravel-dompdf` ^3.1
+- Filament ecosystem: `filament/filament`, `forms`, `tables`, `actions`, `widgets`, `infolists`, `notifications`
+- Filament Spatie media library plugin
 
-## 4. Environment & Setup
-Prerequisites:
-- PHP (8.x)
+### Frontend
+- Vite
+- Tailwind CSS
+- Axios
+- Puppeteer Core for UI automation
+
+### Dev tooling
 - Composer
-- Node.js + NPM/Yarn
-- Database server (MySQL/MariaDB)
+- Node.js / npm
+- Pest PHP / PHPUnit
+- Laravel Pint
+- concurrently
 
-Common local setup commands:
+---
 
+## 3. Application Architecture
+### Panel structure
+- **Central Admin Panel** (`/admin`): super admin system settings, tenant creation, branding, user management, audit logs
+- **Academy Panel** (`/academy`): tenant operational management for students, fees, attendance, rooms, pharmacy, leaves, events
+- **Student Portal** (`/student`): student-facing self-service dashboard for attendance, fees, and progress
+
+### Filament locations
+- `app/Filament/CentralPanel/` — admin panel resources and pages
+- `app/Filament/Academy/` — tenant panel resources, widgets, pages
+- `app/Filament/Student/` — student portal pages
+
+### Route files
+- `routes/web.php` — public routes, print routes, academy route groups
+- `routes/tenant.php` — tenant middleware and tenant-aware route bootstrap
+- `routes/console.php` — artisan command routing
+
+### Multi-tenancy
+The app uses `stancl/tenancy` for tenant-aware routing, but tenant data protection is primarily enforced by manual query scoping. Most tenant-scoped models define `scopeForAcademy($query, $academyId)` and most Academy Filament resources override `getEloquentQuery()` to filter by `Auth::user()->academy_id`.
+
+---
+
+## 4. Repository Layout
+### Key directories
+- `app/` — application code
+  - `app/Models`
+  - `app/Filament`
+  - `app/Http`
+  - `app/Services`
+  - `app/Support`
+  - `app/Notifications`
+  - `app/Channels`
+  - `app/Console/Commands`
+- `bootstrap/`
+- `config/`
+- `database/`
+  - `migrations/`
+  - `seeders/`
+  - `factories/`
+- `public/`
+- `resources/`
+  - `css/`
+  - `js/`
+  - `views/`
+- `routes/`
+- `scripts/`
+- `storage/`
+- `tests/`
+- `.agents/`
+
+### Important files
+- `composer.json` — PHP dependencies and scripts
+- `package.json` — frontend scripts and dev dependencies
+- `vite.config.js` — front-end bundling config
+- `phpunit.xml` — test runner config
+- `APPLICATION_DOCUMENTATION.md` — consolidated project doc
+- `.env.example` — environment template
+- `deploy.sh`, `update.sh` — deployment helper scripts
+
+---
+
+## 5. Key Models and Data Entities
+### Main domain models
+- `Academy` — tenant organization data and subscription limits
+- `Branch` — physical location or training/ward branch
+- `User` — super admins, academy admins, coaches, staff
+- `Student` — student/patient profiles
+- `Coach` — coach and staff profiles
+- `Batch` — batch/class/schedule entity
+- `Attendance`, `StudentAttendance`, `BatchAttendance` — attendance logs
+- `Fee`, `StudentFee`, `FeeStructure` — fees and installment records
+- `AcademyRole`, `UserAcademyRole`, `AcademyPermission` — tenant role and permission schema
+- `Setting` — system settings and dynamic branding
+- `Audit` — audit trail records
+- `OverdueFeeNotification` — overdue payment notifications
+
+### Tenant scoping pattern
+Tenant data isolation depends on model query scopes and Filament resource query overrides. A typical pattern is:
+- `scopeForAcademy($query, $academyId)` on tenant models
+- `getEloquentQuery()` override in Filament Academy resources with `->forAcademy(Auth::user()->academy_id)`
+
+This is critical: a resource missing this override can leak data across academies.
+
+---
+
+## 6. Authorization and Permissions
+### Permission architecture
+- The project does not use `app/Policies`
+- Filament resources instruct permission checks via static methods: `canViewAny()`, `canCreate()`, `canEdit()`, `canDelete()`
+- Permission decisions are centralized in `App\Support\AcademyPermissionHelper`
+
+### AcademyPermissionHelper
+- Resolves permission names to IDs via `AcademyPermission`
+- Combines role permissions with user-specific additional permissions stored in `user_academy_roles`
+- Grants all permissions to super admins and academy admins
+- Used by resources and widgets throughout `app/Filament/Academy`
+
+### User-side permission checks
+- `User::hasPermission()` checks role permissions and extra academy permissions
+- `User::canAccessAcademy(Academy $academy)` ensures a user only accesses their own academy or is super admin
+- `User::canAccessPanel(Panel $panel)` controls Filament panel access
+
+---
+
+## 7. Primary Features
+### Business capabilities
+- Dynamic branding and theme management
+- Multi-tenant academy onboarding and management
+- Student and guardian records
+- Coach/staff management and certifications
+- Batch and schedule management
+- Attendance tracking with exports
+- Fee management, installments, receipts, and overdue handling
+- Leave requests and approvals
+- Pharmacy inventory imports and stock management
+- Event registration and participant management
+- Audit logs and reporting widgets
+
+### UI and automation
+- Public welcome page with live branding
+- Filament-based admin, tenant, and student portals
+- Native print routes for permissions, users, attendance, fees, and events
+- CLI UI diagnostic runner: `php scripts/ui_test_runner.php`
+- Workspace agent guidance in `.agents/`
+
+---
+
+## 8. Setup and Environment
+### Requirements
+- PHP 8.2+
+- Composer
+- Node.js 18.x+
+- npm
+- SQLite for local dev or MySQL/MariaDB in production
+
+### Local setup
 ```bash
 composer install
 cp .env.example .env
-# fill .env values (DB, queue, storage, mail, etc.)
 php artisan key:generate
-php artisan migrate --seed
+php -r "file_exists('database/database.sqlite') || touch('database/database.sqlite');"
+php artisan migrate:fresh --seed
 npm install
 npm run dev
 php artisan serve
 ```
 
-Testing:
+### Common scripts
+- `composer install`
+- `npm install`
+- `npm run dev`
+- `npm run build`
+- `composer run test`
+- `php artisan migrate`
+- `php artisan db:seed`
+- `php artisan test`
 
-```bash
-# Run tests with Pest (or phpunit)
-./vendor/bin/pest
-php artisan test
+---
+
+## 9. Testing and QA
+### Test types
+- Feature tests under `tests/Feature`
+- Unit tests under `tests/Unit`
+- Pest PHP testing framework
+
+### Important test suites
+- `TenantIsolationTest` — academy boundary checks
+- `UiPanelTestingTest` — Filament UI and panel rendering
+- `FeeManagementTest` — payment and fee flow validation
+
+### UI validation
+- `php scripts/ui_test_runner.php` runs a CLI UI health check
+- `npm run test:ui` and `npm run test:ui:headless` run Node-based UI automation
+
+---
+
+## 10. Deployment and Operations
+### Deployment notes
+- Build frontend assets before production
+- Ensure `storage/` and `bootstrap/cache/` are writable
+- Keep environment secrets out of source control
+- Use `deploy.sh` / `update.sh` for deployment workflows
+- Review GoDaddy-specific docs when deploying to that host
+
+### Operational considerations
+- Monitor tenant scoping and authorization
+- Validate print routes and data exports
+- Ensure cron/queue workers are configured for scheduled tasks and notifications
+
+---
+
+## 11. Agents and Workspace Workflow
+### Agent files
+- `.agents/AGENTS.md` — workspace rules and UI testing guidance
+- `.agents/skills/application-agent/SKILL.md` — app development instructions
+- `.agents/skills/ui-testing-agent/SKILL.md` — UI testing and diagnostics
+
+### Recommended development workflow
+1. Review existing code in the relevant area
+2. Keep changes small and scoped
+3. Run targeted tests
+4. For UI-facing work, run the UI test runner
+5. Document assumptions and changes
+
+---
+
+## 12. Recommended Improvements
+### Immediate safety checks
+- Audit all `app/Filament/Academy/Resources` for tenant query scoping
+- Add tests for `AcademyPermissionHelper` and `User` permission methods
+- Confirm `Routes/web.php` print routes do not expose unintended data
+
+### Refactor priorities
+- Extract repeatable business logic into `app/Services`
+- Keep Filament resources thin and delegate to services
+- Replace direct database logic in controllers with service/repository layers
+- Avoid `env()` in code; use `config()` instead
+
+---
+
+## 13. Directory Reference
+```text
+InternationalSportsSolutions/
+├── .agents/
+│   ├── AGENTS.md
+│   └── skills/
+│       ├── application-agent/SKILL.md
+│       └── ui-testing-agent/SKILL.md
+├── app/
+│   ├── Channels/
+│   ├── Console/
+│   ├── Exports/
+│   ├── Filament/
+│   │   ├── Academy/
+│   │   ├── CentralPanel/
+│   │   ├── Pages/
+│   │   ├── Resources/
+│   │   └── Student/
+│   ├── Helpers/
+│   ├── Http/
+│   ├── Models/
+│   ├── Notifications/
+│   ├── Providers/
+│   ├── Rules/
+│   ├── Services/
+│   ├── Support/
+│   └── Traits/
+├── bootstrap/
+├── config/
+├── database/
+│   ├── factories/
+│   ├── migrations/
+│   └── seeders/
+├── public/
+├── resources/
+│   ├── css/
+│   ├── js/
+│   └── views/
+├── routes/
+├── scripts/
+├── storage/
+├── tests/
+└── vendor/
 ```
 
-Deployment notes:
-- `deploy.sh` and `update.sh` exist — inspect for provider-specific steps
-- There are GoDaddy deployment guides in the repo (`GODADDY_DEPLOYMENT_GUIDE.md`, `GODADDY_TROUBLESHOOTING.md`) and other deployment docs
-- Use built assets (`npm run build`) and ensure storage and permissions are correct on server
-
-## 5. Architecture & Patterns
-- The project uses Laravel MVC with an added service/domain layer under `app/Services`.
-- Filament provides the admin UI; look for resources and pages inside `app/Filament`.
-- Notifications use Laravel Notification system and custom SMS channels under `app/Channels`.
-- Background jobs should use Laravel Queues; locate Jobs in `app/Jobs` (if present) or service classes dispatching jobs.
-- Third-party integration wrappers likely live in `app/Services` or `app/Support`.
-
-Recommended reading in repo to understand flow:
-- [app/Http](app/Http)
-- [app/Services](app/Services)
-- [app/Filament](app/Filament)
-- [routes/web.php](routes/web.php)
-
-## 6. Database & Models
-- Models live in `app/Models` and map to migrations in `database/migrations`.
-- Seed data in `database/seeders` and factories in `database/factories`.
-- Important domain models (examples): `Student`, `Academy`, `Attendance`, `Fee`, etc. (search `app/Models` to list all models).
-
-## 7. Notifications & Channels
-- Notifications: `app/Notifications` contains mail and in-app notifications.
-- SMS channel: `app/Channels/SmsChannel.php` indicates custom SMS sending logic.
-- Ensure secrets and provider credentials are in `.env` and not committed.
-
-## 8. Filament (Admin Panel)
-- Filament resources and pages are under `app/Filament`.
-- Look for Resources, Pages, Widgets used to build academy/central panels.
-- Filament typically uses Resource classes that map to Models — these are good refactor touchpoints if UIs require decoupling.
-
-## 9. Testing Strategy
-- Tests under `tests/Feature` and `tests/Unit`.
-- Uses Pest helpers (see `tests/Pest.php`) and `TestCase.php` bootstrapping.
-- Recommendations: add end-to-end coverage for critical flows (registration, payments, attendance), and use factories for test data.
-
-## 10. Scripts & CI helpers
-- `scripts/` contains UI test runners and test preparation scripts.
-- Check `package.json` and Composer scripts for any automation tasks.
-
-## 11. Security & Config
-- Ensure secrets in `.env` are not committed; verify `.gitignore` covers storage and env files.
-- Keep `APP_KEY`, `DB_*`, `MAIL_*`, `SMS_*` secure in deployment environments.
-- Ensure correct file/directory permissions for `storage/` and `bootstrap/cache` on deployment.
-
-## 12. Common Refactor Opportunities
-These are common improvements and places to consider refactoring first (safer, high ROI):
-
-- Extract and define clear service interfaces
-  - Move business logic out of Controllers into `app/Services`.
-  - Add interfaces for services and bind them in a service provider for easier testing/mocking.
-
-- Improve Test Coverage
-  - Add unit tests for service classes and integration tests for major flows.
-  - Ensure factories and seeders provide realistic test data.
-
-- Reduce Fat Models / Controllers
-  - Move complex query logic into Repository or Query classes.
-  - Use Eloquent Scopes for repeated query patterns.
-
-- Decouple Filament UI from core logic
-  - Keep Filament Resources thin (calls to Services), to allow reusing domain logic elsewhere.
-
-- Queue & Job Reliability
-  - Ensure long-running tasks use Jobs with idempotency and retry handling.
-  - Move external API calls into Jobs or Services with retry/backoff.
-
-- Configuration & Secrets
-  - Centralize config keys under `config/` and avoid sprinkling `env()` calls across classes.
-
-- Performance
-  - Add caching for expensive queries (use Redis)
-  - Eager-load relationships where N+1 queries exist
-
-## 13. Suggested Safe Refactor Plan
-1. Add or update unit tests around the small surface you plan to change.
-2. Extract logic to a service with an interface. Bind interface in a provider.
-3. Run tests and fix regressions.
-4. Replace usage sites with the new service.
-5. Repeat for the next slice.
-
-This "strangler" approach keeps changes small and reversible.
-
-## 14. Where to Start (Suggested Priorities)
-- Critical bugs / security fixes
-- Tests for core domain (students, payments, attendance)
-- Extract payment and notification logic to services with clear interfaces
-- Decouple Filament resources by introducing thin adapters to services
-
-## 15. Useful Commands & Shortcuts
-- Run migrations: `php artisan migrate`
-- Seed DB: `php artisan db:seed`
-- Run tests: `./vendor/bin/pest` or `php artisan test`
-- Generate key: `php artisan key:generate`
-- Queue worker: `php artisan queue:work`
-- View route list: `php artisan route:list`
-
-## 16. Where to Look for Hard-coded or Risky Code
-- Search for `env(` usage inside app code (should be in config files only)
-- Look for `DB::raw`, complex raw SQL in controllers
-- External API keys or credentials committed accidentally
-
-## 17. Next Steps / Action Items
-- Run a static grep to list top-level models, services, and Filament resources.
-- Create a short list of 5 highest-risk modules to refactor first.
-- Add missing unit tests around the primary business flows.
-
 ---
 
-## Appendix A — Quick repo pointers
-- Filament admin: [app/Filament](app/Filament)
-- Services: [app/Services](app/Services)
-- Models: [app/Models](app/Models)
-- Routes: [routes/web.php](routes/web.php)
-- Scripts: [scripts](scripts)
-- Tests: [tests](tests)
+## 14. Final Notes
+This document provides the full, current overview of the repository and the application. Use it as the reference for development, testing, deployment, and future refactor planning.
 
-
----
-
-If you want, I can:
-- Produce a generated checklist of the top 10 files to inspect for refactor.
-- Run a quick code scan (list models, services, controllers) and attach findings.
-- Create PR-ready patches for the first refactor slice (with tests).
-
-Would you like me to (choose one):
-- generate the top-10 file checklist,
-- run a repo scan to list models/services/controllers,
-- or start extracting a specific service now? 
+If you want, I can also generate a follow-up checklist of the top 10 files and components to inspect first for the next feature or refactor.
