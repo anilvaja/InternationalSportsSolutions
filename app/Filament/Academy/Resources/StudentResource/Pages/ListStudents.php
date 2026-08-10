@@ -19,7 +19,7 @@ class ListStudents extends ListRecords
         $currentCount = Student::where('academy_id', Auth::user()->academy_id)
             ->where('status', 'active')
             ->count();
-        $maxStudents = $academy->max_students;
+        $maxStudents = $academy?->max_students;
 
         $actions = [];
 

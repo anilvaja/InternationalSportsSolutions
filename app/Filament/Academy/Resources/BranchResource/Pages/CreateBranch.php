@@ -22,7 +22,7 @@ class CreateBranch extends CreateRecord
             ->where('status', 'active')
             ->count();
 
-        if ($academy->max_branches && $currentBranchCount >= $academy->max_branches) {
+        if ($academy && $academy->max_branches && $currentBranchCount >= $academy->max_branches) {
             Notification::make()
                 ->title('Branch Limit Reached')
                 ->body("Cannot create new branch. Your academy is limited to {$academy->max_branches} active branch(es). You currently have {$currentBranchCount} active branches. Please deactivate existing branches or contact support to upgrade your plan.")
@@ -51,7 +51,7 @@ class CreateBranch extends CreateRecord
             ->where('status', 'active')
             ->count();
 
-        if ($academy->max_branches && $currentBranchCount >= $academy->max_branches) {
+        if ($academy && $academy->max_branches && $currentBranchCount >= $academy->max_branches) {
             Notification::make()
                 ->title('Branch Limit Reached')
                 ->body("Your academy is limited to {$academy->max_branches} active branch(es). You currently have {$currentBranchCount} active branches. Please contact support to upgrade your plan.")

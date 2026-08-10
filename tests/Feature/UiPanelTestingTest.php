@@ -84,4 +84,33 @@ class UiPanelTestingTest extends TestCase
 
         $response->assertStatus(200);
     }
+
+    public function test_super_admin_can_access_academy_panel_without_null_crashes(): void
+    {
+        $academy = Academy::create([
+            'name' => 'Super Test Academy',
+            'slug' => 'super-test-academy',
+            'contact_email' => 'super@test.com',
+            'contact_phone' => '1234567890',
+            'status' => 'active',
+        ]);
+
+        $superAdmin = User::create([
+            'name' => 'Super Admin',
+            'email' => 'superadmin@test.com',
+            'password' => bcrypt('password'),
+            'is_super_admin' => true,
+            'status' => 'active',
+            'is_active' => true,
+            'academy_id' => null, // Super admin starts with null academy context
+        ]);
+
+        // Access academy dashboard - should automatically assign first academy and succeed
+        $response = $this->actingAs($superAdmin)->get('/academy');
+        $response->assertStatus(200);
+
+        // Access student list page - should load successfully without null pointer error
+        $response2 = $this->actingAs($superAdmin)->get('/academy/students');
+        $response2->assertStatus(200);
+    }
 }

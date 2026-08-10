@@ -25,6 +25,13 @@ class RestrictAcademyAccess
 
         // Allow super admins to access the academy panel
         if ($user->is_super_admin) {
+            if ($user->academy_id === null) {
+                $firstAcademy = \App\Models\Academy::first();
+                if ($firstAcademy) {
+                    $user->academy_id = $firstAcademy->id;
+                    $user->save();
+                }
+            }
             return $next($request);
         }
 

@@ -35,7 +35,7 @@ class CreateStudent extends CreateRecord
             ->where('status', 'active')
             ->count();
 
-        if ($academy->max_students && $currentStudentCount >= $academy->max_students) {
+        if ($academy && $academy->max_students && $currentStudentCount >= $academy->max_students) {
             Notification::make()
                 ->title('Student Limit Reached')
                 ->body("Your academy is limited to {$academy->max_students} active student(s). You currently have {$currentStudentCount} active students. Please contact support to upgrade your plan.")

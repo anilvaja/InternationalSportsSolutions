@@ -41,6 +41,16 @@ class AcademySettings extends Page implements HasForms
     public function mount(): void
     {
         $academy = Auth::user()->academy;
+        if (!$academy) {
+            Notification::make()
+                ->title('No Academy Context')
+                ->body('Your user account is not associated with an academy context.')
+                ->danger()
+                ->send();
+            
+            $this->redirect(Auth::user()->is_super_admin ? '/admin' : '/');
+            return;
+        }
         $academyData = $academy->toArray();
         
         // Add settings data

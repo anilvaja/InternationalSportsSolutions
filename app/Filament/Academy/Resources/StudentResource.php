@@ -41,7 +41,7 @@ class StudentResource extends BaseAcademyResource
                         $currentCount = Student::where('academy_id', Auth::user()->academy_id)
                             ->where('status', 'active')
                             ->count();
-                        $maxStudents = $academy->max_students ?? 'Unlimited';
+                        $maxStudents = $academy?->max_students ?? 'Unlimited';
                         
                         return "Active students: {$currentCount} / {$maxStudents}";
                     })
@@ -53,7 +53,7 @@ class StudentResource extends BaseAcademyResource
                                 $currentCount = Student::where('academy_id', Auth::user()->academy_id)
                                     ->where('status', 'active')
                                     ->count();
-                                $maxStudents = $academy->max_students;
+                                $maxStudents = $academy?->max_students;
                                 
                                 if ($maxStudents && $currentCount >= $maxStudents) {
                                     return "⚠️ **Active student limit reached!** Your academy is limited to {$maxStudents} active student(s). Contact support to upgrade your plan.";

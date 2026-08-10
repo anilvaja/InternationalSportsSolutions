@@ -43,7 +43,7 @@ class BranchResource extends BaseAcademyResource
                         $currentCount = \App\Models\Branch::where('academy_id', Auth::user()->academy_id)
                             ->where('status', 'active')
                             ->count();
-                        $maxBranches = $academy->max_branches ?? 'Unlimited';
+                        $maxBranches = $academy?->max_branches ?? 'Unlimited';
                         
                         return "Active branches: {$currentCount} / {$maxBranches}";
                     })
@@ -55,7 +55,7 @@ class BranchResource extends BaseAcademyResource
                                 $currentCount = \App\Models\Branch::where('academy_id', Auth::user()->academy_id)
                                     ->where('status', 'active')
                                     ->count();
-                                $maxBranches = $academy->max_branches;
+                                $maxBranches = $academy?->max_branches;
                                 
                                 if ($maxBranches && $currentCount >= $maxBranches) {
                                     return "⚠️ **Active branch limit reached!** Your academy is limited to {$maxBranches} active branch(es). Contact support to upgrade your plan.";

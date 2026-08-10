@@ -19,7 +19,7 @@ class ListBranches extends ListRecords
         $currentCount = Branch::where('academy_id', Auth::user()->academy_id)
             ->where('status', 'active')
             ->count();
-        $maxBranches = $academy->max_branches;
+        $maxBranches = $academy?->max_branches;
 
         $actions = [];
 
