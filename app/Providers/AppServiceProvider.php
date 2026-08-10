@@ -28,6 +28,16 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Force HTTPS/HTTP scheme dynamically based on request headers
+        if (
+            (isset($_SERVER['HTTPS']) && ($_SERVER['HTTPS'] === 'on' || $_SERVER['HTTPS'] == 1)) ||
+            (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+        ) {
+            \Illuminate\Support\Facades\URL::forceScheme('https');
+        } else {
+            \Illuminate\Support\Facades\URL::forceScheme('http');
+        }
+
         // Configure mail settings from database if available
         try {
             if (Schema::hasTable('settings')) {
