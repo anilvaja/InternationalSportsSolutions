@@ -28,14 +28,33 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Force HTTPS/HTTP scheme dynamically based on request headers
-        if (
-            (isset($_SERVER['HTTPS']) && ($_SERVER['HTTPS'] === 'on' || $_SERVER['HTTPS'] == 1)) ||
-            (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
-        ) {
+        // Detect current request protocol
+        $isSecure = (isset($_SERVER['HTTPS']) && ($_SERVER['HTTPS'] === 'on' || $_SERVER['HTTPS'] == 1)) ||
+                    (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+
+        if ($isSecure) {
             \Illuminate\Support\Facades\URL::forceScheme('https');
         } else {
             \Illuminate\Support\Facades\URL::forceScheme('http');
+            // Dynamically rewrite app.url config to use http
+            $appUrl = config('app.url');
+            if ($appUrl && str_starts_with($appUrl, 'https://')) {
+                config(['app.url' => str_replace('https://', 'http://', $appUrl)]);
+            }
+            // Dynamically force HTTP asset root in URL generator using reflection
+            $assetUrl = config('app.asset_url') ?? env('ASSET_URL');
+            if ($assetUrl && str_starts_with($assetUrl, 'https://')) {
+                $httpAssetUrl = str_replace('https://', 'http://', $assetUrl);
+                try {
+                    $urlGenerator = app('url');
+                    $reflection = new \ReflectionClass($urlGenerator);
+                    $property = $reflection->getProperty('assetRoot');
+                    $property->setAccessible(true);
+                    $property->setValue($urlGenerator, $httpAssetUrl);
+                } catch (\Exception $e) {
+                    // Fallback if class structure differs
+                }
+            }
         }
 
         // Configure mail settings from database if available

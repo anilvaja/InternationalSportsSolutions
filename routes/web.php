@@ -23,3 +23,4 @@ Route::prefix('academy')->name('academy.')->group(function () {
     Route::get('/fees/{fee}/print', [PrintController::class, 'fee'])->name('fee.print');
     Route::get('/events/{event}/participants/print', [PrintController::class, 'eventParticipants'])->name('events.participants.print');
 });
+
