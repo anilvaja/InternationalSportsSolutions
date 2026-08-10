@@ -25,7 +25,7 @@ jobs:
     - name: FTP Upload
       uses: SamKirkland/FTP-Deploy-Action@v4.3.5
       with:
-        server: ftp.internationalsportssolutions.com
+        server: internationalsportssolutions.com
         username: ${{ secrets.FTP_USERNAME }}
         password: ${{ secrets.FTP_PASSWORD }}
         server-dir: / # The FTP user sports_admin is already jailed to sports_admin/
