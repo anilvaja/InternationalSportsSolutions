@@ -50,9 +50,9 @@ class SystemSettings extends Page
                     ->schema([
                         Grid::make(2)->schema([
                             TextInput::make('system_name')
-                                ->label('System / Hospital Name')
+                                ->label('System Name')
                                 ->required()
-                                ->placeholder('e.g. International Sports Solutions / City Hospital')
+                                ->placeholder('e.g. International Sports Solutions')
                                 ->maxLength(255),
 
                             FileUpload::make('system_logo')
@@ -111,7 +111,7 @@ class SystemSettings extends Page
 
         Notification::make()
             ->title('System settings updated successfully')
-            ->body('Dynamic Hospital/System name, logo, and theme colors have been applied.')
+            ->body('Dynamic system name, logo, and theme colors have been applied.')
             ->success()
             ->send();
     }

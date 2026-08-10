@@ -8,12 +8,12 @@ This single document captures the current project structure, architecture, techn
 ---
 
 ## 1. Project Summary
-**InternationalSportsSolutions** is a Laravel 12 multi-tenant SaaS platform built with Filament 3. It targets academy, sports, and hospital operations with separate panels for:
+**InternationalSportsSolutions** is a Laravel 12 multi-tenant SaaS platform built with Filament 3. It targets academy and sports operations with separate panels for:
 - **Central Admin** (`/admin`)
 - **Academy Tenant** (`/academy`)
 - **Student Portal** (`/student`)
 
-The platform supports student/patient management, fee collections, attendance tracking, room/facility scheduling, pharmacy inventory imports, leave workflows, event management, and dynamic branding.
+The platform supports student management, fee collections, attendance tracking, room/facility scheduling, leave workflows, event management, and dynamic branding.
 
 ---
 
@@ -45,7 +45,7 @@ The platform supports student/patient management, fee collections, attendance tr
 ## 3. Application Architecture
 ### Panel structure
 - **Central Admin Panel** (`/admin`): super admin system settings, tenant creation, branding, user management, audit logs
-- **Academy Panel** (`/academy`): tenant operational management for students, fees, attendance, rooms, pharmacy, leaves, events
+- **Academy Panel** (`/academy`): tenant operational management for students, fees, attendance, rooms, leaves, events
 - **Student Portal** (`/student`): student-facing self-service dashboard for attendance, fees, and progress
 
 ### Filament locations
@@ -105,9 +105,9 @@ The app uses `stancl/tenancy` for tenant-aware routing, but tenant data protecti
 ## 5. Key Models and Data Entities
 ### Main domain models
 - `Academy` — tenant organization data and subscription limits
-- `Branch` — physical location or training/ward branch
+- `Branch` — physical location or training branch
 - `User` — super admins, academy admins, coaches, staff
-- `Student` — student/patient profiles
+- `Student` — student profiles
 - `Coach` — coach and staff profiles
 - `Batch` — batch/class/schedule entity
 - `Attendance`, `StudentAttendance`, `BatchAttendance` — attendance logs
@@ -155,7 +155,6 @@ This is critical: a resource missing this override can leak data across academie
 - Attendance tracking with exports
 - Fee management, installments, receipts, and overdue handling
 - Leave requests and approvals
-- Pharmacy inventory imports and stock management
 - Event registration and participant management
 - Audit logs and reporting widgets
 

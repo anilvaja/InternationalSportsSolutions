@@ -1,11 +1,11 @@
-# International Sports & Hospital Solutions — Multi-Tenant SaaS Platform
+# International Sports Solutions — Multi-Tenant SaaS Platform
 
 [![Laravel](https://img.shields.io/badge/Laravel-12.x-FF2D20?style=for-the-badge&logo=laravel&logoColor=white)](https://laravel.com)
 [![Filament](https://img.shields.io/badge/Filament-3.x-D97706?style=for-the-badge&logo=laravel&logoColor=white)](https://filamentphp.com)
 [![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
 [![License](https://img.shields.io/badge/License-Proprietary-blue.svg?style=for-the-badge)](#-license)
 
-**International Sports & Hospital Solutions** is an enterprise-grade, multi-tenant SaaS platform built with **Laravel 12** and **Filament PHP 3**. It provides a multi-panel SaaS system designed to streamline operations, student & patient management, coach & doctor schedules, leave tracking, room & facility allocations, pharmacy stock imports, fee installment management, event registrations, and dynamic theme customization.
+**International Sports Solutions** is an enterprise-grade, multi-tenant SaaS platform built with **Laravel 12** and **Filament PHP 3**. It provides a multi-panel SaaS system designed to streamline operations, student management, coach schedules, leave tracking, room & facility allocations, fee installment management, event registrations, and dynamic theme customization.
 
 ---
 
@@ -13,13 +13,13 @@
 
 ### 🎨 1. Dynamic Branding, Logo & Theme Colors System
 - **Super Admin System Settings (`/admin/system-settings`)**:
-  - Super Admins can dynamically change the **Hospital / System Name**, upload a custom **System Logo**, and configure the **Primary & Secondary Theme Accent Colors** via an interactive Color Picker.
+  - Super Admins can dynamically change the **System Name**, upload a custom **System Logo**, and configure the **Primary & Secondary Theme Accent Colors** via an interactive Color Picker.
 - **Cross-Panel Dynamic Theme Synchronization**:
   - Automatically propagates dynamic branding, custom logos, and primary theme colors across all three panels (`/admin`, `/academy`, `/student`) and the public welcome landing page (`/`).
 
 ### 🍃 2. Leaves Management Module
 - **Comprehensive Leave Request Tracking**:
-  - Track leave applications for staff, coaches, and students/patients.
+  - Track leave applications for staff, coaches, and students.
   - Supports multiple leave types (Sick Leave, Casual Leave, Medical Leave, Unpaid Leave).
 - **Approval & Workflow Status**:
   - Role-based approval/rejection workflows (`Pending`, `Approved`, `Rejected`).
@@ -27,18 +27,12 @@
 
 ### 🏢 3. Rooms & Facilities Management Module
 - **Facility & Room Allocations**:
-  - Manage rooms, training halls, courts, wards, and facility capacities.
+  - Manage rooms, training halls, courts, and facility capacities.
   - Track room status (`Available`, `Occupied`, `Under Maintenance`, `Reserved`).
 - **Batch & Event Scheduling Assignments**:
   - Assign specific rooms or facilities to batches, training sessions, or events to eliminate scheduling double-bookings.
 
-### 💊 4. Pharmacy & Supplies Import Options
-- **Bulk Pharmacy Data Ingestion**:
-  - Import medicine stock, pharmaceutical supplies, and inventory data via CSV, Excel, or JSON import options.
-- **Validation & Inventory Tracking**:
-  - Automated column mapping, data validation checks (batch numbers, expiry dates, stock quantities, unit prices), and inventory adjustment logs.
-
-### 🧪 5. Automated UI Testing and Application Agent Workflow
+### 🧪 4. Automated UI Testing and Application Agent Workflow
 - **Application Development Agent Skill (`application-development-agent`)**:
   - Use this agent for feature implementation, incremental updates, and repository-guided development tasks.
   - The agent reviews current models, Filament resources, routes, and tests before generating code.
@@ -58,13 +52,13 @@ The application is structured into **3 specialized panels**:
 ```mermaid
 graph TD
     SA[Super Admin] -->|Manages System Settings, Logos, Themes & Tenants| CP[Central Admin Panel /admin]
-    AO[Academy / Hospital Admin & Staff] -->|Manages Operations, Leaves, Rooms & Pharmacy| AP[Academy Tenant Panel /academy]
-    ST[Student / Parent / Patient] -->|Views Records & Receipts| SP[Student Portal /student]
+    AO[Academy Admin & Staff] -->|Manages Operations, Leaves & Rooms| AP[Academy Tenant Panel /academy]
+    ST[Student / Parent] -->|Views Records & Receipts| SP[Student Portal /student]
 ```
 
 ### 1. Central Admin Panel (`/admin`)
-- **System & UI Settings**: Dynamic Hospital/System Name, Logo Upload, Primary Theme Color Picker (`Color::hex`), and Support Contacts.
-- **Tenant & Academy Management**: Create, onboard, activate, and configure tenant academies/facilities.
+- **System & UI Settings**: Dynamic System Name, Logo Upload, Primary Theme Color Picker (`Color::hex`), and Support Contacts.
+- **Tenant & Academy Management**: Create, onboard, activate, and configure tenant academies.
 - **Subscription Limits Control**: Set maximum branches, users, coaches, and student capacity limits per tenant.
 - **Global User Management**: Manage platform super admins and tenant administrators.
 - **System Audit Logs**: Global audit trail tracking operational changes.
@@ -72,7 +66,6 @@ graph TD
 ### 2. Academy Tenant Panel (`/academy`)
 - **Leaves Management**: Staff, coach, and student leave requests, leave approvals, and balance logs.
 - **Rooms & Facilities**: Manage room capacities, status allocations, and batch scheduling assignments.
-- **Pharmacy & Stock Imports**: CSV/Excel bulk import options for pharmacy inventory, medicine batches, and stock management.
 - **Branch Management**: Multi-branch support per tenant with location, contact, and manager details.
 - **Student Management**: Profiles, emergency contacts, medical history, guardian details, and document uploads.
 - **Coach & Staff Management**: Professional profiles, certifications, hourly/monthly pay rates, and batch availability.
@@ -113,7 +106,7 @@ The core domain model comprises primary Eloquent models including:
 - **Academy**: Core tenant model containing status, domain, subscription limits (`max_branches`, `max_students`, `max_coaches`), and metadata.
 - **Branch**: Physical tenant branches/locations.
 - **User**: Multi-tenant user model handling super admin, academy admin, coach, and staff access.
-- **Student**: Comprehensive student/patient profile linked to tenant and branch.
+- **Student**: Comprehensive student profile linked to tenant and branch.
 - **Coach**: Professional coach/staff profile with specializations, certifications, and salary structure.
 - **Batch**: Class batches with room allocations, schedule definitions, coach assignments, and student enrollments.
 - **Attendance / BatchAttendance**: Batch attendance logs and individual presence status.
@@ -260,4 +253,4 @@ InternationalSportsSolutions/
 
 ## 📝 License
 
-This software is proprietary and developed for **International Sports & Hospital Solutions**. All rights reserved.
+This software is proprietary and developed for **International Sports Solutions**. All rights reserved.
