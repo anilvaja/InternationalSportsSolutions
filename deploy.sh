@@ -103,6 +103,17 @@ print_header "Step 3: Installing Composer Dependencies"
 composer install --no-dev --optimize-autoloader
 print_success "Composer dependencies installed"
 
+# Step 3b: Install Node dependencies and build front-end assets
+print_header "Step 3b: Building Front-end Assets"
+if ! command -v npm &> /dev/null; then
+    print_error "npm is not installed - front-end assets (CSS/JS) will not be built."
+    print_error "The site will render unstyled until this is fixed. Install Node.js 18+ and re-run."
+    exit 1
+fi
+npm ci
+npm run build
+print_success "Front-end assets built successfully"
+
 # Step 4: Environment setup
 print_header "Step 4: Setting up Environment"
 if [ ! -f "$DEPLOY_PATH/.env" ]; then
@@ -148,6 +159,7 @@ print_success "Caches cleared"
 
 # Step 9: Optimize for production
 print_header "Step 7: Optimizing for Production"
+php artisan filament:assets
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache

@@ -1,0 +1,208 @@
+From 7df21546ee44a932de63351875610a7bc266fb09 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Mon, 10 Aug 2026 10:37:56 +0000
+Subject: [PATCH] Fix security issues and missing asset build step
+
+- Remove unauthenticated /test-data route that leaked all academies,
+  branches, and users to anyone
+- Fix cross-tenant IDOR in PrintController::fee() - a logged-in user
+  from one academy could view/download another academy's fee receipt
+  by ID
+- Add defense-in-depth tenant ownership check in BaseAcademyResource
+  canEdit()/canDelete() so record-level access doesn't rely solely on
+  each resource remembering to scope getEloquentQuery()
+- Add npm ci && npm run build (+ php artisan filament:assets) to
+  deploy.sh and update.sh - this was missing entirely, which is why
+  public/build never gets generated on the server and the UI renders
+  unstyled/distorted
+- Align composer.json license and README badge with the proprietary
+  licensing already stated in the README (previously said MIT and
+  linked to a LICENSE file that doesn't exist)
+---
+ README.md                                     |  2 +-
+ .../Academy/Resources/BaseAcademyResource.php | 29 +++++++++++++++++++
+ app/Http/Controllers/PrintController.php      |  8 ++++-
+ composer.json                                 |  2 +-
+ deploy.sh                                     | 12 ++++++++
+ routes/web.php                                | 13 ---------
+ update.sh                                     | 16 ++++++++++
+ 7 files changed, 66 insertions(+), 16 deletions(-)
+
+diff --git a/README.md b/README.md
+index d90c350..3de6e64 100644
+--- a/README.md
++++ b/README.md
+@@ -3,7 +3,7 @@ # International Sports & Hospital Solutions — Multi-Tenant SaaS Platform
+ [![Laravel](https://img.shields.io/badge/Laravel-12.x-FF2D20?style=for-the-badge&logo=laravel&logoColor=white)](https://laravel.com)
+ [![Filament](https://img.shields.io/badge/Filament-3.x-D97706?style=for-the-badge&logo=laravel&logoColor=white)](https://filamentphp.com)
+ [![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
+-[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
++[![License](https://img.shields.io/badge/License-Proprietary-blue.svg?style=for-the-badge)](#-license)
+ 
+ **International Sports & Hospital Solutions** is an enterprise-grade, multi-tenant SaaS platform built with **Laravel 12** and **Filament PHP 3**. It provides a multi-panel SaaS system designed to streamline operations, student & patient management, coach & doctor schedules, leave tracking, room & facility allocations, pharmacy stock imports, fee installment management, event registrations, and dynamic theme customization.
+ 
+diff --git a/app/Filament/Academy/Resources/BaseAcademyResource.php b/app/Filament/Academy/Resources/BaseAcademyResource.php
+index 8946c42..3ab4338 100644
+--- a/app/Filament/Academy/Resources/BaseAcademyResource.php
++++ b/app/Filament/Academy/Resources/BaseAcademyResource.php
+@@ -77,6 +77,13 @@ public static function canEdit($record): bool
+         if (!$user || is_null($user->academy_id)) {
+             return false;
+         }
++
++        // Belt-and-braces tenant check: even if a resource's getEloquentQuery()
++        // scoping is ever missed/removed, never allow editing a record that
++        // belongs to a different academy.
++        if (!static::recordBelongsToCurrentAcademy($record, $user)) {
++            return false;
++        }
+         
+         // Use proper permission check
+         return static::canAcademy('edit');
+@@ -95,8 +102,30 @@ public static function canDelete($record): bool
+         if (!$user || is_null($user->academy_id)) {
+             return false;
+         }
++
++        // Belt-and-braces tenant check: even if a resource's getEloquentQuery()
++        // scoping is ever missed/removed, never allow deleting a record that
++        // belongs to a different academy.
++        if (!static::recordBelongsToCurrentAcademy($record, $user)) {
++            return false;
++        }
+         
+         // Use proper permission check
+         return static::canAcademy('delete');
+     }
++
++    /**
++     * Defense-in-depth guard: confirms $record actually belongs to the
++     * current user's academy before allowing a mutating action. Records
++     * without an academy_id attribute (e.g. globally-shared lookup data)
++     * are treated as not tenant-scoped and pass through unaffected.
++     */
++    protected static function recordBelongsToCurrentAcademy($record, $user): bool
++    {
++        if (!is_object($record) || !array_key_exists('academy_id', $record->getAttributes())) {
++            return true;
++        }
++
++        return (int) $record->academy_id === (int) $user->academy_id;
++    }
+ }
+diff --git a/app/Http/Controllers/PrintController.php b/app/Http/Controllers/PrintController.php
+index 0a54513..ab51ab1 100644
+--- a/app/Http/Controllers/PrintController.php
++++ b/app/Http/Controllers/PrintController.php
+@@ -256,7 +256,13 @@ public function reports(Request $request)
+     public function fee(Fee $fee)
+     {
+         $this->checkPermission('print_fees');
+-        
++
++        // Ensure the fee belongs to the user's academy
++        $user = Auth::user();
++        if (!$user->is_super_admin && $fee->academy_id !== $user->academy_id) {
++            abort(403, 'You do not have access to this fee record.');
++        }
++
+         // Load all related data for the fee receipt
+         $fee->load(['student', 'batch', 'academy', 'branch', 'collectedBy']);
+         
+diff --git a/composer.json b/composer.json
+index 5be8004..9a5b76f 100644
+--- a/composer.json
++++ b/composer.json
+@@ -4,7 +4,7 @@
+     "type": "project",
+     "description": "The skeleton application for the Laravel framework.",
+     "keywords": ["laravel", "framework"],
+-    "license": "MIT",
++    "license": "proprietary",
+     "require": {
+         "php": "^8.2",
+         "barryvdh/laravel-dompdf": "^3.1",
+diff --git a/deploy.sh b/deploy.sh
+index 42eebd5..e92f713 100644
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -103,6 +103,17 @@ print_header "Step 3: Installing Composer Dependencies"
+ composer install --no-dev --optimize-autoloader
+ print_success "Composer dependencies installed"
+ 
++# Step 3b: Install Node dependencies and build front-end assets
++print_header "Step 3b: Building Front-end Assets"
++if ! command -v npm &> /dev/null; then
++    print_error "npm is not installed - front-end assets (CSS/JS) will not be built."
++    print_error "The site will render unstyled until this is fixed. Install Node.js 18+ and re-run."
++    exit 1
++fi
++npm ci
++npm run build
++print_success "Front-end assets built successfully"
++
+ # Step 4: Environment setup
+ print_header "Step 4: Setting up Environment"
+ if [ ! -f "$DEPLOY_PATH/.env" ]; then
+@@ -148,6 +159,7 @@ print_success "Caches cleared"
+ 
+ # Step 9: Optimize for production
+ print_header "Step 7: Optimizing for Production"
++php artisan filament:assets
+ php artisan config:cache
+ php artisan route:cache
+ php artisan view:cache
+diff --git a/routes/web.php b/routes/web.php
+index 1afe93a..95cbdf2 100644
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -7,19 +7,6 @@
+     return view('welcome');
+ });
+ 
+-// Test route to debug branches
+-Route::get('/test-data', function () {
+-    $data = [
+-        'academies_count' => \App\Models\Academy::count(),
+-        'branches_count' => \App\Models\Branch::count(),
+-        'users_count' => \App\Models\User::count(),
+-        'academies' => \App\Models\Academy::all()->toArray(),
+-        'branches' => \App\Models\Branch::all()->toArray(),
+-    ];
+-    
+-    return response()->json($data);
+-});
+-
+ // Academy print routes
+ Route::prefix('academy')->name('academy.')->group(function () {
+     Route::get('/permissions/print', [PrintController::class, 'permissions'])->name('permissions.print');
+diff --git a/update.sh b/update.sh
+index 9725040..6127f31 100644
+--- a/update.sh
++++ b/update.sh
+@@ -58,6 +58,22 @@ else
+     print_success "No dependency changes detected"
+ fi
+ 
++# Step 2b: Rebuild front-end assets if front-end source changed (or build/ is missing)
++print_header "Checking Front-end Assets"
++if [ ! -d "public/build" ] || git diff HEAD~1..HEAD --name-only | grep -Eq "package(-lock)?\.json|vite\.config\.js|resources/(css|js)/"; then
++    print_warning "Front-end changes detected (or no prior build found), rebuilding assets..."
++    if ! command -v npm &> /dev/null; then
++        print_warning "npm is not installed - skipping asset build. The site may render unstyled."
++    else
++        npm ci
++        npm run build
++        php artisan filament:assets
++        print_success "Front-end assets rebuilt"
++    fi
++else
++    print_success "No front-end changes detected"
++fi
++
+ # Step 3: Database backup
+ print_header "Backing Up Database"
+ if [ -f "database/database.sqlite" ]; then
+-- 
+2.43.0
+

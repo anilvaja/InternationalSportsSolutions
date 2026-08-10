@@ -58,6 +58,22 @@ else
     print_success "No dependency changes detected"
 fi
 
+# Step 2b: Rebuild front-end assets if front-end source changed (or build/ is missing)
+print_header "Checking Front-end Assets"
+if [ ! -d "public/build" ] || git diff HEAD~1..HEAD --name-only | grep -Eq "package(-lock)?\.json|vite\.config\.js|resources/(css|js)/"; then
+    print_warning "Front-end changes detected (or no prior build found), rebuilding assets..."
+    if ! command -v npm &> /dev/null; then
+        print_warning "npm is not installed - skipping asset build. The site may render unstyled."
+    else
+        npm ci
+        npm run build
+        php artisan filament:assets
+        print_success "Front-end assets rebuilt"
+    fi
+else
+    print_success "No front-end changes detected"
+fi
+
 # Step 3: Database backup
 print_header "Backing Up Database"
 if [ -f "database/database.sqlite" ]; then

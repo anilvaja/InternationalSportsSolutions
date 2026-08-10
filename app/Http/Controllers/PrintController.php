@@ -256,7 +256,13 @@ class PrintController extends Controller
     public function fee(Fee $fee)
     {
         $this->checkPermission('print_fees');
-        
+
+        // Ensure the fee belongs to the user's academy
+        $user = Auth::user();
+        if (!$user->is_super_admin && $fee->academy_id !== $user->academy_id) {
+            abort(403, 'You do not have access to this fee record.');
+        }
+
         // Load all related data for the fee receipt
         $fee->load(['student', 'batch', 'academy', 'branch', 'collectedBy']);
         

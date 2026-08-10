@@ -77,6 +77,13 @@ abstract class BaseAcademyResource extends Resource
         if (!$user || is_null($user->academy_id)) {
             return false;
         }
+
+        // Belt-and-braces tenant check: even if a resource's getEloquentQuery()
+        // scoping is ever missed/removed, never allow editing a record that
+        // belongs to a different academy.
+        if (!static::recordBelongsToCurrentAcademy($record, $user)) {
+            return false;
+        }
         
         // Use proper permission check
         return static::canAcademy('edit');
@@ -95,8 +102,30 @@ abstract class BaseAcademyResource extends Resource
         if (!$user || is_null($user->academy_id)) {
             return false;
         }
+
+        // Belt-and-braces tenant check: even if a resource's getEloquentQuery()
+        // scoping is ever missed/removed, never allow deleting a record that
+        // belongs to a different academy.
+        if (!static::recordBelongsToCurrentAcademy($record, $user)) {
+            return false;
+        }
         
         // Use proper permission check
         return static::canAcademy('delete');
+    }
+
+    /**
+     * Defense-in-depth guard: confirms $record actually belongs to the
+     * current user's academy before allowing a mutating action. Records
+     * without an academy_id attribute (e.g. globally-shared lookup data)
+     * are treated as not tenant-scoped and pass through unaffected.
+     */
+    protected static function recordBelongsToCurrentAcademy($record, $user): bool
+    {
+        if (!is_object($record) || !array_key_exists('academy_id', $record->getAttributes())) {
+            return true;
+        }
+
+        return (int) $record->academy_id === (int) $user->academy_id;
     }
 }

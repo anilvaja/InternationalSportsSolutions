@@ -7,19 +7,6 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-// Test route to debug branches
-Route::get('/test-data', function () {
-    $data = [
-        'academies_count' => \App\Models\Academy::count(),
-        'branches_count' => \App\Models\Branch::count(),
-        'users_count' => \App\Models\User::count(),
-        'academies' => \App\Models\Academy::all()->toArray(),
-        'branches' => \App\Models\Branch::all()->toArray(),
-    ];
-    
-    return response()->json($data);
-});
-
 // Academy print routes
 Route::prefix('academy')->name('academy.')->group(function () {
     Route::get('/permissions/print', [PrintController::class, 'permissions'])->name('permissions.print');
