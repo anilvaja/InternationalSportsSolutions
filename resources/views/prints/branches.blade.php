@@ -22,8 +22,8 @@
                     <td>{{ $branch->phone ?? 'N/A' }}</td>
                     <td>{{ $branch->students_count }}</td>
                     <td>
-                        <span class="badge badge-{{ $branch->is_active ? 'success' : 'danger' }}">
-                            {{ $branch->is_active ? 'Active' : 'Inactive' }}
+                        <span class="badge badge-{{ $branch->isActive() ? 'success' : 'danger' }}">
+                            {{ $branch->isActive() ? 'Active' : 'Inactive' }}
                         </span>
                     </td>
                 </tr>
@@ -48,7 +48,7 @@
             </tr>
             <tr>
                 <td>Active Branches</td>
-                <td>{{ $branches->where('is_active', true)->count() }}</td>
+                <td>{{ $branches->filter(fn ($b) => $b->isActive())->count() }}</td>
             </tr>
             <tr>
                 <td>Total Students</td>

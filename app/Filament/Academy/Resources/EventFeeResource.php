@@ -31,6 +31,10 @@ class EventFeeResource extends BaseAcademyResource
     {
         $user = Auth::user();
         
+        if (!$user) {
+            return false;
+        }
+        
         if ($user->is_super_admin) {
             return true;
         }

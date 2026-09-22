@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Traits\Auditable;
-
 class Branch extends Model
 {
     use HasFactory, Auditable;
@@ -50,6 +49,11 @@ class Branch extends Model
     public function batches(): HasMany
     {
         return $this->hasMany(Batch::class);
+    }
+
+    public function students(): HasMany
+    {
+        return $this->hasMany(Student::class);
     }
 
     // Scopes

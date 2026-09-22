@@ -92,6 +92,24 @@ class AcademyPermission extends Model
                 'view_attendance_reports' => 'View Attendance Reports',
                 'mark_bulk_attendance' => 'Mark Bulk Attendance',
             ],
+
+            // Staff Attendance Management (StaffAttendanceResource)
+            'staff_attendances' => [
+                'view_staff_attendances' => 'View Staff Attendances',
+                'create_staff_attendances' => 'Create Staff Attendances',
+                'edit_staff_attendances' => 'Edit Staff Attendances',
+                'delete_staff_attendances' => 'Delete Staff Attendances',
+                'export_staff_attendances' => 'Export Staff Attendances',
+            ],
+
+            // Staff Payroll Management (StaffPayrollResource)
+            'staff_payrolls' => [
+                'view_staff_payrolls' => 'View Staff Payrolls',
+                'create_staff_payrolls' => 'Create Staff Payrolls',
+                'edit_staff_payrolls' => 'Edit Staff Payrolls',
+                'delete_staff_payrolls' => 'Delete Staff Payrolls',
+                'export_staff_payrolls' => 'Export Staff Payrolls',
+            ],
             
             // Fee Management (FeeResource)
             'fees' => [

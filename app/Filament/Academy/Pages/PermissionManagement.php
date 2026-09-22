@@ -40,6 +40,10 @@ class PermissionManagement extends Page implements HasForms, HasTable
     {
         $user = Auth::user();
         
+        if (!$user) {
+            return false;
+        }
+        
         if ($user->is_super_admin) {
             return true;
         }

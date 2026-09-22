@@ -244,16 +244,14 @@ class AcademyResource extends Resource
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $data['value'] 
-                            ? $query->whereJsonContains('data->status', $data['value'])
+                            ? $query->where('status', $data['value'])
                             : $query;
                     }),
                 
                 SelectFilter::make('city')
                     ->options(function () {
-                        return Academy::all()
-                            ->map(function ($academy) {
-                                return $academy->city;
-                            })
+                        return Academy::query()
+                            ->pluck('city')
                             ->filter()
                             ->unique()
                             ->sort()
@@ -264,13 +262,13 @@ class AcademyResource extends Resource
                     })
                     ->query(function (Builder $query, array $data): Builder {
                         return $data['value'] 
-                            ? $query->whereJsonContains('data->city', $data['value'])
+                            ? $query->where('city', $data['value'])
                             : $query;
                     }),
                 
                 Tables\Filters\Filter::make('subscription_expired')
                     ->query(fn (Builder $query): Builder => 
-                        $query->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(data, '$.subscription_ends_at')) < ?", [now()->toDateString()])
+                        $query->whereDate('subscription_ends_at', '<', now()->toDateString())
                     )
                     ->label('Expired Subscriptions'),
             ])
@@ -326,13 +324,23 @@ class AcademyResource extends Resource
         ];
     }
     
+    protected static ?int $academyCountCache = null;
+
+    protected static function academyCount(): int
+    {
+        if (static::$academyCountCache === null) {
+            static::$academyCountCache = static::getModel()::count();
+        }
+        return static::$academyCountCache;
+    }
+
     public static function getNavigationBadge(): ?string
     {
-        return static::getModel()::count();
+        return static::academyCount();
     }
     
     public static function getNavigationBadgeColor(): string|array|null
     {
-        return static::getModel()::count() > 10 ? 'warning' : 'primary';
+        return static::academyCount() > 10 ? 'warning' : 'primary';
     }
 }

@@ -43,6 +43,12 @@ class User extends Authenticatable implements FilamentUser
         'is_active',
         'bio',
         'notes',
+        'salary_type',
+        'hourly_rate',
+        'minutly_rate',
+        'monthly_salary',
+        'overtime_hourly_rate',
+        'standard_daily_hours',
     ];
 
     /**
@@ -82,7 +88,23 @@ class User extends Authenticatable implements FilamentUser
             'is_active' => 'boolean',
             'date_of_birth' => 'date',
             'specialization' => 'array',
+            'hourly_rate' => 'decimal:2',
+            'minutly_rate' => 'decimal:4',
+            'monthly_salary' => 'decimal:2',
+            'overtime_hourly_rate' => 'decimal:2',
+            'standard_daily_hours' => 'decimal:2',
         ];
+    }
+
+    // Relationships
+    public function staffAttendances(): HasMany
+    {
+        return $this->hasMany(StaffAttendance::class);
+    }
+
+    public function staffPayrolls(): HasMany
+    {
+        return $this->hasMany(StaffPayroll::class);
     }
 
     // Relationships
@@ -138,15 +160,7 @@ class User extends Authenticatable implements FilamentUser
             return null;
         }
 
-        $userRole = $this->activeAcademyRoles()
-            ->forAcademy($academyId)
-            ->first();
-
-        if ($userRole?->academyRole) {
-            return $userRole->academyRole;
-        }
-
-        // Fallback for users when activeAcademyRoles pivot is empty
+        // Determine the primary role name based on the user's role column
         $targetRoleName = match ($this->role) {
             'academy_admin' => 'admin',
             'coach' => 'coach',
@@ -154,6 +168,29 @@ class User extends Authenticatable implements FilamentUser
             default => 'staff',
         };
 
+        // Prefer the active role assignment that matches the user's primary role,
+        // so a stale secondary assignment cannot shadow the intended role.
+        $matchingAssignment = $this->activeAcademyRoles()
+            ->forAcademy($academyId)
+            ->with('academyRole')
+            ->get()
+            ->first(fn ($userRole) => $userRole->academyRole?->name === $targetRoleName);
+
+        if ($matchingAssignment?->academyRole) {
+            return $matchingAssignment->academyRole;
+        }
+
+        // Fallback: first active role assignment
+        $userRole = $this->activeAcademyRoles()
+            ->forAcademy($academyId)
+            ->with('academyRole')
+            ->first();
+
+        if ($userRole?->academyRole) {
+            return $userRole->academyRole;
+        }
+
+        // Last fallback for users when the pivot is empty
         return AcademyRole::where('academy_id', $academyId)
             ->where('name', $targetRoleName)
             ->first();
@@ -419,5 +456,12 @@ class User extends Authenticatable implements FilamentUser
                 'assigned_at' => now(),
             ]);
         }
+
+        // Deactivate any other active role assignments for this academy so they
+        // cannot shadow the user's primary role during permission resolution.
+        $this->userAcademyRoles()
+            ->where('academy_id', $this->academy_id)
+            ->where('academy_role_id', '!=', $targetRole->id)
+            ->update(['is_active' => false]);
     }
 }

@@ -41,6 +41,11 @@ return [
             'provider' => 'users',
         ],
 
+        'academy' => [
+            'driver' => 'session',
+            'provider' => 'users',
+        ],
+
         'student' => [
             'driver' => 'session',
             'provider' => 'students',

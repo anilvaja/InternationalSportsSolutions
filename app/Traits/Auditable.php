@@ -55,6 +55,10 @@ trait Auditable
             return Auth::guard('web')->user();
         }
         
+        if (Auth::guard('academy')->check()) {
+            return Auth::guard('academy')->user();
+        }
+
         if (Auth::guard('student')->check()) {
             return Auth::guard('student')->user();
         }

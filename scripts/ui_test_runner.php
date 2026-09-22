@@ -86,8 +86,13 @@ function checkUiRoute(string $uri, string $name, array $expectedText = [], ?User
         }
 
         if ($asUser) {
-            Auth::guard('web')->setUser($asUser);
-            Auth::shouldUse('web');
+            $guard = match ($panelId) {
+                'academy' => 'academy',
+                'student' => 'student',
+                default => 'web',
+            };
+            Auth::guard($guard)->setUser($asUser);
+            Auth::shouldUse($guard);
         }
         
         $req = Request::create($uri, 'GET');

@@ -73,7 +73,7 @@ class UiPanelTestingTest extends TestCase
             'is_active' => true,
         ]);
 
-        $response = $this->actingAs($academyUser)->get('/academy');
+        $response = $this->actingAs($academyUser, 'academy')->get('/academy');
 
         $response->assertStatus(200);
     }
@@ -106,11 +106,11 @@ class UiPanelTestingTest extends TestCase
         ]);
 
         // Access academy dashboard - should automatically assign first academy and succeed
-        $response = $this->actingAs($superAdmin)->get('/academy');
+        $response = $this->actingAs($superAdmin, 'academy')->get('/academy');
         $response->assertStatus(200);
 
         // Access student list page - should load successfully without null pointer error
-        $response2 = $this->actingAs($superAdmin)->get('/academy/students');
+        $response2 = $this->actingAs($superAdmin, 'academy')->get('/academy/students');
         $response2->assertStatus(200);
     }
 }

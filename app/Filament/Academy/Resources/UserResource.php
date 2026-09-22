@@ -204,6 +204,54 @@ class UserResource extends BaseAcademyResource
                             })
                             ->helperText('Grant additional permissions beyond the assigned role'),
                     ]),
+
+                Section::make('Salary & Compensation')
+                    ->description('Configure staff remuneration model and rates for attendance-based pay')
+                    ->schema([
+                        Grid::make(3)->schema([
+                            Forms\Components\Select::make('salary_type')
+                                ->label('Salary Type')
+                                ->options([
+                                    'hourly' => 'Hourly Rate',
+                                    'minutly' => 'Minutly Rate',
+                                    'monthly' => 'Monthly Salary',
+                                ])
+                                ->default('monthly')
+                                ->required()
+                                ->reactive(),
+
+                            Forms\Components\TextInput::make('hourly_rate')
+                                ->label('Hourly Rate ($)')
+                                ->numeric()
+                                ->prefix('$')
+                                ->visible(fn ($get) => $get('salary_type') === 'hourly'),
+
+                            Forms\Components\TextInput::make('minutly_rate')
+                                ->label('Minutly Rate ($)')
+                                ->numeric()
+                                ->prefix('$')
+                                ->visible(fn ($get) => $get('salary_type') === 'minutly'),
+
+                            Forms\Components\TextInput::make('monthly_salary')
+                                ->label('Monthly Base Salary ($)')
+                                ->numeric()
+                                ->prefix('$')
+                                ->visible(fn ($get) => $get('salary_type') === 'monthly'),
+                        ]),
+
+                        Grid::make(2)->schema([
+                            Forms\Components\TextInput::make('overtime_hourly_rate')
+                                ->label('Overtime Hourly Rate ($)')
+                                ->numeric()
+                                ->prefix('$'),
+
+                            Forms\Components\TextInput::make('standard_daily_hours')
+                                ->label('Standard Daily Work Hours')
+                                ->numeric()
+                                ->default(8.00)
+                                ->suffix('hrs'),
+                        ]),
+                    ]),
                     
                 Forms\Components\Hidden::make('academy_id')
                     ->default($academyId),

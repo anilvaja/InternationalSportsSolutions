@@ -5,6 +5,7 @@ namespace App\Filament\Academy\Pages;
 use App\Filament\Academy\Widgets\AbsenteeStudents;
 use App\Filament\Academy\Widgets\FeesOverview;
 use App\Filament\Academy\Widgets\TodaysBatches;
+use App\Filament\Academy\Widgets\StaffCheckInWidget;
 use App\Filament\Academy\Widgets\RecentAuditActivity;
 use App\Support\AcademyPermissionHelper;
 use Filament\Pages\Dashboard as BaseDashboard;
@@ -19,6 +20,9 @@ class Dashboard extends BaseDashboard
     public function getWidgets(): array
     {
         $widgets = [];
+
+        // Always show Staff Attendance & Check-In Widget
+        $widgets[] = StaffCheckInWidget::class;
         
         // Always show Account Widget
         $widgets[] = Widgets\AccountWidget::class;

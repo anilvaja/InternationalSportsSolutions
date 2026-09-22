@@ -96,8 +96,13 @@ function testRoute(string $module, string $path, string $name, array $mustContai
         }
 
         if ($asUser) {
-            Auth::guard('web')->setUser($asUser);
-            Auth::shouldUse('web');
+            $guard = match ($panelId) {
+                'academy' => 'academy',
+                'student' => 'student',
+                default => 'web',
+            };
+            Auth::guard($guard)->setUser($asUser);
+            Auth::shouldUse($guard);
         }
 
         $req = Request::create($path, 'GET');

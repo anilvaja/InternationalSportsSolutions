@@ -33,6 +33,10 @@ class PermissionResource extends BaseAcademyResource
     {
         $user = Auth::user();
         
+        if (!$user) {
+            return false;
+        }
+        
         // Allow super admin to access
         if ($user->is_super_admin) {
             return true;

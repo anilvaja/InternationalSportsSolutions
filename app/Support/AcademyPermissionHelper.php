@@ -2,7 +2,6 @@
 namespace App\Support;
 
 use App\Models\User;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 
 class AcademyPermissionHelper
@@ -24,42 +23,7 @@ class AcademyPermissionHelper
         if (!$user) {
             return [];
         }
-        $permissions = [];
-        if (method_exists($user, 'getAcademyRole')) {
-            $role = $user->getAcademyRole($user->academy_id);
-            $rolePermissions = $role?->permissions ?? [];
-            
-            // Convert role permission names to IDs if they are stored as names
-            foreach ($rolePermissions as $permission) {
-                if (is_numeric($permission)) {
-                    // Already an ID
-                    $permissions[] = $permission;
-                } else {
-                    // Convert name to ID
-                    $permissionId = static::getPermissionId($permission);
-                    if ($permissionId) {
-                        $permissions[] = $permissionId;
-                    }
-                }
-            }
-        }
-        if (method_exists($user, 'userAcademyRoles')) {
-            $pivot = $user->userAcademyRoles()->where('academy_id', $user->academy_id)->first();
-            if ($pivot && is_array($pivot->additional_permissions)) {
-                // Convert additional permission names to IDs
-                $additionalPermissionIds = [];
-                foreach ($pivot->additional_permissions as $permissionName) {
-                    $permissionId = static::getPermissionId($permissionName);
-                    if ($permissionId) {
-                        $additionalPermissionIds[] = $permissionId;
-                    }
-                }
-                $permissions = array_unique(array_merge($permissions, $additionalPermissionIds));
-            }
-        }
-        // Debug log for troubleshooting
-    Log::info('[AcademyPermissionHelper] User: ' . $user->id . ' (' . $user->name . ') Academy: ' . $user->academy_id . ' Permissions: ' . json_encode($permissions));
-        return $permissions;
+        return static::resolveUserPermissionIds($user);
     }
 
     /**
@@ -114,20 +78,31 @@ class AcademyPermissionHelper
             return false;
         }
         
-        // Use the same logic as getUserPermissions but for the given user
+        // Resolve the user's effective permission IDs (role + additional permissions)
+        $permissions = static::resolveUserPermissionIds($user);
+
+        return in_array($permissionId, $permissions);
+    }
+
+    /**
+     * Resolve the list of permission IDs granted to a given user in their academy context.
+     * Combines the user's role permissions with any additional per-user permissions.
+     */
+    protected static function resolveUserPermissionIds($user): array
+    {
         $permissions = [];
         if (method_exists($user, 'getAcademyRole')) {
             $role = $user->getAcademyRole($user->academy_id);
             $rolePermissions = $role?->permissions ?? [];
-            
+
             // Convert role permission names to IDs if they are stored as names
-            foreach ($rolePermissions as $permission) {
-                if (is_numeric($permission)) {
+            foreach ($rolePermissions as $rolePermission) {
+                if (is_numeric($rolePermission)) {
                     // Already an ID
-                    $permissions[] = $permission;
+                    $permissions[] = $rolePermission;
                 } else {
                     // Convert name to ID
-                    $permissionId = static::getPermissionId($permission);
+                    $permissionId = static::getPermissionId($rolePermission);
                     if ($permissionId) {
                         $permissions[] = $permissionId;
                     }
@@ -148,6 +123,6 @@ class AcademyPermissionHelper
                 $permissions = array_unique(array_merge($permissions, $additionalPermissionIds));
             }
         }
-        return in_array($permissionId, $permissions);
+        return array_values(array_unique($permissions));
     }
 }

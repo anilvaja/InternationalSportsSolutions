@@ -21,24 +21,52 @@ class PrintController extends Controller
         // Let Filament handle the authentication
     }
 
+    /**
+     * Print permission names mapped to their underlying resource view permission.
+     * Used as a fallback so users with e.g. view_students can print the student report.
+     */
+    private const PERMISSION_FALLBACKS = [
+        'print_permissions' => 'view_permissions',
+        'print_users' => 'view_users',
+        'print_roles' => 'view_academy_roles',
+        'print_branches' => 'view_branches',
+        'print_students' => 'view_students',
+        'print_batches' => 'view_batches',
+        'print_attendance' => 'view_attendances',
+        'print_syllabus' => 'view_syllabus_categories',
+        'print_coaches' => 'view_users',
+        'print_payments' => 'view_fees',
+        'print_reports' => 'view_reports',
+        'print_fees' => 'view_fees',
+        'print_events' => 'view_events',
+    ];
+
     private function checkPermission(string $permission)
     {
-        // Check if user is authenticated via Filament
+        // Check if user is authenticated
         if (!Auth::check()) {
             abort(403, 'You must be logged in to access this resource.');
         }
         
         $user = Auth::user();
         
+        // Super admin can print any report
+        if ($user->is_super_admin) {
+            return;
+        }
+        
         // Ensure user has academy access
-        if (!$user->academy_id && !$user->is_super_admin) {
+        if (!$user->academy_id) {
             abort(403, 'You do not have access to academy resources.');
         }
         
-        // For now, allow all academy users to print (permissions will be implemented later)
-        // if (!$user->is_super_admin && !$user->hasPermission($permission)) {
-        //     abort(403, 'You do not have permission to print this resource.');
-        // }
+        // Check the specific print permission, falling back to the underlying resource view permission
+        $fallback = self::PERMISSION_FALLBACKS[$permission] ?? null;
+        if ($user->hasPermission($permission) || ($fallback && $user->hasPermission($fallback))) {
+            return;
+        }
+        
+        abort(403, 'You do not have permission to print this resource.');
     }
 
     public function permissions(Request $request)

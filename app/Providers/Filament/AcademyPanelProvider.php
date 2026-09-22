@@ -18,6 +18,7 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use App\Http\Middleware\EnsureUserBelongsToAcademy;
+use App\Http\Middleware\SetAcademyAuthGuard;
 
 class AcademyPanelProvider extends PanelProvider
 {
@@ -45,6 +46,7 @@ class AcademyPanelProvider extends PanelProvider
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
+                SetAcademyAuthGuard::class,
                 AuthenticateSession::class,
                 ShareErrorsFromSession::class,
                 VerifyCsrfToken::class,
@@ -57,6 +59,6 @@ class AcademyPanelProvider extends PanelProvider
                 'restrict.academy',
                 EnsureUserBelongsToAcademy::class,
             ])
-            ->authGuard('web');
+            ->authGuard('academy');
     }
 }
