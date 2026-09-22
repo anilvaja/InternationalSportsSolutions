@@ -6,6 +6,7 @@ use App\Filament\Academy\Widgets\AbsenteeStudents;
 use App\Filament\Academy\Widgets\FeesOverview;
 use App\Filament\Academy\Widgets\TodaysBatches;
 use App\Filament\Academy\Widgets\StaffCheckInWidget;
+use App\Filament\Academy\Widgets\StaffPayrollExpensesChart;
 use App\Filament\Academy\Widgets\RecentAuditActivity;
 use App\Support\AcademyPermissionHelper;
 use Filament\Pages\Dashboard as BaseDashboard;
@@ -23,6 +24,11 @@ class Dashboard extends BaseDashboard
 
         // Always show Staff Attendance & Check-In Widget
         $widgets[] = StaffCheckInWidget::class;
+
+        // Show Payroll Expenditure Chart if user has staff payroll permissions
+        if (AcademyPermissionHelper::can('view_staff_payrolls') || AcademyPermissionHelper::can('view_reports')) {
+            $widgets[] = StaffPayrollExpensesChart::class;
+        }
         
         // Always show Account Widget
         $widgets[] = Widgets\AccountWidget::class;

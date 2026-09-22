@@ -244,6 +244,26 @@ class StaffPayrollResource extends BaseAcademyResource
                     ]),
             ])
             ->actions([
+                Tables\Actions\Action::make('download_pdf')
+                    ->label('PDF Payslip')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('info')
+                    ->action(function (StaffPayroll $record) {
+                        $user = $record->user;
+                        $academy = $record->academy;
+
+                        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('receipts.staff-payslip', [
+                            'payroll' => $record,
+                            'user' => $user,
+                            'academy' => $academy,
+                        ]);
+
+                        return response()->streamDownload(
+                            fn () => print($pdf->output()),
+                            "Payslip_{$user?->name}_{$record->period_start_date?->format('Y-m-d')}.pdf"
+                        );
+                    }),
+
                 Tables\Actions\Action::make('mark_as_paid')
                     ->label('Mark Paid')
                     ->icon('heroicon-o-check-circle')
@@ -263,6 +283,27 @@ class StaffPayrollResource extends BaseAcademyResource
 
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
+            ])
+            ->headerActions([
+                Tables\Actions\Action::make('export_csv')
+                    ->label('Export Payrolls (CSV)')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('secondary')
+                    ->action(function () {
+                        $user = Auth::user();
+                        $payrolls = StaffPayroll::where('academy_id', $user->academy_id)->with('user')->get();
+
+                        $csvData = "ID,Staff Name,Email,Salary Type,Period Start,Period End,Days Worked,Total Minutes,Base Pay,Net Salary,Status\n";
+
+                        foreach ($payrolls as $p) {
+                            $csvData .= "\"{$p->id}\",\"{$p->user?->name}\",\"{$p->user?->email}\",\"{$p->salary_type}\",\"{$p->period_start_date?->format('Y-m-d')}\",\"{$p->period_end_date?->format('Y-m-d')}\",\"{$p->total_days_worked}\",\"{$p->total_worked_minutes}\",\"{$p->base_salary_amount}\",\"{$p->net_salary}\",\"{$p->status}\"\n";
+                        }
+
+                        return response()->streamDownload(
+                            fn () => print($csvData),
+                            "Staff_Payrolls_Export_" . now()->format('Y-m-d') . ".csv"
+                        );
+                    }),
             ]);
     }
 

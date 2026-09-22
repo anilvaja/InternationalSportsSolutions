@@ -276,6 +276,27 @@ class StaffAttendanceResource extends BaseAcademyResource
 
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
+            ])
+            ->headerActions([
+                Tables\Actions\Action::make('export_csv')
+                    ->label('Export Attendances (CSV)')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('secondary')
+                    ->action(function () {
+                        $user = Auth::user();
+                        $attendances = StaffAttendance::where('academy_id', $user->academy_id)->with('user')->get();
+
+                        $csvData = "ID,Staff Name,Email,Date,Check In,Check Out,Break Minutes,Worked Minutes,Status,Salary Type,Calculated Pay\n";
+
+                        foreach ($attendances as $a) {
+                            $csvData .= "\"{$a->id}\",\"{$a->user?->name}\",\"{$a->user?->email}\",\"{$a->attendance_date?->format('Y-m-d')}\",\"{$a->check_in_at?->format('H:i:s')}\",\"{$a->check_out_at?->format('H:i:s')}\",\"{$a->break_duration_minutes}\",\"{$a->total_worked_minutes}\",\"{$a->status}\",\"{$a->salary_type_snapshot}\",\"{$a->calculated_pay}\"\n";
+                        }
+
+                        return response()->streamDownload(
+                            fn () => print($csvData),
+                            "Staff_Attendances_Export_" . now()->format('Y-m-d') . ".csv"
+                        );
+                    }),
             ]);
     }
 
