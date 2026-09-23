@@ -198,4 +198,61 @@ class Academy extends Model
         
         return empty(array_diff($requiredRoles, $existingRoles));
     }
+
+    /**
+     * Truncate and purge all tenant-scoped testing data for production handover.
+     */
+    public function purgeTenantData(bool $preserveAdminUser = true): array
+    {
+        $deletedCounts = [];
+
+        $tablesToPurge = [
+            'staff_attendance_corrections',
+            'staff_attendance_settings',
+            'staff_schedule_slots',
+            'staff_attendances',
+            'staff_payrolls',
+            'event_participants',
+            'event_fees',
+            'events',
+            'student_fees',
+            'overdue_fee_notifications',
+            'fees',
+            'student_technique_progress',
+            'student_attendances',
+            'batch_attendances',
+            'attendances',
+            'syllabus_techniques',
+            'syllabus_categories',
+            'students',
+            'coaches',
+            'batches',
+            'branches',
+            'audits',
+        ];
+
+        foreach ($tablesToPurge as $table) {
+            if (\Illuminate\Support\Facades\Schema::hasTable($table) && \Illuminate\Support\Facades\Schema::hasColumn($table, 'academy_id')) {
+                $deletedCounts[$table] = \Illuminate\Support\Facades\DB::table($table)->where('academy_id', $this->id)->delete();
+            }
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('users')) {
+            if ($preserveAdminUser) {
+                $deletedCounts['users'] = \Illuminate\Support\Facades\DB::table('users')->where('academy_id', $this->id)
+                    ->where('is_super_admin', false)
+                    ->where(function ($q) {
+                        $q->whereNull('role')
+                          ->orWhere('role', '!=', 'academy_admin');
+                    })
+                    ->delete();
+            } else {
+                $deletedCounts['users'] = \Illuminate\Support\Facades\DB::table('users')->where('academy_id', $this->id)
+                    ->where('is_super_admin', false)
+                    ->delete();
+            }
+        }
+
+        return $deletedCounts;
+    }
 }

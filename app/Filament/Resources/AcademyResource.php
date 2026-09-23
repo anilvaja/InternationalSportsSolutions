@@ -20,6 +20,7 @@ use Filament\Infolists\Infolist;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Components\Section as InfoSection;
 use Illuminate\Support\Str;
+use Filament\Notifications\Notification;
 
 class AcademyResource extends Resource
 {
@@ -273,6 +274,31 @@ class AcademyResource extends Resource
                     ->label('Expired Subscriptions'),
             ])
             ->actions([
+                Tables\Actions\Action::make('purge_tenant_data')
+                    ->label('Purge Testing Data')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->modalHeading(fn (Academy $record) => "Purge Testing Data for {$record->name}")
+                    ->modalDescription('WARNING: This action will permanently delete all testing data (Students, Attendances, Payroll, Fees, Batches, Events, Coaches, Branches, Non-Admin Users) for this academy. This cannot be undone.')
+                    ->form([
+                        Forms\Components\Checkbox::make('confirm_purge')
+                            ->label('I confirm I want to permanently delete all testing data for this academy')
+                            ->required(),
+                        Forms\Components\Toggle::make('preserve_admin_user')
+                            ->label('Preserve Primary Academy Admin Account')
+                            ->default(true)
+                            ->helperText('Retains the primary Academy Admin user so they can log into a clean production environment.'),
+                    ])
+                    ->action(function (Academy $record, array $data) {
+                        $counts = $record->purgeTenantData($data['preserve_admin_user'] ?? true);
+                        $totalDeleted = array_sum($counts);
+
+                        Notification::make()
+                            ->title('Tenant Testing Data Truncated')
+                            ->body("Successfully purged {$totalDeleted} testing records for {$record->name}. Ready for production handover!")
+                            ->success()
+                            ->send();
+                    }),
                 Tables\Actions\Action::make('details')
                     ->label('Details')
                     ->icon('heroicon-o-eye')
