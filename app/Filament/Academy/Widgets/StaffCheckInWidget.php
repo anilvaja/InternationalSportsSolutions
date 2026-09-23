@@ -3,6 +3,7 @@
 namespace App\Filament\Academy\Widgets;
 
 use App\Models\StaffAttendance;
+use App\Models\StaffAttendanceCorrection;
 use App\Models\User;
 use Filament\Widgets\Widget;
 use Filament\Actions\Action;
@@ -37,15 +38,18 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
         }
 
         $today = now()->toDateString();
-        $todayRecord = StaffAttendance::where('academy_id', $user->academy_id)
+        $todayAttendances = StaffAttendance::where('academy_id', $user->academy_id)
             ->where('user_id', $user->id)
-            ->where('attendance_date', $today)
-            ->first();
+            ->whereDate('attendance_date', $today)
+            ->get();
 
-        $workedMinutes = $todayRecord ? $todayRecord->total_worked_minutes : 0;
+        $activeSession = $todayAttendances->whereNull('check_out_at')->first();
+        $completedSessions = $todayAttendances->whereNotNull('check_out_at');
+
+        $workedMinutes = (int) $todayAttendances->sum('payable_minutes');
         $workedFormatted = $this->formatHoursMinutes($workedMinutes);
 
-        $todayPay = $todayRecord ? $todayRecord->calculated_pay : 0.00;
+        $todayPay = (float) $todayAttendances->sum('calculated_pay');
 
         // Current month totals
         $startOfMonth = now()->startOfMonth()->toDateString();
@@ -56,7 +60,7 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
             ->whereBetween('attendance_date', [$startOfMonth, $endOfMonth])
             ->get();
 
-        $monthlyWorkedMinutes = (int) $monthlyAttendances->sum('total_worked_minutes');
+        $monthlyWorkedMinutes = (int) $monthlyAttendances->sum('payable_minutes');
         $monthlyWorkedFormatted = $this->formatHoursMinutes($monthlyWorkedMinutes);
         $monthlyPay = (float) $monthlyAttendances->sum('calculated_pay');
 
@@ -70,47 +74,56 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
         return [
             'hasUser' => true,
             'user' => $user,
-            'todayRecord' => $todayRecord,
-            'isCheckedIn' => $todayRecord && is_null($todayRecord->check_out_at),
-            'isCheckedOut' => $todayRecord && !is_null($todayRecord->check_out_at),
-            'checkInTime' => $todayRecord?->check_in_at?->format('H:i') ?? '--:--',
-            'checkOutTime' => $todayRecord?->check_out_at?->format('H:i') ?? '--:--',
+            'activeSession' => $activeSession,
+            'isCheckedIn' => !is_null($activeSession),
+            'isCheckedOut' => !is_null($todayAttendances->last()?->check_out_at) && is_null($activeSession),
+            'sessionCount' => $todayAttendances->count(),
+            'checkInTime' => $activeSession?->check_in_at?->format('H:i') ?? ($todayAttendances->last()?->check_in_at?->format('H:i') ?? '--:--'),
+            'checkOutTime' => $todayAttendances->last()?->check_out_at?->format('H:i') ?? '--:--',
             'workedMinutes' => $workedMinutes,
             'workedFormatted' => $workedFormatted,
             'todayPay' => number_format($todayPay, 2),
             'salaryTypeLabel' => $salaryTypeLabel,
             'monthlyWorkedFormatted' => $monthlyWorkedFormatted,
             'monthlyPay' => number_format($monthlyPay, 2),
-            'daysWorkedThisMonth' => $monthlyAttendances->where('total_worked_minutes', '>', 0)->count(),
+            'daysWorkedThisMonth' => $monthlyAttendances->where('payable_minutes', '>', 0)->pluck('attendance_date')->unique()->count(),
         ];
     }
 
     public function checkInAction(): Action
     {
         return Action::make('checkIn')
-            ->label('Check In Now')
+            ->label('Check In Session')
             ->icon('heroicon-o-arrow-right-on-rectangle')
             ->color('success')
             ->action(function () {
                 $user = Auth::user();
                 $today = now()->toDateString();
 
-                $existing = StaffAttendance::where('academy_id', $user->academy_id)
+                $activeSession = StaffAttendance::where('academy_id', $user->academy_id)
                     ->where('user_id', $user->id)
-                    ->where('attendance_date', $today)
+                    ->whereDate('attendance_date', $today)
+                    ->whereNull('check_out_at')
                     ->first();
 
-                if ($existing && is_null($existing->check_out_at)) {
+                if ($activeSession) {
                     Notification::make()
-                        ->title('Already Checked In')
+                        ->title('Active Session In Progress')
+                        ->body('You must check out from your active session before starting a new one.')
                         ->warning()
                         ->send();
                     return;
                 }
 
+                $sessionNumber = StaffAttendance::where('academy_id', $user->academy_id)
+                    ->where('user_id', $user->id)
+                    ->whereDate('attendance_date', $today)
+                    ->count() + 1;
+
                 StaffAttendance::create([
                     'academy_id' => $user->academy_id,
                     'user_id' => $user->id,
+                    'slot_name' => "Slot {$sessionNumber}",
                     'attendance_date' => $today,
                     'check_in_at' => now(),
                     'status' => 'present',
@@ -123,7 +136,7 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
 
                 Notification::make()
                     ->title('Checked In Successfully')
-                    ->body('Your check-in time has been recorded: ' . now()->format('H:i'))
+                    ->body("Session #{$sessionNumber} recorded: " . now()->format('H:i'))
                     ->success()
                     ->send();
             });
@@ -141,7 +154,7 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
 
                 $record = StaffAttendance::where('academy_id', $user->academy_id)
                     ->where('user_id', $user->id)
-                    ->where('attendance_date', $today)
+                    ->whereDate('attendance_date', $today)
                     ->whereNull('check_out_at')
                     ->first();
 
@@ -157,11 +170,11 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
                 $record->syncWorkedMinutesAndPay();
                 $record->save();
 
-                $formatted = $this->formatHoursMinutes($record->total_worked_minutes);
+                $formatted = $this->formatHoursMinutes($record->payable_minutes);
 
                 Notification::make()
                     ->title('Checked Out Successfully')
-                    ->body("Worked: {$formatted}. Estimated Pay: \${$record->calculated_pay}")
+                    ->body("Session completed. Payable time: {$formatted}.")
                     ->success()
                     ->send();
             });
@@ -170,13 +183,18 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
     public function logCustomTimeAction(): Action
     {
         return Action::make('logCustomTime')
-            ->label('Log / Edit Self Attendance')
+            ->label('Log / Request Self Attendance')
             ->icon('heroicon-o-pencil-square')
             ->color('info')
             ->form([
                 Forms\Components\DatePicker::make('attendance_date')
                     ->label('Attendance Date')
                     ->default(now())
+                    ->required(),
+
+                Forms\Components\TextInput::make('slot_name')
+                    ->label('Session / Slot Name')
+                    ->default('Slot 1')
                     ->required(),
 
                 Forms\Components\DateTimePicker::make('check_in_at')
@@ -193,38 +211,60 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
                     ->default(0),
 
                 Forms\Components\Textarea::make('notes')
-                    ->label('Work Notes / Remarks')
+                    ->label('Notes / Reason')
                     ->rows(2),
             ])
             ->action(function (array $data) {
                 $user = Auth::user();
-                $dateStr = Carbon::parse($data['attendance_date'])->toDateString();
+                $dateObj = Carbon::parse($data['attendance_date']);
+                $dateStr = $dateObj->toDateString();
 
-                $record = StaffAttendance::updateOrCreate(
-                    [
+                // Check 2-day retroactive rule
+                $twoDaysAgo = now()->subDays(2)->startOfDay();
+                if ($dateObj->lt($twoDaysAgo)) {
+                    // Create correction / approval request for dates > 2 days prior
+                    StaffAttendanceCorrection::create([
                         'academy_id' => $user->academy_id,
                         'user_id' => $user->id,
-                        'attendance_date' => $dateStr,
-                    ],
-                    [
-                        'check_in_at' => $data['check_in_at'],
-                        'check_out_at' => $data['check_out_at'] ?? null,
+                        'request_date' => $dateStr,
+                        'slot_name' => $data['slot_name'] ?? 'Slot 1',
+                        'requested_check_in' => $data['check_in_at'],
+                        'requested_check_out' => $data['check_out_at'] ?? now(),
                         'break_duration_minutes' => $data['break_duration_minutes'] ?? 0,
-                        'notes' => $data['notes'] ?? null,
-                        'status' => 'present',
-                        'salary_type_snapshot' => $user->salary_type ?: 'monthly',
-                        'hourly_rate_snapshot' => $user->hourly_rate,
-                        'minutly_rate_snapshot' => $user->minutly_rate,
-                        'monthly_salary_snapshot' => $user->monthly_salary,
-                        'marked_by' => $user->id,
-                    ]
-                );
+                        'reason' => 'Retroactive self-logging older than 2 days: ' . ($data['notes'] ?? 'N/A'),
+                        'status' => 'pending',
+                    ]);
 
-                $formatted = $this->formatHoursMinutes($record->total_worked_minutes);
+                    Notification::make()
+                        ->title('Correction Request Submitted')
+                        ->body('Attendance date is older than 2 days. A request has been sent to Admin for approval.')
+                        ->warning()
+                        ->send();
+                    return;
+                }
+
+                $record = StaffAttendance::create([
+                    'academy_id' => $user->academy_id,
+                    'user_id' => $user->id,
+                    'slot_name' => $data['slot_name'] ?? 'Slot 1',
+                    'attendance_date' => $dateStr,
+                    'check_in_at' => $data['check_in_at'],
+                    'check_out_at' => $data['check_out_at'] ?? null,
+                    'break_duration_minutes' => $data['break_duration_minutes'] ?? 0,
+                    'notes' => $data['notes'] ?? null,
+                    'status' => 'present',
+                    'salary_type_snapshot' => $user->salary_type ?: 'monthly',
+                    'hourly_rate_snapshot' => $user->hourly_rate,
+                    'minutly_rate_snapshot' => $user->minutly_rate,
+                    'monthly_salary_snapshot' => $user->monthly_salary,
+                    'marked_by' => $user->id,
+                ]);
+
+                $formatted = $this->formatHoursMinutes($record->payable_minutes);
 
                 Notification::make()
-                    ->title('Attendance Saved')
-                    ->body("Logged {$formatted} worked. Pay: \${$record->calculated_pay}")
+                    ->title('Attendance Session Logged')
+                    ->body("Logged {$formatted} payable duration.")
                     ->success()
                     ->send();
             });

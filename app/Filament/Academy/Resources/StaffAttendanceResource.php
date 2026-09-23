@@ -195,15 +195,34 @@ class StaffAttendanceResource extends BaseAcademyResource
                     ->placeholder('Active (Checked In)')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('total_worked_minutes')
-                    ->label('Worked Time')
-                    ->formatStateUsing(function ($state) {
-                        if (!$state) return '0m';
-                        $hours = floor($state / 60);
-                        $mins = $state % 60;
-                        return $hours > 0 ? "{$hours}h {$mins}m" : "{$mins}m";
-                    })
+                Tables\Columns\TextColumn::make('scheduled_minutes')
+                    ->label('Scheduled')
+                    ->formatStateUsing(fn ($state) => $state ? floor($state / 60) . 'h ' . ($state % 60) . 'm' : '5h 0m'),
+
+                Tables\Columns\TextColumn::make('actual_minutes')
+                    ->label('Actual Worked')
+                    ->formatStateUsing(fn ($state) => $state ? floor($state / 60) . 'h ' . ($state % 60) . 'm' : '0m'),
+
+                Tables\Columns\TextColumn::make('extra_minutes')
+                    ->label('Extra Time')
+                    ->formatStateUsing(fn ($state) => $state > 0 ? '+' . floor($state / 60) . 'h ' . ($state % 60) . 'm' : '0m')
+                    ->color(fn ($state) => $state > 0 ? 'warning' : 'gray'),
+
+                Tables\Columns\TextColumn::make('payable_minutes')
+                    ->label('Payable Time')
+                    ->formatStateUsing(fn ($state) => $state ? floor($state / 60) . 'h ' . ($state % 60) . 'm' : '0m')
                     ->sortable(),
+
+                Tables\Columns\TextColumn::make('overtime_status')
+                    ->label('Overtime Approval')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'approved' => 'success',
+                        'auto_approved' => 'success',
+                        'pending_approval' => 'warning',
+                        'rejected' => 'danger',
+                        default => 'gray',
+                    }),
 
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
@@ -213,17 +232,13 @@ class StaffAttendanceResource extends BaseAcademyResource
                         'overtime' => 'info',
                         'half_day' => 'warning',
                         'on_leave' => 'gray',
+                        'pending_approval' => 'warning',
                         'absent' => 'danger',
                         default => 'primary',
                     }),
 
-                Tables\Columns\TextColumn::make('salary_type_snapshot')
-                    ->label('Salary Type')
-                    ->badge()
-                    ->color('secondary'),
-
                 Tables\Columns\TextColumn::make('calculated_pay')
-                    ->label('Pay Amount')
+                    ->label('Calculated Pay')
                     ->money('USD')
                     ->sortable(),
             ])
@@ -238,25 +253,57 @@ class StaffAttendanceResource extends BaseAcademyResource
                             ->pluck('name', 'id');
                     }),
 
+                SelectFilter::make('overtime_status')
+                    ->label('Approval Status')
+                    ->options([
+                        'pending_approval' => 'Pending Approval',
+                        'approved' => 'Approved',
+                        'auto_approved' => 'Auto Approved',
+                        'rejected' => 'Rejected',
+                        'none' => 'None',
+                    ]),
+
                 SelectFilter::make('status')
                     ->options([
                         'present' => 'Present',
                         'absent' => 'Absent',
                         'half_day' => 'Half Day',
                         'on_leave' => 'On Leave',
-                        'late' => 'Late',
+                        'pending_approval' => 'Pending Approval',
                         'overtime' => 'Overtime',
-                    ]),
-
-                SelectFilter::make('salary_type_snapshot')
-                    ->label('Salary Type')
-                    ->options([
-                        'hourly' => 'Hourly',
-                        'minutly' => 'Minutly',
-                        'monthly' => 'Monthly',
                     ]),
             ])
             ->actions([
+                Tables\Actions\Action::make('approve_overtime')
+                    ->label('Approve Overtime')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->visible(fn (StaffAttendance $record) => $record->overtime_status === 'pending_approval' || $record->status === 'pending_approval')
+                    ->action(function (StaffAttendance $record) {
+                        $record->approveOvertime(Auth::user());
+
+                        Notification::make()
+                            ->title('Overtime Approved')
+                            ->body("Approved {$record->extra_minutes} extra mins. Payable Pay: \${$record->calculated_pay}")
+                            ->success()
+                            ->send();
+                    }),
+
+                Tables\Actions\Action::make('reject_overtime')
+                    ->label('Reject Overtime')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->visible(fn (StaffAttendance $record) => $record->overtime_status === 'pending_approval' || $record->status === 'pending_approval')
+                    ->action(function (StaffAttendance $record) {
+                        $record->rejectOvertime(Auth::user());
+
+                        Notification::make()
+                            ->title('Overtime Rejected')
+                            ->body("Extra hours rejected. Pay calculated on scheduled time only.")
+                            ->warning()
+                            ->send();
+                    }),
+
                 Tables\Actions\Action::make('check_out')
                     ->label('Check Out Now')
                     ->icon('heroicon-o-arrow-right-on-rectangle')
@@ -269,7 +316,7 @@ class StaffAttendanceResource extends BaseAcademyResource
 
                         Notification::make()
                             ->title('Checked Out')
-                            ->body("Staff checked out. Worked: {$record->total_worked_minutes} mins. Calculated Pay: \${$record->calculated_pay}")
+                            ->body("Staff checked out. Worked: {$record->actual_minutes} mins.")
                             ->success()
                             ->send();
                     }),

@@ -49,6 +49,7 @@ class User extends Authenticatable implements FilamentUser
         'monthly_salary',
         'overtime_hourly_rate',
         'standard_daily_hours',
+        'max_daily_work_hours',
     ];
 
     /**
@@ -93,6 +94,7 @@ class User extends Authenticatable implements FilamentUser
             'monthly_salary' => 'decimal:2',
             'overtime_hourly_rate' => 'decimal:2',
             'standard_daily_hours' => 'decimal:2',
+            'max_daily_work_hours' => 'decimal:2',
         ];
     }
 

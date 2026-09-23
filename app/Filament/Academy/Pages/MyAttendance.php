@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\Auth;
 use Filament\Notifications\Notification;
 use Carbon\Carbon;
 
+use App\Models\StaffAttendanceCorrection;
+
 class MyAttendance extends Page implements HasForms, HasTable
 {
     use InteractsWithForms;
@@ -108,28 +110,53 @@ class MyAttendance extends Page implements HasForms, HasTable
             ])
             ->defaultSort('attendance_date', 'desc')
             ->actions([
-                Tables\Actions\EditAction::make('edit_self')
-                    ->label('Edit')
-                    ->icon('heroicon-o-pencil')
+                Tables\Actions\Action::make('request_correction_for_row')
+                    ->label('Request Correction')
+                    ->icon('heroicon-o-pencil-square')
+                    ->color('warning')
                     ->form([
-                        Forms\Components\DateTimePicker::make('check_in_at')
-                            ->label('Check-In Time')
+                        Forms\Components\DateTimePicker::make('requested_check_in')
+                            ->label('Requested Check-In Time')
+                            ->default(fn (StaffAttendance $record) => $record->check_in_at)
                             ->required(),
 
-                        Forms\Components\DateTimePicker::make('check_out_at')
-                            ->label('Check-Out Time'),
+                        Forms\Components\DateTimePicker::make('requested_check_out')
+                            ->label('Requested Check-Out Time')
+                            ->default(fn (StaffAttendance $record) => $record->check_out_at ?: now())
+                            ->required(),
 
                         Forms\Components\TextInput::make('break_duration_minutes')
                             ->label('Break (Minutes)')
                             ->numeric()
-                            ->default(0),
+                            ->default(fn (StaffAttendance $record) => $record->break_duration_minutes ?: 0),
 
-                        Forms\Components\Textarea::make('notes')
+                        Forms\Components\Textarea::make('reason')
+                            ->label('Reason for Correction')
+                            ->required()
                             ->rows(2),
                     ])
-                    ->after(function (StaffAttendance $record) {
-                        $record->syncWorkedMinutesAndPay();
-                        $record->save();
+                    ->action(function (StaffAttendance $record, array $data) {
+                        $user = Auth::user();
+
+                        StaffAttendanceCorrection::create([
+                            'academy_id' => $user->academy_id,
+                            'user_id' => $user->id,
+                            'staff_attendance_id' => $record->id,
+                            'request_date' => $record->attendance_date,
+                            'original_check_in' => $record->check_in_at,
+                            'original_check_out' => $record->check_out_at,
+                            'requested_check_in' => $data['requested_check_in'],
+                            'requested_check_out' => $data['requested_check_out'],
+                            'break_duration_minutes' => $data['break_duration_minutes'] ?? 0,
+                            'reason' => $data['reason'],
+                            'status' => 'pending',
+                        ]);
+
+                        Notification::make()
+                            ->title('Correction Submitted')
+                            ->body('Correction request sent to Academy Admin for approval.')
+                            ->info()
+                            ->send();
                     }),
             ]);
     }
@@ -243,7 +270,29 @@ class MyAttendance extends Page implements HasForms, HasTable
                 ])
                 ->action(function (array $data) {
                     $user = Auth::user();
-                    $dateStr = Carbon::parse($data['attendance_date'])->toDateString();
+                    $dateObj = Carbon::parse($data['attendance_date']);
+                    $dateStr = $dateObj->toDateString();
+
+                    // If date is > 2 days ago, route as Correction Request for Admin approval
+                    if ($dateObj->lt(now()->subDays(2)->startOfDay())) {
+                        StaffAttendanceCorrection::create([
+                            'academy_id' => $user->academy_id,
+                            'user_id' => $user->id,
+                            'request_date' => $dateStr,
+                            'requested_check_in' => $data['check_in_at'],
+                            'requested_check_out' => $data['check_out_at'],
+                            'break_duration_minutes' => $data['break_duration_minutes'] ?? 0,
+                            'reason' => 'Retroactive log (>2 days ago): ' . ($data['notes'] ?? 'Late self log'),
+                            'status' => 'pending',
+                        ]);
+
+                        Notification::make()
+                            ->title('Correction Request Created')
+                            ->body('This date is older than 2 days. A request has been sent to Academy Admin for approval.')
+                            ->warning()
+                            ->send();
+                        return;
+                    }
 
                     $record = StaffAttendance::updateOrCreate(
                         [
@@ -269,6 +318,57 @@ class MyAttendance extends Page implements HasForms, HasTable
                         ->title('Saved')
                         ->body("Attendance saved: {$record->total_worked_minutes} mins worked.")
                         ->success()
+                        ->send();
+                }),
+
+            Actions\Action::make('request_correction_general')
+                ->label('Request Correction')
+                ->icon('heroicon-o-pencil-square')
+                ->color('secondary')
+                ->form([
+                    Forms\Components\DatePicker::make('request_date')
+                        ->label('Target Date')
+                        ->default(now()->subDay())
+                        ->required(),
+
+                    Forms\Components\DateTimePicker::make('requested_check_in')
+                        ->label('Requested Check-In Time')
+                        ->default(now())
+                        ->required(),
+
+                    Forms\Components\DateTimePicker::make('requested_check_out')
+                        ->label('Requested Check-Out Time')
+                        ->default(now())
+                        ->required(),
+
+                    Forms\Components\TextInput::make('break_duration_minutes')
+                        ->label('Break Duration (Minutes)')
+                        ->numeric()
+                        ->default(0),
+
+                    Forms\Components\Textarea::make('reason')
+                        ->label('Reason for Correction')
+                        ->required()
+                        ->rows(3),
+                ])
+                ->action(function (array $data) {
+                    $user = Auth::user();
+
+                    StaffAttendanceCorrection::create([
+                        'academy_id' => $user->academy_id,
+                        'user_id' => $user->id,
+                        'request_date' => Carbon::parse($data['request_date'])->toDateString(),
+                        'requested_check_in' => $data['requested_check_in'],
+                        'requested_check_out' => $data['requested_check_out'],
+                        'break_duration_minutes' => $data['break_duration_minutes'] ?? 0,
+                        'reason' => $data['reason'],
+                        'status' => 'pending',
+                    ]);
+
+                    Notification::make()
+                        ->title('Correction Request Sent')
+                        ->body('Submitted to Academy Admin for review.')
+                        ->info()
                         ->send();
                 }),
         ];

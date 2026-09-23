@@ -239,7 +239,7 @@ class UserResource extends BaseAcademyResource
                                 ->visible(fn ($get) => $get('salary_type') === 'monthly'),
                         ]),
 
-                        Grid::make(2)->schema([
+                        Grid::make(3)->schema([
                             Forms\Components\TextInput::make('overtime_hourly_rate')
                                 ->label('Overtime Hourly Rate ($)')
                                 ->numeric()
@@ -250,6 +250,13 @@ class UserResource extends BaseAcademyResource
                                 ->numeric()
                                 ->default(8.00)
                                 ->suffix('hrs'),
+
+                            Forms\Components\TextInput::make('max_daily_work_hours')
+                                ->label('Max Daily Work Hours (Limit)')
+                                ->numeric()
+                                ->default(10.00)
+                                ->suffix('hrs')
+                                ->helperText('Excess daily hours require Admin Approval'),
                         ]),
                     ]),
                     
