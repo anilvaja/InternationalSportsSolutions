@@ -99,42 +99,42 @@ class StaffPayrollResource extends BaseAcademyResource
 
                         Grid::make(4)->schema([
                             Forms\Components\TextInput::make('base_salary_amount')
-                                ->label('Base Salary ($)')
+                                ->label('Base Salary (₹)')
                                 ->numeric()
-                                ->prefix('$')
+                                ->prefix('₹')
                                 ->default(0.00)
                                 ->reactive()
                                 ->afterStateUpdated(fn ($state, Forms\Set $set, $get) => $set('net_salary', (float)$state + (float)$get('overtime_amount') + (float)$get('allowances') - (float)$get('deductions'))),
 
                             Forms\Components\TextInput::make('overtime_amount')
-                                ->label('Overtime ($)')
+                                ->label('Overtime (₹)')
                                 ->numeric()
-                                ->prefix('$')
+                                ->prefix('₹')
                                 ->default(0.00)
                                 ->reactive()
                                 ->afterStateUpdated(fn ($state, Forms\Set $set, $get) => $set('net_salary', (float)$get('base_salary_amount') + (float)$state + (float)$get('allowances') - (float)$get('deductions'))),
 
                             Forms\Components\TextInput::make('allowances')
-                                ->label('Allowances ($)')
+                                ->label('Allowances (₹)')
                                 ->numeric()
-                                ->prefix('$')
+                                ->prefix('₹')
                                 ->default(0.00)
                                 ->reactive()
                                 ->afterStateUpdated(fn ($state, Forms\Set $set, $get) => $set('net_salary', (float)$get('base_salary_amount') + (float)$get('overtime_amount') + (float)$state - (float)$get('deductions'))),
 
                             Forms\Components\TextInput::make('deductions')
-                                ->label('Deductions ($)')
+                                ->label('Deductions (₹)')
                                 ->numeric()
-                                ->prefix('$')
+                                ->prefix('₹')
                                 ->default(0.00)
                                 ->reactive()
                                 ->afterStateUpdated(fn ($state, Forms\Set $set, $get) => $set('net_salary', (float)$get('base_salary_amount') + (float)$get('overtime_amount') + (float)$get('allowances') - (float)$state)),
                         ]),
 
                         Forms\Components\TextInput::make('net_salary')
-                            ->label('Net Payable Salary ($)')
+                            ->label('Net Payable Salary (₹)')
                             ->numeric()
-                            ->prefix('$')
+                            ->prefix('₹')
                             ->default(0.00)
                             ->required(),
                     ]),
@@ -209,11 +209,11 @@ class StaffPayrollResource extends BaseAcademyResource
 
                 Tables\Columns\TextColumn::make('base_salary_amount')
                     ->label('Base Pay')
-                    ->money('USD'),
+                    ->money('INR'),
 
                 Tables\Columns\TextColumn::make('net_salary')
                     ->label('Net Salary')
-                    ->money('USD')
+                    ->money('INR')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('status')

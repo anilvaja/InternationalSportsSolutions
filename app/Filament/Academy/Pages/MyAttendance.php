@@ -83,9 +83,9 @@ class MyAttendance extends Page implements HasForms, HasTable
                     ->badge()
                     ->formatStateUsing(function ($state, StaffAttendance $record) {
                         return match ($state) {
-                            'hourly' => 'Hourly ($' . number_format($record->hourly_rate_snapshot ?? 0, 2) . '/hr)',
-                            'minutly' => 'Minutly ($' . number_format($record->minutly_rate_snapshot ?? 0, 4) . '/min)',
-                            'monthly' => 'Monthly ($' . number_format($record->monthly_salary_snapshot ?? 0, 2) . '/mo)',
+                            'hourly' => 'Hourly (₹' . number_format($record->hourly_rate_snapshot ?? 0, 2) . '/hr)',
+                            'minutly' => 'Minutly (₹' . number_format($record->minutly_rate_snapshot ?? 0, 4) . '/min)',
+                            'monthly' => 'Monthly (₹' . number_format($record->monthly_salary_snapshot ?? 0, 2) . '/mo)',
                             default => ucfirst($state ?? 'Standard'),
                         };
                     })
@@ -93,7 +93,7 @@ class MyAttendance extends Page implements HasForms, HasTable
 
                 Tables\Columns\TextColumn::make('calculated_pay')
                     ->label('Calculated Pay')
-                    ->money('USD')
+                    ->money('INR')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('status')
@@ -236,7 +236,7 @@ class MyAttendance extends Page implements HasForms, HasTable
 
                     Notification::make()
                         ->title('Checked Out')
-                        ->body("Worked: {$hours}h {$mins}m. Pay: \${$record->calculated_pay}")
+                        ->body("Worked: {$hours}h {$mins}m. Pay: ₹{$record->calculated_pay}")
                         ->success()
                         ->send();
                 }),

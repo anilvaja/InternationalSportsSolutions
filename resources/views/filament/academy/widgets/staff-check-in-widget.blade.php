@@ -80,7 +80,7 @@
                         <x-heroicon-o-currency-dollar class="w-4 h-4 text-emerald-500" />
                     </div>
                     <div class="text-lg font-bold text-emerald-900 dark:text-emerald-100 mt-1">
-                        ${{ $todayPay }}
+                        ₹{{ $todayPay }}
                     </div>
                     <div class="text-xs text-emerald-600/80 dark:text-emerald-400/80 mt-1">
                         Based on {{ $salaryTypeLabel }}
@@ -94,7 +94,7 @@
                         <x-heroicon-o-chart-bar class="w-4 h-4 text-purple-500" />
                     </div>
                     <div class="text-base font-bold text-purple-900 dark:text-purple-100 mt-1">
-                        ${{ $monthlyPay }}
+                        ₹{{ $monthlyPay }}
                     </div>
                     <div class="text-xs text-purple-600/80 dark:text-purple-400/80 mt-1">
                         {{ $monthlyWorkedFormatted }} ({{ $daysWorkedThisMonth }} days)

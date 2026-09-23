@@ -31,7 +31,7 @@ class FeesRelationManager extends RelationManager
                 Forms\Components\TextInput::make('amount')
                     ->required()
                     ->numeric()
-                    ->prefix('$')
+                    ->prefix('₹')
                     ->step(0.01)
                     ->live()
                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
@@ -54,7 +54,7 @@ class FeesRelationManager extends RelationManager
                 
                 Forms\Components\TextInput::make('discount_amount')
                     ->numeric()
-                    ->prefix('$')
+                    ->prefix('₹')
                     ->step(0.01)
                     ->default(0)
                     ->live()
@@ -77,7 +77,7 @@ class FeesRelationManager extends RelationManager
                 Forms\Components\TextInput::make('final_amount')
                     ->required()
                     ->numeric()
-                    ->prefix('$')
+                    ->prefix('₹')
                     ->step(0.01)
                     ->disabled()
                     ->dehydrated()
@@ -123,12 +123,12 @@ class FeesRelationManager extends RelationManager
                 
                 Tables\Columns\TextColumn::make('amount')
                     ->label('Original Amount')
-                    ->money('USD')
+                    ->money('INR')
                     ->sortable(),
                 
                 Tables\Columns\TextColumn::make('final_amount')
                     ->label('Final Amount')
-                    ->money('USD')
+                    ->money('INR')
                     ->sortable(),
                 
                 Tables\Columns\BadgeColumn::make('payment_status')

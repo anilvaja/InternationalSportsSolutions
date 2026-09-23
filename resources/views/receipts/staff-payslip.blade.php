@@ -200,30 +200,30 @@
         <thead>
             <tr>
                 <th>Earnings & Deductions Component</th>
-                <th style="text-align: right;">Amount ($)</th>
+                <th style="text-align: right;">Amount (₹)</th>
             </tr>
         </thead>
         <tbody>
             <tr class="amount-row">
                 <td>Base Calculated Salary</td>
-                <td style="text-align: right;">${{ number_format($payroll->base_salary_amount, 2) }}</td>
+                <td style="text-align: right;">₹{{ number_format($payroll->base_salary_amount, 2) }}</td>
             </tr>
             @if($payroll->overtime_amount > 0)
             <tr class="amount-row">
                 <td>Overtime Bonus</td>
-                <td style="text-align: right; color: #16a34a;">+${{ number_format($payroll->overtime_amount, 2) }}</td>
+                <td style="text-align: right; color: #16a34a;">+₹{{ number_format($payroll->overtime_amount, 2) }}</td>
             </tr>
             @endif
             @if($payroll->allowances > 0)
             <tr class="amount-row">
                 <td>Allowances</td>
-                <td style="text-align: right; color: #16a34a;">+${{ number_format($payroll->allowances, 2) }}</td>
+                <td style="text-align: right; color: #16a34a;">+₹{{ number_format($payroll->allowances, 2) }}</td>
             </tr>
             @endif
             @if($payroll->deductions > 0)
             <tr class="amount-row">
                 <td>Deductions</td>
-                <td style="text-align: right; color: #dc2626;">-${{ number_format($payroll->deductions, 2) }}</td>
+                <td style="text-align: right; color: #dc2626;">-₹{{ number_format($payroll->deductions, 2) }}</td>
             </tr>
             @endif
         </tbody>
@@ -232,7 +232,7 @@
     {{-- Net Payable Box --}}
     <div class="net-pay-box">
         <div class="net-pay-title">Net Payable Salary</div>
-        <div class="net-pay-amount">${{ number_format($payroll->net_salary, 2) }}</div>
+        <div class="net-pay-amount">₹{{ number_format($payroll->net_salary, 2) }}</div>
     </div>
 
     @if($payroll->notes)

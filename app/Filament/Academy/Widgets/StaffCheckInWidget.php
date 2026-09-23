@@ -65,9 +65,9 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
         $monthlyPay = (float) $monthlyAttendances->sum('calculated_pay');
 
         $salaryTypeLabel = match ($user->salary_type) {
-            'hourly' => 'Hourly ($' . number_format($user->hourly_rate ?? 0, 2) . '/hr)',
-            'minutly' => 'Minutly ($' . number_format($user->minutly_rate ?? 0, 4) . '/min)',
-            'monthly' => 'Monthly ($' . number_format($user->monthly_salary ?? 0, 2) . '/mo)',
+            'hourly' => 'Hourly (₹' . number_format($user->hourly_rate ?? 0, 2) . '/hr)',
+            'minutly' => 'Minutly (₹' . number_format($user->minutly_rate ?? 0, 4) . '/min)',
+            'monthly' => 'Monthly (₹' . number_format($user->monthly_salary ?? 0, 2) . '/mo)',
             default => 'Not Set',
         };
 

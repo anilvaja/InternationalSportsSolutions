@@ -51,7 +51,7 @@ class EventParticipants extends Page implements HasTable
                 ]),
                 Tables\Columns\TextColumn::make('student.eventFees.final_amount')
                     ->label('Fee Amount')
-                    ->money('USD')
+                    ->money('INR')
                     ->visible(fn () => $this->record->fee > 0)
                     ->getStateUsing(function ($record) {
                         return $record->student->eventFees()

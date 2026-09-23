@@ -221,29 +221,29 @@ class UserResource extends BaseAcademyResource
                                 ->reactive(),
 
                             Forms\Components\TextInput::make('hourly_rate')
-                                ->label('Hourly Rate ($)')
+                                ->label('Hourly Rate (₹)')
                                 ->numeric()
-                                ->prefix('$')
+                                ->prefix('₹')
                                 ->visible(fn ($get) => $get('salary_type') === 'hourly'),
 
                             Forms\Components\TextInput::make('minutly_rate')
-                                ->label('Minutly Rate ($)')
+                                ->label('Minutly Rate (₹)')
                                 ->numeric()
-                                ->prefix('$')
+                                ->prefix('₹')
                                 ->visible(fn ($get) => $get('salary_type') === 'minutly'),
 
                             Forms\Components\TextInput::make('monthly_salary')
-                                ->label('Monthly Base Salary ($)')
+                                ->label('Monthly Base Salary (₹)')
                                 ->numeric()
-                                ->prefix('$')
+                                ->prefix('₹')
                                 ->visible(fn ($get) => $get('salary_type') === 'monthly'),
                         ]),
 
                         Grid::make(3)->schema([
                             Forms\Components\TextInput::make('overtime_hourly_rate')
-                                ->label('Overtime Hourly Rate ($)')
+                                ->label('Overtime Hourly Rate (₹)')
                                 ->numeric()
-                                ->prefix('$'),
+                                ->prefix('₹'),
 
                             Forms\Components\TextInput::make('standard_daily_hours')
                                 ->label('Standard Daily Work Hours')

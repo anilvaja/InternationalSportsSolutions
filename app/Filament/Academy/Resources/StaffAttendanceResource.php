@@ -138,26 +138,26 @@ class StaffAttendanceResource extends BaseAcademyResource
                                 ->required(),
 
                             Forms\Components\TextInput::make('hourly_rate_snapshot')
-                                ->label('Hourly Rate Snapshot ($)')
+                                ->label('Hourly Rate Snapshot (₹)')
                                 ->numeric()
-                                ->prefix('$'),
+                                ->prefix('₹'),
 
                             Forms\Components\TextInput::make('minutly_rate_snapshot')
-                                ->label('Minutly Rate Snapshot ($)')
+                                ->label('Minutly Rate Snapshot (₹)')
                                 ->numeric()
-                                ->prefix('$'),
+                                ->prefix('₹'),
                         ]),
 
                         Grid::make(2)->schema([
                             Forms\Components\TextInput::make('monthly_salary_snapshot')
-                                ->label('Monthly Base Salary Snapshot ($)')
+                                ->label('Monthly Base Salary Snapshot (₹)')
                                 ->numeric()
-                                ->prefix('$'),
+                                ->prefix('₹'),
 
                             Forms\Components\TextInput::make('calculated_pay')
-                                ->label('Calculated Pay ($)')
+                                ->label('Calculated Pay (₹)')
                                 ->numeric()
-                                ->prefix('$')
+                                ->prefix('₹')
                                 ->helperText('Auto-calculated based on worked time and rates'),
                         ]),
                     ]),
@@ -239,7 +239,7 @@ class StaffAttendanceResource extends BaseAcademyResource
 
                 Tables\Columns\TextColumn::make('calculated_pay')
                     ->label('Calculated Pay')
-                    ->money('USD')
+                    ->money('INR')
                     ->sortable(),
             ])
             ->defaultSort('attendance_date', 'desc')
@@ -284,7 +284,7 @@ class StaffAttendanceResource extends BaseAcademyResource
 
                         Notification::make()
                             ->title('Overtime Approved')
-                            ->body("Approved {$record->extra_minutes} extra mins. Payable Pay: \${$record->calculated_pay}")
+                            ->body("Approved {$record->extra_minutes} extra mins. Payable Pay: ₹{$record->calculated_pay}")
                             ->success()
                             ->send();
                     }),

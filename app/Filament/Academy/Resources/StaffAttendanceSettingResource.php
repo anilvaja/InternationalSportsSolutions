@@ -87,9 +87,9 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                                 ->required(),
 
                             Forms\Components\TextInput::make('salary_amount')
-                                ->label('Salary Amount ($)')
+                                ->label('Salary Amount (₹)')
                                 ->numeric()
-                                ->prefix('$')
+                                ->prefix('₹')
                                 ->default(0.00),
 
                             Forms\Components\DatePicker::make('effective_from')
@@ -133,9 +133,9 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                                 ->suffix('x'),
 
                             Forms\Components\TextInput::make('overtime_hourly_rate')
-                                ->label('Overtime Hourly Rate ($)')
+                                ->label('Overtime Hourly Rate (₹)')
                                 ->numeric()
-                                ->prefix('$'),
+                                ->prefix('₹'),
                         ]),
                     ]),
 
@@ -194,7 +194,7 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
 
                 Tables\Columns\TextColumn::make('salary_amount')
                     ->label('Salary Amount')
-                    ->money('USD')
+                    ->money('INR')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('expected_daily_hours')
