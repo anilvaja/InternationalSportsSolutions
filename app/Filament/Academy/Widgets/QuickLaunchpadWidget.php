@@ -21,47 +21,59 @@ class QuickLaunchpadWidget extends Widget
         if (AcademyPermissionHelper::can('view_attendances')) {
             $links[] = [
                 'title' => 'Class Attendance',
-                'description' => 'Batch attendance & student techniques',
+                'description' => 'Mark batch attendance & technique levels',
                 'icon' => 'heroicon-o-clipboard-document-check',
                 'url' => url('/academy/attendances'),
                 'create_url' => url('/academy/attendances/create'),
-                'create_label' => '+ Mark Now',
-                'color' => 'emerald',
-                'badge' => 'Daily Class',
+                'create_label' => '+ Take Attendance',
+                'badge' => 'Class Roster',
                 'featured' => true,
                 'can_create' => AcademyPermissionHelper::can('create_attendances'),
+                'bg_light' => 'bg-emerald-50 dark:bg-emerald-950/40',
+                'text_color' => 'text-emerald-600 dark:text-emerald-400',
+                'border_color' => 'border-emerald-200 dark:border-emerald-900/60',
+                'hover_border' => 'hover:border-emerald-400 dark:hover:border-emerald-600',
+                'btn_bg' => 'bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 shadow-xs',
             ];
         }
 
         // 2. Self Attendance (My Attendance & Pay)
         if (AcademyPermissionHelper::can('view_own_staff_attendances')) {
             $links[] = [
-                'title' => 'My Attendance & Pay',
-                'description' => 'Clock-in/out & work hours log',
+                'title' => 'Self Attendance',
+                'description' => 'Clock-in/out & live work hours',
                 'icon' => 'heroicon-o-clock',
                 'url' => url('/academy/my-attendances'),
                 'create_url' => url('/academy/my-attendances'),
                 'create_label' => 'Log Check-In',
-                'color' => 'blue',
-                'badge' => 'Self Log',
+                'badge' => 'My Hours',
                 'featured' => true,
                 'can_create' => true,
+                'bg_light' => 'bg-sky-50 dark:bg-sky-950/40',
+                'text_color' => 'text-sky-600 dark:text-sky-400',
+                'border_color' => 'border-sky-200 dark:border-sky-900/60',
+                'hover_border' => 'hover:border-sky-400 dark:hover:border-sky-600',
+                'btn_bg' => 'bg-sky-600 hover:bg-sky-700 text-white dark:bg-sky-500 dark:hover:bg-sky-600 shadow-xs',
             ];
         }
 
         // 3. Students Directory
         if (AcademyPermissionHelper::can('view_students')) {
             $links[] = [
-                'title' => 'Students',
-                'description' => 'Student list, belts & status',
+                'title' => 'Students Directory',
+                'description' => 'Student list, belt levels & records',
                 'icon' => 'heroicon-o-academic-cap',
                 'url' => url('/academy/students'),
                 'create_url' => url('/academy/students/create'),
                 'create_label' => '+ Add Student',
-                'color' => 'indigo',
-                'badge' => 'Students',
+                'badge' => 'Profiles',
                 'featured' => true,
                 'can_create' => AcademyPermissionHelper::can('create_students'),
+                'bg_light' => 'bg-indigo-50 dark:bg-indigo-950/40',
+                'text_color' => 'text-indigo-600 dark:text-indigo-400',
+                'border_color' => 'border-indigo-200 dark:border-indigo-900/60',
+                'hover_border' => 'hover:border-indigo-400 dark:hover:border-indigo-600',
+                'btn_bg' => 'bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600 shadow-xs',
             ];
         }
 
@@ -69,15 +81,19 @@ class QuickLaunchpadWidget extends Widget
         if (AcademyPermissionHelper::can('view_batches')) {
             $links[] = [
                 'title' => 'Batches & Schedule',
-                'description' => 'Class timings & coach rosters',
+                'description' => 'Class timings & coach assignments',
                 'icon' => 'heroicon-o-rectangle-stack',
                 'url' => url('/academy/batches'),
                 'create_url' => url('/academy/batches/create'),
                 'create_label' => '+ New Batch',
-                'color' => 'amber',
-                'badge' => 'Schedule',
+                'badge' => 'Schedules',
                 'featured' => true,
                 'can_create' => AcademyPermissionHelper::can('create_batches'),
+                'bg_light' => 'bg-amber-50 dark:bg-amber-950/40',
+                'text_color' => 'text-amber-600 dark:text-amber-400',
+                'border_color' => 'border-amber-200 dark:border-amber-900/60',
+                'hover_border' => 'hover:border-amber-400 dark:hover:border-amber-600',
+                'btn_bg' => 'bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-600 shadow-xs',
             ];
         }
 
@@ -85,15 +101,19 @@ class QuickLaunchpadWidget extends Widget
         if (AcademyPermissionHelper::can('view_fees')) {
             $links[] = [
                 'title' => 'Fee Collection',
-                'description' => 'Collect fees & receipts',
+                'description' => 'Collect student fees & receipts',
                 'icon' => 'heroicon-o-banknotes',
                 'url' => url('/academy/fee-collections'),
                 'create_url' => url('/academy/fee-collections/create'),
                 'create_label' => '+ Collect Fee',
-                'color' => 'teal',
-                'badge' => 'Finance',
+                'badge' => 'Payments',
                 'featured' => true,
                 'can_create' => AcademyPermissionHelper::can('create_fees'),
+                'bg_light' => 'bg-teal-50 dark:bg-teal-950/40',
+                'text_color' => 'text-teal-600 dark:text-teal-400',
+                'border_color' => 'border-teal-200 dark:border-teal-900/60',
+                'hover_border' => 'hover:border-teal-400 dark:hover:border-teal-600',
+                'btn_bg' => 'bg-teal-600 hover:bg-teal-700 text-white dark:bg-teal-500 dark:hover:bg-teal-600 shadow-xs',
             ];
         }
 
@@ -101,15 +121,19 @@ class QuickLaunchpadWidget extends Widget
         if (AcademyPermissionHelper::can('view_staff_leaves')) {
             $links[] = [
                 'title' => 'Staff Leaves',
-                'description' => 'Apply leave & request approvals',
+                'description' => 'Apply leave & view request status',
                 'icon' => 'heroicon-o-calendar-days',
                 'url' => url('/academy/staff-leaves'),
                 'create_url' => url('/academy/staff-leaves/create'),
                 'create_label' => '+ Apply Leave',
-                'color' => 'rose',
                 'badge' => 'Leaves',
                 'featured' => true,
                 'can_create' => AcademyPermissionHelper::can('create_staff_leaves'),
+                'bg_light' => 'bg-rose-50 dark:bg-rose-950/40',
+                'text_color' => 'text-rose-600 dark:text-rose-400',
+                'border_color' => 'border-rose-200 dark:border-rose-900/60',
+                'hover_border' => 'hover:border-rose-400 dark:hover:border-rose-600',
+                'btn_bg' => 'bg-rose-600 hover:bg-rose-700 text-white dark:bg-rose-500 dark:hover:bg-rose-600 shadow-xs',
             ];
         }
 
@@ -120,7 +144,8 @@ class QuickLaunchpadWidget extends Widget
                 'description' => 'All staff attendance logs',
                 'icon' => 'heroicon-o-identification',
                 'url' => url('/academy/staff-attendances'),
-                'color' => 'sky',
+                'bg_light' => 'bg-blue-50 dark:bg-blue-950/40',
+                'text_color' => 'text-blue-600 dark:text-blue-400',
                 'featured' => false,
             ];
         }
@@ -128,11 +153,12 @@ class QuickLaunchpadWidget extends Widget
         // 8. Syllabus & Techniques
         if (AcademyPermissionHelper::can('view_syllabus_techniques') || AcademyPermissionHelper::can('view_syllabus_categories')) {
             $links[] = [
-                'title' => 'Syllabus & Techniques',
+                'title' => 'Syllabus & Belt Techniques',
                 'description' => 'Belt categories & techniques',
                 'icon' => 'heroicon-o-book-open',
                 'url' => url('/academy/syllabus-techniques'),
-                'color' => 'purple',
+                'bg_light' => 'bg-purple-50 dark:bg-purple-950/40',
+                'text_color' => 'text-purple-600 dark:text-purple-400',
                 'featured' => false,
             ];
         }
@@ -140,11 +166,12 @@ class QuickLaunchpadWidget extends Widget
         // 9. Branches
         if (AcademyPermissionHelper::can('view_branches')) {
             $links[] = [
-                'title' => 'Branches',
+                'title' => 'Academy Branches',
                 'description' => 'Academy locations & details',
                 'icon' => 'heroicon-o-building-office',
                 'url' => url('/academy/branches'),
-                'color' => 'cyan',
+                'bg_light' => 'bg-cyan-50 dark:bg-cyan-950/40',
+                'text_color' => 'text-cyan-600 dark:text-cyan-400',
                 'featured' => false,
             ];
         }
@@ -156,7 +183,8 @@ class QuickLaunchpadWidget extends Widget
                 'description' => 'Academy annual holiday list',
                 'icon' => 'heroicon-o-sun',
                 'url' => url('/academy/organization-holidays'),
-                'color' => 'orange',
+                'bg_light' => 'bg-orange-50 dark:bg-orange-950/40',
+                'text_color' => 'text-orange-600 dark:text-orange-400',
                 'featured' => false,
             ];
         }
@@ -168,7 +196,8 @@ class QuickLaunchpadWidget extends Widget
                 'description' => 'Competitions & event fees',
                 'icon' => 'heroicon-o-trophy',
                 'url' => url('/academy/events'),
-                'color' => 'violet',
+                'bg_light' => 'bg-violet-50 dark:bg-violet-950/40',
+                'text_color' => 'text-violet-600 dark:text-violet-400',
                 'featured' => false,
             ];
         }
@@ -180,7 +209,8 @@ class QuickLaunchpadWidget extends Widget
                 'description' => 'Staff permissions & security',
                 'icon' => 'heroicon-o-key',
                 'url' => url('/academy/permissions'),
-                'color' => 'slate',
+                'bg_light' => 'bg-slate-100 dark:bg-slate-800',
+                'text_color' => 'text-slate-700 dark:text-slate-300',
                 'featured' => false,
             ];
         }
@@ -192,7 +222,8 @@ class QuickLaunchpadWidget extends Widget
                 'description' => 'System currency & timezone',
                 'icon' => 'heroicon-o-cog-6-tooth',
                 'url' => url('/academy/currency-settings'),
-                'color' => 'gray',
+                'bg_light' => 'bg-gray-100 dark:bg-gray-800',
+                'text_color' => 'text-gray-700 dark:text-gray-300',
                 'featured' => false,
             ];
         }

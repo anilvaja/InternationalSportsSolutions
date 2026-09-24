@@ -21,68 +21,70 @@
                             </span>
                         </h2>
                         <p class="text-xs text-gray-500 dark:text-gray-400">
-                            Jump straight to key features & daily tasks without navigating side menus.
+                            Directly jump to any module or trigger common daily tasks without using side navigation.
                         </p>
                     </div>
                 </div>
             </div>
 
-            {{-- 1. Featured Daily Action Cards Grid --}}
+            {{-- 1. Featured Action Cards Grid --}}
             @if(count($featuredLinks) > 0)
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     @foreach($featuredLinks as $item)
-                        <div class="p-3.5 bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 shadow-xs hover:border-primary-300 dark:hover:border-primary-700 transition-all group flex flex-col justify-between">
-                            <div class="flex items-start justify-between gap-3">
-                                <div class="flex items-center space-x-3">
-                                    <div class="p-2.5 rounded-lg bg-{{ $item['color'] }}-50 dark:bg-{{ $item['color'] }}-950/50 text-{{ $item['color'] }}-600 dark:text-{{ $item['color'] }}-400 group-hover:scale-105 transition-transform">
-                                        @switch($item['icon'])
-                                            @case('heroicon-o-clipboard-document-check')
-                                                <x-heroicon-o-clipboard-document-check class="w-5 h-5" />
-                                                @break
-                                            @case('heroicon-o-clock')
-                                                <x-heroicon-o-clock class="w-5 h-5" />
-                                                @break
-                                            @case('heroicon-o-academic-cap')
-                                                <x-heroicon-o-academic-cap class="w-5 h-5" />
-                                                @break
-                                            @case('heroicon-o-rectangle-stack')
-                                                <x-heroicon-o-rectangle-stack class="w-5 h-5" />
-                                                @break
-                                            @case('heroicon-o-banknotes')
-                                                <x-heroicon-o-banknotes class="w-5 h-5" />
-                                                @break
-                                            @case('heroicon-o-calendar-days')
-                                                <x-heroicon-o-calendar-days class="w-5 h-5" />
-                                                @break
-                                            @default
-                                                <x-heroicon-o-arrow-top-right-on-square class="w-5 h-5" />
-                                        @endswitch
+                        <div class="p-4 bg-white dark:bg-gray-900 rounded-xl border border-gray-200/80 dark:border-gray-800 shadow-xs hover:shadow-md transition-all group flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="flex items-center space-x-3">
+                                        <div class="p-2.5 rounded-xl {{ $item['bg_light'] }} {{ $item['text_color'] }} group-hover:scale-105 transition-transform">
+                                            @switch($item['icon'])
+                                                @case('heroicon-o-clipboard-document-check')
+                                                    <x-heroicon-o-clipboard-document-check class="w-6 h-6" />
+                                                    @break
+                                                @case('heroicon-o-clock')
+                                                    <x-heroicon-o-clock class="w-6 h-6" />
+                                                    @break
+                                                @case('heroicon-o-academic-cap')
+                                                    <x-heroicon-o-academic-cap class="w-6 h-6" />
+                                                    @break
+                                                @case('heroicon-o-rectangle-stack')
+                                                    <x-heroicon-o-rectangle-stack class="w-6 h-6" />
+                                                    @break
+                                                @case('heroicon-o-banknotes')
+                                                    <x-heroicon-o-banknotes class="w-6 h-6" />
+                                                    @break
+                                                @case('heroicon-o-calendar-days')
+                                                    <x-heroicon-o-calendar-days class="w-6 h-6" />
+                                                    @break
+                                                @default
+                                                    <x-heroicon-o-folder class="w-6 h-6" />
+                                            @endswitch
+                                        </div>
+                                        <div>
+                                            <a href="{{ $item['url'] }}" class="text-sm font-bold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400">
+                                                {{ $item['title'] }}
+                                            </a>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                                {{ $item['description'] }}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <a href="{{ $item['url'] }}" class="text-sm font-bold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1">
-                                            {{ $item['title'] }}
-                                        </a>
-                                        <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 mt-0.5">
-                                            {{ $item['description'] }}
-                                        </p>
-                                    </div>
-                                </div>
 
-                                @if(!empty($item['badge']))
-                                    <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
-                                        {{ $item['badge'] }}
-                                    </span>
-                                @endif
+                                    @if(!empty($item['badge']))
+                                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                                            {{ $item['badge'] }}
+                                        </span>
+                                    @endif
+                                </div>
                             </div>
 
-                            <div class="mt-3 pt-2.5 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between text-xs">
+                            <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between text-xs">
                                 <a href="{{ $item['url'] }}" class="font-medium text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1">
-                                    <span>Open Section</span>
+                                    <span>View Section</span>
                                     <x-heroicon-m-chevron-right class="w-3.5 h-3.5" />
                                 </a>
 
                                 @if(($item['can_create'] ?? false) && !empty($item['create_url']))
-                                    <a href="{{ $item['create_url'] }}" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-{{ $item['color'] }}-50 dark:bg-{{ $item['color'] }}-950/70 text-{{ $item['color'] }}-700 dark:text-{{ $item['color'] }}-300 hover:bg-{{ $item['color'] }}-100 dark:hover:bg-{{ $item['color'] }}-900 transition-colors">
+                                    <a href="{{ $item['create_url'] }}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold {{ $item['btn_bg'] }} transition-colors">
                                         {{ $item['create_label'] }}
                                     </a>
                                 @endif
@@ -92,17 +94,17 @@
                 </div>
             @endif
 
-            {{-- 2. Compact Module Direct Shortcuts Bar --}}
+            {{-- 2. All Modules Quick Shortcuts Bar --}}
             @if(count($standardLinks) > 0)
                 <div class="pt-2">
-                    <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                        All Academy Modules Quick Access
+                    <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2.5">
+                        More Academy Modules
                     </div>
 
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                         @foreach($standardLinks as $item)
-                            <a href="{{ $item['url'] }}" class="p-2.5 bg-gray-50/70 dark:bg-gray-900/50 hover:bg-white dark:hover:bg-gray-900 rounded-lg border border-gray-200/60 dark:border-gray-800/60 hover:border-primary-400 dark:hover:border-primary-600 hover:shadow-xs transition-all flex flex-col items-center text-center group">
-                                <div class="p-2 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 group-hover:text-primary-600 dark:group-hover:text-primary-400 shadow-xs transition-colors mb-1.5">
+                            <a href="{{ $item['url'] }}" class="p-3 bg-white dark:bg-gray-900 rounded-xl border border-gray-200/80 dark:border-gray-800 hover:border-primary-400 dark:hover:border-primary-600 hover:shadow-sm transition-all flex items-center space-x-3 group">
+                                <div class="p-2 rounded-lg {{ $item['bg_light'] }} {{ $item['text_color'] }} group-hover:scale-105 transition-transform shrink-0">
                                     @switch($item['icon'])
                                         @case('heroicon-o-identification')
                                             <x-heroicon-o-identification class="w-4 h-4" />
@@ -129,9 +131,14 @@
                                             <x-heroicon-o-folder class="w-4 h-4" />
                                     @endswitch
                                 </div>
-                                <span class="text-xs font-semibold text-gray-800 dark:text-gray-200 group-hover:text-primary-600 dark:group-hover:text-primary-400 line-clamp-1">
-                                    {{ $item['title'] }}
-                                </span>
+                                <div class="truncate">
+                                    <div class="text-xs font-bold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 truncate">
+                                        {{ $item['title'] }}
+                                    </div>
+                                    <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                                        {{ $item['description'] }}
+                                    </div>
+                                </div>
                             </a>
                         @endforeach
                     </div>
