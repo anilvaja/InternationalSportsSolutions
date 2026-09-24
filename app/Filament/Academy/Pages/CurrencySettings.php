@@ -25,7 +25,7 @@ class CurrencySettings extends Page implements HasForms
     
     protected static string $view = 'filament.academy.pages.currency-settings';
     
-    protected static ?string $navigationLabel = 'Currency Settings';
+    protected static ?string $navigationLabel = 'Currency & Timezone Settings';
     
     protected static ?string $navigationGroup = 'Settings';
     
@@ -38,12 +38,61 @@ class CurrencySettings extends Page implements HasForms
         $currentCurrency = Setting::get('default_currency', 'INR');
         $currencyName = Setting::get('currency_name', CurrencyHelper::getAcademyCurrencyName());
         $currencySymbol = Setting::get('currency_symbol', CurrencyHelper::getAcademyCurrencySymbol());
+        $timezone = Setting::get('timezone', 'Asia/Kolkata');
 
         $this->form->fill([
             'default_currency' => $currentCurrency,
             'currency_name' => $currencyName,
             'currency_symbol' => $currencySymbol,
+            'timezone' => $timezone,
         ]);
+    }
+
+    public static function getTimezoneOptions(): array
+    {
+        $identifiers = \DateTimeZone::listIdentifiers();
+        $options = [];
+        $now = new \DateTime('now', new \DateTimeZone('UTC'));
+
+        $popularMapping = [
+            'Asia/Kolkata' => 'India (IST)',
+            'Asia/Dubai' => 'UAE / Gulf (GST)',
+            'Asia/Riyadh' => 'Saudi Arabia (AST)',
+            'Asia/Qatar' => 'Qatar',
+            'Asia/Muscat' => 'Oman',
+            'Asia/Kuwait' => 'Kuwait',
+            'Asia/Bahrain' => 'Bahrain',
+            'Asia/Singapore' => 'Singapore (SGT)',
+            'Asia/Bangkok' => 'Thailand',
+            'Asia/Tokyo' => 'Japan (JST)',
+            'Asia/Dhaka' => 'Bangladesh',
+            'Asia/Colombo' => 'Sri Lanka',
+            'Asia/Karachi' => 'Pakistan',
+            'Europe/London' => 'United Kingdom (GMT/BST)',
+            'Europe/Paris' => 'France / Central Europe',
+            'Europe/Berlin' => 'Germany',
+            'America/New_York' => 'USA (Eastern)',
+            'America/Chicago' => 'USA (Central)',
+            'America/Los_Angeles' => 'USA (Pacific)',
+            'America/Toronto' => 'Canada (Eastern)',
+            'Australia/Sydney' => 'Australia (Sydney)',
+            'Pacific/Auckland' => 'New Zealand',
+        ];
+
+        foreach ($identifiers as $tz) {
+            try {
+                $zone = new \DateTimeZone($tz);
+                $offset = $zone->getOffset($now);
+                $hours = sprintf('%+03d:%02d', intval($offset / 3600), abs(intval($offset % 3600 / 60)));
+                $country = $popularMapping[$tz] ?? null;
+                $suffix = $country ? " — {$country}" : '';
+                $options[$tz] = str_replace('_', ' ', $tz) . " (UTC{$hours}){$suffix}";
+            } catch (\Exception $e) {
+                $options[$tz] = $tz;
+            }
+        }
+
+        return $options;
     }
 
     public function form(Form $form): Form
@@ -84,6 +133,30 @@ class CurrencySettings extends Page implements HasForms
                             ]),
                     ]),
 
+                Section::make('Academy Timezone Settings')
+                    ->description('Select your local country/city timezone for class schedules, attendance logs, and system timestamps.')
+                    ->schema([
+                        Select::make('timezone')
+                            ->label('Academy Timezone')
+                            ->options(static::getTimezoneOptions())
+                            ->default('Asia/Kolkata')
+                            ->searchable()
+                            ->required()
+                            ->live()
+                            ->helperText('Searchable list of timezones (e.g. Asia/Kolkata - India, America/New_York - USA, Asia/Dubai - UAE)'),
+
+                        Placeholder::make('current_time_preview')
+                            ->label('Current Academy Local Time')
+                            ->content(function ($get) {
+                                $tz = $get('timezone') ?: 'Asia/Kolkata';
+                                try {
+                                    return \Carbon\Carbon::now($tz)->format('d/m/Y h:i:s A (T)');
+                                } catch (\Exception $e) {
+                                    return \Carbon\Carbon::now('Asia/Kolkata')->format('d/m/Y h:i:s A (T)');
+                                }
+                            }),
+                    ]),
+
                 Section::make('Display Preview')
                     ->description('Live preview of how prices and fees will appear across the system')
                     ->schema([
@@ -112,11 +185,14 @@ class CurrencySettings extends Page implements HasForms
             if (!empty($data['currency_symbol'])) {
                 Setting::set('currency_symbol', $data['currency_symbol']);
             }
+            if (!empty($data['timezone'])) {
+                Setting::set('timezone', $data['timezone']);
+            }
 
             Notification::make()
                 ->success()
-                ->title('Currency settings saved!')
-                ->body('Currency name and icon/symbol updated successfully.')
+                ->title('Currency & Timezone Settings saved!')
+                ->body('Currency name, icon/symbol, and academy timezone updated successfully.')
                 ->send();
                 
             $this->mount();
@@ -127,7 +203,7 @@ class CurrencySettings extends Page implements HasForms
             Notification::make()
                 ->danger()
                 ->title('Error!')
-                ->body('Failed to save currency settings: ' . $e->getMessage())
+                ->body('Failed to save settings: ' . $e->getMessage())
                 ->send();
         }
     }
