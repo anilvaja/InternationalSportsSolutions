@@ -33,23 +33,25 @@ class FinanceOverviewStats extends BaseWidget
 
         // 1. Today's Collection
         $todaysCollection = (clone $feesQuery)
+            ->where('status', 'paid')
             ->whereDate('payment_date', now()->toDateString())
-            ->sum('paid_amount');
+            ->sum('fees_amount');
 
         // 2. This Month Collection
         $monthlyCollection = (clone $feesQuery)
+            ->where('status', 'paid')
             ->whereYear('payment_date', now()->year)
             ->whereMonth('payment_date', now()->month)
-            ->sum('paid_amount');
+            ->sum('fees_amount');
 
         // 3. Pending Fees
         $pendingQuery = (clone $feesQuery)->whereIn('status', ['pending', 'partial']);
-        $pendingBalance = $pendingQuery->sum('balance_amount');
+        $pendingBalance = $pendingQuery->sum('fees_amount');
         $pendingStudentsCount = $pendingQuery->distinct('student_id')->count('student_id');
 
         // 4. Overdue Fees
         $overdueQuery = (clone $feesQuery)->where('status', 'overdue');
-        $overdueBalance = $overdueQuery->sum('balance_amount');
+        $overdueBalance = $overdueQuery->sum('fees_amount');
         $overdueStudentsCount = $overdueQuery->distinct('student_id')->count('student_id');
 
         $formattedToday = CurrencyHelper::format($todaysCollection);
