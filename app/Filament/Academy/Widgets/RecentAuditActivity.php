@@ -37,10 +37,7 @@ class RecentAuditActivity extends BaseWidget
             ->query(
                 Audit::query()
                     ->where('created_at', '>=', $oneDayAgo)
-                    ->where(function ($q) use ($allowedModels) {
-                        $q->whereIn('subject_type', $allowedModels)
-                          ->orWhereIn('auditable_type', $allowedModels);
-                    })
+                    ->whereIn('subject_type', $allowedModels)
                     ->latest()
                     ->limit(50)
             )
