@@ -321,6 +321,7 @@ class StudentResource extends BaseAcademyResource
             ->columns([
                 Tables\Columns\ImageColumn::make('photo')
                     ->circular()
+                    ->defaultImageUrl(url('images/default-avatar.svg'))
                     ->size(50)
                     ->toggleable(),
                 

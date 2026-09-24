@@ -193,7 +193,7 @@ class UserResource extends Resource
             ->columns([
                 Tables\Columns\ImageColumn::make('avatar')
                     ->circular()
-                    ->defaultImageUrl(url('/images/default-avatar.png'))
+                    ->defaultImageUrl(url('images/default-avatar.svg'))
                     ->size(40),
                 
                 Tables\Columns\TextColumn::make('name')

@@ -179,6 +179,7 @@ class AcademyResource extends Resource
             ->columns([
                 Tables\Columns\ImageColumn::make('logo')
                     ->circular()
+                    ->defaultImageUrl(url('images/default-academy.svg'))
                     ->size(40),
                 
                 Tables\Columns\TextColumn::make('name')
