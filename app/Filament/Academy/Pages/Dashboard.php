@@ -5,6 +5,7 @@ namespace App\Filament\Academy\Pages;
 use App\Filament\Academy\Widgets\AbsenteeStudents;
 use App\Filament\Academy\Widgets\FeesOverview;
 use App\Filament\Academy\Widgets\TodaysBatches;
+use App\Filament\Academy\Widgets\QuickLaunchpadWidget;
 use App\Filament\Academy\Widgets\StaffCheckInWidget;
 use App\Filament\Academy\Widgets\StaffPayrollExpensesChart;
 use App\Filament\Academy\Widgets\RecentAuditActivity;
@@ -21,6 +22,9 @@ class Dashboard extends BaseDashboard
     public function getWidgets(): array
     {
         $widgets = [];
+
+        // Always show Quick Direct Access Launchpad at top
+        $widgets[] = QuickLaunchpadWidget::class;
 
         // Always show Staff Attendance & Check-In Widget
         $widgets[] = StaffCheckInWidget::class;
