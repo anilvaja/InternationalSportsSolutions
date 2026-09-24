@@ -68,6 +68,15 @@ class StaffPayroll extends Model
         return $this->belongsTo(User::class, 'generated_by');
     }
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saving(function (StaffPayroll $payroll) {
+            $payroll->calculateNetSalary();
+        });
+    }
+
     public function calculateNetSalary(): void
     {
         $base = (float) ($this->base_salary_amount ?? 0);

@@ -70,5 +70,14 @@ class AppServiceProvider extends ServiceProvider
         Notification::extend('sms', function ($app) {
             return new SmsChannel($app->make(SmsService::class));
         });
+
+        // Global Calendar / DatePicker format configuration (Display: DD/MM/YYYY - Storage: YYYY-MM-DD)
+        \Filament\Forms\Components\DatePicker::configureUsing(function (\Filament\Forms\Components\DatePicker $component) {
+            $component->displayFormat('d/m/Y')->format('Y-m-d');
+        });
+
+        \Filament\Forms\Components\DateTimePicker::configureUsing(function (\Filament\Forms\Components\DateTimePicker $component) {
+            $component->displayFormat('d/m/Y H:i')->format('Y-m-d H:i:s');
+        });
     }
 }

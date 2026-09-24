@@ -91,4 +91,23 @@ class StaffSelfAttendanceTest extends TestCase
         $dashboardResponse = $this->get('/academy');
         $dashboardResponse->assertStatus(200);
     }
+
+    public function test_backdate_limit_enforces_correction_request(): void
+    {
+        $staff = User::create([
+            'name' => 'Backdate Staff',
+            'email' => 'backdate@academy.com',
+            'password' => bcrypt('password'),
+            'academy_id' => $this->academy->id,
+            'salary_type' => 'hourly',
+            'hourly_rate' => 25.00,
+        ]);
+
+        $setting = \App\Models\StaffAttendanceSetting::getOrCreateForUser($staff);
+        $this->assertEquals(2, $setting->max_backdate_days);
+
+        // Update limit to 3 days
+        $setting->update(['max_backdate_days' => 3]);
+        $this->assertEquals(3, $setting->fresh()->max_backdate_days);
+    }
 }

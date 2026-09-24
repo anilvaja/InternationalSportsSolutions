@@ -54,7 +54,7 @@ class MyAttendance extends Page implements HasForms, HasTable
             ->columns([
                 Tables\Columns\TextColumn::make('attendance_date')
                     ->label('Date')
-                    ->date('M d, Y (D)')
+                    ->date('d/m/Y')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('check_in_at')
@@ -273,8 +273,13 @@ class MyAttendance extends Page implements HasForms, HasTable
                     $dateObj = Carbon::parse($data['attendance_date']);
                     $dateStr = $dateObj->toDateString();
 
-                    // If date is > 2 days ago, route as Correction Request for Admin approval
-                    if ($dateObj->lt(now()->subDays(2)->startOfDay())) {
+                    $setting = \App\Models\StaffAttendanceSetting::where('academy_id', $user->academy_id)
+                        ->where('user_id', $user->id)
+                        ->first();
+                    $maxBackdateDays = $setting?->max_backdate_days ?? 2;
+
+                    // If date is > maxBackdateDays ago, route as Correction Request for Admin approval
+                    if ($dateObj->lt(now()->subDays($maxBackdateDays)->startOfDay())) {
                         StaffAttendanceCorrection::create([
                             'academy_id' => $user->academy_id,
                             'user_id' => $user->id,
@@ -282,13 +287,13 @@ class MyAttendance extends Page implements HasForms, HasTable
                             'requested_check_in' => $data['check_in_at'],
                             'requested_check_out' => $data['check_out_at'],
                             'break_duration_minutes' => $data['break_duration_minutes'] ?? 0,
-                            'reason' => 'Retroactive log (>2 days ago): ' . ($data['notes'] ?? 'Late self log'),
+                            'reason' => "Retroactive log (>{$maxBackdateDays} days ago): " . ($data['notes'] ?? 'Late self log'),
                             'status' => 'pending',
                         ]);
 
                         Notification::make()
                             ->title('Correction Request Created')
-                            ->body('This date is older than 2 days. A request has been sent to Academy Admin for approval.')
+                            ->body("This date is older than {$maxBackdateDays} days. A request has been sent to Academy Admin for approval.")
                             ->warning()
                             ->send();
                         return;

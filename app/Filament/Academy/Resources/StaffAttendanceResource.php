@@ -181,17 +181,17 @@ class StaffAttendanceResource extends BaseAcademyResource
 
                 Tables\Columns\TextColumn::make('attendance_date')
                     ->label('Date')
-                    ->date()
+                    ->date('d/m/Y')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('check_in_at')
                     ->label('Check-In')
-                    ->dateTime('H:i (M d)')
+                    ->dateTime('d/m/Y H:i')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('check_out_at')
                     ->label('Check-Out')
-                    ->dateTime('H:i (M d)')
+                    ->dateTime('d/m/Y H:i')
                     ->placeholder('Active (Checked In)')
                     ->sortable(),
 

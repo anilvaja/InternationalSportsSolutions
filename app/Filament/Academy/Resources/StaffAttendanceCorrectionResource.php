@@ -102,17 +102,17 @@ class StaffAttendanceCorrectionResource extends BaseAcademyResource
 
                 Tables\Columns\TextColumn::make('request_date')
                     ->label('Target Date')
-                    ->date()
+                    ->date('d/m/Y')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('requested_check_in')
                     ->label('Requested Check-In')
-                    ->dateTime('M d, Y H:i')
+                    ->dateTime('d/m/Y H:i')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('requested_check_out')
                     ->label('Requested Check-Out')
-                    ->dateTime('M d, Y H:i')
+                    ->dateTime('d/m/Y H:i')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('break_duration_minutes')
@@ -141,7 +141,7 @@ class StaffAttendanceCorrectionResource extends BaseAcademyResource
 
                 Tables\Columns\TextColumn::make('reviewed_at')
                     ->label('Reviewed At')
-                    ->dateTime('M d H:i')
+                    ->dateTime('d/m/Y H:i')
                     ->placeholder('-'),
             ])
             ->defaultSort('created_at', 'desc')

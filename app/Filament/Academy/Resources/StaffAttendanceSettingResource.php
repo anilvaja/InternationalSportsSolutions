@@ -142,7 +142,7 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                 Section::make('Approval Authority & Threshold Settings')
                     ->description('Assign the specific admin/approver and threshold time for extended attendance approval')
                     ->schema([
-                        Grid::make(2)->schema([
+                        Grid::make(3)->schema([
                             Forms\Components\Select::make('approval_authority_user_id')
                                 ->label('Assigned Approver (Admin / Branch Manager)')
                                 ->options(function () use ($academyId) {
@@ -158,7 +158,15 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                                 ->numeric()
                                 ->default(30)
                                 ->suffix('mins')
-                                ->helperText('Extra hours ≤ threshold are auto-approved; > threshold require approval by assigned approver'),
+                                ->helperText('Extra hours ≤ threshold are auto-approved; > threshold require approval'),
+
+                            Forms\Components\TextInput::make('max_backdate_days')
+                                ->label('Allowed Backdate Days')
+                                ->numeric()
+                                ->default(2)
+                                ->suffix('days')
+                                ->required()
+                                ->helperText('Maximum past days staff can self-log directly. Dates older require approval (default: 2)'),
                         ]),
 
                         Forms\Components\Hidden::make('approval_authority_type')
@@ -209,6 +217,11 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                 Tables\Columns\TextColumn::make('approval_threshold_minutes')
                     ->label('Threshold')
                     ->suffix(' mins'),
+
+                Tables\Columns\TextColumn::make('max_backdate_days')
+                    ->label('Allowed Backdate')
+                    ->suffix(' days')
+                    ->sortable(),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

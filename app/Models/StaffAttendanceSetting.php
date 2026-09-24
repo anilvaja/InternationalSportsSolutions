@@ -13,6 +13,36 @@ class StaffAttendanceSetting extends Model
 {
     use HasFactory, SoftDeletes, Auditable;
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saved(function (StaffAttendanceSetting $setting) {
+            if ($setting->user_id) {
+                $user = User::find($setting->user_id);
+                if ($user) {
+                    if (!empty($setting->salary_type)) {
+                        $user->salary_type = $setting->salary_type;
+                    }
+                    if ($setting->salary_type === 'hourly' && $setting->salary_amount) {
+                        $user->hourly_rate = $setting->salary_amount;
+                    } elseif ($setting->salary_type === 'minutly' && $setting->salary_amount) {
+                        $user->minutly_rate = $setting->salary_amount;
+                    } elseif ($setting->salary_type === 'monthly' && $setting->salary_amount) {
+                        $user->monthly_salary = $setting->salary_amount;
+                    }
+                    if ($setting->expected_daily_hours) {
+                        $user->standard_daily_hours = $setting->expected_daily_hours;
+                    }
+                    if ($setting->overtime_hourly_rate) {
+                        $user->overtime_hourly_rate = $setting->overtime_hourly_rate;
+                    }
+                    $user->saveQuietly();
+                }
+            }
+        });
+    }
+
     protected $fillable = [
         'academy_id',
         'user_id',
@@ -28,6 +58,7 @@ class StaffAttendanceSetting extends Model
         'approval_authority_type',
         'approval_authority_user_id',
         'approval_threshold_minutes',
+        'max_backdate_days',
         'branch_id',
         'schedule_source',
     ];
@@ -44,6 +75,7 @@ class StaffAttendanceSetting extends Model
             'overtime_rate_multiplier' => 'decimal:2',
             'overtime_hourly_rate' => 'decimal:2',
             'approval_threshold_minutes' => 'integer',
+            'max_backdate_days' => 'integer',
         ];
     }
 
@@ -93,6 +125,7 @@ class StaffAttendanceSetting extends Model
                 'overtime_hourly_rate' => $user->overtime_hourly_rate,
                 'approval_authority_type' => 'academy_admin',
                 'approval_threshold_minutes' => 30,
+                'max_backdate_days' => 2,
             ]
         );
     }
