@@ -61,6 +61,11 @@ class AppServiceProvider extends ServiceProvider
         try {
             if (Schema::hasTable('settings')) {
                 MailConfigService::configure();
+                $tz = Setting::get('timezone', env('APP_TIMEZONE', 'Asia/Kolkata'));
+                if ($tz) {
+                    date_default_timezone_set($tz);
+                    config(['app.timezone' => $tz]);
+                }
             }
         } catch (\Exception $e) {
             // Silent fail during migrations or when database is not ready

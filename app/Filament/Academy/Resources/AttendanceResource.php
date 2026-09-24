@@ -80,6 +80,7 @@ class AttendanceResource extends BaseAcademyResource
                                         $set('class_date', $nextDate);
                                         
                                         // Show information about last attendance and suggested date
+                                        $todayObj = static::getAcademyToday();
                                         if ($lastAttendance) {
                                             $lastDateText = "Last attendance: " . $lastAttendance->class_date->format('M d, Y');
                                             
@@ -95,13 +96,13 @@ class AttendanceResource extends BaseAcademyResource
                                                 " (Schedule: " . implode(', ', $batchDays) . ")" : 
                                                 "";
                                             
-                                            $isToday = $nextDateObj->isToday();
+                                            $isToday = $nextDateObj->isSameDay($todayObj);
                                             $dateLabel = $isToday ? "Today" : "Suggested date";
                                             
                                             $notificationBody = "{$lastDateText}. {$dateLabel}: " . $nextDateObj->format('M d, Y (l)') . $scheduleText . ". Note: Future dates are not allowed for attendance.";
                                         } else {
                                             $nextDateObj = \Carbon\Carbon::parse($nextDate);
-                                            $isToday = $nextDateObj->isToday();
+                                            $isToday = $nextDateObj->isSameDay($todayObj);
                                             $dateLabel = $isToday ? "Today" : "Suggested date";
                                             
                                             $notificationBody = "No previous attendance found. {$dateLabel}: " . $nextDateObj->format('M d, Y (l)') . ". Note: Only today or past dates are allowed for attendance.";
@@ -154,16 +155,16 @@ class AttendanceResource extends BaseAcademyResource
                         Forms\Components\DatePicker::make('class_date')
                             ->label('Class Date')
                             ->required()
-                            ->maxDate(today()) // Disable future dates
+                            ->maxDate(fn () => static::getAcademyToday()) // Disable future dates
                             ->helperText('Auto-calculated to skip existing attendance dates. Future dates are disabled - attendance can only be taken for today or past dates.')
                             ->reactive()
-                            ->rules(['before_or_equal:today'])
+                            ->rules([fn () => 'before_or_equal:' . static::getAcademyToday()->format('Y-m-d')])
                             ->afterStateUpdated(function (callable $get, callable $set, $state) {
                                 $batchId = $get('batch_id');
                                 if ($batchId && $state) {
                                     // Check if the selected date is in the future
                                     $selectedDate = \Carbon\Carbon::parse($state);
-                                    $today = \Carbon\Carbon::today();
+                                    $today = static::getAcademyToday();
                                     
                                     if ($selectedDate->isAfter($today)) {
                                         \Filament\Notifications\Notification::make()
@@ -174,7 +175,7 @@ class AttendanceResource extends BaseAcademyResource
                                             ->send();
                                         
                                         // Reset to today's date
-                                        $set('class_date', today()->format('Y-m-d'));
+                                        $set('class_date', $today->format('Y-m-d'));
                                         return;
                                     }
                                     
@@ -536,7 +537,13 @@ class AttendanceResource extends BaseAcademyResource
         return \App\Support\AcademyPermissionHelper::can('view_attendances');
     }
 
-    protected static function calculateNextAttendanceDate(\App\Models\Batch $batch): string
+    public static function getAcademyToday(): \Carbon\Carbon
+    {
+        $tz = \App\Models\Setting::get('timezone', env('APP_TIMEZONE', 'Asia/Kolkata'));
+        return \Carbon\Carbon::today($tz);
+    }
+
+    public static function calculateNextAttendanceDate(\App\Models\Batch $batch): string
     {
         // Get the last attendance date for this batch (excluding cancelled ones)
         $lastAttendance = BatchAttendance::where('batch_id', $batch->id)
@@ -545,16 +552,17 @@ class AttendanceResource extends BaseAcademyResource
             ->orderBy('class_date', 'desc')
             ->first();
 
+        $today = static::getAcademyToday();
+
         // If no previous attendance, start from today, otherwise start from day after last attendance
         // But never go beyond today (no future dates allowed for attendance)
         $searchStartDate = $lastAttendance ? 
             \Carbon\Carbon::parse($lastAttendance->class_date)->addDay() : 
-            \Carbon\Carbon::today();
+            $today->copy();
             
         // Ensure we don't search beyond today
-        $today = \Carbon\Carbon::today();
         if ($searchStartDate->isAfter($today)) {
-            $searchStartDate = $today;
+            $searchStartDate = $today->copy();
         }
 
         // Parse batch weekdays (e.g., "Monday,Wednesday,Friday")
@@ -579,7 +587,7 @@ class AttendanceResource extends BaseAcademyResource
                 $nextDate->subDay();
                 
                 // Don't go too far back
-                if ($nextDate->lt(\Carbon\Carbon::today()->subDays(60))) {
+                if ($nextDate->lt($today->copy()->subDays(60))) {
                     // Stop searching if too far in the past
                     return $today->format('Y-m-d');
                 }
@@ -627,7 +635,7 @@ class AttendanceResource extends BaseAcademyResource
                 }
                 $nextDate->subDay();
                 
-                if ($nextDate->lt(\Carbon\Carbon::today()->subDays(60))) {
+                if ($nextDate->lt($today->copy()->subDays(60))) {
                     break;
                 }
                     
@@ -638,14 +646,13 @@ class AttendanceResource extends BaseAcademyResource
             $nextDate->subDay();
             
             // Don't go too far back
-            if ($nextDate->lt(\Carbon\Carbon::today()->subDays(90))) {
+            if ($nextDate->lt($today->copy()->subDays(90))) {
                 // Stop searching if too far in the past
                 return $today->format('Y-m-d');
             }
         }
 
         // Ultimate fallback: return today if it matches batch schedule
-        $today = \Carbon\Carbon::today();
         if (in_array($today->dayOfWeek, $batchDays)) {
             return $today->format('Y-m-d');
         }
