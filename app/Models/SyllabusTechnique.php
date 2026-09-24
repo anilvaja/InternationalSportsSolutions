@@ -139,4 +139,79 @@ class SyllabusTechnique extends Model
         
         return $minutes . ' minutes';
     }
+
+    public static function getSelectableTechniquesForStudent(int $studentId, int $academyId, ?int $currentTechniqueId = null): array
+    {
+        $allTechniques = static::where('academy_id', $academyId)
+            ->active()
+            ->orderBy('sort_order', 'asc')
+            ->orderBy('id', 'asc')
+            ->get();
+
+        if ($allTechniques->isEmpty()) {
+            return [];
+        }
+
+        $activeTechniqueId = $currentTechniqueId;
+        if (!$activeTechniqueId) {
+            $activeTechniqueId = static::getDefaultTechniqueIdForStudent($studentId, $academyId);
+        }
+
+        $currentIndex = 0;
+        if ($activeTechniqueId) {
+            foreach ($allTechniques as $index => $tech) {
+                if ($tech->id == $activeTechniqueId) {
+                    $currentIndex = $index;
+                    break;
+                }
+            }
+        }
+
+        $maxAllowedIndex = min(count($allTechniques) - 1, $currentIndex + 1);
+
+        $options = [];
+        foreach ($allTechniques as $index => $tech) {
+            if ($index <= $maxAllowedIndex) {
+                $orderNum = $index + 1;
+                $tag = ($index == $currentIndex) ? ' (Current Level)' : (($index == $currentIndex + 1) ? ' (Next Level)' : " (Level {$orderNum})");
+                $options[$tech->id] = "{$orderNum}. {$tech->name}{$tag}";
+            }
+        }
+
+        return $options;
+    }
+
+    public static function getDefaultTechniqueIdForStudent(int $studentId, int $academyId): ?int
+    {
+        $allTechniques = static::where('academy_id', $academyId)
+            ->active()
+            ->orderBy('sort_order', 'asc')
+            ->orderBy('id', 'asc')
+            ->get();
+
+        if ($allTechniques->isEmpty()) {
+            return null;
+        }
+
+        // 1. Check latest StudentAttendance record with non-null syllabus_technique_id
+        $latestAttendance = StudentAttendance::where('student_id', $studentId)
+            ->whereNotNull('syllabus_technique_id')
+            ->latest('id')
+            ->first();
+
+        if ($latestAttendance && $allTechniques->contains('id', $latestAttendance->syllabus_technique_id)) {
+            return $latestAttendance->syllabus_technique_id;
+        }
+
+        // 2. Check StudentTechniqueProgress
+        $latestProgress = StudentTechniqueProgress::where('student_id', $studentId)
+            ->latest('updated_at')
+            ->first();
+
+        if ($latestProgress && $allTechniques->contains('id', $latestProgress->syllabus_technique_id)) {
+            return $latestProgress->syllabus_technique_id;
+        }
+
+        return $allTechniques->first()->id;
+    }
 }

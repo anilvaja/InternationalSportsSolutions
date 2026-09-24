@@ -16,6 +16,7 @@ class StudentAttendance extends Model
         'batch_attendance_id',
         'student_id',
         'status',
+        'syllabus_technique_id',
         'actual_arrival_time',
         'actual_departure_time',
         'participation_level',
@@ -41,6 +42,11 @@ class StudentAttendance extends Model
     public function batchAttendance(): BelongsTo
     {
         return $this->belongsTo(BatchAttendance::class);
+    }
+
+    public function syllabusTechnique(): BelongsTo
+    {
+        return $this->belongsTo(SyllabusTechnique::class, 'syllabus_technique_id');
     }
 
     public function student(): BelongsTo
@@ -73,6 +79,26 @@ class StudentAttendance extends Model
             if ($query->exists()) {
                 $existing = $query->first();
                 throw new \Exception("Duplicate student attendance: Student {$model->student_id} already has attendance record for batch attendance {$model->batch_attendance_id} (Record ID: {$existing->id})");
+            }
+        });
+
+        static::saved(function ($model) {
+            if ($model->student_id && $model->syllabus_technique_id) {
+                $batchId = $model->batchAttendance?->batch_id;
+                if ($batchId) {
+                    $progress = StudentTechniqueProgress::firstOrCreate(
+                        [
+                            'student_id' => $model->student_id,
+                            'syllabus_technique_id' => $model->syllabus_technique_id,
+                            'batch_id' => $batchId,
+                        ],
+                        [
+                            'status' => 'learning',
+                            'started_date' => now()->toDateString(),
+                        ]
+                    );
+                    $progress->incrementPractice();
+                }
             }
         });
     }

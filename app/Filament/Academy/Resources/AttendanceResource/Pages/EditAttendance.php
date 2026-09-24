@@ -21,6 +21,20 @@ class EditAttendance extends EditRecord
         ];
     }
 
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        $academyId = Auth::user()->academy_id;
+        if (!empty($data['studentAttendances'])) {
+            foreach ($data['studentAttendances'] as $key => $item) {
+                if (empty($item['syllabus_technique_id']) && !empty($item['student_id'])) {
+                    $data['studentAttendances'][$key]['syllabus_technique_id'] = 
+                        \App\Models\SyllabusTechnique::getDefaultTechniqueIdForStudent((int) $item['student_id'], (int) $academyId);
+                }
+            }
+        }
+        return $data;
+    }
+
     protected function mutateFormDataBeforeSave(array $data): array
     {
         // Ensure academy_id is always set

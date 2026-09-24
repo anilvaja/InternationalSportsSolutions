@@ -140,6 +140,7 @@ class AttendanceResource extends BaseAcademyResource
                                                 'student_id' => $student->id,
                                                 'academy_id' => Auth::user()->academy_id,
                                                 'status' => 'present',
+                                                'syllabus_technique_id' => \App\Models\SyllabusTechnique::getDefaultTechniqueIdForStudent((int) $student->id, (int) Auth::user()->academy_id),
                                             ];
                                         })->toArray();
                                         
@@ -267,7 +268,7 @@ class AttendanceResource extends BaseAcademyResource
                                 Forms\Components\Hidden::make('academy_id')
                                     ->default(fn () => Auth::user()->academy_id),
                                 
-                                Forms\Components\Grid::make(2)
+                                Forms\Components\Grid::make(3)
                                     ->schema([
                                         Forms\Components\Placeholder::make('student_name')
                                             ->label('Student')
@@ -293,6 +294,36 @@ class AttendanceResource extends BaseAcademyResource
                                             ->required()
                                             ->inline()
                                             ->columns(2),
+
+                                        Forms\Components\Select::make('syllabus_technique_id')
+                                            ->label('Technique in Study')
+                                            ->options(function ($get) {
+                                                $studentId = $get('student_id');
+                                                $academyId = Auth::user()->academy_id;
+                                                $currentTechId = $get('syllabus_technique_id');
+                                                if (!$studentId) return [];
+                                                return \App\Models\SyllabusTechnique::getSelectableTechniquesForStudent((int) $studentId, (int) $academyId, $currentTechId ? (int) $currentTechId : null);
+                                            })
+                                            ->default(function ($get) {
+                                                $studentId = $get('student_id');
+                                                $academyId = Auth::user()->academy_id;
+                                                if (!$studentId) return null;
+                                                return \App\Models\SyllabusTechnique::getDefaultTechniqueIdForStudent((int) $studentId, (int) $academyId);
+                                            })
+                                            ->afterStateHydrated(function ($component, $state, $get) {
+                                                if (blank($state)) {
+                                                    $studentId = $get('student_id');
+                                                    $academyId = Auth::user()?->academy_id;
+                                                    if ($studentId && $academyId) {
+                                                        $defaultId = \App\Models\SyllabusTechnique::getDefaultTechniqueIdForStudent((int) $studentId, (int) $academyId);
+                                                        if ($defaultId) {
+                                                            $component->state($defaultId);
+                                                        }
+                                                    }
+                                                }
+                                            })
+                                            ->searchable()
+                                            ->helperText('Defaults to current level. Coach can advance +1 level max or step back to any previous level.'),
                                     ]),
                             ])
                             ->visible(fn (callable $get) => !in_array($get('status'), ['cancelled', 'holiday']))
@@ -311,6 +342,7 @@ class AttendanceResource extends BaseAcademyResource
                                         'student_id' => $student->id,
                                         'academy_id' => Auth::user()->academy_id,
                                         'status' => 'present',
+                                        'syllabus_technique_id' => \App\Models\SyllabusTechnique::getDefaultTechniqueIdForStudent((int) $student->id, (int) Auth::user()->academy_id),
                                     ];
                                 })->toArray();
                             })
@@ -388,7 +420,7 @@ class AttendanceResource extends BaseAcademyResource
                         return $record->attendance_taken ? "$present/$total" : "0/$total";
                     }),
 
-                Tables\Columns\TextColumn::make('attendance_marked_by.name')
+                Tables\Columns\TextColumn::make('attendanceMarkedBy.name')
                     ->label('Marked By')
                     ->placeholder('—'),
 
@@ -401,9 +433,22 @@ class AttendanceResource extends BaseAcademyResource
                 SelectFilter::make('batch_id')
                     ->label('Batch')
                     ->options(function () {
-                        return Batch::where('academy_id', Auth::user()->academy_id)
-                            ->where('is_active', true)
-                            ->pluck('name', 'id');
+                        $user = Auth::user();
+                        $query = Batch::where('academy_id', $user->academy_id)->where('is_active', true);
+                        
+                        $myBatches = (clone $query)->where('coach_id', $user->id)->pluck('name', 'id');
+                        if ($myBatches->isNotEmpty()) {
+                            $otherBatches = (clone $query)->where(function($q) use ($user) {
+                                $q->where('coach_id', '!=', $user->id)->orWhereNull('coach_id');
+                            })->pluck('name', 'id');
+
+                            $options = ['My Assigned Batches' => $myBatches->toArray()];
+                            if ($otherBatches->isNotEmpty()) {
+                                $options['Other Academy Batches'] = $otherBatches->toArray();
+                            }
+                            return $options;
+                        }
+                        return $query->pluck('name', 'id')->toArray();
                     }),
 
                 SelectFilter::make('status')

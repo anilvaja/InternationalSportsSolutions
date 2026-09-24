@@ -15,6 +15,45 @@ class CreateAttendance extends CreateRecord
 {
     protected static string $resource = AttendanceResource::class;
 
+    public function mount(): void
+    {
+        parent::mount();
+
+        $batchId = request()->query('batch_id');
+        if ($batchId) {
+            $batch = \App\Models\Batch::where('academy_id', Auth::user()->academy_id)->find($batchId);
+            if ($batch) {
+                $nextDate = AttendanceResource::calculateNextAttendanceDate($batch);
+                $startTime = $batch->start_time instanceof \Carbon\Carbon ? 
+                    $batch->start_time->format('H:i') : 
+                    \Carbon\Carbon::parse($batch->start_time)->format('H:i');
+                    
+                $endTime = $batch->end_time instanceof \Carbon\Carbon ? 
+                    $batch->end_time->format('H:i') : 
+                    \Carbon\Carbon::parse($batch->end_time)->format('H:i');
+                
+                $students = $batch->activeStudents->map(function ($student) {
+                    return [
+                        'student_id' => $student->id,
+                        'academy_id' => Auth::user()->academy_id,
+                        'status' => 'present',
+                        'syllabus_technique_id' => \App\Models\SyllabusTechnique::getDefaultTechniqueIdForStudent((int) $student->id, (int) Auth::user()->academy_id),
+                    ];
+                })->toArray();
+
+                $this->form->fill([
+                    'academy_id' => Auth::user()->academy_id,
+                    'batch_id' => $batch->id,
+                    'class_date' => $nextDate,
+                    'class_start_time' => $startTime,
+                    'class_end_time' => $endTime,
+                    'status' => 'scheduled',
+                    'studentAttendances' => $students,
+                ]);
+            }
+        }
+    }
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['academy_id'] = Auth::user()->academy_id;

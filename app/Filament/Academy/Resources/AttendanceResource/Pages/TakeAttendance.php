@@ -45,13 +45,14 @@ class TakeAttendance extends Page
                 'student_id' => $student->id,
                 'student_name' => $student->first_name . ' ' . $student->last_name,
                 'status' => $attendance?->status ?? 'present',
+                'syllabus_technique_id' => $attendance?->syllabus_technique_id ?? \App\Models\SyllabusTechnique::getDefaultTechniqueIdForStudent((int) $student->id, (int) Auth::user()->academy_id),
                 'actual_arrival_time' => $attendance?->actual_arrival_time ?? $record->class_start_time,
                 'participation_level' => $attendance?->participation_level,
                 'progress_notes' => $attendance?->progress_notes,
                 'notes' => $attendance?->notes,
             ];
         }
-        
+
         $this->data = [
             'students' => $studentData,
             'class_notes' => $record->notes,
@@ -70,12 +71,12 @@ class TakeAttendance extends Page
                                     ->label('Batch')
                                     ->default($this->record->batch->name . ' - ' . $this->record->batch->code)
                                     ->disabled(),
-                                
+
                                 TextInput::make('class_date')
                                     ->label('Date')
                                     ->default($this->record->class_date->format('M d, Y'))
                                     ->disabled(),
-                                
+
                                 TextInput::make('class_time')
                                     ->label('Time')
                                     ->default($this->record->class_start_time->format('H:i') . ' - ' . $this->record->class_end_time->format('H:i'))
@@ -92,7 +93,7 @@ class TakeAttendance extends Page
                                         TextInput::make('student_name')
                                             ->label('Student')
                                             ->disabled()
-                                            ->columnSpan(2),
+                                            ->columnSpan(1),
 
                                         Select::make('status')
                                             ->label('Status')
@@ -106,6 +107,18 @@ class TakeAttendance extends Page
                                             ->default('present')
                                             ->reactive()
                                             ->columnSpan(1),
+
+                                        Select::make('syllabus_technique_id')
+                                            ->label('Technique in Study')
+                                            ->options(function ($get) {
+                                                $studentId = $get('student_id');
+                                                $academyId = Auth::user()->academy_id;
+                                                $currentTechId = $get('syllabus_technique_id');
+                                                if (!$studentId) return [];
+                                                return \App\Models\SyllabusTechnique::getSelectableTechniquesForStudent((int) $studentId, (int) $academyId, $currentTechId ? (int) $currentTechId : null);
+                                            })
+                                            ->searchable()
+                                            ->columnSpan(2),
 
                                         TimePicker::make('actual_arrival_time')
                                             ->label('Arrival Time')
@@ -122,11 +135,6 @@ class TakeAttendance extends Page
                                                 5 => '5 - Excellent',
                                             ])
                                             ->visible(fn (callable $get) => in_array($get('status'), ['present', 'late']))
-                                            ->columnSpan(1),
-
-                                        Textarea::make('notes')
-                                            ->label('Notes')
-                                            ->rows(1)
                                             ->columnSpan(1),
                                     ]),
                             ])
@@ -165,7 +173,7 @@ class TakeAttendance extends Page
     public function saveAttendance(): void
     {
         $data = $this->form->getState();
-        
+
         try {
             // Save each student's attendance
             foreach ($data['students'] as $studentData) {
@@ -177,6 +185,7 @@ class TakeAttendance extends Page
                     [
                         'academy_id' => Auth::user()->academy_id,
                         'status' => $studentData['status'],
+                        'syllabus_technique_id' => $studentData['syllabus_technique_id'] ?? null,
                         'actual_arrival_time' => $studentData['actual_arrival_time'] ?? null,
                         'participation_level' => $studentData['participation_level'] ?? null,
                         'progress_notes' => $studentData['progress_notes'] ?? null,
