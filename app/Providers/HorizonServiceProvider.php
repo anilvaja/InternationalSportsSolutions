@@ -3,33 +3,47 @@
 namespace App\Providers;
 
 use Illuminate\Support\Facades\Gate;
-use Laravel\Horizon\Horizon;
-use Laravel\Horizon\HorizonApplicationServiceProvider;
+use Illuminate\Support\ServiceProvider;
 
-class HorizonServiceProvider extends HorizonApplicationServiceProvider
-{
-    /**
-     * Bootstrap any application services.
-     */
-    public function boot(): void
+if (! class_exists(\Laravel\Horizon\HorizonApplicationServiceProvider::class)) {
+    class HorizonServiceProvider extends ServiceProvider
     {
-        parent::boot();
+        public function register(): void
+        {
+            //
+        }
 
-        Horizon::auth(function ($request) {
-            $user = $request->user();
-            return $user && (bool) $user->is_super_admin;
-        });
+        public function boot(): void
+        {
+            //
+        }
     }
-
-    /**
-     * Register the Horizon gate.
-     *
-     * This gate determines who can access Horizon in non-local environments.
-     */
-    protected function gate(): void
+} else {
+    class HorizonServiceProvider extends \Laravel\Horizon\HorizonApplicationServiceProvider
     {
-        Gate::define('viewHorizon', function ($user = null) {
-            return $user && (bool) $user->is_super_admin;
-        });
+        /**
+         * Bootstrap any application services.
+         */
+        public function boot(): void
+        {
+            parent::boot();
+
+            \Laravel\Horizon\Horizon::auth(function ($request) {
+                $user = $request->user();
+                return $user && (bool) $user->is_super_admin;
+            });
+        }
+
+        /**
+         * Register the Horizon gate.
+         *
+         * This gate determines who can access Horizon in non-local environments.
+         */
+        protected function gate(): void
+        {
+            Gate::define('viewHorizon', function ($user = null) {
+                return $user && (bool) $user->is_super_admin;
+            });
+        }
     }
 }
