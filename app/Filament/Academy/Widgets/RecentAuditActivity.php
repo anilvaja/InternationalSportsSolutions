@@ -37,13 +37,17 @@ class RecentAuditActivity extends BaseWidget
             ->query(
                 Audit::query()
                     ->where('created_at', '>=', $oneDayAgo)
-                    ->whereIn('auditable_type', $allowedModels)
+                    ->where(function ($q) use ($allowedModels) {
+                        $q->whereIn('subject_type', $allowedModels)
+                          ->orWhereIn('auditable_type', $allowedModels);
+                    })
                     ->latest()
                     ->limit(50)
             )
             ->columns([
                 Tables\Columns\BadgeColumn::make('event')
                     ->label('Action')
+                    ->getStateUsing(fn ($record) => $record->event ?? $record->description ?? 'logged')
                     ->colors([
                         'success' => 'created',
                         'warning' => 'updated',
@@ -54,8 +58,9 @@ class RecentAuditActivity extends BaseWidget
                 Tables\Columns\TextColumn::make('model_name')
                     ->label('Model'),
                 
-                Tables\Columns\TextColumn::make('auditable_id')
-                    ->label('ID'),
+                Tables\Columns\TextColumn::make('subject_id')
+                    ->label('ID')
+                    ->getStateUsing(fn ($record) => $record->subject_id ?? $record->auditable_id ?? '-'),
                 
                 Tables\Columns\TextColumn::make('user_name')
                     ->label('User'),

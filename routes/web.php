@@ -24,4 +24,6 @@ Route::prefix('academy')->name('academy.')->middleware(['auth:academy', SetAcade
     Route::get('/print/fees/{fee}', [PrintController::class, 'fee'])->name('fee.print');
     Route::get('/print/events/{event}/participants', [PrintController::class, 'eventParticipants'])->name('events.participants.print');
 });
-
+// Redirect alias for activity log URL
+Route::get('/activity-log', fn () => redirect('/academy/audits'));
+Route::get('/activity-logs', fn () => redirect('/academy/audits'));
