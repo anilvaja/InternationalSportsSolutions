@@ -188,7 +188,21 @@ class StaffAttendance extends Model
 
     public function calculatePay(): float
     {
-        if (in_array($this->status, ['absent', 'on_leave', 'rejected'])) {
+        // Check if on_leave is a paid leave
+        $isPaidLeave = false;
+        if ($this->status === 'on_leave') {
+            $leave = StaffLeave::where('academy_id', $this->academy_id)
+                ->where('user_id', $this->user_id)
+                ->where('status', 'approved')
+                ->whereDate('start_date', '<=', $this->attendance_date)
+                ->whereDate('end_date', '>=', $this->attendance_date)
+                ->first();
+            if ($leave && $leave->is_paid) {
+                $isPaidLeave = true;
+            }
+        }
+
+        if (in_array($this->status, ['absent', 'rejected']) || ($this->status === 'on_leave' && !$isPaidLeave)) {
             return 0.00;
         }
 
@@ -208,9 +222,18 @@ class StaffAttendance extends Model
 
         if ($type === 'monthly') {
             $monthlySalary = (float) ($this->monthly_salary_snapshot ?? 0);
-            $standardDailyHours = (float) ($this->user?->standard_daily_hours ?: 5.0);
+            $userObj = $this->user ?: ($this->user_id ? User::find($this->user_id) : null);
+            $setting = $userObj ? StaffAttendanceSetting::getOrCreateForUser($userObj) : null;
+            $workingDays = max(1, $setting?->working_days_per_month ?: 26);
+
+            $dailyPay = $monthlySalary / (float) $workingDays;
+
+            if ($isPaidLeave) {
+                return round($dailyPay, 2);
+            }
+
+            $standardDailyHours = (float) ($userObj?->standard_daily_hours ?: 5.0);
             $standardDailyMinutes = max(1, $standardDailyHours * 60);
-            $dailyPay = $monthlySalary / 26.0;
 
             if ($payableMins >= $standardDailyMinutes) {
                 return round($dailyPay, 2);

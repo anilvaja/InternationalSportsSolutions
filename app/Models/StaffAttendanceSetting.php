@@ -59,6 +59,12 @@ class StaffAttendanceSetting extends Model
         'approval_authority_user_id',
         'approval_threshold_minutes',
         'max_backdate_days',
+        'salary_visibility_day',
+        'salary_cycle_start_day',
+        'salary_cycle_end_day',
+        'weekly_working_days',
+        'fix_paid_leaves_per_year',
+        'flexible_leaves_per_year',
         'branch_id',
         'schedule_source',
     ];
@@ -76,6 +82,12 @@ class StaffAttendanceSetting extends Model
             'overtime_hourly_rate' => 'decimal:2',
             'approval_threshold_minutes' => 'integer',
             'max_backdate_days' => 'integer',
+            'salary_visibility_day' => 'integer',
+            'salary_cycle_start_day' => 'integer',
+            'salary_cycle_end_day' => 'integer',
+            'weekly_working_days' => 'integer',
+            'fix_paid_leaves_per_year' => 'integer',
+            'flexible_leaves_per_year' => 'integer',
         ];
     }
 
@@ -126,6 +138,12 @@ class StaffAttendanceSetting extends Model
                 'approval_authority_type' => 'academy_admin',
                 'approval_threshold_minutes' => 30,
                 'max_backdate_days' => 2,
+                'salary_visibility_day' => 5,
+                'salary_cycle_start_day' => 1,
+                'salary_cycle_end_day' => 31,
+                'weekly_working_days' => 6,
+                'fix_paid_leaves_per_year' => 12,
+                'flexible_leaves_per_year' => 4,
             ]
         );
     }

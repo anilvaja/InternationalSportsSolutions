@@ -93,7 +93,18 @@ class MyAttendance extends Page implements HasForms, HasTable
 
                 Tables\Columns\TextColumn::make('calculated_pay')
                     ->label('Calculated Pay')
-                    ->money('INR')
+                    ->formatStateUsing(function ($state, StaffAttendance $record) {
+                        $user = Auth::user();
+                        $setting = \App\Models\StaffAttendanceSetting::where('academy_id', $user->academy_id)->where('user_id', $user->id)->first();
+                        $visibilityDay = $setting?->salary_visibility_day ?? 5;
+                        $recordDate = Carbon::parse($record->attendance_date);
+
+                        if ($recordDate->isCurrentMonth() && (int) now()->format('j') < $visibilityDay) {
+                            return "Locked (Visible on {$visibilityDay}th)";
+                        }
+
+                        return '₹' . number_format((float) $state, 2);
+                    })
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('status')
@@ -374,6 +385,76 @@ class MyAttendance extends Page implements HasForms, HasTable
                         ->title('Correction Request Sent')
                         ->body('Submitted to Academy Admin for review.')
                         ->info()
+                        ->send();
+                }),
+
+            Actions\Action::make('apply_for_leave')
+                ->label('Apply for Leave')
+                ->icon('heroicon-o-document-plus')
+                ->color('success')
+                ->form([
+                    Forms\Components\Select::make('leave_type')
+                        ->label('Leave Type')
+                        ->options([
+                            'fixed_paid' => 'Fixed Paid Leave',
+                            'flexible_religious' => 'Flexible Religious Holiday Claim',
+                            'casual' => 'Casual Leave',
+                            'sick' => 'Sick Leave',
+                            'unpaid' => 'Unpaid Leave',
+                        ])
+                        ->reactive()
+                        ->default('fixed_paid')
+                        ->required(),
+
+                    Forms\Components\Select::make('organization_holiday_id')
+                        ->label('Select Religious Holiday')
+                        ->options(function () {
+                            $user = Auth::user();
+                            return \App\Models\OrganizationHoliday::forAcademy($user->academy_id)
+                                ->where('type', 'flexible_religious')
+                                ->pluck('title', 'id');
+                        })
+                        ->visible(fn (Forms\Get $get) => $get('leave_type') === 'flexible_religious')
+                        ->searchable(),
+
+                    Forms\Components\DatePicker::make('start_date')
+                        ->label('Start Date')
+                        ->default(now())
+                        ->required(),
+
+                    Forms\Components\DatePicker::make('end_date')
+                        ->label('End Date')
+                        ->default(now())
+                        ->required(),
+
+                    Forms\Components\Textarea::make('reason')
+                        ->label('Reason for Leave')
+                        ->rows(2)
+                        ->required(),
+                ])
+                ->action(function (array $data) {
+                    $user = Auth::user();
+                    $start = Carbon::parse($data['start_date']);
+                    $end = Carbon::parse($data['end_date']);
+                    $totalDays = max(1, $start->diffInDays($end) + 1);
+
+                    \App\Models\StaffLeave::create([
+                        'academy_id' => $user->academy_id,
+                        'user_id' => $user->id,
+                        'leave_type' => $data['leave_type'],
+                        'organization_holiday_id' => $data['organization_holiday_id'] ?? null,
+                        'start_date' => $start->toDateString(),
+                        'end_date' => $end->toDateString(),
+                        'total_days' => $totalDays,
+                        'reason' => $data['reason'],
+                        'status' => 'pending',
+                        'is_paid' => in_array($data['leave_type'], ['fixed_paid', 'flexible_religious', 'casual', 'sick']),
+                    ]);
+
+                    Notification::make()
+                        ->title('Leave Application Submitted')
+                        ->body('Your leave request has been sent to Academy Admin for approval.')
+                        ->success()
                         ->send();
                 }),
         ];

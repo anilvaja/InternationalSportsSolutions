@@ -173,6 +173,67 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                             ->default('specific_user'),
                     ]),
 
+                Section::make('Salary Visibility, Cycle & Organization Leave Quotas')
+                    ->description('Configure salary visibility dates, payroll cycle range, weekly work schedule, and leave quotas')
+                    ->schema([
+                        Grid::make(3)->schema([
+                            Forms\Components\TextInput::make('salary_visibility_day')
+                                ->label('Salary Visibility Date (Day of Month)')
+                                ->numeric()
+                                ->minValue(1)
+                                ->maxValue(31)
+                                ->default(5)
+                                ->required()
+                                ->helperText('Date of the month when salary details become visible to staff (e.g. 5th)'),
+
+                            Forms\Components\TextInput::make('salary_cycle_start_day')
+                                ->label('Salary Cycle Start Day')
+                                ->numeric()
+                                ->minValue(1)
+                                ->maxValue(31)
+                                ->default(1)
+                                ->required()
+                                ->helperText('Default start day of monthly calculation cycle (e.g. 1st)'),
+
+                            Forms\Components\TextInput::make('salary_cycle_end_day')
+                                ->label('Salary Cycle End Day')
+                                ->numeric()
+                                ->minValue(1)
+                                ->maxValue(31)
+                                ->default(31)
+                                ->required()
+                                ->helperText('Default end day of monthly calculation cycle (e.g. 31st or 30th)'),
+                        ]),
+
+                        Grid::make(3)->schema([
+                            Forms\Components\Select::make('weekly_working_days')
+                                ->label('Weekly Working Pattern')
+                                ->options([
+                                    5 => '5 Days / Week (Mon - Fri)',
+                                    6 => '6 Days / Week (Mon - Sat)',
+                                ])
+                                ->default(6)
+                                ->required()
+                                ->helperText('Determines total working days per month for daily rate division'),
+
+                            Forms\Components\TextInput::make('fix_paid_leaves_per_year')
+                                ->label('Annual Fixed Paid Leaves')
+                                ->numeric()
+                                ->default(12)
+                                ->suffix('days')
+                                ->required()
+                                ->helperText('Fixed organization paid leaves per year'),
+
+                            Forms\Components\TextInput::make('flexible_leaves_per_year')
+                                ->label('Annual Flexible Religious Leaves')
+                                ->numeric()
+                                ->default(4)
+                                ->suffix('days')
+                                ->required()
+                                ->helperText('Religious / optional holiday quota staff can claim per year'),
+                        ]),
+                    ]),
+
                 Forms\Components\Hidden::make('academy_id')
                     ->default($academyId),
             ]);
