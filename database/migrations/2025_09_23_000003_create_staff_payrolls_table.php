@@ -33,7 +33,7 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
 
-            $table->index(['academy_id', 'period_start_date', 'period_end_date']);
+            $table->index(['academy_id', 'period_start_date', 'period_end_date'], 'staff_payrolls_acad_period_idx');
             $table->index(['academy_id', 'user_id']);
         });
     }

@@ -29,7 +29,7 @@ return new class extends Migration
             $table->timestamp('reviewed_at')->nullable();
             $table->timestamps();
 
-            $table->index(['academy_id', 'user_id', 'status']);
+            $table->index(['academy_id', 'user_id', 'status'], 'staff_att_corr_acad_usr_stat_idx');
         });
     }
 
