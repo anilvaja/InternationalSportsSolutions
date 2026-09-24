@@ -16,15 +16,15 @@ class RestrictAcademyAccess
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // Allow access if user is not authenticated (for login page)
-        if (!Auth::check()) {
+        // Allow access if user is not authenticated on academy guard (for login page)
+        if (!Auth::guard('academy')->check()) {
             return $next($request);
         }
 
-        $user = Auth::user();
+        $user = Auth::guard('academy')->user();
 
         // Allow super admins to access the academy panel
-        if ($user->is_super_admin) {
+        if ($user && $user->is_super_admin) {
             if ($user->academy_id === null) {
                 $firstAcademy = \App\Models\Academy::first();
                 if ($firstAcademy) {
@@ -36,22 +36,22 @@ class RestrictAcademyAccess
         }
 
         // Additional check: ensure user has an academy assigned
-        if ($user->academy_id === null) {
-            Auth::logout();
+        if (!$user || $user->academy_id === null) {
+            Auth::guard('academy')->logout();
             return redirect()->route('filament.academy.auth.login')
                 ->withErrors(['email' => 'You are not assigned to any academy. Please contact support.']);
         }
 
         // Additional check: ensure user status is active
         if ($user->is_active === false || ($user->status && $user->status !== 'active')) {
-            Auth::logout();
+            Auth::guard('academy')->logout();
             return redirect()->route('filament.academy.auth.login')
                 ->withErrors(['email' => 'Your user account is inactive or suspended. Please contact support.']);
         }
 
         // Additional check: ensure user's academy is active
         if ($user->academy && $user->academy->status !== 'active') {
-            Auth::logout();
+            Auth::guard('academy')->logout();
             return redirect()->route('filament.academy.auth.login')
                 ->withErrors(['email' => 'Your academy account is not active. Please contact support.']);
         }
