@@ -39,8 +39,8 @@
                                             @case('heroicon-o-clipboard-document-check')
                                                 <x-heroicon-o-clipboard-document-check class="w-5 h-5" />
                                                 @break
-                                            @case('heroicon-o-user-check')
-                                                <x-heroicon-o-user-check class="w-5 h-5" />
+                                            @case('heroicon-o-clock')
+                                                <x-heroicon-o-clock class="w-5 h-5" />
                                                 @break
                                             @case('heroicon-o-academic-cap')
                                                 <x-heroicon-o-academic-cap class="w-5 h-5" />

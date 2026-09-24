@@ -38,7 +38,7 @@ class QuickLaunchpadWidget extends Widget
             $links[] = [
                 'title' => 'My Attendance & Pay',
                 'description' => 'Clock-in/out & work hours log',
-                'icon' => 'heroicon-o-user-check',
+                'icon' => 'heroicon-o-clock',
                 'url' => url('/academy/my-attendances'),
                 'create_url' => url('/academy/my-attendances'),
                 'create_label' => 'Log Check-In',
