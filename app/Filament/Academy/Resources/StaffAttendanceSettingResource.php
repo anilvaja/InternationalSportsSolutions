@@ -139,38 +139,30 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                         ]),
                     ]),
 
-                Section::make('Approval Hierarchy & Threshold Settings')
-                    ->description('Specify approval authority and threshold time for extra hours approval')
+                Section::make('Approval Authority & Threshold Settings')
+                    ->description('Assign the specific admin/approver and threshold time for extended attendance approval')
                     ->schema([
-                        Grid::make(3)->schema([
-                            Forms\Components\Select::make('approval_authority_type')
-                                ->label('Approval Authority')
-                                ->options([
-                                    'academy_admin' => 'Academy Admin',
-                                    'branch_head' => 'Branch Head',
-                                    'head_coach' => 'Head Coach',
-                                    'specific_user' => 'Specific Employee',
-                                ])
-                                ->default('academy_admin')
-                                ->required()
-                                ->reactive(),
-
+                        Grid::make(2)->schema([
                             Forms\Components\Select::make('approval_authority_user_id')
-                                ->label('Specific Approver User')
+                                ->label('Assigned Approver (Admin / Branch Manager)')
                                 ->options(function () use ($academyId) {
                                     return User::where('academy_id', $academyId)
                                         ->pluck('name', 'id');
                                 })
                                 ->searchable()
-                                ->visible(fn ($get) => $get('approval_authority_type') === 'specific_user'),
+                                ->required()
+                                ->helperText('Select the specific admin or branch manager responsible for approving extended attendance timings'),
 
                             Forms\Components\TextInput::make('approval_threshold_minutes')
                                 ->label('Approval Threshold (Minutes)')
                                 ->numeric()
                                 ->default(30)
                                 ->suffix('mins')
-                                ->helperText('Extra hours ≤ threshold are auto-approved; > threshold require approval'),
+                                ->helperText('Extra hours ≤ threshold are auto-approved; > threshold require approval by assigned approver'),
                         ]),
+
+                        Forms\Components\Hidden::make('approval_authority_type')
+                            ->default('specific_user'),
                     ]),
 
                 Forms\Components\Hidden::make('academy_id')
@@ -184,6 +176,12 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
             ->columns([
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Staff Member')
+                    ->searchable()
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('branch.name')
+                    ->label('Branch')
+                    ->placeholder('All Branches')
                     ->searchable()
                     ->sortable(),
 
@@ -202,8 +200,9 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                     ->suffix(' hrs')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('approval_authority_type')
-                    ->label('Approval Authority')
+                Tables\Columns\TextColumn::make('approvalAuthorityUser.name')
+                    ->label('Assigned Approver')
+                    ->placeholder('Academy Admin')
                     ->badge()
                     ->color('info'),
 
