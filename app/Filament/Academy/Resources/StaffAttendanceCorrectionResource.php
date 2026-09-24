@@ -27,9 +27,9 @@ class StaffAttendanceCorrectionResource extends BaseAcademyResource
 
     protected static ?string $pluralModelLabel = 'Attendance Corrections';
 
-    protected static ?string $navigationGroup = 'Staff Management';
+    protected static ?string $navigationGroup = 'STAFF MANAGEMENT';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 3;
 
     public static function getEloquentQuery(): Builder
     {

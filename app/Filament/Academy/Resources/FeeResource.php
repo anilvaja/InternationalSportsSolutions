@@ -17,13 +17,13 @@ class FeeResource extends BaseAcademyResource
 {
     protected static ?string $model = Fee::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-currency-dollar';
+    protected static ?string $navigationIcon = 'heroicon-o-banknotes';
     
     protected static ?string $navigationLabel = 'Fee Collection';
     
-    protected static ?string $navigationGroup = 'Academy Management';
+    protected static ?string $navigationGroup = 'FINANCE';
     
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 1;
 
     public static function getEloquentQuery(): Builder
     {

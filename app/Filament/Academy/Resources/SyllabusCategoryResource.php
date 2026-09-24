@@ -22,11 +22,11 @@ class SyllabusCategoryResource extends BaseAcademyResource
 
     protected static ?string $navigationIcon = 'heroicon-o-folder-open';
     
-    protected static ?string $navigationGroup = 'Academy Management';
+    protected static ?string $navigationGroup = 'ACADEMIC';
     
     protected static ?string $navigationLabel = 'Syllabus Categories';
     
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 1;
 
     public static function form(Form $form): Form
     {

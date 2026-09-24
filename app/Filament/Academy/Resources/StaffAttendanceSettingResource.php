@@ -31,9 +31,9 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
 
     protected static ?string $pluralModelLabel = 'Staff Attendance Settings';
 
-    protected static ?string $navigationGroup = 'Staff Management';
+    protected static ?string $navigationGroup = 'STAFF MANAGEMENT';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 4;
 
     public static function getEloquentQuery(): Builder
     {

@@ -24,14 +24,14 @@ class BranchResource extends BaseAcademyResource
     protected static ?string $model = Branch::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-building-office';
-    protected static ?string $navigationGroup = 'Academy Management';
+    protected static ?string $navigationGroup = 'ACADEMY';
     protected static ?string $navigationLabel = 'Branches';
     
     protected static ?string $modelLabel = 'Branch';
     
     protected static ?string $pluralModelLabel = 'Branches';
     
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 5;
 
     public static function form(Form $form): Form
     {

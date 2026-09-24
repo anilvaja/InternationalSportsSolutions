@@ -29,9 +29,9 @@ class BatchResource extends BaseAcademyResource
 
     protected static ?string $pluralModelLabel = 'Batches';
 
-    protected static ?string $navigationGroup = 'Academy Management';
+    protected static ?string $navigationGroup = 'ACADEMY';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 2;
 
 
 

@@ -17,17 +17,17 @@ class OrganizationHolidayResource extends BaseAcademyResource
 {
     protected static ?string $model = OrganizationHoliday::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-calendar';
+    protected static ?string $navigationIcon = 'heroicon-o-sun';
 
-    protected static ?string $navigationLabel = 'Organization Holidays';
+    protected static ?string $navigationLabel = 'Holidays';
 
     protected static ?string $modelLabel = 'Organization Holiday';
 
     protected static ?string $pluralModelLabel = 'Organization Holidays';
 
-    protected static ?string $navigationGroup = 'Staff Management';
+    protected static ?string $navigationGroup = 'SCHEDULE & EVENTS';
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 2;
 
     public static function getEloquentQuery(): Builder
     {

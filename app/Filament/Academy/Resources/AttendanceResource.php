@@ -29,15 +29,15 @@ class AttendanceResource extends BaseAcademyResource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
     
-    protected static ?string $navigationLabel = 'Attendance';
+    protected static ?string $navigationLabel = 'Class Attendance';
     
     protected static ?string $modelLabel = 'Batch Attendance';
     
     protected static ?string $pluralModelLabel = 'Batch Attendances';
 
-    protected static ?string $navigationGroup = 'Classes';
+    protected static ?string $navigationGroup = 'ACADEMY';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 3;
 
 
 

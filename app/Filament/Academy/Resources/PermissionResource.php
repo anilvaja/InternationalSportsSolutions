@@ -25,7 +25,7 @@ class PermissionResource extends BaseAcademyResource
 
     protected static ?string $pluralModelLabel = 'Permissions';
 
-    protected static ?string $navigationGroup = 'Access Management';
+    protected static ?string $navigationGroup = 'ADMINISTRATION';
 
     protected static ?int $navigationSort = 2;
 

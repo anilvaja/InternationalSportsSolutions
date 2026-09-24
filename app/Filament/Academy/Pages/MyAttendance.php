@@ -31,9 +31,9 @@ class MyAttendance extends Page implements HasForms, HasTable
 
     protected static ?string $navigationLabel = 'My Attendance & Pay';
 
-    protected static ?string $navigationGroup = 'Staff Management';
+    protected static ?string $navigationGroup = 'STAFF MANAGEMENT';
 
-    protected static ?int $navigationSort = 0;
+    protected static ?int $navigationSort = 5;
 
     public static function canAccess(): bool
     {

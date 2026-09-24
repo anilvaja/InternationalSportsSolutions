@@ -39,6 +39,14 @@ class AcademyPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Academy/Resources'), for: 'App\\Filament\\Academy\\Resources')
             ->discoverPages(in: app_path('Filament/Academy/Pages'), for: 'App\\Filament\\Academy\\Pages')
             ->discoverWidgets(in: app_path('Filament/Academy/Widgets'), for: 'App\\Filament\\Academy\\Widgets')
+            ->navigationGroups([
+                'ACADEMY',
+                'FINANCE',
+                'ACADEMIC',
+                'SCHEDULE & EVENTS',
+                'STAFF MANAGEMENT',
+                'ADMINISTRATION',
+            ])
             ->widgets([
                 Widgets\AccountWidget::class,
             ])

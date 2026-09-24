@@ -32,9 +32,9 @@ class AcademySettings extends Page implements HasForms
     
     protected static ?string $navigationLabel = 'Academy Settings';
     
-    protected static ?string $navigationGroup = 'Settings';
+    protected static ?string $navigationGroup = 'ADMINISTRATION';
     
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 3;
 
     public ?array $data = [];
 

@@ -17,9 +17,9 @@ use Illuminate\Support\Facades\Auth;
 class EmailSettings extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-envelope';
-    protected static ?string $navigationGroup = 'Settings';
+    protected static ?string $navigationGroup = 'ADMINISTRATION';
     protected static ?string $navigationLabel = 'Email Settings';
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 5;
     protected static string $view = 'filament.pages.email-settings';
 
     public ?array $data = [];

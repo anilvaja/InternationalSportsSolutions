@@ -18,9 +18,9 @@ use Illuminate\Support\Facades\Auth;
 class SmsSettings extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-device-phone-mobile';
-    protected static ?string $navigationGroup = 'Settings';
+    protected static ?string $navigationGroup = 'ADMINISTRATION';
     protected static ?string $navigationLabel = 'SMS Settings';
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 6;
     protected static string $view = 'filament.pages.sms-settings';
 
     public ?array $data = [];

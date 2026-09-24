@@ -27,9 +27,9 @@ class CurrencySettings extends Page implements HasForms
     
     protected static ?string $navigationLabel = 'Currency & Timezone Settings';
     
-    protected static ?string $navigationGroup = 'Settings';
+    protected static ?string $navigationGroup = 'ADMINISTRATION';
     
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 2;
 
     public ?array $data = [];
 

@@ -22,9 +22,9 @@ use App\Support\CurrencyHelper;
 class EventFeeResource extends BaseAcademyResource
 {
     protected static ?string $model = EventFee::class;
-    protected static ?string $navigationIcon = 'heroicon-o-currency-dollar';
+    protected static ?string $navigationIcon = 'heroicon-o-receipt-percent';
     protected static ?string $navigationLabel = 'Event Fees';
-    protected static ?string $navigationGroup = 'Events Management';
+    protected static ?string $navigationGroup = 'FINANCE';
     protected static ?int $navigationSort = 2;
 
     public static function canAccess(): bool

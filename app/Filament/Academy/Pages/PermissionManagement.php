@@ -29,9 +29,9 @@ class PermissionManagement extends Page implements HasForms, HasTable
     
     protected static string $view = 'filament.academy.pages.permission-management';
     
-    protected static ?string $navigationGroup = 'Access Management';
+    protected static ?string $navigationGroup = 'ADMINISTRATION';
     
-    protected static ?int $navigationSort = 15;
+    protected static ?int $navigationSort = 1;
 
     public $selectedRole = null;
     public $permissionMatrix = [];

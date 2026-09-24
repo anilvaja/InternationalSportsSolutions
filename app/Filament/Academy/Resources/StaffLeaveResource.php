@@ -21,7 +21,7 @@ class StaffLeaveResource extends BaseAcademyResource
 {
     protected static ?string $model = StaffLeave::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-document-text';
+    protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
 
     protected static ?string $navigationLabel = 'Staff Leaves & Approvals';
 
@@ -29,9 +29,9 @@ class StaffLeaveResource extends BaseAcademyResource
 
     protected static ?string $pluralModelLabel = 'Staff Leaves';
 
-    protected static ?string $navigationGroup = 'Staff Management';
+    protected static ?string $navigationGroup = 'STAFF MANAGEMENT';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 2;
 
     public static function getEloquentQuery(): Builder
     {

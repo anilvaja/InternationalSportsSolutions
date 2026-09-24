@@ -24,11 +24,11 @@ class SyllabusTechniqueResource extends BaseAcademyResource
 
     protected static ?string $navigationIcon = 'heroicon-o-book-open';
     
-    protected static ?string $navigationGroup = 'Academy Management';
+    protected static ?string $navigationGroup = 'ACADEMIC';
     
     protected static ?string $navigationLabel = 'Syllabus Techniques';
     
-    protected static ?int $navigationSort = 6;
+    protected static ?int $navigationSort = 2;
 
     public static function canAccess(): bool
     {

@@ -24,9 +24,9 @@ class StudentResource extends BaseAcademyResource
 {
     protected static ?string $model = Student::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
-    
-    protected static ?string $navigationGroup = 'Academy Management';
+    protected static ?string $navigationIcon = 'heroicon-o-academic-cap';
+    protected static ?string $navigationGroup = 'ACADEMY';
+    protected static ?int $navigationSort = 1;
 
     public static function form(Form $form): Form
     {

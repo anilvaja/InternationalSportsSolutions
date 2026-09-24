@@ -25,15 +25,15 @@ class UserResource extends BaseAcademyResource
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
     
-    protected static ?string $navigationLabel = 'Users';
+    protected static ?string $navigationLabel = 'Coaches & Staff';
     
-    protected static ?string $modelLabel = 'User';
+    protected static ?string $modelLabel = 'Staff User';
     
-    protected static ?string $pluralModelLabel = 'Users';
+    protected static ?string $pluralModelLabel = 'Coaches & Staff';
     
-    protected static ?string $navigationGroup = 'Access Management';
+    protected static ?string $navigationGroup = 'ACADEMY';
     
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 4;
 
     public static function getEloquentQuery(): Builder
     {

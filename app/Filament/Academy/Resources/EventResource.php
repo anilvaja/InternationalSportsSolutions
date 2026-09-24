@@ -26,9 +26,9 @@ class EventResource extends BaseAcademyResource
 {
     protected static ?string $model = Event::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
+    protected static ?string $navigationIcon = 'heroicon-o-trophy';
 
-    protected static ?string $navigationGroup = 'Events Management';
+    protected static ?string $navigationGroup = 'SCHEDULE & EVENTS';
 
     protected static ?int $navigationSort = 1;
 

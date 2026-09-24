@@ -28,9 +28,9 @@ class AcademyRoleResource extends BaseAcademyResource
     
     protected static ?string $pluralModelLabel = 'Roles';
     
-    protected static ?string $navigationGroup = 'Access Management';
+    protected static ?string $navigationGroup = 'ADMINISTRATION';
     
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 1;
 
     public static function getEloquentQuery(): Builder
     {

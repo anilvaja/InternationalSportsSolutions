@@ -29,9 +29,9 @@ class StaffPayrollResource extends BaseAcademyResource
 
     protected static ?string $pluralModelLabel = 'Staff Payrolls';
 
-    protected static ?string $navigationGroup = 'Staff Management';
+    protected static ?string $navigationGroup = 'FINANCE';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 3;
 
     public static function getEloquentQuery(): Builder
     {
