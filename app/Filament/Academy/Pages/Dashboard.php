@@ -2,10 +2,11 @@
 
 namespace App\Filament\Academy\Pages;
 
-use App\Filament\Academy\Widgets\AbsenteeStudents;
-use App\Filament\Academy\Widgets\FeesOverview;
-use App\Filament\Academy\Widgets\TodaysBatches;
-use App\Filament\Academy\Widgets\QuickLaunchpadWidget;
+use App\Filament\Academy\Widgets\AcademyHeaderWidget;
+use App\Filament\Academy\Widgets\AcademyOverviewStats;
+use App\Filament\Academy\Widgets\AttentionRequiredWidget;
+use App\Filament\Academy\Widgets\TodayOperationsWidget;
+use App\Filament\Academy\Widgets\FinanceOverviewStats;
 use App\Filament\Academy\Widgets\StaffCheckInWidget;
 use App\Filament\Academy\Widgets\StaffPayrollExpensesChart;
 use App\Filament\Academy\Widgets\RecentAuditActivity;
@@ -23,43 +24,40 @@ class Dashboard extends BaseDashboard
     {
         $widgets = [];
 
-        // Always show Quick Direct Access Launchpad at top
-        $widgets[] = QuickLaunchpadWidget::class;
+        // 1. Operational Header (Greeting, Branch Selector & Fast Action Pills)
+        $widgets[] = AcademyHeaderWidget::class;
 
-        // Always show Staff Attendance & Check-In Widget
-        $widgets[] = StaffCheckInWidget::class;
+        // 2. Top Key Performance Indicators (Students, Batches, Staff, Branches)
+        if (AcademyPermissionHelper::can('view_students') || AcademyPermissionHelper::can('view_batches')) {
+            $widgets[] = AcademyOverviewStats::class;
+        }
 
-        // Show Payroll Expenditure Chart if user has staff payroll permissions
+        // 3. Attention Required Alerts Panel (Action-oriented items today)
+        $widgets[] = AttentionRequiredWidget::class;
+
+        // 4. Prominent Today's Operations (Today's Attendance Summary & Batch Schedule Timeline)
+        if (AcademyPermissionHelper::can('view_attendances') || AcademyPermissionHelper::can('view_batches')) {
+            $widgets[] = TodayOperationsWidget::class;
+        }
+
+        // 5. Finance KPIs (Today's Collection, This Month, Pending & Overdue Fees in INR)
+        if (AcademyPermissionHelper::can('view_fees') || AcademyPermissionHelper::can('view_reports')) {
+            $widgets[] = FinanceOverviewStats::class;
+        }
+
+        // 6. Daily Staff Attendance & Self Clock-In Tracker
+        if (AcademyPermissionHelper::can('view_own_staff_attendances') || AcademyPermissionHelper::can('view_staff_attendances')) {
+            $widgets[] = StaffCheckInWidget::class;
+        }
+
+        // 7. Staff Payroll Trend Chart
         if (AcademyPermissionHelper::can('view_staff_payrolls') || AcademyPermissionHelper::can('view_reports')) {
             $widgets[] = StaffPayrollExpensesChart::class;
         }
-        
-        // Always show Account Widget
-        $widgets[] = Widgets\AccountWidget::class;
-        
-        // Permission-based widget visibility
-        $permissionWidgets = [
-            'view_fees' => FeesOverview::class,
-            'view_batches' => TodaysBatches::class,
-            'view_students' => AbsenteeStudents::class,
-            'view_audits' => RecentAuditActivity::class,
-        ];
-        
-        foreach ($permissionWidgets as $permission => $widgetClass) {
-            if (AcademyPermissionHelper::can($permission)) {
-                $widgets[] = $widgetClass;
-            }
-        }
-        
-        // If user has no specific permissions, show basic widgets
-        if (count($widgets) === 1) { // Only AccountWidget
-            // Show at least batches and students for any academy user
-            if (AcademyPermissionHelper::can('view_attendances')) {
-                $widgets[] = TodaysBatches::class;
-            }
-            if (AcademyPermissionHelper::can('view_attendances')) {
-                $widgets[] = AbsenteeStudents::class;
-            }
+
+        // 8. Recent Audit Activity Stream
+        if (AcademyPermissionHelper::can('view_audits')) {
+            $widgets[] = RecentAuditActivity::class;
         }
         
         return $widgets;

@@ -50,7 +50,7 @@ class StaffPayrollExpensesChart extends ChartWidget
         return [
             'datasets' => [
                 [
-                    'label' => 'Net Salary Payouts ($)',
+                    'label' => 'Net Salary Payouts (₹)',
                     'data' => $payrollData,
                     'backgroundColor' => '#0284c7',
                     'borderColor' => '#0284c7',
