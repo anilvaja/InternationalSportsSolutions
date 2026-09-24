@@ -31,6 +31,10 @@ class CurrencyHelper
      */
     public static function getAcademyCurrencySymbol(): string
     {
+        $customSymbol = Setting::get('currency_symbol', null);
+        if (!empty($customSymbol)) {
+            return $customSymbol;
+        }
         $currency = static::getAcademyCurrency();
         return static::$currencies[$currency]['symbol'] ?? '₹';
     }
@@ -40,6 +44,10 @@ class CurrencyHelper
      */
     public static function getAcademyCurrencyName(): string
     {
+        $customName = Setting::get('currency_name', null);
+        if (!empty($customName)) {
+            return $customName;
+        }
         $currency = static::getAcademyCurrency();
         return static::$currencies[$currency]['name'] ?? 'Indian Rupee';
     }
@@ -49,9 +57,7 @@ class CurrencyHelper
      */
     public static function format(float $amount, ?string $currency = null): string
     {
-        $currency = $currency ?? static::getAcademyCurrency();
-        $symbol = static::$currencies[$currency]['symbol'] ?? '₹';
-        
+        $symbol = static::getAcademyCurrencySymbol();
         return $symbol . ' ' . number_format($amount, 2);
     }
 
