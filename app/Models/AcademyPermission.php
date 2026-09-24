@@ -102,6 +102,53 @@ class AcademyPermission extends Model
                 'export_staff_attendances' => 'Export Staff Attendances',
             ],
 
+            // Staff Attendance Rules (StaffAttendanceSettingResource)
+            'staff_attendance_settings' => [
+                'view_staff_attendance_settings' => 'View Staff Attendance Rules',
+                'create_staff_attendance_settings' => 'Create Staff Attendance Rules',
+                'edit_staff_attendance_settings' => 'Edit Staff Attendance Rules',
+                'delete_staff_attendance_settings' => 'Delete Staff Attendance Rules',
+                'export_staff_attendance_settings' => 'Export Staff Attendance Rules',
+            ],
+
+            // Staff Attendance Corrections (StaffAttendanceCorrectionResource)
+            'staff_attendance_corrections' => [
+                'view_staff_attendance_corrections' => 'View Staff Attendance Corrections',
+                'create_staff_attendance_corrections' => 'Create Staff Attendance Corrections',
+                'edit_staff_attendance_corrections' => 'Edit Staff Attendance Corrections',
+                'delete_staff_attendance_corrections' => 'Delete Staff Attendance Corrections',
+                'export_staff_attendance_corrections' => 'Export Staff Attendance Corrections',
+                'approve_staff_attendance_corrections' => 'Approve Staff Attendance Corrections',
+            ],
+
+            // Staff Leaves & Approvals (StaffLeaveResource)
+            'staff_leaves' => [
+                'view_staff_leaves' => 'View Staff Leaves',
+                'create_staff_leaves' => 'Create Staff Leaves',
+                'edit_staff_leaves' => 'Edit Staff Leaves',
+                'delete_staff_leaves' => 'Delete Staff Leaves',
+                'export_staff_leaves' => 'Export Staff Leaves',
+                'approve_staff_leaves' => 'Approve Staff Leaves',
+            ],
+
+            // Organization Holidays (OrganizationHolidayResource)
+            'organization_holidays' => [
+                'view_organization_holidays' => 'View Organization Holidays',
+                'create_organization_holidays' => 'Create Organization Holidays',
+                'edit_organization_holidays' => 'Edit Organization Holidays',
+                'delete_organization_holidays' => 'Delete Organization Holidays',
+                'export_organization_holidays' => 'Export Organization Holidays',
+            ],
+
+            // Academy Administrators (AdminResource)
+            'admins' => [
+                'view_admins' => 'View Academy Admins',
+                'create_admins' => 'Create Academy Admins',
+                'edit_admins' => 'Edit Academy Admins',
+                'delete_admins' => 'Delete Academy Admins',
+                'export_admins' => 'Export Academy Admins',
+            ],
+
             // Staff Payroll Management (StaffPayrollResource)
             'staff_payrolls' => [
                 'view_staff_payrolls' => 'View Staff Payrolls',
