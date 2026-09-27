@@ -6,9 +6,15 @@
         "build": "vite build",
         "dev": "vite",
         "test:ui": "node scripts/open_ui_test_runner.js",
-        "test:ui:headless": "node scripts/open_ui_test_runner.js --headless"
+        "test:ui:headless": "node scripts/open_ui_test_runner.js --headless",
+        "test:e2e": "playwright test",
+        "test:e2e:ui": "playwright test --ui",
+        "test:e2e:headed": "playwright test --headed",
+        "test:e2e:visual": "playwright test --headed",
+        "test:e2e:report": "playwright show-report"
     },
     "devDependencies": {
+        "@playwright/test": "^1.63.0",
         "@tailwindcss/vite": "^4.1.12",
         "axios": "^1.8.2",
         "concurrently": "^9.0.1",
