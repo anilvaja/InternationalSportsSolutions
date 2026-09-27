@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
-import { BASE_URL } from './constants.js';
+import { BASE_URL, CREDENTIALS } from './constants.js';
+import { submitLoginForm } from './auth.js';
 
 /**
  * Reusable, comprehensive CRUD test executor for Filament & Laravel UI pages.
@@ -15,6 +16,7 @@ import { BASE_URL } from './constants.js';
  * @param {boolean} [options.hasCreate=true] - Whether resource supports Create
  * @param {boolean} [options.hasEdit=true] - Whether resource supports Edit
  * @param {boolean} [options.hasDelete=true] - Whether resource supports Delete
+ * @param {Object} [options.credentials] - Explicit credentials override
  */
 export async function testResourceCrudLifecycle(page, options) {
   const {
@@ -25,12 +27,41 @@ export async function testResourceCrudLifecycle(page, options) {
     editFields = {},
     hasCreate = true,
     hasEdit = true,
-    hasDelete = true
+    hasDelete = true,
+    credentials = null
   } = options;
 
   const fullBasePath = basePath.startsWith('http') ? basePath : `${BASE_URL}${basePath}`;
   const createPath = `${fullBasePath}/create`;
   const results = [];
+
+  const resolveCreds = () => {
+    if (credentials) return credentials;
+    if (module.includes('Super Admin') || module.includes('Admin Panel')) return CREDENTIALS.superAdmin;
+    if (module.includes('Academy Panel')) return CREDENTIALS.academyAdmin;
+    return CREDENTIALS.student;
+  };
+
+  const ensureNav = async (targetUrl) => {
+    if (page.url() !== targetUrl) {
+      try {
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+      } catch (e) {
+        if (!e.message.includes('ERR_ABORTED')) throw e;
+      }
+    }
+    if (page.url().includes('/login')) {
+      const creds = resolveCreds();
+      await submitLoginForm(page, creds.loginUrl, creds.email, creds.password);
+      if (page.url() !== targetUrl && !page.url().includes(targetUrl)) {
+        try {
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+        } catch (e) {
+          if (!e.message.includes('ERR_ABORTED')) throw e;
+        }
+      }
+    }
+  };
 
   const logStep = (step, success, details = '', error = null) => {
     const entry = { module, resourceName, step, success, details, error: error ? error.message : null, url: page.url() };
@@ -47,7 +78,7 @@ export async function testResourceCrudLifecycle(page, options) {
   // STEP 1: READ / LIST VIEW & NAVIGATION
   // =========================================================================
   try {
-    await page.goto(fullBasePath, { waitUntil: 'domcontentloaded' });
+    await ensureNav(fullBasePath);
     await expect(page.locator('body')).toBeVisible();
     logStep('READ (List Page Load)', true, `Loaded ${fullBasePath}`);
   } catch (err) {
@@ -75,7 +106,7 @@ export async function testResourceCrudLifecycle(page, options) {
   // =========================================================================
   if (hasCreate) {
     try {
-      await page.goto(createPath, { waitUntil: 'domcontentloaded' });
+      await ensureNav(createPath);
       
       const isCreatePage = page.url().includes('/create') || (await page.locator('button[type="submit"]').count()) > 0;
       if (isCreatePage) {
@@ -108,7 +139,7 @@ export async function testResourceCrudLifecycle(page, options) {
   // =========================================================================
   if (hasEdit) {
     try {
-      await page.goto(fullBasePath, { waitUntil: 'domcontentloaded' });
+      await ensureNav(fullBasePath);
       const editBtn = page.locator('a[href*="/edit"], button[title*="Edit"]').first();
       
       if (await editBtn.isVisible()) {
@@ -141,7 +172,7 @@ export async function testResourceCrudLifecycle(page, options) {
   // =========================================================================
   if (hasDelete) {
     try {
-      await page.goto(fullBasePath, { waitUntil: 'domcontentloaded' });
+      await ensureNav(fullBasePath);
       const deleteBtn = page.locator('button[title*="Delete"], button[aria-label*="Delete"], button:has-text("Delete")').first();
 
       if (await deleteBtn.isVisible()) {

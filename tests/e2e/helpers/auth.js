@@ -6,7 +6,13 @@ import { BASE_URL, CREDENTIALS } from './constants.js';
  */
 export async function submitLoginForm(page, loginUrl, email, password) {
   const fullUrl = loginUrl.startsWith('http') ? loginUrl : `${BASE_URL}${loginUrl}`;
-  await page.goto(fullUrl, { waitUntil: 'domcontentloaded' });
+  if (!page.url().includes(loginUrl)) {
+    try {
+      await page.goto(fullUrl, { waitUntil: 'domcontentloaded' });
+    } catch (e) {
+      if (!e.message.includes('ERR_ABORTED')) throw e;
+    }
+  }
   
   const emailSelector = 'input[type="email"], input[name="email"], input[id*="email"]';
   const passSelector = 'input[type="password"], input[name="password"], input[id*="password"]';
@@ -23,7 +29,9 @@ export async function submitLoginForm(page, loginUrl, email, password) {
       await page.keyboard.press('Enter');
     }
 
-    await page.waitForTimeout(2000);
+    // Wait for Livewire authentication redirect to complete
+    await page.waitForURL((url) => !url.href.includes('/login'), { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(1000);
   } catch (e) {
     console.warn(`[Auth Helper] Notice filling login form at ${fullUrl}: ${e.message}`);
   }
