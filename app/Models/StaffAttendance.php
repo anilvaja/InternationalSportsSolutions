@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\Auditable;
 use Carbon\Carbon;
 
-class StaffAttendance extends Model
+class StaffAttendance extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use HasFactory, SoftDeletes, Auditable;
 
@@ -224,7 +224,16 @@ class StaffAttendance extends Model
             $monthlySalary = (float) ($this->monthly_salary_snapshot ?? 0);
             $userObj = $this->user ?: ($this->user_id ? User::find($this->user_id) : null);
             $setting = $userObj ? StaffAttendanceSetting::getOrCreateForUser($userObj) : null;
-            $workingDays = max(1, $setting?->working_days_per_month ?: 26);
+
+            $attendanceDate = Carbon::parse($this->attendance_date ?: now());
+            $weeklyWorkingDays = (int) ($setting?->weekly_working_days ?: 6);
+            $calculatedWorkingDays = StaffAttendanceSetting::calculateWorkingDaysInMonth(
+                $weeklyWorkingDays,
+                $attendanceDate->year,
+                $attendanceDate->month
+            );
+
+            $workingDays = max(1, $setting?->working_days_per_month ?: $calculatedWorkingDays);
 
             $dailyPay = $monthlySalary / (float) $workingDays;
 

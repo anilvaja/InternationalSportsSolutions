@@ -10,7 +10,7 @@ use App\Traits\Auditable;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 
-class StaffLeave extends Model
+class StaffLeave extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use HasFactory, SoftDeletes, Auditable;
 

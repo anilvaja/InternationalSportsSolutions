@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\Auditable;
 
-class StaffAttendanceSetting extends Model
+class StaffAttendanceSetting extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use HasFactory, SoftDeletes, Auditable;
 
@@ -121,8 +121,36 @@ class StaffAttendanceSetting extends Model
         return $this->hasMany(StaffScheduleSlot::class, 'user_id', 'user_id');
     }
 
+    public static function calculateWorkingDaysInMonth(int $weeklyWorkingDays = 6, ?int $year = null, ?int $month = null): int
+    {
+        $year = $year ?? now()->year;
+        $month = $month ?? now()->month;
+
+        $startDate = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfDay();
+        $daysInMonth = $startDate->daysInMonth;
+        $workingDays = 0;
+
+        for ($day = 1; $day <= $daysInMonth; $day++) {
+            $date = \Carbon\Carbon::createFromDate($year, $month, $day);
+            if ($weeklyWorkingDays == 5) {
+                if (!$date->isWeekend()) {
+                    $workingDays++;
+                }
+            } else {
+                if ($date->dayOfWeek !== \Carbon\Carbon::SUNDAY) {
+                    $workingDays++;
+                }
+            }
+        }
+
+        return $workingDays;
+    }
+
     public static function getOrCreateForUser(User $user): self
     {
+        $defaultWeeklyDays = 6;
+        $calculatedWorkingDays = static::calculateWorkingDaysInMonth($defaultWeeklyDays);
+
         return static::firstOrCreate(
             [
                 'academy_id' => $user->academy_id,
@@ -133,6 +161,7 @@ class StaffAttendanceSetting extends Model
                 'salary_amount' => $user->monthly_salary ?? $user->hourly_rate ?? 0.00,
                 'expected_daily_hours' => $user->standard_daily_hours ?: 5.00,
                 'expected_daily_minutes' => (int)(($user->standard_daily_hours ?: 5.00) * 60),
+                'working_days_per_month' => $calculatedWorkingDays,
                 'overtime_applicable' => true,
                 'overtime_hourly_rate' => $user->overtime_hourly_rate,
                 'approval_authority_type' => 'academy_admin',
@@ -141,7 +170,7 @@ class StaffAttendanceSetting extends Model
                 'salary_visibility_day' => 5,
                 'salary_cycle_start_day' => 1,
                 'salary_cycle_end_day' => 31,
-                'weekly_working_days' => 6,
+                'weekly_working_days' => $defaultWeeklyDays,
                 'fix_paid_leaves_per_year' => 12,
                 'flexible_leaves_per_year' => 4,
             ]

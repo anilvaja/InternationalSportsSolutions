@@ -100,7 +100,7 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
 
                 Section::make('Working Hours & Overtime Rules')
                     ->schema([
-                        Grid::make(3)->schema([
+                        Grid::make(4)->schema([
                             Forms\Components\TextInput::make('expected_daily_hours')
                                 ->label('Expected Hours / Day')
                                 ->numeric()
@@ -115,10 +115,28 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                                 ->default(300)
                                 ->suffix('mins'),
 
+                            Forms\Components\Select::make('weekly_working_days')
+                                ->label('Weekly Working Pattern')
+                                ->options([
+                                    5 => '5 Days / Week (Mon - Fri)',
+                                    6 => '6 Days / Week (Mon - Sat)',
+                                ])
+                                ->default(6)
+                                ->required()
+                                ->reactive()
+                                ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                    $set('working_days_per_month', StaffAttendanceSetting::calculateWorkingDaysInMonth((int) $state));
+                                })
+                                ->helperText('Determines working days per month'),
+
                             Forms\Components\TextInput::make('working_days_per_month')
                                 ->label('Working Days / Month')
                                 ->numeric()
-                                ->default(26),
+                                ->default(function (Forms\Get $get) {
+                                    $weeklyDays = (int) ($get('weekly_working_days') ?: 6);
+                                    return StaffAttendanceSetting::calculateWorkingDaysInMonth($weeklyDays);
+                                })
+                                ->helperText('Auto-calculated based on 5/6 days weekly pattern'),
                         ]),
 
                         Grid::make(3)->schema([
@@ -174,7 +192,7 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                     ]),
 
                 Section::make('Salary Visibility, Cycle & Organization Leave Quotas')
-                    ->description('Configure salary visibility dates, payroll cycle range, weekly work schedule, and leave quotas')
+                    ->description('Configure salary visibility dates, payroll cycle range, and annual leave quotas')
                     ->schema([
                         Grid::make(3)->schema([
                             Forms\Components\TextInput::make('salary_visibility_day')
@@ -205,17 +223,7 @@ class StaffAttendanceSettingResource extends BaseAcademyResource
                                 ->helperText('Default end day of monthly calculation cycle (e.g. 31st or 30th)'),
                         ]),
 
-                        Grid::make(3)->schema([
-                            Forms\Components\Select::make('weekly_working_days')
-                                ->label('Weekly Working Pattern')
-                                ->options([
-                                    5 => '5 Days / Week (Mon - Fri)',
-                                    6 => '6 Days / Week (Mon - Sat)',
-                                ])
-                                ->default(6)
-                                ->required()
-                                ->helperText('Determines total working days per month for daily rate division'),
-
+                        Grid::make(2)->schema([
                             Forms\Components\TextInput::make('fix_paid_leaves_per_year')
                                 ->label('Annual Fixed Paid Leaves')
                                 ->numeric()
