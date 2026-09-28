@@ -1,4 +1,4 @@
-name: Build & Deploy via FTP
+name: Production Deploy to GoDaddy
 
 on:
   push:
@@ -7,29 +7,20 @@ on:
 
 jobs:
   deploy:
+    name: Deploy Application to GoDaddy Server
     runs-on: ubuntu-latest
+
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 18
-
-    - name: Build Front-end Assets
-      run: |
-        npm ci
-        npm run build
-
-    - name: FTP Upload
-      uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-      with:
-        server: internationalsportssolutions.com
-        username: ${{ secrets.FTP_USERNAME }}
-        password: ${{ secrets.FTP_PASSWORD }}
-        server-dir: / # The FTP user sports_admin is already jailed to sports_admin/
-        exclude: |
-          **/.git*
-          **/node_modules/**
-          **/tests/**
+      - name: Execute Remote Deployment via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.GODADDY_SSH_HOST }}
+          username: ${{ secrets.GODADDY_SSH_USERNAME }}
+          password: ${{ secrets.GODADDY_SSH_PASSWORD }}
+          port: ${{ secrets.GODADDY_SSH_PORT || 22 }}
+          script: |
+            cd ${{ secrets.GODADDY_APP_PATH || '~/public_html' }}
+            bash scripts/deploy.sh
