@@ -25,15 +25,25 @@ class UserResource extends BaseAcademyResource
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
     
-    protected static ?string $navigationLabel = 'Coaches & Staff';
+    protected static ?string $navigationLabel = 'Staff & User Management';
     
     protected static ?string $modelLabel = 'Staff User';
     
-    protected static ?string $pluralModelLabel = 'Coaches & Staff';
+    protected static ?string $pluralModelLabel = 'Staff & User Management';
     
-    protected static ?string $navigationGroup = 'ACADEMY';
+    protected static ?string $navigationGroup = 'USER MANAGEMENT';
     
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 1;
+
+    public static function canViewAny(): bool
+    {
+        $user = Auth::user();
+        if (!$user) return false;
+        if ($user->is_super_admin || $user->role === 'academy_admin') {
+            return true;
+        }
+        return \App\Support\AcademyPermissionHelper::can('view_users');
+    }
 
     public static function getEloquentQuery(): Builder
     {

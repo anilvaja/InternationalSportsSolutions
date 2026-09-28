@@ -11,7 +11,7 @@ class QuickLaunchpadWidget extends Widget
 
     protected int | string | array $columnSpan = 'full';
 
-    protected static ?int $sort = -3;
+    protected static ?int $sort = -7;
 
     public function getQuickLinks(): array
     {

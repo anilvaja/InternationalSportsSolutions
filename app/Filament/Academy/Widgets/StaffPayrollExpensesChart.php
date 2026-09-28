@@ -11,7 +11,7 @@ class StaffPayrollExpensesChart extends ChartWidget
 {
     protected static ?string $heading = 'Staff Payroll Expenditure Trend';
 
-    protected static ?int $sort = 3;
+    protected static ?int $sort = -2;
 
     protected function getData(): array
     {

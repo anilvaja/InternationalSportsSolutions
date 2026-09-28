@@ -5,14 +5,15 @@ namespace App\Filament\Academy\Pages;
 use App\Filament\Academy\Widgets\AcademyHeaderWidget;
 use App\Filament\Academy\Widgets\AcademyOverviewStats;
 use App\Filament\Academy\Widgets\AttentionRequiredWidget;
+use App\Filament\Academy\Widgets\QuickLaunchpadWidget;
 use App\Filament\Academy\Widgets\TodayOperationsWidget;
+use App\Filament\Academy\Widgets\AbsenteeStudents;
 use App\Filament\Academy\Widgets\FinanceOverviewStats;
 use App\Filament\Academy\Widgets\StaffCheckInWidget;
 use App\Filament\Academy\Widgets\StaffPayrollExpensesChart;
 use App\Filament\Academy\Widgets\RecentAuditActivity;
 use App\Support\AcademyPermissionHelper;
 use Filament\Pages\Dashboard as BaseDashboard;
-use Filament\Widgets;
 
 class Dashboard extends BaseDashboard
 {
@@ -24,7 +25,7 @@ class Dashboard extends BaseDashboard
     {
         $widgets = [];
 
-        // 1. Operational Header (Greeting, Branch Selector & Fast Action Pills)
+        // 1. Operational Header (Greeting, Branch Selector & Quick Actions)
         $widgets[] = AcademyHeaderWidget::class;
 
         // 2. Top Key Performance Indicators (Students, Batches, Staff, Branches)
@@ -32,31 +33,39 @@ class Dashboard extends BaseDashboard
             $widgets[] = AcademyOverviewStats::class;
         }
 
-        // 3. Attention Required Alerts Panel (Action-oriented items today)
+        // 3. Attention Required Alerts Panel (Immediate Action Items)
         $widgets[] = AttentionRequiredWidget::class;
 
-        // 4. Prominent Today's Operations (Today's Attendance Summary & Batch Schedule Timeline)
+        // 4. Quick Access Launchpad (Direct feature links & create shortcuts)
+        $widgets[] = QuickLaunchpadWidget::class;
+
+        // 5. Today's Operations Hub (Attendance Summary Ring & Batch Timeline)
         if (AcademyPermissionHelper::can('view_attendances') || AcademyPermissionHelper::can('view_batches')) {
             $widgets[] = TodayOperationsWidget::class;
         }
 
-        // 5. Finance KPIs (Today's Collection, This Month, Pending & Overdue Fees in INR)
-        if (AcademyPermissionHelper::can('view_fees') || AcademyPermissionHelper::can('view_reports')) {
+        // 6. Absentee Students Monitor (Consecutive absence alert for retention)
+        if (AbsenteeStudents::canView()) {
+            $widgets[] = AbsenteeStudents::class;
+        }
+
+        // 7. Finance KPIs (Today's Collection, This Month, Pending & Overdue Fees)
+        if (FinanceOverviewStats::canView()) {
             $widgets[] = FinanceOverviewStats::class;
         }
 
-        // 6. Daily Staff Attendance & Self Clock-In Tracker
+        // 8. Daily Staff Attendance & Self Clock-In Tracker
         if (AcademyPermissionHelper::can('view_own_staff_attendances') || AcademyPermissionHelper::can('view_staff_attendances')) {
             $widgets[] = StaffCheckInWidget::class;
         }
 
-        // 7. Staff Payroll Trend Chart
+        // 9. Staff Payroll Expense Trend Chart
         if (AcademyPermissionHelper::can('view_staff_payrolls') || AcademyPermissionHelper::can('view_reports')) {
             $widgets[] = StaffPayrollExpensesChart::class;
         }
 
-        // 8. Recent Audit Activity Stream
-        if (AcademyPermissionHelper::can('view_audits')) {
+        // 10. Recent Audit & Activity Stream
+        if (RecentAuditActivity::canView()) {
             $widgets[] = RecentAuditActivity::class;
         }
         
@@ -74,3 +83,4 @@ class Dashboard extends BaseDashboard
         ];
     }
 }
+

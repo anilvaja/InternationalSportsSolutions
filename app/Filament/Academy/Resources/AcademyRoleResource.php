@@ -22,15 +22,25 @@ class AcademyRoleResource extends BaseAcademyResource
 
     protected static ?string $navigationIcon = 'heroicon-o-key';
     
-    protected static ?string $navigationLabel = 'Roles';
+    protected static ?string $navigationLabel = 'Roles & Access Control';
     
     protected static ?string $modelLabel = 'Role';
     
-    protected static ?string $pluralModelLabel = 'Roles';
+    protected static ?string $pluralModelLabel = 'Roles & Access Control';
     
-    protected static ?string $navigationGroup = 'ADMINISTRATION';
+    protected static ?string $navigationGroup = 'USER MANAGEMENT';
     
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
+
+    public static function canViewAny(): bool
+    {
+        $user = Auth::user();
+        if (!$user) return false;
+        if ($user->is_super_admin || $user->role === 'academy_admin') {
+            return true;
+        }
+        return \App\Support\AcademyPermissionHelper::can('view_roles');
+    }
 
     public static function getEloquentQuery(): Builder
     {

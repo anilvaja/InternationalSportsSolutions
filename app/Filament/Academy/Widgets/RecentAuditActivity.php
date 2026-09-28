@@ -7,60 +7,51 @@ use App\Support\AcademyPermissionHelper;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
+use Illuminate\Support\Facades\Auth;
 
 class RecentAuditActivity extends BaseWidget
 {
-    protected static ?string $heading = 'Recent Activity';
+    protected static ?string $heading = 'Recent Audit & Activity Log';
     protected int | string | array $columnSpan = 'full';
+    protected static ?int $sort = -1;
     
     public static function canView(): bool
     {
-        // Users need general view permission for audits/activity logs
         return AcademyPermissionHelper::can('view_audits');
     }
     
     public function table(Table $table): Table
     {
-        // Only show last 1 day's activities and only for fees and batch models
-        $oneDayAgo = now()->subDay(30);
-        $feeModels = [
-            'App\\Models\\Fee',
-            'App\\Models\\Payment',
-            // Add other fee-related models if needed
-        ];
-        $batchModels = [
-            'App\\Models\\Batch',
-            // Add other batch-related models if needed
-        ];
-        $allowedModels = array_merge($feeModels, $batchModels);
+        $oneMonthAgo = now()->subDays(30);
+
         return $table
             ->query(
                 Audit::query()
-                    ->where('created_at', '>=', $oneDayAgo)
-                    ->whereIn('subject_type', $allowedModels)
+                    ->forUserAccess()
+                    ->where('created_at', '>=', $oneMonthAgo)
                     ->latest()
                     ->limit(50)
             )
             ->columns([
                 Tables\Columns\BadgeColumn::make('event')
                     ->label('Action')
-                    ->getStateUsing(fn ($record) => $record->event ?? $record->description ?? 'logged')
+                    ->getStateUsing(fn ($record) => ucfirst($record->event ?? 'logged'))
                     ->colors([
-                        'success' => 'created',
-                        'warning' => 'updated',
-                        'danger' => 'deleted',
-                        'info' => 'restored',
+                        'success' => 'Created',
+                        'warning' => 'Updated',
+                        'danger' => 'Deleted',
+                        'info' => 'Restored',
                     ]),
                 
                 Tables\Columns\TextColumn::make('model_name')
-                    ->label('Model'),
+                    ->label('Entity'),
                 
-                Tables\Columns\TextColumn::make('subject_id')
-                    ->label('ID')
-                    ->getStateUsing(fn ($record) => $record->subject_id ?? $record->auditable_id ?? '-'),
+                Tables\Columns\TextColumn::make('auditable_id')
+                    ->label('Record ID')
+                    ->getStateUsing(fn ($record) => $record->auditable_id ?? '-'),
                 
                 Tables\Columns\TextColumn::make('user_name')
-                    ->label('User'),
+                    ->label('Performed By'),
                 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Time')
@@ -69,12 +60,13 @@ class RecentAuditActivity extends BaseWidget
             ])
             ->actions([
                 Tables\Actions\Action::make('view')
-                    ->label('View')
+                    ->label('View Audit')
                     ->icon('heroicon-o-eye')
-                    ->url(fn (Audit $record) => route('filament.academy.resources.audits.view', $record))
+                    ->url(fn (Audit $record) => \App\Filament\Academy\Resources\AuditResource::getUrl('view', ['record' => $record]))
                     ->visible(fn () => AcademyPermissionHelper::can('view_audits')),
             ])
             ->paginated(false)
             ->poll('30s');
     }
 }
+

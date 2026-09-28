@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Auth;
 
 class FinanceOverviewStats extends BaseWidget
 {
-    protected static ?int $sort = -6;
+    protected static ?int $sort = -4;
 
     public static function canView(): bool
     {
