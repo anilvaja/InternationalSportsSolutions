@@ -45,8 +45,6 @@ class AdminPanelProvider extends PanelProvider
             ->widgets([
                 \App\Filament\Admin\Widgets\SuperAdminStatsOverview::class,
                 \App\Filament\Admin\Widgets\AcademiesOverviewWidget::class,
-                \App\Filament\Admin\Widgets\RecentStudentsWidget::class,
-                \App\Filament\Admin\Widgets\SystemAuditActivityWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,
