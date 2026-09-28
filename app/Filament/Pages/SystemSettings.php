@@ -38,10 +38,6 @@ class SystemSettings extends Page
             'system_name' => $settings['system_name'] ?? Setting::get('system_name', 'International Sports Solutions'),
             'system_logo' => $settings['system_logo'] ?? Setting::get('system_logo'),
             'admin_theme_preset' => $settings['admin_theme_preset'] ?? Setting::get('admin_theme_preset', 'ocean'),
-            'primary_color' => $settings['primary_color'] ?? Setting::get('primary_color', '#0284c7'),
-            'secondary_color' => $settings['secondary_color'] ?? Setting::get('secondary_color', '#0f172a'),
-            'sidebar_bg_color' => $settings['sidebar_bg_color'] ?? Setting::get('sidebar_bg_color', '#0f172a'),
-            'content_bg_color' => $settings['content_bg_color'] ?? Setting::get('content_bg_color', '#0b1329'),
             'contact_email' => $settings['contact_email'] ?? Setting::get('contact_email', 'admin@solution.com'),
             'contact_phone' => $settings['contact_phone'] ?? Setting::get('contact_phone', '+1234567890'),
         ]);
@@ -71,8 +67,8 @@ class SystemSettings extends Page
                         ]),
                     ]),
 
-                Section::make('Super Admin Theme & Background Customization (Admin Panel Only)')
-                    ->description('Select a vibrant gradient theme preset or customize theme colors, side menu background, and main content background.')
+                Section::make('Super Admin Theme Presets (Admin Panel Only)')
+                    ->description('Select a theme preset for the Super Admin Panel. The chosen theme automatically styles the side menu background, content background, and accent colors.')
                     ->schema([
                         Select::make('admin_theme_preset')
                             ->label('Gradient Theme Preset')
@@ -83,48 +79,9 @@ class SystemSettings extends Page
                                 'emerald' => '🌿 Emerald Glow (Emerald & Mint)',
                                 'cyber' => '🔮 Cyberpunk Neon (Purple & Fuchsia)',
                                 'amber' => '✨ Golden Amber (Amber & Gold)',
-                                'custom' => '🎨 Custom Colors',
                             ])
                             ->default('ocean')
-                            ->live()
-                            ->afterStateUpdated(function ($state, Set $set) {
-                                $presets = [
-                                    'ocean' => ['primary' => '#0284c7', 'secondary' => '#0f172a', 'sidebar_bg' => '#0f172a', 'content_bg' => '#0b1329'],
-                                    'sunset' => ['primary' => '#e11d48', 'secondary' => '#18080f', 'sidebar_bg' => '#18080f', 'content_bg' => '#12050b'],
-                                    'midnight' => ['primary' => '#4f46e5', 'secondary' => '#0b0f19', 'sidebar_bg' => '#0f172a', 'content_bg' => '#090d16'],
-                                    'emerald' => ['primary' => '#059669', 'secondary' => '#062c22', 'sidebar_bg' => '#062c22', 'content_bg' => '#041f18'],
-                                    'cyber' => ['primary' => '#9333ea', 'secondary' => '#1e0836', 'sidebar_bg' => '#1e0836', 'content_bg' => '#140526'],
-                                    'amber' => ['primary' => '#d97706', 'secondary' => '#1c1205', 'sidebar_bg' => '#261807', 'content_bg' => '#190f04'],
-                                ];
-                                if (isset($presets[$state])) {
-                                    $set('primary_color', $presets[$state]['primary']);
-                                    $set('secondary_color', $presets[$state]['secondary']);
-                                    $set('sidebar_bg_color', $presets[$state]['sidebar_bg']);
-                                    $set('content_bg_color', $presets[$state]['content_bg']);
-                                }
-                            }),
-
-                        Grid::make(2)->schema([
-                            ColorPicker::make('primary_color')
-                                ->label('Primary Accent Color')
-                                ->required()
-                                ->default('#0284c7'),
-
-                            ColorPicker::make('secondary_color')
-                                ->label('Secondary Accent Color')
-                                ->required()
-                                ->default('#0f172a'),
-
-                            ColorPicker::make('sidebar_bg_color')
-                                ->label('Side Menu (Sidebar) Background Color')
-                                ->required()
-                                ->default('#0f172a'),
-
-                            ColorPicker::make('content_bg_color')
-                                ->label('Main Content Area Background Color')
-                                ->required()
-                                ->default('#0b1329'),
-                        ]),
+                            ->required(),
                     ]),
 
                 Section::make('Contact & Support Information')
