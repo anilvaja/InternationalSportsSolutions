@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\Auditable;
 
-class Batch extends Model
+class Batch extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use HasFactory, SoftDeletes, Auditable;
 

@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Traits\Auditable;
-class Branch extends Model
+class Branch extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use HasFactory, Auditable;
 

@@ -8,7 +8,7 @@ use App\Traits\Auditable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Carbon\Carbon;
 
-class Fee extends Model
+class Fee extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use HasFactory, Auditable;
 

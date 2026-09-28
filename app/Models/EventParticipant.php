@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Traits\Auditable;
 
-class EventParticipant extends Model
+class EventParticipant extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use Auditable;
     protected $fillable = [

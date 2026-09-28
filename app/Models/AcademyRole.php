@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class AcademyRole extends Model
+class AcademyRole extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use HasFactory, Auditable;
 

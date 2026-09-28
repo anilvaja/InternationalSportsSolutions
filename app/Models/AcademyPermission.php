@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Traits\Auditable;
 
-class AcademyPermission extends Model
+class AcademyPermission extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use HasFactory, Auditable;
 

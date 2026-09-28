@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use App\Traits\Auditable;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
-class Notification extends Model
+class Notification extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use Auditable;
     

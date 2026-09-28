@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Traits\Auditable;
 
-class Event extends Model
+class Event extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use SoftDeletes, Auditable;
 

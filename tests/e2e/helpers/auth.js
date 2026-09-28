@@ -6,21 +6,28 @@ import { BASE_URL, CREDENTIALS } from './constants.js';
  */
 export async function submitLoginForm(page, loginUrl, email, password) {
   const fullUrl = loginUrl.startsWith('http') ? loginUrl : `${BASE_URL}${loginUrl}`;
-  if (!page.url().includes(loginUrl)) {
+  
+  if (!page.url().includes('/login')) {
     try {
       await page.goto(fullUrl, { waitUntil: 'domcontentloaded' });
     } catch (e) {
       if (!e.message.includes('ERR_ABORTED')) throw e;
     }
   }
+
+  // If already authenticated and redirected away from login, return early
+  if (!page.url().includes('/login')) {
+    return;
+  }
   
-  const emailSelector = 'input[type="email"], input[name="email"], input[id*="email"]';
-  const passSelector = 'input[type="password"], input[name="password"], input[id*="password"]';
+  const emailSelector = 'input[type="email"], input[name="email"], input[id*="email"], input[name*="email"]';
+  const passSelector = 'input[type="password"], input[name="password"], input[id*="password"], input[name*="password"]';
   
   try {
     await page.waitForSelector(emailSelector, { timeout: 8000 });
     await page.fill(emailSelector, email);
     await page.fill(passSelector, password);
+    await page.waitForTimeout(300);
     
     const submitButton = page.locator('button[type="submit"]').first();
     if (await submitButton.isVisible()) {
@@ -33,7 +40,7 @@ export async function submitLoginForm(page, loginUrl, email, password) {
     await page.waitForURL((url) => !url.href.includes('/login'), { timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(1000);
   } catch (e) {
-    console.warn(`[Auth Helper] Notice filling login form at ${fullUrl}: ${e.message}`);
+    console.warn(`[Auth Helper] Notice filling login form at ${page.url()}: ${e.message}`);
   }
 }
 
@@ -44,7 +51,7 @@ export async function navigateAndEnsureAuth(page, path, credentials) {
   // If redirected to login page, authenticate and retry navigation
   if (page.url().includes('/login')) {
     await submitLoginForm(page, credentials.loginUrl, credentials.email, credentials.password);
-    if (page.url().includes('/login')) {
+    if (!page.url().includes('/login')) {
       await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
     }
   }
@@ -79,3 +86,4 @@ export async function logout(page) {
     // Ignore logout cleanup error
   }
 }
+

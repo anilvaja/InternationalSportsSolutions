@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('audits', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('academy_id')->nullable()->constrained('academies')->nullOnDelete();
             $table->string('user_type')->nullable();
             $table->unsignedBigInteger('user_id')->nullable();
             $table->string('event'); // created, updated, deleted, restored
@@ -26,6 +27,7 @@ return new class extends Migration
             $table->json('tags')->nullable();
             $table->timestamps();
             
+            $table->index('academy_id');
             $table->index(['auditable_type', 'auditable_id']);
             $table->index(['user_type', 'user_id']);
             $table->index('event');

@@ -7,7 +7,7 @@ use App\Traits\Auditable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 
-class Setting extends Model
+class Setting extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use Auditable;
     

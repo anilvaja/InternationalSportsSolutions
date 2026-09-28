@@ -16,7 +16,7 @@ use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Filament\Models\Contracts\HasName;
 use App\Traits\Auditable;
 
-class Student extends Authenticatable implements HasName
+class Student extends Authenticatable implements HasName, \OwenIt\Auditing\Contracts\Auditable
 {
     use HasFactory, SoftDeletes, Notifiable, Auditable;
 

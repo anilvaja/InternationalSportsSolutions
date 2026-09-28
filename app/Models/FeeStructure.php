@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\Auditable;
 
-class FeeStructure extends Model
+class FeeStructure extends Model implements \OwenIt\Auditing\Contracts\Auditable
 {
     use HasFactory, SoftDeletes, Auditable;
 

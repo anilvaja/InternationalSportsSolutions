@@ -25,16 +25,33 @@ class AuditResource extends BaseAcademyResource
         return $form
             ->schema([
                 Forms\Components\TextInput::make('event')
+                    ->label('Event Action')
                     ->disabled(),
-                Forms\Components\TextInput::make('subject_type')
-                    ->label('Model')
+                Forms\Components\TextInput::make('model_name')
+                    ->label('Target Model')
+                    ->disabled(),
+                Forms\Components\TextInput::make('auditable_id')
+                    ->label('Target Record ID')
                     ->disabled(),
                 Forms\Components\TextInput::make('user_name')
+                    ->label('User / Causer')
                     ->disabled(),
-                Forms\Components\Textarea::make('properties')
-                    ->label('Log Details / Properties')
+                Forms\Components\TextInput::make('ip_address')
+                    ->label('IP Address')
+                    ->disabled(),
+                Forms\Components\TextInput::make('url')
+                    ->label('Request URL')
+                    ->disabled(),
+                Forms\Components\Textarea::make('old_values')
+                    ->label('Old Values')
                     ->disabled()
-                    ->formatStateUsing(fn ($state) => json_encode($state, JSON_PRETTY_PRINT)),
+                    ->columnSpanFull()
+                    ->formatStateUsing(fn ($state) => is_array($state) ? json_encode($state, JSON_PRETTY_PRINT) : $state),
+                Forms\Components\Textarea::make('new_values')
+                    ->label('New Values')
+                    ->disabled()
+                    ->columnSpanFull()
+                    ->formatStateUsing(fn ($state) => is_array($state) ? json_encode($state, JSON_PRETTY_PRINT) : $state),
             ]);
     }
 
@@ -48,7 +65,7 @@ class AuditResource extends BaseAcademyResource
                 
                 Tables\Columns\BadgeColumn::make('event')
                     ->label('Action')
-                    ->getStateUsing(fn ($record) => $record->event ?? $record->description ?? 'logged')
+                    ->getStateUsing(fn ($record) => $record->event ?? 'logged')
                     ->colors([
                         'success' => 'created',
                         'warning' => 'updated',
@@ -61,9 +78,8 @@ class AuditResource extends BaseAcademyResource
                     ->sortable()
                     ->searchable(),
                 
-                Tables\Columns\TextColumn::make('subject_id')
+                Tables\Columns\TextColumn::make('auditable_id')
                     ->label('Record ID')
-                    ->getStateUsing(fn ($record) => $record->subject_id ?? $record->auditable_id ?? '-')
                     ->sortable(),
                 
                 Tables\Columns\TextColumn::make('user_name')
@@ -71,6 +87,10 @@ class AuditResource extends BaseAcademyResource
                     ->sortable()
                     ->searchable(),
                 
+                Tables\Columns\TextColumn::make('ip_address')
+                    ->label('IP Address')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Date/Time')
                     ->dateTime('d M Y, H:i:s')
@@ -101,9 +121,25 @@ class AuditResource extends BaseAcademyResource
             ->poll('30s');
     }
 
+    public static function canViewAny(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+        if ($user->is_super_admin || $user->academy_id) {
+            return true;
+        }
+        return parent::canViewAny();
+    }
+
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery();
+        $query = parent::getEloquentQuery();
+        if (Auth::check()) {
+            $query->forUserAccess(Auth::user());
+        }
+        return $query;
     }
 
     public static function getPages(): array

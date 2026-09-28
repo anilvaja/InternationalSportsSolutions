@@ -14,7 +14,7 @@ use Filament\Panel;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable implements FilamentUser, \OwenIt\Auditing\Contracts\Auditable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, HasRoles, Auditable;
