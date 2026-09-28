@@ -18,6 +18,7 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
+use Filament\View\PanelsRenderHook;
 use App\Http\Middleware\SetAdminAuthGuard;
 
 class AdminPanelProvider extends PanelProvider
@@ -36,6 +37,10 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::hex($primaryColorHex),
             ])
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn () => view('components.admin-theme-styles')
+            )
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([

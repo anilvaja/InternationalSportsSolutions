@@ -13,6 +13,9 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Storage;
 
+use Filament\Forms\Components\Select;
+use Filament\Forms\Set;
+
 class SystemSettings extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-cog-6-tooth';
@@ -34,6 +37,7 @@ class SystemSettings extends Page
         $this->form->fill([
             'system_name' => $settings['system_name'] ?? Setting::get('system_name', 'International Sports Solutions'),
             'system_logo' => $settings['system_logo'] ?? Setting::get('system_logo'),
+            'admin_theme_preset' => $settings['admin_theme_preset'] ?? Setting::get('admin_theme_preset', 'ocean'),
             'primary_color' => $settings['primary_color'] ?? Setting::get('primary_color', '#0284c7'),
             'secondary_color' => $settings['secondary_color'] ?? Setting::get('secondary_color', '#0f172a'),
             'contact_email' => $settings['contact_email'] ?? Setting::get('contact_email', 'admin@solution.com'),
@@ -65,9 +69,37 @@ class SystemSettings extends Page
                         ]),
                     ]),
 
-                Section::make('Dynamic Theme & Accent Colors')
-                    ->description('Customize the primary and secondary theme colors for the application interface.')
+                Section::make('Super Admin Theme & Gradient Presets (Admin Panel Only)')
+                    ->description('Select a vibrant gradient theme preset or customize theme colors exclusively for the Super Admin Panel.')
                     ->schema([
+                        Select::make('admin_theme_preset')
+                            ->label('Gradient Theme Preset')
+                            ->options([
+                                'ocean' => '🌊 Ocean Breeze (Sky Blue & Cyan)',
+                                'sunset' => '🌅 Sunset Crimson (Rose & Ruby)',
+                                'midnight' => '🌌 Midnight Indigo (Indigo & Violet)',
+                                'emerald' => '🌿 Emerald Glow (Emerald & Mint)',
+                                'cyber' => '🔮 Cyberpunk Neon (Purple & Fuchsia)',
+                                'amber' => '✨ Golden Amber (Amber & Gold)',
+                                'custom' => '🎨 Custom Colors',
+                            ])
+                            ->default('ocean')
+                            ->live()
+                            ->afterStateUpdated(function ($state, Set $set) {
+                                $presets = [
+                                    'ocean' => ['primary' => '#0284c7', 'secondary' => '#0f172a'],
+                                    'sunset' => ['primary' => '#e11d48', 'secondary' => '#111827'],
+                                    'midnight' => ['primary' => '#4f46e5', 'secondary' => '#0f172a'],
+                                    'emerald' => ['primary' => '#059669', 'secondary' => '#064e3b'],
+                                    'cyber' => ['primary' => '#9333ea', 'secondary' => '#2e1065'],
+                                    'amber' => ['primary' => '#d97706', 'secondary' => '#451a03'],
+                                ];
+                                if (isset($presets[$state])) {
+                                    $set('primary_color', $presets[$state]['primary']);
+                                    $set('secondary_color', $presets[$state]['secondary']);
+                                }
+                            }),
+
                         Grid::make(2)->schema([
                             ColorPicker::make('primary_color')
                                 ->label('Primary Theme Color')
