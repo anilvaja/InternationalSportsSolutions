@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use App\Traits\Auditable;
 
 class Academy extends Model implements \OwenIt\Auditing\Contracts\Auditable
@@ -47,6 +48,31 @@ class Academy extends Model implements \OwenIt\Auditing\Contracts\Auditable
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    public function students(): HasMany
+    {
+        return $this->hasMany(Student::class);
+    }
+
+    public function branches(): HasMany
+    {
+        return $this->hasMany(Branch::class);
+    }
+
+    public function coaches(): HasManyThrough
+    {
+        return $this->hasManyThrough(Coach::class, User::class, 'academy_id', 'user_id');
+    }
+
+    public function batches(): HasMany
+    {
+        return $this->hasMany(Batch::class);
+    }
+
+    public function fees(): HasMany
+    {
+        return $this->hasMany(Fee::class);
     }
 
     public function roles(): HasMany
