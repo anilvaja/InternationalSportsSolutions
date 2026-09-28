@@ -66,6 +66,7 @@ class ListUsers extends ListRecords
                         'phone' => $data['phone'] ?? null,
                         'password' => Hash::make($data['password']),
                         'academy_id' => $data['academy_id'],
+                        'role' => 'academy_admin',
                         'status' => $data['status'],
                         'is_super_admin' => false,
                     ]);
@@ -76,39 +77,97 @@ class ListUsers extends ListRecords
                 ->label('Bulk Create Academy Admins')
                 ->icon('heroicon-o-user-group')
                 ->color('info')
-                ->action(function () {
-                    $academiesWithoutAdmins = Academy::whereDoesntHave('users')->get();
-                    
-                    $created = 0;
+                ->form(function () {
+                    $academiesWithoutAdmins = Academy::whereDoesntHave('users', function ($query) {
+                        $query->where('role', 'academy_admin');
+                    })->get();
+
+                    if ($academiesWithoutAdmins->isEmpty()) {
+                        return [
+                            Forms\Components\Placeholder::make('no_academies_notice')
+                                ->label('')
+                                ->content('All academies currently have an academy admin user.'),
+                        ];
+                    }
+
+                    $schema = [
+                        Forms\Components\TextInput::make('default_password')
+                            ->label('Default Password for All New Admins')
+                            ->password()
+                            ->required()
+                            ->default('password')
+                            ->minLength(6),
+                    ];
+
                     foreach ($academiesWithoutAdmins as $academy) {
+                        $defaultEmail = $academy->contact_email 
+                            ?? ('admin@' . ($academy->slug ?: \Illuminate\Support\Str::slug($academy->name)) . '.com');
+
+                        $schema[] = Forms\Components\Section::make($academy->name)
+                            ->description("Specify admin details for {$academy->name}")
+                            ->schema([
+                                Forms\Components\TextInput::make("admins.{$academy->id}.name")
+                                    ->label('Admin Name')
+                                    ->required()
+                                    ->default("{$academy->name} Admin"),
+                                
+                                Forms\Components\TextInput::make("admins.{$academy->id}.email")
+                                    ->label('Admin Email')
+                                    ->email()
+                                    ->required()
+                                    ->unique('users', 'email')
+                                    ->default($defaultEmail),
+                            ])
+                            ->columns(2);
+                    }
+
+                    return $schema;
+                })
+                ->action(function (array $data) {
+                    $adminsData = $data['admins'] ?? [];
+                    $password = $data['default_password'] ?? 'password';
+                    $createdList = [];
+
+                    foreach ($adminsData as $academyId => $adminInfo) {
+                        if (empty($adminInfo['email'])) {
+                            continue;
+                        }
+
+                        $academy = Academy::find($academyId);
+                        if (!$academy) {
+                            continue;
+                        }
+
                         User::create([
-                            'name' => "{$academy->name} Admin",
-                            'email' => "admin@{$academy->slug}.com",
-                            'password' => Hash::make('password'),
+                            'name' => $adminInfo['name'] ?? "{$academy->name} Admin",
+                            'email' => $adminInfo['email'],
+                            'password' => Hash::make($password),
                             'academy_id' => $academy->id,
+                            'role' => 'academy_admin',
                             'status' => 'active',
                             'is_super_admin' => false,
                         ]);
-                        $created++;
+
+                        $createdList[] = "{$academy->name} ({$adminInfo['email']})";
                     }
-                    
-                    if ($created > 0) {
+
+                    if (!empty($createdList)) {
                         Notification::make()
-                            ->title("Created {$created} academy admin(s)")
-                            ->body("Default password is 'password'. Please ask admins to change it.")
+                            ->title("Created " . count($createdList) . " academy admin(s)")
+                            ->body("Admin user(s) created for:\n• " . implode("\n• ", $createdList))
                             ->success()
                             ->send();
                     } else {
                         Notification::make()
-                            ->title('No action needed')
-                            ->body('All academies already have admin users.')
+                            ->title('No action taken')
+                            ->body('All academies already have admin users or no missing academies were found.')
                             ->warning()
                             ->send();
                     }
                 })
-                ->requiresConfirmation()
                 ->modalHeading('Create Missing Academy Admins')
-                ->modalDescription('This will create admin users for academies that don\'t have any users yet.'),
+                ->modalDescription('Provide or review email addresses for academies currently missing an admin user.')
+                ->modalSubmitActionLabel('Create Admins'),
         ];
     }
 }
