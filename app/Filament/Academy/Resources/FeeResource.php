@@ -17,6 +17,8 @@ class FeeResource extends BaseAcademyResource
 {
     protected static ?string $model = Fee::class;
 
+    protected static ?string $slug = 'fee-collections';
+
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
     
     protected static ?string $navigationLabel = 'Fee Collection';
