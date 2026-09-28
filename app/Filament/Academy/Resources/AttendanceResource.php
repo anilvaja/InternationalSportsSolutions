@@ -396,9 +396,11 @@ class AttendanceResource extends BaseAcademyResource
 
                 Tables\Columns\TextColumn::make('class_start_time')
                     ->label('Time')
-                    ->formatStateUsing(fn ($record) => 
-                        $record->class_start_time->format('H:i') . ' - ' . $record->class_end_time->format('H:i')
-                    ),
+                    ->formatStateUsing(function ($record) {
+                        $start = $record->class_start_time ? $record->class_start_time->format('H:i') : '--:--';
+                        $end = $record->class_end_time ? $record->class_end_time->format('H:i') : '--:--';
+                        return "{$start} - {$end}";
+                    }),
 
                 Tables\Columns\BadgeColumn::make('status')
                     ->colors([
@@ -416,6 +418,10 @@ class AttendanceResource extends BaseAcademyResource
                 Tables\Columns\TextColumn::make('studentAttendances')
                     ->label('Students')
                     ->formatStateUsing(function ($record) {
+                        if (!$record->batch) {
+                            $present = $record->studentAttendances()->whereIn('status', ['present', 'late'])->count();
+                            return "$present/0";
+                        }
                         $total = $record->batch->activeStudents()->count();
                         $present = $record->studentAttendances()->whereIn('status', ['present', 'late'])->count();
                         return $record->attendance_taken ? "$present/$total" : "0/$total";
