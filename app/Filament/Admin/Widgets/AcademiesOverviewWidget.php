@@ -21,7 +21,7 @@ class AcademiesOverviewWidget extends BaseWidget
         return $table
             ->query(
                 Academy::query()
-                    ->withCount(['students', 'branches', 'coaches'])
+                    ->withCount(['students', 'branches'])
                     ->latest('created_at')
             )
             ->columns([
@@ -55,9 +55,13 @@ class AcademiesOverviewWidget extends BaseWidget
 
                 Tables\Columns\TextColumn::make('coaches_count')
                     ->label('Coaches')
+                    ->state(function (Academy $record) {
+                        return \App\Models\Coach::whereHas('user', function ($q) use ($record) {
+                            $q->where('academy_id', $record->id);
+                        })->count();
+                    })
                     ->badge()
-                    ->color('warning')
-                    ->sortable(),
+                    ->color('warning'),
 
                 Tables\Columns\TextColumn::make('total_revenue')
                     ->label('Total Revenue Collected')
