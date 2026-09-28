@@ -43,12 +43,12 @@
             {{-- Metric Cards Grid --}}
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {{-- Today's Status --}}
-                <div class="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-800">
-                    <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">Today's Check In / Out</div>
-                    <div class="text-base font-bold text-gray-900 dark:text-white mt-1">
-                        {{ $checkInTime }} <span class="text-gray-400 font-normal">to</span> {{ $checkOutTime }}
+                <div class="p-4 bg-slate-100 dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700/80">
+                    <div class="text-xs text-slate-700 dark:text-slate-300 font-semibold">Today's Check In / Out</div>
+                    <div class="text-base font-bold text-slate-900 dark:text-slate-100 mt-1">
+                        {{ $checkInTime }} <span class="text-slate-500 dark:text-slate-400 font-normal">to</span> {{ $checkOutTime }}
                     </div>
-                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <div class="text-xs text-slate-600 dark:text-slate-400 mt-1">
                         @if($isCheckedIn)
                             Working currently
                         @elseif($isCheckedOut)
@@ -60,43 +60,43 @@
                 </div>
 
                 {{-- Today's Worked Duration (Hours + Minutes) --}}
-                <div class="p-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-xl border border-blue-100 dark:border-blue-900/40">
-                    <div class="text-xs text-blue-600 dark:text-blue-400 font-medium flex items-center justify-between">
+                <div class="p-4 bg-blue-50 dark:bg-blue-950/60 rounded-xl border border-blue-200 dark:border-blue-800/60">
+                    <div class="text-xs text-blue-700 dark:text-blue-300 font-semibold flex items-center justify-between">
                         <span>Today Worked Time</span>
                         <x-heroicon-o-clock class="w-4 h-4 text-blue-500" />
                     </div>
                     <div class="text-lg font-bold text-blue-900 dark:text-blue-100 mt-1">
                         {{ $workedFormatted }}
                     </div>
-                    <div class="text-xs text-blue-600/80 dark:text-blue-400/80 mt-1">
+                    <div class="text-xs text-blue-700/80 dark:text-blue-300/80 mt-1">
                         Calculated from check in/out
                     </div>
                 </div>
 
                 {{-- Today's Daily Pay --}}
-                <div class="p-4 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100 dark:border-emerald-900/40">
-                    <div class="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center justify-between">
+                <div class="p-4 bg-emerald-50 dark:bg-emerald-950/60 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
+                    <div class="text-xs text-emerald-700 dark:text-emerald-300 font-semibold flex items-center justify-between">
                         <span>Today Estimated Pay</span>
                         <x-heroicon-o-currency-dollar class="w-4 h-4 text-emerald-500" />
                     </div>
                     <div class="text-lg font-bold text-emerald-900 dark:text-emerald-100 mt-1">
                         ₹{{ $todayPay }}
                     </div>
-                    <div class="text-xs text-emerald-600/80 dark:text-emerald-400/80 mt-1">
+                    <div class="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1">
                         Based on {{ $salaryTypeLabel }}
                     </div>
                 </div>
 
                 {{-- Monthly Worked & Earnings --}}
-                <div class="p-4 bg-purple-50/50 dark:bg-purple-950/20 rounded-xl border border-purple-100 dark:border-purple-900/40">
-                    <div class="text-xs text-purple-600 dark:text-purple-400 font-medium flex items-center justify-between">
+                <div class="p-4 bg-purple-50 dark:bg-purple-950/60 rounded-xl border border-purple-200 dark:border-purple-800/60">
+                    <div class="text-xs text-purple-700 dark:text-purple-300 font-semibold flex items-center justify-between">
                         <span>Monthly Total</span>
                         <x-heroicon-o-chart-bar class="w-4 h-4 text-purple-500" />
                     </div>
                     <div class="text-base font-bold text-purple-900 dark:text-purple-100 mt-1">
                         ₹{{ $monthlyPay }}
                     </div>
-                    <div class="text-xs text-purple-600/80 dark:text-purple-400/80 mt-1">
+                    <div class="text-xs text-purple-700/80 dark:text-purple-300/80 mt-1">
                         {{ $monthlyWorkedFormatted }} ({{ $daysWorkedThisMonth }} days)
                     </div>
                 </div>

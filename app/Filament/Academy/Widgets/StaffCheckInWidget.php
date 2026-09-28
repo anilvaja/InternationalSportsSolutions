@@ -71,6 +71,25 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
             default => 'Not Set',
         };
 
+        $tz = config('app.timezone') ?: 'Asia/Kolkata';
+
+        $formatTime = function ($dt) use ($tz) {
+            if (!$dt) {
+                return '--:--';
+            }
+            return Carbon::parse($dt)->setTimezone($tz)->format('h:i A');
+        };
+
+        $checkInTime = $activeSession?->check_in_at 
+            ? $formatTime($activeSession->check_in_at)
+            : ($todayAttendances->last()?->check_in_at 
+                ? $formatTime($todayAttendances->last()->check_in_at) 
+                : '--:--');
+
+        $checkOutTime = $todayAttendances->last()?->check_out_at 
+            ? $formatTime($todayAttendances->last()->check_out_at) 
+            : '--:--';
+
         return [
             'hasUser' => true,
             'user' => $user,
@@ -78,8 +97,8 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
             'isCheckedIn' => !is_null($activeSession),
             'isCheckedOut' => !is_null($todayAttendances->last()?->check_out_at) && is_null($activeSession),
             'sessionCount' => $todayAttendances->count(),
-            'checkInTime' => $activeSession?->check_in_at?->format('H:i') ?? ($todayAttendances->last()?->check_in_at?->format('H:i') ?? '--:--'),
-            'checkOutTime' => $todayAttendances->last()?->check_out_at?->format('H:i') ?? '--:--',
+            'checkInTime' => $checkInTime,
+            'checkOutTime' => $checkOutTime,
             'workedMinutes' => $workedMinutes,
             'workedFormatted' => $workedFormatted,
             'todayPay' => number_format($todayPay, 2),
@@ -134,9 +153,11 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
                     'marked_by' => $user->id,
                 ]);
 
+                $tz = config('app.timezone') ?: 'Asia/Kolkata';
+
                 Notification::make()
                     ->title('Checked In Successfully')
-                    ->body("Session #{$sessionNumber} recorded: " . now()->format('H:i'))
+                    ->body("Session #{$sessionNumber} recorded: " . now()->setTimezone($tz)->format('h:i A'))
                     ->success()
                     ->send();
             });

@@ -59,12 +59,12 @@ class MyAttendance extends Page implements HasForms, HasTable
 
                 Tables\Columns\TextColumn::make('check_in_at')
                     ->label('Check In')
-                    ->dateTime('H:i')
+                    ->dateTime('h:i A', timezone: config('app.timezone', 'Asia/Kolkata'))
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('check_out_at')
                     ->label('Check Out')
-                    ->dateTime('H:i')
+                    ->dateTime('h:i A', timezone: config('app.timezone', 'Asia/Kolkata'))
                     ->placeholder('Active (In Session)')
                     ->sortable(),
 
