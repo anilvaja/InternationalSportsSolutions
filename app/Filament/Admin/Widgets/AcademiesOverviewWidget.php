@@ -67,7 +67,7 @@ class AcademiesOverviewWidget extends BaseWidget
                     ->label('Total Revenue Collected')
                     ->state(function (Academy $record) {
                         $studentFee = Fee::where('academy_id', $record->id)->where('status', 'paid')->sum('fees_amount');
-                        $eventFee = EventFee::where('academy_id', $record->id)->where('status', 'paid')->sum('amount');
+                        $eventFee = EventFee::whereHas('event', fn ($q) => $q->where('academy_id', $record->id))->where('payment_status', 'paid')->sum('amount');
                         return '₹' . number_format($studentFee + $eventFee, 2);
                     })
                     ->weight(FontWeight::Bold)

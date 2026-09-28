@@ -28,7 +28,7 @@ class SuperAdminStatsOverview extends BaseWidget
 
         // Calculate total revenues from paid student fees and event fees across all academies
         $totalStudentFeeRevenue = (float) Fee::where('status', 'paid')->sum('fees_amount');
-        $totalEventFeeRevenue = (float) EventFee::where('status', 'paid')->sum('amount');
+        $totalEventFeeRevenue = (float) EventFee::where('payment_status', 'paid')->sum('amount');
         $totalRevenue = $totalStudentFeeRevenue + $totalEventFeeRevenue;
 
         // Calculate current month revenue
@@ -36,7 +36,7 @@ class SuperAdminStatsOverview extends BaseWidget
         $monthlyStudentFeeRevenue = (float) Fee::where('status', 'paid')
             ->where('payment_date', '>=', $currentMonthStart)
             ->sum('fees_amount');
-        $monthlyEventFeeRevenue = (float) EventFee::where('status', 'paid')
+        $monthlyEventFeeRevenue = (float) EventFee::where('payment_status', 'paid')
             ->where('payment_date', '>=', $currentMonthStart)
             ->sum('amount');
         $monthlyRevenue = $monthlyStudentFeeRevenue + $monthlyEventFeeRevenue;
