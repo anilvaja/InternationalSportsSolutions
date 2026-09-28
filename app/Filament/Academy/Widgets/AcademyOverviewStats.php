@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Auth;
 
 class AcademyOverviewStats extends BaseWidget
 {
-    protected static ?int $sort = -9;
+    protected static ?int $sort = -8;
 
     protected function getStats(): array
     {

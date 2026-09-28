@@ -25,7 +25,7 @@ class StaffCheckInWidget extends Widget implements HasActions, HasForms
 
     protected int | string | array $columnSpan = 'full';
 
-    protected static ?int $sort = -3;
+    protected static ?int $sort = -9;
 
     public function getViewData(): array
     {

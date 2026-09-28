@@ -28,35 +28,35 @@ class Dashboard extends BaseDashboard
         // 1. Operational Header (Greeting, Branch Selector & Quick Actions)
         $widgets[] = AcademyHeaderWidget::class;
 
-        // 2. Top Key Performance Indicators (Students, Batches, Staff, Branches)
+        // 2. Daily Staff Attendance & Self Clock-In Tracker (Daily Attendance Tracker on Top)
+        if (AcademyPermissionHelper::can('view_own_staff_attendances') || AcademyPermissionHelper::can('view_staff_attendances')) {
+            $widgets[] = StaffCheckInWidget::class;
+        }
+
+        // 3. Top Key Performance Indicators (Students, Batches, Staff, Branches)
         if (AcademyPermissionHelper::can('view_students') || AcademyPermissionHelper::can('view_batches')) {
             $widgets[] = AcademyOverviewStats::class;
         }
 
-        // 3. Attention Required Alerts Panel (Immediate Action Items)
+        // 4. Attention Required Alerts Panel (Immediate Action Items)
         $widgets[] = AttentionRequiredWidget::class;
 
-        // 4. Quick Access Launchpad (Direct feature links & create shortcuts)
+        // 5. Quick Access Launchpad (Direct feature links & create shortcuts)
         $widgets[] = QuickLaunchpadWidget::class;
 
-        // 5. Today's Operations Hub (Attendance Summary Ring & Batch Timeline)
+        // 6. Today's Operations Hub (Attendance Summary Ring & Batch Timeline)
         if (AcademyPermissionHelper::can('view_attendances') || AcademyPermissionHelper::can('view_batches')) {
             $widgets[] = TodayOperationsWidget::class;
         }
 
-        // 6. Absentee Students Monitor (Consecutive absence alert for retention)
+        // 7. Absentee Students Monitor (Consecutive absence alert for retention)
         if (AbsenteeStudents::canView()) {
             $widgets[] = AbsenteeStudents::class;
         }
 
-        // 7. Finance KPIs (Today's Collection, This Month, Pending & Overdue Fees)
+        // 8. Finance KPIs (Today's Collection, This Month, Pending & Overdue Fees)
         if (FinanceOverviewStats::canView()) {
             $widgets[] = FinanceOverviewStats::class;
-        }
-
-        // 8. Daily Staff Attendance & Self Clock-In Tracker
-        if (AcademyPermissionHelper::can('view_own_staff_attendances') || AcademyPermissionHelper::can('view_staff_attendances')) {
-            $widgets[] = StaffCheckInWidget::class;
         }
 
         // 9. Staff Payroll Expense Trend Chart

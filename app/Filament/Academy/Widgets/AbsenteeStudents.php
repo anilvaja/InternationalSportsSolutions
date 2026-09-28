@@ -23,7 +23,7 @@ use Filament\Notifications\Notification;
 class AbsenteeStudents extends BaseWidget
 {
     protected static ?string $heading = "Students with Recent Absences";
-    protected static ?int $sort = -5;
+    protected static ?int $sort = -4;
     protected int | string | array $columnSpan = 'full';
     protected static ?string $pollingInterval = '60s';
     

@@ -17,7 +17,7 @@ class AttentionRequiredWidget extends Widget
 
     protected int | string | array $columnSpan = 'full';
 
-    protected static ?int $sort = -8;
+    protected static ?int $sort = -7;
 
     public function getAttentionItems(): array
     {
