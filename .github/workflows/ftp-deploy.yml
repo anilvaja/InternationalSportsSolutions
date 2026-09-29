@@ -1,0 +1,35 @@
+name: Auto FTP Push Deploy to GoDaddy
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  ftp-deploy:
+    name: Sync Files via FTP
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync Files via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ftp.internationalsportssolutions.com
+          username: ${{ secrets.FTP_USERNAME || 'sports_admin@internationalsportssolutions.com' }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: 21
+          protocol: ftps
+          security: loose
+          exclude: |
+            **/.git**
+            **/.github**
+            **/node_modules/**
+            **/tests/**
+            .env
+            database/database.sqlite
+            storage/*.key
