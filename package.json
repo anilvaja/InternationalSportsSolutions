@@ -3,6 +3,8 @@
     "private": true,
     "type": "module",
     "scripts": {
+        "push:ftp": "powershell -ExecutionPolicy Bypass -File scripts/local_ftp_push.ps1",
+        "push:ftp:full": "powershell -ExecutionPolicy Bypass -File scripts/local_ftp_push.ps1 -FullUpload",
         "build": "vite build",
         "dev": "vite",
         "test:ui": "node scripts/open_ui_test_runner.js",

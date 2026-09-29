@@ -24,4 +24,6 @@ Homestead.yaml
 Thumbs.db
 /playwright-report
 /test-results
+scripts/local_ftp_push.ps1
+scripts/ftp_upload.ps1
 
