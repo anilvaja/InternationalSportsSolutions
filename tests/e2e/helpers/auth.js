@@ -2,7 +2,7 @@ import { expect } from '@playwright/test';
 import { BASE_URL, CREDENTIALS } from './constants.js';
 
 /**
- * Robust helper to fill Filament / Laravel login forms
+ * Robust helper to fill Filament / Laravel login forms with automatic rate limit handling
  */
 export async function submitLoginForm(page, loginUrl, email, password) {
   const fullUrl = loginUrl.startsWith('http') ? loginUrl : `${BASE_URL}${loginUrl}`;
@@ -18,6 +18,16 @@ export async function submitLoginForm(page, loginUrl, email, password) {
   // If already authenticated and redirected away from login, return early
   if (!page.url().includes('/login')) {
     return;
+  }
+
+  // Handle pre-existing rate limit on login page
+  let bodyText = await page.locator('body').innerText().catch(() => '');
+  if (bodyText.includes('Too many login attempts')) {
+    const match = bodyText.match(/in (\d+) seconds/);
+    const waitSec = match ? parseInt(match[1]) + 2 : 8;
+    console.log(`[Auth] Rate limited. Waiting ${waitSec}s for lockout to clear...`);
+    await page.waitForTimeout(waitSec * 1000);
+    await page.goto(fullUrl, { waitUntil: 'domcontentloaded' });
   }
   
   const emailSelector = 'input[type="email"], input[name="email"], input[id*="email"], input[name*="email"]';
@@ -39,6 +49,22 @@ export async function submitLoginForm(page, loginUrl, email, password) {
     // Wait for Livewire authentication redirect to complete
     await page.waitForURL((url) => !url.href.includes('/login'), { timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(1000);
+
+    // If still on login due to rate limit, wait and retry once
+    if (page.url().includes('/login')) {
+      bodyText = await page.locator('body').innerText().catch(() => '');
+      if (bodyText.includes('Too many login attempts')) {
+        const match = bodyText.match(/in (\d+) seconds/);
+        const waitSec = match ? parseInt(match[1]) + 2 : 8;
+        console.log(`[Auth] Rate limited on submit. Retrying in ${waitSec}s...`);
+        await page.waitForTimeout(waitSec * 1000);
+        await page.fill(emailSelector, email);
+        await page.fill(passSelector, password);
+        await page.click('button[type="submit"]');
+        await page.waitForURL((url) => !url.href.includes('/login'), { timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(1000);
+      }
+    }
   } catch (e) {
     console.warn(`[Auth Helper] Notice filling login form at ${page.url()}: ${e.message}`);
   }
@@ -86,4 +112,3 @@ export async function logout(page) {
     // Ignore logout cleanup error
   }
 }
-

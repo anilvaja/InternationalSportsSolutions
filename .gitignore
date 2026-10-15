@@ -25,5 +25,15 @@ Thumbs.db
 /playwright-report
 /test-results
 scripts/local_ftp_push.ps1
-scripts/ftp_upload.ps1
+/data/*.db*
+/data/academies/*.db*
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+/storage/uploads/*
+/storage/backups/*
+/storage/logs/*
+!data/.gitkeep
+!data/academies/.gitkeep
 

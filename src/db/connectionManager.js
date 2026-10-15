@@ -1,0 +1,228 @@
+import Database from 'better-sqlite3';
+import fs from 'fs';
+import path from 'path';
+import bcrypt from 'bcryptjs';
+import { config } from '../config/index.js';
+import { getCentralDb } from './centralDb.js';
+import { runMigrations } from './migrator.js';
+
+// Cache for open tenant database connections: academyId -> Database
+const tenantDbMap = new Map();
+
+/**
+ * Normalizes and formats the DB path for an academy
+ */
+export function getAcademyDbPath(academyId) {
+  return path.join(config.academiesDir, `academy_${academyId}.db`);
+}
+
+/**
+ * Gets or initializes a tenant database connection by Academy ID
+ * @param {number|string} academyId 
+ * @returns {import('better-sqlite3').Database}
+ */
+export function getTenantDbById(academyId) {
+  const id = Number(academyId);
+  if (!id) {
+    throw new Error(`Invalid Academy ID: ${academyId}`);
+  }
+
+  if (tenantDbMap.has(id)) {
+    return tenantDbMap.get(id);
+  }
+
+  const centralDb = getCentralDb();
+  const academy = centralDb.prepare('SELECT * FROM academies WHERE id = ?').get(id);
+  if (!academy) {
+    throw new Error(`Academy with ID ${id} not found in central registry`);
+  }
+
+  if (academy.status === 'suspended') {
+    throw new Error(`Academy '${academy.name}' is currently suspended`);
+  }
+
+  const dbPath = academy.db_path || getAcademyDbPath(id);
+
+  // Ensure directory exists
+  const parentDir = path.dirname(dbPath);
+  if (!fs.existsSync(parentDir)) {
+    fs.mkdirSync(parentDir, { recursive: true });
+  }
+
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+  db.pragma('foreign_keys = ON');
+  db.pragma('busy_timeout = 5000');
+
+  // Automatically execute tenant migrations on connect
+  runMigrations(db, 'tenant');
+
+  tenantDbMap.set(id, db);
+  return db;
+}
+
+/**
+ * Resolves an academy by its slug and returns its database connection
+ * @param {string} slug 
+ */
+export function getTenantDbBySlug(slug) {
+  if (!slug) return null;
+  const centralDb = getCentralDb();
+  const academy = centralDb.prepare('SELECT id FROM academies WHERE slug = ? COLLATE NOCASE').get(slug);
+  if (!academy) {
+    return null;
+  }
+  return {
+    academyId: academy.id,
+    db: getTenantDbById(academy.id),
+  };
+}
+
+/**
+ * Provisions a new academy:
+ * 1. Inserts into central `academies` table
+ * 2. Creates the isolated `data/academies/academy_{id}.db` file
+ * 3. Runs tenant migrations
+ * 4. Seeds default academy roles and optionally an initial admin user
+ * 5. Registers user in `academy_users_lookup`
+ */
+export function provisionAcademyDb({
+  name,
+  slug,
+  contact_email,
+  contact_phone,
+  address,
+  city,
+  plan = 'professional',
+  max_branches = 5,
+  max_students = 500,
+  max_coaches = 50,
+  admin_name,
+  admin_email,
+  admin_password,
+}) {
+  const centralDb = getCentralDb();
+
+  // Check if slug exists
+  const existing = centralDb.prepare('SELECT id FROM academies WHERE slug = ? COLLATE NOCASE').get(slug);
+  if (existing) {
+    throw new Error(`Academy with slug '${slug}' already exists`);
+  }
+
+  // Insert into central academies
+  const insertAcademy = centralDb.prepare(`
+    INSERT INTO academies (
+      name, slug, contact_email, contact_phone, address, city,
+      plan, max_branches, max_students, max_coaches, db_path
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let newAcademyId;
+  const dbPathPlaceholder = path.join(config.academiesDir, `temp.db`);
+
+  const tx = centralDb.transaction(() => {
+    const res = insertAcademy.run(
+      name,
+      slug.toLowerCase().trim(),
+      contact_email || admin_email || null,
+      contact_phone || null,
+      address || null,
+      city || null,
+      plan,
+      max_branches,
+      max_students,
+      max_coaches,
+      dbPathPlaceholder
+    );
+    newAcademyId = Number(res.lastInsertRowid);
+    const finalDbPath = getAcademyDbPath(newAcademyId);
+    centralDb.prepare('UPDATE academies SET db_path = ? WHERE id = ?').run(finalDbPath, newAcademyId);
+  });
+
+  tx();
+
+  // Initialize and migrate tenant database
+  const tenantDb = getTenantDbById(newAcademyId);
+
+  // Seed default roles
+  const seedRoles = tenantDb.transaction(() => {
+    const insertRole = tenantDb.prepare('INSERT OR IGNORE INTO academy_roles (name, description, permissions) VALUES (?, ?, ?)');
+    
+    insertRole.run(
+      'academy_admin',
+      'Full administrative access to all academy features and settings',
+      JSON.stringify(['all'])
+    );
+    insertRole.run(
+      'academy_staff',
+      'Staff member with operational access to students, attendance, and fees',
+      JSON.stringify(['view_students', 'manage_students', 'view_attendance', 'mark_attendance', 'view_fees', 'collect_fees', 'view_leaves'])
+    );
+    insertRole.run(
+      'coach',
+      'Sports coach with schedule, batch management, and attendance marking',
+      JSON.stringify(['view_batches', 'view_students', 'mark_attendance', 'apply_leaves'])
+    );
+    insertRole.run(
+      'student',
+      'Self-service student portal access',
+      JSON.stringify(['view_my_attendance', 'view_my_fees', 'pay_fees', 'apply_leaves'])
+    );
+  });
+  seedRoles();
+
+  // If initial admin credentials supplied, create admin in tenant DB and central lookup
+  if (admin_email && admin_password) {
+    const passwordHash = bcrypt.hashSync(admin_password, 10);
+    const insertUser = tenantDb.prepare(`
+      INSERT INTO users (name, email, password_hash, role, phone, status)
+      VALUES (?, ?, ?, 'academy_admin', ?, 'active')
+    `);
+    insertUser.run(admin_name || `${name} Admin`, admin_email, passwordHash, contact_phone || null);
+
+    // Register in central lookup
+    centralDb.prepare(`
+      INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role)
+      VALUES (?, ?, 'academy_admin')
+    `).run(admin_email, newAcademyId);
+  }
+
+  return {
+    id: newAcademyId,
+    name,
+    slug,
+    db_path: getAcademyDbPath(newAcademyId),
+    tenantDb,
+  };
+}
+
+/**
+ * Closes an open tenant database connection
+ * @param {number} academyId 
+ */
+export function closeTenantDb(academyId) {
+  const id = Number(academyId);
+  if (tenantDbMap.has(id)) {
+    try {
+      tenantDbMap.get(id).close();
+    } catch (e) {
+      console.error(`Error closing DB for academy ${id}:`, e);
+    }
+    tenantDbMap.delete(id);
+  }
+}
+
+/**
+ * Closes all open tenant DB connections
+ */
+export function closeAllTenantDbs() {
+  for (const [id, db] of tenantDbMap.entries()) {
+    try {
+      db.close();
+    } catch (e) {
+      console.error(`Error closing DB for academy ${id}:`, e);
+    }
+  }
+  tenantDbMap.clear();
+}

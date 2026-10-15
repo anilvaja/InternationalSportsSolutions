@@ -60,7 +60,10 @@ class Audit extends OwenItAudit
         if ($isAcademyAdmin && $user->academy_id) {
             return $query->where(function (Builder $q) use ($user) {
                 $q->where('academy_id', $user->academy_id)
-                  ->orWhereHas('user', fn ($uQuery) => $uQuery->where('academy_id', $user->academy_id));
+                  ->orWhere(function (Builder $sub) use ($user) {
+                      $sub->where('user_type', get_class($user))
+                          ->whereIn('user_id', User::where('academy_id', $user->academy_id)->pluck('id'));
+                  });
             });
         }
 

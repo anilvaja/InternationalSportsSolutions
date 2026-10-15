@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  iss-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iss_sports_saas
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3005}:3005"
+    environment:
+      - NODE_ENV=production
+      - PORT=3005
+      - JWT_SECRET=iss_production_jwt_secret_key_change_in_env
+    volumes:
+      # Persistent SQLite tenant databases and file storage mounts
+      - ./data:/app/data
+      - ./storage:/app/storage
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3005/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
