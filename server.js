@@ -67,23 +67,37 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, error: err.message || 'Internal Server Error' });
 });
 
-const server = app.listen(config.port, () => {
-  console.log(`\n======================================================`);
-  console.log(` International Sports Solutions - Multi-Tenant Platform`);
-  console.log(` Server running on http://localhost:${config.port}`);
-  console.log(` Database: Isolated SQLite per Tenant`);
-  console.log(`======================================================\n`);
-});
+const isDirectRun = process.argv[1] && (
+  process.argv[1].endsWith('server.js') ||
+  process.argv[1].endsWith('server')
+);
+
+let server;
+if (isDirectRun && process.env.NODE_ENV !== 'test') {
+  server = app.listen(config.port, () => {
+    console.log(`\n======================================================`);
+    console.log(` International Sports Solutions - Multi-Tenant Platform`);
+    console.log(` Server running on http://localhost:${config.port}`);
+    console.log(` Database: Isolated SQLite per Tenant`);
+    console.log(`======================================================\n`);
+  });
+}
 
 // Graceful Shutdown
 function handleShutdown(signal) {
   console.log(`\nReceived ${signal}. Gracefully closing databases and server...`);
-  server.close(() => {
+  if (server) {
+    server.close(() => {
+      closeAllTenantDbs();
+      closeCentralDb();
+      console.log('All database connections closed cleanly.');
+      process.exit(0);
+    });
+  } else {
     closeAllTenantDbs();
     closeCentralDb();
-    console.log('All database connections closed cleanly.');
     process.exit(0);
-  });
+  }
 }
 
 process.on('SIGINT', () => handleShutdown('SIGINT'));

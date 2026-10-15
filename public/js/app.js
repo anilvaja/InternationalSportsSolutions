@@ -739,7 +739,7 @@ const app = {
                 <th>Student Name</th>
                 <th>Guardian & Phone</th>
                 <th>Branch</th>
-                <th>Enrolled Batches</th>
+                <th>Active Batch</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -757,12 +757,23 @@ const app = {
                     <div style="font-size: 11px; color: var(--text-muted);">${s.phone || '-'}</div>
                   </td>
                   <td>${s.branch_name || 'Main Campus'}</td>
-                  <td><span style="font-size: 12px; color: var(--secondary);">${s.enrolled_batches || 'None'}</span></td>
+                  <td>
+                    ${s.active_batch_name ? `
+                      <span class="badge badge-info" title="Enrolled: ${s.batch_enrolled_date || 'N/A'}">
+                        ${s.active_batch_name}
+                      </span>
+                    ` : '<span style="color: var(--text-dim); font-size: 12px;">Unassigned</span>'}
+                  </td>
                   <td><span class="badge badge-success">${s.status}</span></td>
                   <td>
-                    <button class="btn btn-secondary btn-sm" onclick="app.showStudentDetails(${JSON.stringify(s).replace(/"/g, '&quot;')})">
-                      <i class="fa-solid fa-id-card"></i>
-                    </button>
+                    <div style="display: flex; gap: 6px;">
+                      <button class="btn btn-primary btn-sm" onclick="app.showTransferBatchModal(${s.id}, '${s.first_name} ${s.last_name}', '${s.active_batch_name || 'None'}')" title="Transfer to New Batch">
+                        <i class="fa-solid fa-right-left"></i> Transfer
+                      </button>
+                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentBatchHistory(${s.id}, '${s.first_name} ${s.last_name}')" title="View Batch History">
+                        <i class="fa-solid fa-clock-rotate-left"></i> History
+                      </button>
+                    </div>
                   </td>
                 </tr>
               `).join('')}
@@ -775,7 +786,129 @@ const app = {
     this.currentStudentsData = students;
   },
 
-  showAddStudentModal() {
+  async showTransferBatchModal(studentId, studentName, currentBatchName) {
+    const batchesData = await this.apiRequest('/api/academy/batches');
+    const batches = batchesData.batches || [];
+    const today = new Date().toISOString().split('T')[0];
+
+    this.openModal(
+      `Batch Transfer — ${studentName}`,
+      `
+        <div>
+          <div style="background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 16px;">
+            <p style="font-size: 13px;">Current Active Batch: <strong>${currentBatchName}</strong></p>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+              Transferring will atomically close the current assignment and record a permanent audit entry.
+            </p>
+          </div>
+          <div class="form-group">
+            <label>Select Target Batch *</label>
+            <select id="transfer-batch-id" class="form-select" style="width: 100%;" required>
+              <option value="">-- Choose New Batch --</option>
+              ${batches.map(b => `<option value="${b.id}">${b.name} (${b.sport_name} | Branch: ${b.branch_name})</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Transfer Reason *</label>
+            <input type="text" id="transfer-reason" class="form-input" style="width: 100%;" placeholder="e.g. Schedule clash, Level upgrade, Branch change" required>
+          </div>
+          <div class="form-group">
+            <label>Effective Date</label>
+            <input type="date" id="transfer-date" class="form-input" style="width: 100%;" value="${today}">
+          </div>
+        </div>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitBatchTransfer(${studentId})">
+          <i class="fa-solid fa-check"></i> Confirm Transfer
+        </button>
+      `
+    );
+  },
+
+  async submitBatchTransfer(studentId) {
+    const new_batch_id = document.getElementById('transfer-batch-id').value;
+    const transfer_reason = document.getElementById('transfer-reason').value.trim();
+    const effective_date = document.getElementById('transfer-date').value;
+
+    if (!new_batch_id) {
+      this.showToast('Please select a target batch', 'danger');
+      return;
+    }
+    if (!transfer_reason) {
+      this.showToast('Please provide a reason for the transfer', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/students/${studentId}/transfer-batch`, {
+      method: 'POST',
+      body: JSON.stringify({ new_batch_id, transfer_reason, effective_date }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.closeModal();
+      this.renderStudents();
+    } else {
+      this.showToast(res.error || 'Transfer failed', 'danger');
+    }
+  },
+
+  async showStudentBatchHistory(studentId, studentName) {
+    const res = await this.apiRequest(`/api/academy/students/${studentId}/enrollment-history`);
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to load enrollment history', 'danger');
+      return;
+    }
+
+    const history = res.history || [];
+
+    this.openModal(
+      `Batch Assignment History — ${studentName}`,
+      `
+        <div>
+          ${history.length === 0 ? '<p style="color:var(--text-muted);">No enrollment records found.</p>' : `
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              ${history.map((h, idx) => `
+                <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; background: rgba(255,255,255,0.02);">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: #fff; font-size: 14px;">${h.batch_name}</strong>
+                    <span class="badge ${h.status === 'active' ? 'badge-success' : 'badge-secondary'}">
+                      ${h.status.toUpperCase()}
+                    </span>
+                  </div>
+                  <div style="font-size: 12px; color: var(--text-muted);">
+                    Sport: ${h.sport_name || 'General'} | Branch: ${h.branch_name || 'Main Campus'}
+                  </div>
+                  <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">
+                    Period: <strong>${h.start_date}</strong> to <strong>${h.end_date || 'Present (Active)'}</strong>
+                  </div>
+                  ${h.transfer_reason ? `
+                    <div style="font-size: 12px; color: var(--secondary); margin-top: 6px; background: rgba(14,165,233,0.08); padding: 6px 8px; border-radius: 4px;">
+                      <i class="fa-solid fa-circle-info"></i> Reason: ${h.transfer_reason}
+                    </div>
+                  ` : ''}
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `,
+      `<button class="btn btn-secondary" onclick="app.closeModal()">Close</button>`
+    );
+  },
+
+  async showAddStudentModal() {
+    const [branchesData, batchesData] = await Promise.all([
+      this.apiRequest('/api/academy/branches'),
+      this.apiRequest('/api/academy/batches'),
+    ]);
+
+    const branches = branchesData.branches || [];
+    const batches = batchesData.batches || [];
+    window._cachedBatchesForStudentForm = batches;
+
     this.openModal(
       'Enroll New Student',
       `
@@ -810,6 +943,22 @@ const app = {
               <input type="date" id="stu-dob" class="form-input" style="width: 100%;">
             </div>
           </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Academy Branch *</label>
+              <select id="stu-branch" class="form-select" style="width: 100%;" onchange="app.onStudentBranchChange(this.value)">
+                <option value="">-- Select Branch --</option>
+                ${branches.map(b => `<option value="${b.id}">${b.name} (${b.city || 'Campus'})</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Active Training Batch (Optional)</label>
+              <select id="stu-batch" class="form-select" style="width: 100%;">
+                <option value="">-- Choose Batch --</option>
+                ${batches.map(b => `<option value="${b.id}" data-branch="${b.branch_id}">${b.name} (${b.sport_name})</option>`).join('')}
+              </select>
+            </div>
+          </div>
         </form>
       `,
       `
@@ -819,6 +968,17 @@ const app = {
     );
   },
 
+  onStudentBranchChange(branchId) {
+    const batchSelect = document.getElementById('stu-batch');
+    if (!batchSelect) return;
+    const allBatches = window._cachedBatchesForStudentForm || [];
+    const filtered = branchId ? allBatches.filter(b => Number(b.branch_id) === Number(branchId)) : allBatches;
+    batchSelect.innerHTML = `
+      <option value="">-- Choose Batch --</option>
+      ${filtered.map(b => `<option value="${b.id}">${b.name} (${b.sport_name})</option>`).join('')}
+    `;
+  },
+
   async submitAddStudent() {
     const first_name = document.getElementById('stu-fn').value.trim();
     const last_name = document.getElementById('stu-ln').value.trim();
@@ -826,6 +986,8 @@ const app = {
     const phone = document.getElementById('stu-phone').value.trim();
     const guardian_name = document.getElementById('stu-guardian').value.trim();
     const date_of_birth = document.getElementById('stu-dob').value;
+    const branch_id = document.getElementById('stu-branch') ? document.getElementById('stu-branch').value : null;
+    const batch_id = document.getElementById('stu-batch') ? document.getElementById('stu-batch').value : null;
 
     if (!first_name || !last_name) {
       this.showToast('First and last name are required', 'danger');
@@ -834,7 +996,16 @@ const app = {
 
     const res = await this.apiRequest('/api/academy/students', {
       method: 'POST',
-      body: JSON.stringify({ first_name, last_name, email, phone, guardian_name, date_of_birth }),
+      body: JSON.stringify({
+        first_name,
+        last_name,
+        email,
+        phone,
+        guardian_name,
+        date_of_birth,
+        branch_id: branch_id || null,
+        batch_id: batch_id || null,
+      }),
     });
 
     if (res.success) {
@@ -1260,8 +1431,11 @@ const app = {
 
     content.innerHTML = `
       <div class="content-card">
-        <div class="card-header">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
           <h2 class="card-title"><i class="fa-solid fa-calendar-days"></i> Training Batches & Schedules (${batches.length})</h2>
+          <button class="btn btn-primary btn-sm" onclick="app.showAddBatchModal()">
+            <i class="fa-solid fa-plus"></i> New Training Batch
+          </button>
         </div>
         <div class="table-responsive">
           <table class="custom-table">
@@ -1269,6 +1443,7 @@ const app = {
               <tr>
                 <th>Batch Name</th>
                 <th>Sport</th>
+                <th>Branch</th>
                 <th>Coach</th>
                 <th>Timing & Schedule</th>
                 <th>Capacity</th>
@@ -1280,6 +1455,7 @@ const app = {
                 <tr>
                   <td><strong>${b.name}</strong></td>
                   <td><span class="badge badge-info">${b.sport_name}</span></td>
+                  <td>${b.branch_name || 'Main Campus'}</td>
                   <td>${b.coach_name || 'Assigned Coach'}</td>
                   <td>
                     <div style="font-size: 12px; font-weight: 600;">${b.start_time} - ${b.end_time}</div>
@@ -1294,6 +1470,119 @@ const app = {
         </div>
       </div>
     `;
+  },
+
+  async showAddBatchModal() {
+    const [branchesData, sportsData, coachesData] = await Promise.all([
+      this.apiRequest('/api/academy/branches'),
+      this.apiRequest('/api/academy/sports'),
+      this.apiRequest('/api/academy/coaches'),
+    ]);
+
+    const branches = branchesData.branches || [];
+    const sports = sportsData.sports || [];
+    const coaches = coachesData.coaches || [];
+
+    this.openModal(
+      'Create New Training Batch',
+      `
+        <form id="add-batch-form">
+          <div class="form-group">
+            <label>Batch Name *</label>
+            <input type="text" id="batch-name" class="form-input" style="width: 100%;" placeholder="e.g. Under-17 Elite Champions" required>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Branch * (Rule C: 1 Batch belongs to 1 Branch)</label>
+              <select id="batch-branch" class="form-select" style="width: 100%;" required>
+                <option value="">-- Select Branch --</option>
+                ${branches.map(b => `<option value="${b.id}">${b.name} (${b.city || 'Campus'})</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Sport *</label>
+              <select id="batch-sport" class="form-select" style="width: 100%;" required>
+                <option value="">-- Select Sport --</option>
+                ${sports.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Coach</label>
+              <select id="batch-coach" class="form-select" style="width: 100%;">
+                <option value="">-- Select Coach (Optional) --</option>
+                ${coaches.map(c => `<option value="${c.id}">${c.name} (${c.sport_name || 'Coach'})</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Monthly Fee (₹)</label>
+              <input type="number" id="batch-fee" class="form-input" style="width: 100%;" value="2500" min="0">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Start Time * (HH:MM)</label>
+              <input type="time" id="batch-start-time" class="form-input" style="width: 100%;" value="06:30" required>
+            </div>
+            <div class="form-group">
+              <label>End Time * (HH:MM)</label>
+              <input type="time" id="batch-end-time" class="form-input" style="width: 100%;" value="08:00" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Max Student Capacity</label>
+            <input type="number" id="batch-capacity" class="form-input" style="width: 100%;" value="25" min="1">
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitAddBatch()"><i class="fa-solid fa-check"></i> Create Batch</button>
+      `
+    );
+  },
+
+  async submitAddBatch() {
+    const name = document.getElementById('batch-name').value.trim();
+    const branch_id = document.getElementById('batch-branch').value;
+    const sport_id = document.getElementById('batch-sport').value;
+    const coach_id = document.getElementById('batch-coach').value;
+    const start_time = document.getElementById('batch-start-time').value;
+    const end_time = document.getElementById('batch-end-time').value;
+    const monthly_fee = document.getElementById('batch-fee').value;
+    const max_capacity = document.getElementById('batch-capacity').value;
+
+    if (!name || !start_time || !end_time) {
+      this.showToast('Batch name and start/end times are required', 'danger');
+      return;
+    }
+    if (!branch_id) {
+      this.showToast('Every batch must belong to a branch (Rule C)', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/batches', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        branch_id: Number(branch_id),
+        sport_id: sport_id ? Number(sport_id) : null,
+        coach_id: coach_id ? Number(coach_id) : null,
+        start_time,
+        end_time,
+        monthly_fee: Number(monthly_fee) || 0,
+        max_capacity: Number(max_capacity) || 30,
+      }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.closeModal();
+      this.renderBatches();
+    } else {
+      this.showToast(res.error || 'Failed to create batch', 'danger');
+    }
   },
 
   // LEAVES

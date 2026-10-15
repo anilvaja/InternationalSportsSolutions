@@ -187,7 +187,10 @@ function seedMahavirAcademyData(academyId, passwordHash) {
       gender, guardian_name, guardian_phone, guardian_email, address, branch_id, blood_group, status
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
   `);
-  const enrollBatch = db.prepare('INSERT INTO student_batches (student_id, batch_id) VALUES (?, ?)');
+  const enrollBatch = db.prepare(`
+    INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
+    VALUES (?, ?, DATE('now', '-30 days'), 'active', 1)
+  `);
 
   const studentData = [
     { code: 'STU-1001', fn: 'Aarav', ln: 'Patel', email: 'aarav.patel@student.com', dob: '2010-04-12', g: 'male', guardian: 'Ramesh Patel', phone: '+91 98980 11111', blood: 'B+', batch: batch1, fs: fs1 },
@@ -216,8 +219,18 @@ function seedMahavirAcademyData(academyId, passwordHash) {
       s.g, s.guardian, s.phone, `parent.${s.email}`, 'Ahmedabad, Gujarat', b1, s.blood
     ).lastInsertRowid;
 
-    // Enroll in batch
+    // Enroll in EXACTLY ONE active batch
     enrollBatch.run(studentId, s.batch);
+
+    // If Student 1 (Aarav Patel), seed historical transfer record to demonstrate audit preservation
+    if (idx === 0) {
+      db.prepare(`
+        INSERT INTO student_batch_enrollments (
+          student_id, batch_id, start_date, end_date, status, assigned_by,
+          transferred_to_batch_id, transfer_reason
+        ) VALUES (?, ?, DATE('now', '-90 days'), DATE('now', '-30 days'), 'transferred', 1, ?, 'Promoted to Elite Squad after mid-season performance review')
+      `).run(studentId, batch2, batch1);
+    }
 
     // Register student in central lookup for student portal login
     centralDb.prepare('INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role) VALUES (?, ?, ?)').run(s.email, academyId, 'student');

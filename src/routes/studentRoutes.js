@@ -35,16 +35,17 @@ studentRouter.get('/dashboard', (req, res) => {
       return res.status(404).json({ success: false, error: 'Student profile not found' });
     }
 
-    // Batches
-    const batches = db.prepare(`
-      SELECT b.*, s.name as sport_name, c.name as coach_name, br.name as branch_name
-      FROM batches b
-      JOIN student_batches sb ON sb.batch_id = b.id
+    // Active Batch (Student has at most ONE active batch at any time)
+    const activeBatch = db.prepare(`
+      SELECT b.*, s.name as sport_name, c.name as coach_name, br.name as branch_name,
+             sbe.start_date as enrolled_date
+      FROM student_batch_enrollments sbe
+      JOIN batches b ON b.id = sbe.batch_id
       LEFT JOIN sports s ON s.id = b.sport_id
       LEFT JOIN coaches c ON c.id = b.coach_id
       LEFT JOIN branches br ON br.id = b.branch_id
-      WHERE sb.student_id = ? AND sb.is_active = 1
-    `).all(studentId);
+      WHERE sbe.student_id = ? AND sbe.status = 'active'
+    `).get(studentId);
 
     // Attendance stats
     const attendanceStats = db.prepare(`
@@ -79,7 +80,8 @@ studentRouter.get('/dashboard', (req, res) => {
         phone: student.phone,
         status: student.status,
       },
-      batches,
+      batches: activeBatch ? [activeBatch] : [],
+      activeBatch: activeBatch || null,
       attendance: {
         totalSessions,
         present: attendanceStats.present_count || 0,
@@ -226,3 +228,34 @@ studentRouter.post('/leaves', (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+/**
+ * GET /api/student/batch-history
+ */
+studentRouter.get('/batch-history', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const studentId = req.user.role === 'student' ? req.user.userId : Number(req.query.student_id);
+
+    const history = db.prepare(`
+      SELECT 
+        sbe.*,
+        b.name as batch_name,
+        sp.name as sport_name,
+        br.name as branch_name,
+        tb.name as transferred_to_batch_name
+      FROM student_batch_enrollments sbe
+      JOIN batches b ON b.id = sbe.batch_id
+      LEFT JOIN sports sp ON sp.id = b.sport_id
+      LEFT JOIN branches br ON br.id = b.branch_id
+      LEFT JOIN batches tb ON tb.id = sbe.transferred_to_batch_id
+      WHERE sbe.student_id = ?
+      ORDER BY sbe.id DESC
+    `).all(studentId);
+
+    res.json({ success: true, history });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+

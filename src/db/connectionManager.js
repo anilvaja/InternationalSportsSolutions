@@ -55,6 +55,16 @@ export function getTenantDbById(academyId) {
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
 
+  // Record tenant identity in tenant_settings
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tenant_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  db.prepare("INSERT OR REPLACE INTO tenant_settings (key, value) VALUES ('academy_id', ?)").run(String(id));
+
   // Automatically execute tenant migrations on connect
   runMigrations(db, 'tenant');
 
