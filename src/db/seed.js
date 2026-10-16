@@ -131,6 +131,32 @@ export function runSeed() {
     }
   }
 
+  // 4. Seed Default Domains & Subdomains for all Academies
+  try {
+    const allAcademies = centralDb.prepare('SELECT id, slug, name FROM academies').all();
+    const insertDomain = centralDb.prepare(`
+      INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
+      VALUES (?, ?, ?, ?, 'active')
+    `);
+
+    for (const ac of allAcademies) {
+      // Primary platform subdomain
+      insertDomain.run(ac.id, `${ac.slug}.internationalsportssolutions.test`, 1, 0);
+      // Local development subdomain
+      insertDomain.run(ac.id, `${ac.slug}.localhost`, 0, 0);
+    }
+
+    // Custom domain & alias for Mahavir Sports Academy
+    const mahavir = centralDb.prepare("SELECT id FROM academies WHERE slug IN ('mahaviracademy', 'mahavir-sports')").get();
+    if (mahavir) {
+      insertDomain.run(mahavir.id, 'mahavirsports.com', 0, 1);
+      insertDomain.run(mahavir.id, 'mahavir-sports.internationalsportssolutions.test', 0, 0);
+    }
+    console.log('[Seed] Multi-tenant domains registered successfully');
+  } catch (err) {
+    console.warn('[Seed] Warning seeding domains:', err.message);
+  }
+
   console.log('--- Database Seed Finished Successfully ---');
 }
 

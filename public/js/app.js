@@ -574,12 +574,25 @@ const app = {
               </tr>
             </thead>
             <tbody>
-              ${data.academies.map(ac => `
+              ${data.academies.map(ac => {
+                const primaryDomain = (ac.domains || []).find(d => d.is_primary) || (ac.domains || [])[0];
+                return `
                 <tr>
                   <td>#${ac.id}</td>
                   <td>
                     <strong>${ac.name}</strong>
-                    <div style="font-size: 11px; color: var(--text-muted);">Slug: <code>${ac.slug}</code> | ${ac.city || 'India'}</div>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                      <i class="fa-solid fa-link" style="color: var(--primary);"></i> <code>${ac.slug}.internationalsportssolutions.test</code>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px;">
+                      ${(ac.domains || []).slice(0, 2).map(d => `
+                        <span class="badge ${d.is_primary ? 'badge-primary' : 'badge-secondary'}" style="font-size: 10px; padding: 2px 6px;">
+                          ${d.is_primary ? '<i class="fa-solid fa-star" style="color: #f59e0b; margin-right: 2px;"></i>' : ''}
+                          ${d.domain}
+                        </span>
+                      `).join('')}
+                      ${(ac.domains || []).length > 2 ? `<span class="badge badge-secondary" style="font-size: 10px; padding: 2px 6px;">+${ac.domains.length - 2} more</span>` : ''}
+                    </div>
                   </td>
                   <td>
                     <span class="badge badge-info">${ac.plan}</span>
@@ -603,6 +616,9 @@ const app = {
                   </td>
                   <td>
                     <div style="display: flex; gap: 6px;">
+                      <button class="btn btn-secondary btn-sm" onclick="app.showManageDomainsModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}')" title="Manage Domains & Subdomains">
+                        <i class="fa-solid fa-globe" style="color: #3b82f6;"></i> Domains
+                      </button>
                       <a href="/api/central/academies/${ac.id}/backup" class="btn btn-secondary btn-sm" title="Download SQLite DB ZIP">
                         <i class="fa-solid fa-download"></i>
                       </a>
@@ -612,12 +628,178 @@ const app = {
                     </div>
                   </td>
                 </tr>
-              `).join('')}
+              `}).join('')}
             </tbody>
           </table>
         </div>
       </div>
     `;
+  },
+
+  async showManageDomainsModal(academyId, academyName) {
+    const res = await this.apiRequest(`/api/central/academies/${academyId}/domains`);
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to fetch domains', 'danger');
+      return;
+    }
+
+    const { domains, defaultSubdomain } = res;
+
+    this.openModal(
+      `<i class="fa-solid fa-globe" style="color: var(--primary);"></i> Manage Domains — ${academyName}`,
+      `
+        <div style="margin-bottom: 16px;">
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+            Configure platform subdomains and branded custom domains. Requests routed through these domains automatically isolate and access this academy's dedicated database.
+          </p>
+          
+          <div style="background: var(--surface-hover); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); font-weight: 600;">Default Platform Subdomain:</div>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+              <code style="font-size: 13px; font-weight: 600; color: var(--primary);">${defaultSubdomain}</code>
+              <span class="badge badge-success"><i class="fa-solid fa-check"></i> System Default</span>
+            </div>
+          </div>
+
+          <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Active Domains & Subdomains (${domains.length})</h4>
+          <div class="table-responsive" style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px;">
+            <table class="custom-table" style="font-size: 12px;">
+              <thead>
+                <tr>
+                  <th>Domain Name</th>
+                  <th>Type</th>
+                  <th>Primary</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${domains.map(d => `
+                  <tr>
+                    <td>
+                      <strong>${d.domain}</strong>
+                    </td>
+                    <td>
+                      <span class="badge ${d.is_custom ? 'badge-info' : 'badge-secondary'}">
+                        ${d.is_custom ? 'Custom Domain' : 'Subdomain'}
+                      </span>
+                    </td>
+                    <td>
+                      ${d.is_primary ? `
+                        <span class="badge badge-success" style="background: #10b981; color: #fff;">
+                          <i class="fa-solid fa-star"></i> Primary
+                        </span>
+                      ` : `
+                        <button class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 2px 6px;" onclick="app.setPrimaryDomain(${academyId}, ${d.id}, '${academyName.replace(/'/g, "\\'")}')">
+                          Set Primary
+                        </button>
+                      `}
+                    </td>
+                    <td>
+                      <span class="badge badge-success">${d.status}</span>
+                    </td>
+                    <td>
+                      ${domains.length > 1 ? `
+                        <button class="btn btn-danger btn-sm" style="padding: 2px 6px;" onclick="app.deleteDomain(${academyId}, ${d.id}, '${d.domain}', '${academyName.replace(/'/g, "\\'")}')" title="Delete Domain">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      ` : `
+                        <span style="font-size: 11px; color: var(--text-dim);">Protected</span>
+                      `}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border);">
+            <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Add New Domain or Subdomain</h4>
+            <div style="display: flex; gap: 8px; align-items: flex-start;">
+              <div style="flex: 1;">
+                <input type="text" id="new-domain-input" class="form-input" style="width: 100%;" placeholder="e.g. mahavirsports.com or training.mahavir.org">
+                <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--text-muted);">
+                  <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" id="new-domain-primary"> Set as Primary Domain
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" id="new-domain-custom" checked> Custom FQDN
+                  </label>
+                </div>
+              </div>
+              <button class="btn btn-primary" onclick="app.submitAddDomain(${academyId}, '${academyName.replace(/'/g, "\\'")}')" style="white-space: nowrap;">
+                <i class="fa-solid fa-plus"></i> Add Domain
+              </button>
+            </div>
+            <div style="font-size: 11px; color: var(--text-dim); margin-top: 8px; line-height: 1.4;">
+              <i class="fa-solid fa-circle-info" style="color: #3b82f6;"></i>
+              <strong>DNS Setup:</strong> Point your domain's CNAME record to <code>internationalsportssolutions.test</code> or your server IP. The system will automatically map incoming traffic to this academy database.
+            </div>
+          </div>
+        </div>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+      `
+    );
+  },
+
+  async submitAddDomain(academyId, academyName) {
+    const input = document.getElementById('new-domain-input');
+    const domain = input ? input.value.trim() : '';
+    const isPrimary = document.getElementById('new-domain-primary') ? document.getElementById('new-domain-primary').checked : false;
+    const isCustom = document.getElementById('new-domain-custom') ? document.getElementById('new-domain-custom').checked : true;
+
+    if (!domain) {
+      this.showToast('Please enter a valid domain name', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/central/academies/${academyId}/domains`, {
+      method: 'POST',
+      body: JSON.stringify({ domain, is_primary: isPrimary, is_custom: isCustom }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.showManageDomainsModal(academyId, academyName);
+      this.renderCentralAcademies();
+    } else {
+      this.showToast(res.error || 'Failed to add domain', 'danger');
+    }
+  },
+
+  async setPrimaryDomain(academyId, domainId, academyName) {
+    const res = await this.apiRequest(`/api/central/academies/${academyId}/domains/${domainId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_primary: 1 }),
+    });
+
+    if (res.success) {
+      this.showToast('Primary domain updated', 'success');
+      this.showManageDomainsModal(academyId, academyName);
+      this.renderCentralAcademies();
+    } else {
+      this.showToast(res.error || 'Failed to update primary domain', 'danger');
+    }
+  },
+
+  async deleteDomain(academyId, domainId, domainName, academyName) {
+    if (!confirm(`Are you sure you want to remove domain "${domainName}" from this academy?`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/central/academies/${academyId}/domains/${domainId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.showManageDomainsModal(academyId, academyName);
+      this.renderCentralAcademies();
+    } else {
+      this.showToast(res.error || 'Failed to remove domain', 'danger');
+    }
   },
 
   showProvisionAcademyModal() {
@@ -649,7 +831,14 @@ const app = {
               </select>
             </div>
           </div>
-          <div style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 8px;">
+          <div class="form-group" style="margin-top: 10px;">
+            <label>Branded Custom Domain (Optional)</label>
+            <input type="text" id="prov-custom-domain" class="form-input" style="width: 100%;" placeholder="e.g. spartansports.com">
+            <span style="font-size: 11px; color: var(--text-dim); margin-top: 3px; display: block;">
+              Platform subdomain will automatically be registered as <code>&lt;slug&gt;.internationalsportssolutions.test</code>
+            </span>
+          </div>
+          <div style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;">
             <p style="font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Initial Academy Administrator Account</p>
             <div class="form-grid">
               <div class="form-group">
@@ -676,6 +865,7 @@ const app = {
     const slug = document.getElementById('prov-slug').value.trim();
     const city = document.getElementById('prov-city').value.trim();
     const plan = document.getElementById('prov-plan').value;
+    const custom_domain = document.getElementById('prov-custom-domain') ? document.getElementById('prov-custom-domain').value.trim() : '';
     const admin_email = document.getElementById('prov-admin-email').value.trim();
     const admin_password = document.getElementById('prov-admin-password').value.trim();
 
@@ -686,7 +876,7 @@ const app = {
 
     const res = await this.apiRequest('/api/central/academies', {
       method: 'POST',
-      body: JSON.stringify({ name, slug, city, plan, admin_email, admin_password }),
+      body: JSON.stringify({ name, slug, city, plan, custom_domain, admin_email, admin_password }),
     });
 
     if (res.success) {

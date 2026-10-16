@@ -84,8 +84,20 @@ centralRouter.get('/academies', (req, res) => {
         }
       }
 
+      // Fetch registered domains and subdomains
+      let domains = [];
+      try {
+        domains = centralDb.prepare(`
+          SELECT id, domain, is_primary, is_custom, status, created_at
+          FROM domains
+          WHERE academy_id = ?
+          ORDER BY is_primary DESC, created_at ASC
+        `).all(ac.id);
+      } catch (e) {}
+
       return {
         ...ac,
+        domains,
         metrics: {
           students: studentCount,
           coaches: coachCount,
@@ -142,8 +154,19 @@ centralRouter.post('/academies', (req, res) => {
       admin_password,
     });
 
-    // Central audit log
+    // If custom domain provided, register it
     const centralDb = getCentralDb();
+    if (req.body.custom_domain && req.body.custom_domain.trim()) {
+      const cd = req.body.custom_domain.toLowerCase().trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      try {
+        centralDb.prepare(`
+          INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
+          VALUES (?, ?, 0, 1, 'active')
+        `).run(academy.id, cd);
+      } catch (e) {}
+    }
+
+    // Central audit log
     centralDb.prepare(`
       INSERT INTO central_audit_logs (user_id, user_email, action, entity, entity_id, details, ip_address)
       VALUES (?, ?, 'PROVISION_ACADEMY', 'academies', ?, ?, ?)
@@ -275,6 +298,209 @@ centralRouter.get('/audit-logs', (req, res) => {
     const centralDb = getCentralDb();
     const logs = centralDb.prepare('SELECT * FROM central_audit_logs ORDER BY created_at DESC LIMIT 100').all();
     res.json({ success: true, logs });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// DOMAIN & SUBDOMAIN MANAGEMENT ENDPOINTS
+// ==========================================
+
+/**
+ * GET /api/central/academies/:id/domains
+ * Lists all registered subdomains and custom domains for an academy
+ */
+centralRouter.get('/academies/:id/domains', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT id, name, slug FROM academies WHERE id = ?').get(id);
+    if (!academy) {
+      return res.status(404).json({ success: false, error: 'Academy not found' });
+    }
+
+    const domains = centralDb.prepare(`
+      SELECT id, domain, is_primary, is_custom, status, created_at, updated_at
+      FROM domains
+      WHERE academy_id = ?
+      ORDER BY is_primary DESC, created_at ASC
+    `).all(id);
+
+    res.json({
+      success: true,
+      academy,
+      defaultSubdomain: `${academy.slug}.internationalsportssolutions.test`,
+      domains,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/academies/:id/domains
+ * Registers a new domain or subdomain for an academy
+ */
+centralRouter.post('/academies/:id/domains', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { domain, is_primary, is_custom } = req.body;
+
+    if (!domain || typeof domain !== 'string' || !domain.trim()) {
+      return res.status(400).json({ success: false, error: 'Valid domain name is required' });
+    }
+
+    const cleanDomain = domain.toLowerCase().trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+
+    // Domain validation (must contain a dot or localhost)
+    if (!cleanDomain.includes('.') && cleanDomain !== 'localhost') {
+      return res.status(400).json({
+        success: false,
+        error: 'Domain must be a valid FQDN (e.g. sports.example.com or mysports.test)',
+      });
+    }
+
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT id, name FROM academies WHERE id = ?').get(id);
+    if (!academy) {
+      return res.status(404).json({ success: false, error: 'Academy not found' });
+    }
+
+    // Check uniqueness across ALL academies
+    const existing = centralDb.prepare(`
+      SELECT d.*, a.name as academy_name
+      FROM domains d
+      JOIN academies a ON d.academy_id = a.id
+      WHERE d.domain = ? COLLATE NOCASE
+    `).get(cleanDomain);
+
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        error: `Domain '${cleanDomain}' is already registered to ${existing.academy_name} (ID: ${existing.academy_id})`,
+      });
+    }
+
+    const primaryFlag = is_primary ? 1 : 0;
+    const customFlag = is_custom !== undefined
+      ? (is_custom ? 1 : 0)
+      : (!cleanDomain.endsWith('.internationalsportssolutions.test') && !cleanDomain.endsWith('.localhost') ? 1 : 0);
+
+    let newDomainId;
+    const tx = centralDb.transaction(() => {
+      if (primaryFlag === 1) {
+        centralDb.prepare('UPDATE domains SET is_primary = 0 WHERE academy_id = ?').run(id);
+      }
+      const insert = centralDb.prepare(`
+        INSERT INTO domains (academy_id, domain, is_primary, is_custom, status)
+        VALUES (?, ?, ?, ?, 'active')
+      `).run(id, cleanDomain, primaryFlag, customFlag);
+      newDomainId = Number(insert.lastInsertRowid);
+    });
+
+    tx();
+
+    // Central audit log
+    centralDb.prepare(`
+      INSERT INTO central_audit_logs (user_id, user_email, action, entity, entity_id, details, ip_address)
+      VALUES (?, ?, 'ADD_DOMAIN', 'domains', ?, ?, ?)
+    `).run(req.user.userId, req.user.email, String(newDomainId), `Registered domain ${cleanDomain} for ${academy.name}`, req.ip);
+
+    res.status(201).json({
+      success: true,
+      message: `Domain '${cleanDomain}' registered successfully`,
+      domain: {
+        id: newDomainId,
+        academy_id: id,
+        domain: cleanDomain,
+        is_primary: primaryFlag,
+        is_custom: customFlag,
+        status: 'active',
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/central/academies/:id/domains/:domainId
+ * Updates primary status or activation status of a domain
+ */
+centralRouter.put('/academies/:id/domains/:domainId', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const domainId = Number(req.params.domainId);
+    const { is_primary, status } = req.body;
+
+    const centralDb = getCentralDb();
+    const existing = centralDb.prepare('SELECT * FROM domains WHERE id = ? AND academy_id = ?').get(domainId, id);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Domain not found for this academy' });
+    }
+
+    const tx = centralDb.transaction(() => {
+      if (is_primary) {
+        centralDb.prepare('UPDATE domains SET is_primary = 0 WHERE academy_id = ?').run(id);
+        centralDb.prepare('UPDATE domains SET is_primary = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(domainId);
+      }
+      if (status) {
+        centralDb.prepare('UPDATE domains SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, domainId);
+      }
+    });
+
+    tx();
+
+    res.json({ success: true, message: 'Domain updated successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/central/academies/:id/domains/:domainId
+ * Removes a domain (protects the last remaining domain)
+ */
+centralRouter.delete('/academies/:id/domains/:domainId', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const domainId = Number(req.params.domainId);
+
+    const centralDb = getCentralDb();
+    const existing = centralDb.prepare('SELECT * FROM domains WHERE id = ? AND academy_id = ?').get(domainId, id);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Domain not found for this academy' });
+    }
+
+    const count = centralDb.prepare('SELECT COUNT(*) as c FROM domains WHERE academy_id = ?').get(id).c;
+    if (count <= 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete the only registered domain. Every academy must have at least one reachable domain or subdomain.',
+      });
+    }
+
+    const tx = centralDb.transaction(() => {
+      centralDb.prepare('DELETE FROM domains WHERE id = ?').run(domainId);
+      if (existing.is_primary === 1) {
+        // Fallback primary to the first available domain
+        const firstRemaining = centralDb.prepare('SELECT id FROM domains WHERE academy_id = ? ORDER BY id ASC LIMIT 1').get(id);
+        if (firstRemaining) {
+          centralDb.prepare('UPDATE domains SET is_primary = 1 WHERE id = ?').run(firstRemaining.id);
+        }
+      }
+    });
+
+    tx();
+
+    // Central audit log
+    centralDb.prepare(`
+      INSERT INTO central_audit_logs (user_id, user_email, action, entity, entity_id, details, ip_address)
+      VALUES (?, ?, 'DELETE_DOMAIN', 'domains', ?, ?, ?)
+    `).run(req.user.userId, req.user.email, String(domainId), `Removed domain ${existing.domain} from academy ${id}`, req.ip);
+
+    res.json({ success: true, message: `Domain '${existing.domain}' removed successfully` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

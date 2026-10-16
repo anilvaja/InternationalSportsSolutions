@@ -49,6 +49,34 @@ import { chromium } from '@playwright/test';
     const academiesTableVisible = await page.isVisible('table');
     record('Central Admin', 'Link: Academies & Databases (/admin/academies)', academiesTableVisible, `URL: ${page.url()}`);
 
+    // Test Domain & Subdomain Management Modal
+    await page.click('button:has-text("Domains"):first-of-type');
+    await page.waitForSelector('#modal-container.active', { state: 'visible' });
+    await page.waitForTimeout(600);
+    record('Central Admin', 'Modal: Manage Domains & Subdomains', true, 'Opened domains modal');
+
+    // Add new test custom domain
+    const testCustomDomain = `custom-test-${Date.now().toString().slice(-4)}.com`;
+    await page.fill('#new-domain-input', testCustomDomain);
+    await page.click('button:has-text("Add Domain")');
+    await page.waitForTimeout(800);
+    const domainRow = page.locator('#modal-container table tbody tr', { hasText: testCustomDomain });
+    const domainAdded = (await domainRow.count()) > 0;
+    record('Central Admin', 'CRUD: Add Custom Domain', domainAdded, `Registered "${testCustomDomain}"`);
+
+    // Delete the test domain
+    if (domainAdded) {
+      await domainRow.locator('button.btn-danger').click();
+      await page.waitForTimeout(800);
+      const domainDeleted = (await page.locator('#modal-container table tbody tr', { hasText: testCustomDomain }).count()) === 0;
+      record('Central Admin', 'CRUD: Delete Custom Domain', domainDeleted, `Removed "${testCustomDomain}"`);
+    }
+
+    // Close modal
+    await page.click('#modal-container button:has-text("Close")');
+    await page.waitForSelector('#modal-container.active', { state: 'detached', timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
     // Link 2: Platform Metrics
     await page.click('a[href="/admin/analytics"]');
     await page.waitForSelector('.stats-grid', { state: 'visible' });

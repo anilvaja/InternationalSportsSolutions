@@ -1,4 +1,5 @@
 import express from 'express';
+import { getCentralDb } from '../db/centralDb.js';
 import { resolveTenant } from '../middleware/tenantResolver.js';
 import { requireAuth, requireAcademyStaff } from '../middleware/auth.js';
 import { streamAcademyBackup } from '../services/backupService.js';
@@ -1733,6 +1734,35 @@ academyRouter.get('/syllabus-reports', (req, res) => {
     const db = req.tenantDb;
     const reports = SyllabusService.getSyllabusReports(db, req.academy.id);
     res.json({ success: true, ...reports });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/domains
+ * Returns registered domains and primary subdomain for the current academy
+ */
+academyRouter.get('/domains', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const domains = centralDb.prepare(`
+      SELECT id, domain, is_primary, is_custom, status, created_at
+      FROM domains
+      WHERE academy_id = ?
+      ORDER BY is_primary DESC, created_at ASC
+    `).all(req.academy.id);
+
+    res.json({
+      success: true,
+      academy: {
+        id: req.academy.id,
+        name: req.academy.name,
+        slug: req.academy.slug,
+      },
+      defaultSubdomain: `${req.academy.slug}.internationalsportssolutions.test`,
+      domains,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

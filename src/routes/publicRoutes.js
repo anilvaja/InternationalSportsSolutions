@@ -1,38 +1,81 @@
 import express from 'express';
 import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById } from '../db/connectionManager.js';
-import { extractSubdomain } from '../middleware/tenantResolver.js';
+import { extractSubdomain, extractHost } from '../middleware/tenantResolver.js';
 
 export const publicRouter = express.Router();
 
 /**
  * GET /api/public/tenant-info
- * Detects whether the current request is coming from a tenant subdomain
- * e.g., mahaviracademy.internationalsportssolutions.test
+ * Detects whether the current request is coming from a tenant subdomain or custom domain
+ * e.g., mahaviracademy.internationalsportssolutions.test or mahavirsports.com
  */
 publicRouter.get('/tenant-info', (req, res) => {
   try {
-    const slug = req.query.slug || extractSubdomain(req);
-    if (!slug) {
+    const host = extractHost(req);
+    const querySlug = req.query.slug;
+    const queryDomain = req.query.domain;
+    const centralDb = getCentralDb();
+
+    let academy = null;
+    let matchedDomain = null;
+
+    // 1. Check exact custom domain or host in domains table
+    const targetDomain = queryDomain || (
+      host && host !== 'localhost' && host !== '127.0.0.1' && host !== 'internationalsportssolutions.test' ? host : null
+    );
+
+    if (targetDomain) {
+      const match = centralDb.prepare(`
+        SELECT a.*, d.domain as matched_domain, d.is_primary, d.is_custom
+        FROM domains d
+        JOIN academies a ON d.academy_id = a.id
+        WHERE d.domain = ? COLLATE NOCASE AND d.status = 'active'
+      `).get(targetDomain.trim().toLowerCase());
+
+      if (match) {
+        academy = match;
+        matchedDomain = match.matched_domain;
+      }
+    }
+
+    // 2. Fallback to slug or subdomain
+    if (!academy) {
+      const slug = querySlug || extractSubdomain(req);
+      if (slug) {
+        academy = centralDb.prepare(`
+          SELECT * FROM academies WHERE slug = ? COLLATE NOCASE
+        `).get(slug.trim());
+      }
+    }
+
+    if (!academy) {
       return res.json({ success: true, isTenantSubdomain: false, academy: null });
     }
 
-    const centralDb = getCentralDb();
-    const academy = centralDb.prepare(`
-      SELECT id, name, slug, contact_email, contact_phone, address, city, logo_url, plan, status
-      FROM academies
-      WHERE slug = ? COLLATE NOCASE
-    `).get(slug.trim());
-
-    if (!academy) {
-      return res.json({ success: true, isTenantSubdomain: true, found: false, academy: null });
-    }
+    // Attach domains registered for this academy
+    const domains = centralDb.prepare(`
+      SELECT id, domain, is_primary, is_custom, status FROM domains WHERE academy_id = ?
+    `).all(academy.id);
 
     res.json({
       success: true,
       isTenantSubdomain: true,
       found: true,
-      academy,
+      academy: {
+        id: academy.id,
+        name: academy.name,
+        slug: academy.slug,
+        contact_email: academy.contact_email,
+        contact_phone: academy.contact_phone,
+        address: academy.address,
+        city: academy.city,
+        logo_url: academy.logo_url,
+        plan: academy.plan,
+        status: academy.status,
+        matched_domain: matchedDomain,
+        domains,
+      },
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

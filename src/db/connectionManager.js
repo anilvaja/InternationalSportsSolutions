@@ -148,6 +148,21 @@ export function provisionAcademyDb({
     newAcademyId = Number(res.lastInsertRowid);
     const finalDbPath = getAcademyDbPath(newAcademyId);
     centralDb.prepare('UPDATE academies SET db_path = ? WHERE id = ?').run(finalDbPath, newAcademyId);
+
+    // Register default platform subdomain & localhost alias in central domains table
+    try {
+      centralDb.prepare(`
+        INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
+        VALUES (?, ?, 1, 0, 'active')
+      `).run(newAcademyId, `${slug.toLowerCase().trim()}.internationalsportssolutions.test`);
+
+      centralDb.prepare(`
+        INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
+        VALUES (?, ?, 0, 0, 'active')
+      `).run(newAcademyId, `${slug.toLowerCase().trim()}.localhost`);
+    } catch (e) {
+      // Ignore if table not yet migrated
+    }
   });
 
   tx();
