@@ -8,7 +8,7 @@ const app = {
   accessibleAcademies: [],
   selectedAcademyId: localStorage.getItem('selectedAcademyId') || null,
   currentTab: 'overview',
-  theme: localStorage.getItem('theme') || 'dark',
+  theme: localStorage.getItem('theme') || 'light',
   tenantSubdomain: null,
 
   async init() {
@@ -689,7 +689,7 @@ const app = {
           </div>
           <div style="padding: 24px; display: flex; align-items: center; justify-content: space-around; text-align: center;">
             <div>
-              <div style="font-size: 28px; font-weight: 700; color: #fff;">${m.todayAttendance.marked}</div>
+              <div style="font-size: 28px; font-weight: 700; color: var(--text-heading);">${m.todayAttendance.marked}</div>
               <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Total Marked</div>
             </div>
             <div>
@@ -897,9 +897,9 @@ const app = {
           ${history.length === 0 ? '<p style="color:var(--text-muted);">No enrollment records found.</p>' : `
             <div style="display: flex; flex-direction: column; gap: 12px;">
               ${history.map((h, idx) => `
-                <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; background: rgba(255,255,255,0.02);">
+                <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; background: var(--bg-surface);">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <strong style="color: #fff; font-size: 14px;">${h.batch_name}</strong>
+                    <strong style="color: var(--text-heading); font-size: 14px;">${h.batch_name}</strong>
                     <span class="badge ${h.status === 'active' ? 'badge-success' : 'badge-secondary'}">
                       ${h.status.toUpperCase()}
                     </span>
@@ -1903,9 +1903,9 @@ const app = {
         </div>
         <div style="padding: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
           ${batches.map(b => `
-            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px;">
+            <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px;">
               <span class="badge badge-info">${b.sport_name}</span>
-              <h3 style="font-size: 16px; font-weight: 600; color: #fff; margin: 8px 0;">${b.name}</h3>
+              <h3 style="font-size: 16px; font-weight: 600; color: var(--text-heading); margin: 8px 0;">${b.name}</h3>
               <p style="font-size: 13px; color: var(--text-muted);">
                 <i class="fa-solid fa-clock"></i> ${b.start_time} - ${b.end_time} (${b.days_of_week})
               </p>
@@ -2508,13 +2508,23 @@ const app = {
       'Reorder Categories',
       `
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-          Adjust numeric display orders to rearrange categories:
+          <i class="fa-solid fa-hand-pointer" style="color: #38bdf8;"></i> Drag and drop rows to reorder, or use the up/down arrow buttons:
         </p>
-        <div id="reorder-cats-list">
+        <div class="reorder-list" id="reorder-cats-list">
           ${categories.map((c, idx) => `
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px;">
-              <span><strong>${c.name}</strong></span>
-              <input type="number" class="form-input cat-reorder-input" data-id="${c.id}" value="${idx}" style="width: 70px;">
+            <div class="reorder-item" draggable="true" data-id="${c.id}">
+              <div class="reorder-item-left">
+                <i class="fa-solid fa-grip-vertical reorder-handle"></i>
+                <span class="reorder-rank">${idx + 1}</span>
+                <div>
+                  <strong>${c.name}</strong>
+                  ${c.description ? `<div style="font-size: 11px; color: var(--text-muted);">${c.description}</div>` : ''}
+                </div>
+              </div>
+              <div class="reorder-controls">
+                <button type="button" class="reorder-btn" onclick="app.moveReorderItem(this, -1)" title="Move Up"><i class="fa-solid fa-arrow-up"></i></button>
+                <button type="button" class="reorder-btn" onclick="app.moveReorderItem(this, 1)" title="Move Down"><i class="fa-solid fa-arrow-down"></i></button>
+              </div>
             </div>
           `).join('')}
         </div>
@@ -2524,16 +2534,15 @@ const app = {
         <button class="btn btn-primary" onclick="app.submitReorderCategories()"><i class="fa-solid fa-check"></i> Apply Order</button>
       `
     );
+    this.initDragAndDrop('reorder-cats-list');
   },
 
   async submitReorderCategories() {
-    const inputs = document.querySelectorAll('.cat-reorder-input');
-    const sorted = Array.from(inputs).map(inp => ({
-      id: Number(inp.getAttribute('data-id')),
-      val: Number(inp.value) || 0,
-    })).sort((a, b) => a.val - b.val);
+    const container = document.getElementById('reorder-cats-list');
+    if (!container) return;
+    const items = container.querySelectorAll('.reorder-item');
+    const orderIds = Array.from(items).map(item => Number(item.getAttribute('data-id')));
 
-    const orderIds = sorted.map(s => s.id);
     const res = await this.apiRequest('/api/academy/syllabus-categories/reorder', {
       method: 'POST',
       body: JSON.stringify({ orderIds }),
@@ -2751,16 +2760,28 @@ const app = {
       'Reorder Techniques',
       `
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-          Adjust numeric display orders to rearrange techniques:
+          <i class="fa-solid fa-hand-pointer" style="color: #38bdf8;"></i> Drag and drop rows to reorder, or use the up/down arrow buttons:
         </p>
-        <div style="max-height: 400px; overflow-y: auto;">
+        <div class="reorder-list" id="reorder-tech-list">
           ${techniques.map((t, idx) => `
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px;">
-              <div>
-                <strong>${t.name}</strong>
-                <span class="badge badge-purple" style="margin-left: 6px;">Lvl ${t.level}</span>
+            <div class="reorder-item" draggable="true" data-id="${t.id}">
+              <div class="reorder-item-left">
+                <i class="fa-solid fa-grip-vertical reorder-handle"></i>
+                <span class="reorder-rank">${idx + 1}</span>
+                <div>
+                  <strong>${t.name}</strong>
+                  ${t.code ? `<span style="font-size: 11px; color: var(--text-dim); margin-left: 6px;">[${t.code}]</span>` : ''}
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                    <span class="badge badge-purple" style="font-size: 10px; padding: 2px 6px;">Lvl ${t.level}</span>
+                    ${t.belt_level ? `<span class="badge badge-warning" style="font-size: 10px; padding: 2px 6px; margin-left: 4px;">${t.belt_level}</span>` : ''}
+                    <span style="margin-left: 6px;">${t.category_name || ''}</span>
+                  </div>
+                </div>
               </div>
-              <input type="number" class="form-input tech-reorder-input" data-id="${t.id}" value="${idx}" style="width: 70px;">
+              <div class="reorder-controls">
+                <button type="button" class="reorder-btn" onclick="app.moveReorderItem(this, -1)" title="Move Up"><i class="fa-solid fa-arrow-up"></i></button>
+                <button type="button" class="reorder-btn" onclick="app.moveReorderItem(this, 1)" title="Move Down"><i class="fa-solid fa-arrow-down"></i></button>
+              </div>
             </div>
           `).join('')}
         </div>
@@ -2770,16 +2791,15 @@ const app = {
         <button class="btn btn-primary" onclick="app.submitReorderTechniques()"><i class="fa-solid fa-check"></i> Apply Order</button>
       `
     );
+    this.initDragAndDrop('reorder-tech-list');
   },
 
   async submitReorderTechniques() {
-    const inputs = document.querySelectorAll('.tech-reorder-input');
-    const sorted = Array.from(inputs).map(inp => ({
-      id: Number(inp.getAttribute('data-id')),
-      val: Number(inp.value) || 0,
-    })).sort((a, b) => a.val - b.val);
+    const container = document.getElementById('reorder-tech-list');
+    if (!container) return;
+    const items = container.querySelectorAll('.reorder-item');
+    const orderIds = Array.from(items).map(item => Number(item.getAttribute('data-id')));
 
-    const orderIds = sorted.map(s => s.id);
     const res = await this.apiRequest('/api/academy/syllabus-techniques/reorder', {
       method: 'POST',
       body: JSON.stringify({ orderIds }),
@@ -2792,6 +2812,79 @@ const app = {
     } else {
       this.showToast(res.error || 'Failed to reorder techniques', 'danger');
     }
+  },
+
+  initDragAndDrop(containerId) {
+    setTimeout(() => {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      let draggedItem = null;
+
+      const items = container.querySelectorAll('.reorder-item');
+      items.forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+          draggedItem = item;
+          item.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', item.getAttribute('data-id'));
+        });
+
+        item.addEventListener('dragend', () => {
+          item.classList.remove('dragging');
+          container.querySelectorAll('.reorder-item').forEach(el => el.classList.remove('drag-over'));
+          draggedItem = null;
+          app.updateReorderRanks(containerId);
+        });
+
+        item.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          if (!draggedItem || item === draggedItem) return;
+
+          const bounding = item.getBoundingClientRect();
+          const offset = bounding.y + (bounding.height / 2);
+          if (e.clientY > offset) {
+            item.after(draggedItem);
+          } else {
+            item.before(draggedItem);
+          }
+          app.updateReorderRanks(containerId);
+        });
+
+        item.addEventListener('dragenter', (e) => {
+          e.preventDefault();
+          if (draggedItem && item !== draggedItem) {
+            item.classList.add('drag-over');
+          }
+        });
+
+        item.addEventListener('dragleave', () => {
+          item.classList.remove('drag-over');
+        });
+      });
+    }, 50);
+  },
+
+  updateReorderRanks(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const items = container.querySelectorAll('.reorder-item');
+    items.forEach((item, index) => {
+      const rank = item.querySelector('.reorder-rank');
+      if (rank) rank.innerText = index + 1;
+    });
+  },
+
+  moveReorderItem(btn, direction) {
+    const item = btn.closest('.reorder-item');
+    const container = item.parentElement;
+    if (direction === -1 && item.previousElementSibling) {
+      item.previousElementSibling.before(item);
+    } else if (direction === 1 && item.nextElementSibling) {
+      item.nextElementSibling.after(item);
+    }
+    this.updateReorderRanks(container.id);
   },
 
   // ==========================================
@@ -3004,7 +3097,7 @@ const app = {
             <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
               <div>
                 <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Current Active Technique</span>
-                <h3 style="font-size: 18px; font-weight: 700; color: #fff; margin-top: 4px;">
+                <h3 style="font-size: 18px; font-weight: 700; color: var(--text-heading); margin-top: 4px;">
                   ${currentTechnique ? currentTechnique.technique_name : 'No Active Technique Assigned'}
                 </h3>
                 <div style="margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
@@ -3225,7 +3318,7 @@ const app = {
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
               <div>
                 <span style="font-size: 12px; text-transform: uppercase; color: #38bdf8; font-weight: 700; letter-spacing: 0.5px;">Active Training Technique</span>
-                <h2 style="font-size: 24px; font-weight: 800; color: #fff; margin-top: 6px;">
+                <h2 style="font-size: 24px; font-weight: 800; color: var(--text-heading); margin-top: 6px;">
                   ${currentTechnique ? currentTechnique.technique_name : 'No Technique Currently Assigned'}
                 </h2>
                 <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
