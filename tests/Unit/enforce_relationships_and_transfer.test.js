@@ -407,7 +407,7 @@ describe('Enforce Academy, Branch, Batch, and Student Relationships (Rules 1-16)
       token: academy1Token,
       academyId: ACADEMY_1_ID,
     });
-    assert.equal(importRes.status, 201);
+    assert.equal(importRes.status, 201, `Failed to import: ${importRes.data.error}`);
     assert.equal(importRes.data.importedCount, 1, 'Only the valid student should be imported');
     assert.equal(importRes.data.errors.length, 2, 'Invalid rows must be rejected');
 

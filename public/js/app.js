@@ -66,6 +66,12 @@ const app = {
       e.preventDefault();
       this.handleLogin();
     });
+
+    window.addEventListener('popstate', (e) => {
+      if (!this.user) return;
+      const tab = (e.state && e.state.tab) || this.getTabForPath(window.location.pathname) || this.getDefaultTab();
+      this.navigate(tab, false);
+    });
   },
 
   quickFill(email, password) {
@@ -166,6 +172,9 @@ const app = {
     localStorage.removeItem('token');
     localStorage.removeItem('selectedAcademyId');
     this.apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+      window.history.pushState(null, '', '/login');
+    }
     this.showLogin();
   },
 
@@ -194,7 +203,10 @@ const app = {
 
     this.renderTenantSelector();
     this.renderSidebar();
-    this.navigate(this.user.role === 'student' ? 'student-dashboard' : (this.user.isSuperAdmin ? 'central-academies' : 'overview'));
+
+    const urlTab = this.getTabForPath(window.location.pathname);
+    const targetTab = (urlTab && this.isTabAllowed(urlTab)) ? urlTab : this.getDefaultTab();
+    this.navigate(targetTab, true);
   },
 
   formatRole(role) {
@@ -237,7 +249,127 @@ const app = {
     this.selectedAcademyId = Number(academyId);
     localStorage.setItem('selectedAcademyId', this.selectedAcademyId);
     this.showToast('Switched tenant database context', 'info');
-    this.navigate(this.currentTab);
+    this.navigate(this.currentTab, false);
+  },
+
+  // ==========================================
+  // URL ROUTING & NAVIGATION
+  // ==========================================
+
+  routes: {
+    // Central SaaS Admin
+    'central-academies': '/admin/academies',
+    'central-stats': '/admin/analytics',
+    'central-audit': '/admin/audit',
+
+    // Academy Operations
+    'overview': '/academy/overview',
+    'students': '/academy/students',
+    'coaches': '/academy/coaches',
+    'batches': '/academy/batches',
+    'attendance': '/academy/attendance',
+    'syllabus': '/academy/syllabus',
+    'fees': '/academy/fees',
+    'leaves': '/academy/leaves',
+    'facilities': '/academy/facilities',
+    'audit-logs': '/academy/audit-logs',
+
+    // Student Portal
+    'student-dashboard': '/student/dashboard',
+    'student-technique': '/student/syllabus',
+    'student-attendance': '/student/attendance',
+    'student-fees': '/student/fees',
+  },
+
+  tabTitles: {
+    'central-academies': 'Academies & Databases',
+    'central-stats': 'Platform Metrics',
+    'central-audit': 'Central Audit Trail',
+    'overview': 'Dashboard',
+    'students': 'Students',
+    'coaches': 'Coaches & Staff',
+    'batches': 'Batches & Schedules',
+    'attendance': 'Attendance',
+    'syllabus': 'Sports Syllabus & Learning Progression',
+    'fees': 'Fees & Invoices',
+    'leaves': 'Leaves',
+    'facilities': 'Facilities & Equipment',
+    'audit-logs': 'Tenant Audit Log',
+    'student-dashboard': 'Student Dashboard',
+    'student-technique': 'My Syllabus Progress',
+    'student-attendance': 'Attendance History',
+    'student-fees': 'My Invoices & Fees',
+  },
+
+  getPathForTab(tab) {
+    return this.routes[tab] || '/academy/overview';
+  },
+
+  getTabForPath(pathname) {
+    if (!pathname) return null;
+    const clean = pathname.toLowerCase().replace(/\/+$/, '') || '/';
+
+    for (const [tab, route] of Object.entries(this.routes)) {
+      if (route.toLowerCase() === clean) return tab;
+    }
+
+    const aliases = {
+      '/admin': 'central-academies',
+      '/admin/academies': 'central-academies',
+      '/admin/dashboard': 'central-academies',
+      '/admin/stats': 'central-stats',
+      '/admin/analytics': 'central-stats',
+      '/admin/metrics': 'central-stats',
+      '/admin/audit': 'central-audit',
+      '/academy': 'overview',
+      '/academy/overview': 'overview',
+      '/academy/dashboard': 'overview',
+      '/academy/students': 'students',
+      '/academy/coaches': 'coaches',
+      '/academy/batches': 'batches',
+      '/academy/attendance': 'attendance',
+      '/academy/syllabus': 'syllabus',
+      '/academy/techniques': 'syllabus',
+      '/academy/fees': 'fees',
+      '/academy/leaves': 'leaves',
+      '/academy/facilities': 'facilities',
+      '/academy/audit-logs': 'audit-logs',
+      '/student': 'student-dashboard',
+      '/student/dashboard': 'student-dashboard',
+      '/student/technique': 'student-technique',
+      '/student/techniques': 'student-technique',
+      '/student/syllabus': 'student-technique',
+      '/student/attendance': 'student-attendance',
+      '/student/fees': 'student-fees',
+    };
+
+    return aliases[clean] || null;
+  },
+
+  isTabAllowed(tab) {
+    if (!this.user) return false;
+    if (this.user.role === 'student') {
+      return ['student-dashboard', 'student-technique', 'student-attendance', 'student-fees'].includes(tab);
+    }
+    const academyTabs = ['overview', 'students', 'coaches', 'batches', 'attendance', 'syllabus', 'fees', 'leaves', 'facilities', 'audit-logs'];
+    if (academyTabs.includes(tab)) return true;
+    if (this.user.isSuperAdmin) {
+      return ['central-academies', 'central-stats', 'central-audit'].includes(tab);
+    }
+    return false;
+  },
+
+  getDefaultTab() {
+    if (!this.user) return 'overview';
+    if (this.user.role === 'student') return 'student-dashboard';
+    if (this.user.isSuperAdmin) return 'central-academies';
+    return 'overview';
+  },
+
+  updateDocumentTitle(tab) {
+    const academyName = (this.user && this.user.academyName) || (this.tenantSubdomain && this.tenantSubdomain.name) || 'International Sports Solutions';
+    const tabTitle = this.tabTitles[tab] || 'Portal';
+    document.title = `${tabTitle} — ${academyName}`;
   },
 
   // ==========================================
@@ -251,13 +383,13 @@ const app = {
     if (this.user.isSuperAdmin) {
       html += `
         <div class="nav-section-title">Central SaaS Admin</div>
-        <a class="nav-item ${this.currentTab === 'central-academies' ? 'active' : ''}" onclick="app.navigate('central-academies')">
+        <a href="${this.getPathForTab('central-academies')}" class="nav-item ${this.currentTab === 'central-academies' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-academies')">
           <i class="fa-solid fa-server"></i> Academies & Databases
         </a>
-        <a class="nav-item ${this.currentTab === 'central-stats' ? 'active' : ''}" onclick="app.navigate('central-stats')">
+        <a href="${this.getPathForTab('central-stats')}" class="nav-item ${this.currentTab === 'central-stats' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-stats')">
           <i class="fa-solid fa-chart-pie"></i> Platform Metrics
         </a>
-        <a class="nav-item ${this.currentTab === 'central-audit' ? 'active' : ''}" onclick="app.navigate('central-audit')">
+        <a href="${this.getPathForTab('central-audit')}" class="nav-item ${this.currentTab === 'central-audit' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-audit')">
           <i class="fa-solid fa-list-check"></i> Central Audit Trail
         </a>
       `;
@@ -266,34 +398,34 @@ const app = {
     if (this.user.role !== 'student') {
       html += `
         <div class="nav-section-title">Academy Operations</div>
-        <a class="nav-item ${this.currentTab === 'overview' ? 'active' : ''}" onclick="app.navigate('overview')">
+        <a href="${this.getPathForTab('overview')}" class="nav-item ${this.currentTab === 'overview' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('overview')">
           <i class="fa-solid fa-gauge-high"></i> Dashboard
         </a>
-        <a class="nav-item ${this.currentTab === 'students' ? 'active' : ''}" onclick="app.navigate('students')">
+        <a href="${this.getPathForTab('students')}" class="nav-item ${this.currentTab === 'students' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('students')">
           <i class="fa-solid fa-users"></i> Students
         </a>
-        <a class="nav-item ${this.currentTab === 'coaches' ? 'active' : ''}" onclick="app.navigate('coaches')">
+        <a href="${this.getPathForTab('coaches')}" class="nav-item ${this.currentTab === 'coaches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('coaches')">
           <i class="fa-solid fa-user-ninja"></i> Coaches & Staff
         </a>
-        <a class="nav-item ${this.currentTab === 'batches' ? 'active' : ''}" onclick="app.navigate('batches')">
+        <a href="${this.getPathForTab('batches')}" class="nav-item ${this.currentTab === 'batches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('batches')">
           <i class="fa-solid fa-calendar-days"></i> Batches & Schedules
         </a>
-        <a class="nav-item ${this.currentTab === 'attendance' ? 'active' : ''}" onclick="app.navigate('attendance')">
+        <a href="${this.getPathForTab('attendance')}" class="nav-item ${this.currentTab === 'attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('attendance')">
           <i class="fa-solid fa-clipboard-user"></i> Attendance
         </a>
-        <a class="nav-item ${this.currentTab === 'syllabus' ? 'active' : ''}" onclick="app.navigate('syllabus')">
+        <a href="${this.getPathForTab('syllabus')}" class="nav-item ${this.currentTab === 'syllabus' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('syllabus')">
           <i class="fa-solid fa-graduation-cap"></i> Sports Syllabus
         </a>
-        <a class="nav-item ${this.currentTab === 'fees' ? 'active' : ''}" onclick="app.navigate('fees')">
+        <a href="${this.getPathForTab('fees')}" class="nav-item ${this.currentTab === 'fees' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('fees')">
           <i class="fa-solid fa-file-invoice-dollar"></i> Fees & Invoices
         </a>
-        <a class="nav-item ${this.currentTab === 'leaves' ? 'active' : ''}" onclick="app.navigate('leaves')">
+        <a href="${this.getPathForTab('leaves')}" class="nav-item ${this.currentTab === 'leaves' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('leaves')">
           <i class="fa-solid fa-calendar-check"></i> Leaves
         </a>
-        <a class="nav-item ${this.currentTab === 'facilities' ? 'active' : ''}" onclick="app.navigate('facilities')">
+        <a href="${this.getPathForTab('facilities')}" class="nav-item ${this.currentTab === 'facilities' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('facilities')">
           <i class="fa-solid fa-dumbbell"></i> Facilities & Equipment
         </a>
-        <a class="nav-item ${this.currentTab === 'audit-logs' ? 'active' : ''}" onclick="app.navigate('audit-logs')">
+        <a href="${this.getPathForTab('audit-logs')}" class="nav-item ${this.currentTab === 'audit-logs' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('audit-logs')">
           <i class="fa-solid fa-shield-halved"></i> Tenant Audit Log
         </a>
       `;
@@ -301,16 +433,16 @@ const app = {
       // Student view
       html += `
         <div class="nav-section-title">Student Portal</div>
-        <a class="nav-item ${this.currentTab === 'student-dashboard' ? 'active' : ''}" onclick="app.navigate('student-dashboard')">
+        <a href="${this.getPathForTab('student-dashboard')}" class="nav-item ${this.currentTab === 'student-dashboard' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-dashboard')">
           <i class="fa-solid fa-gauge-high"></i> My Dashboard
         </a>
-        <a class="nav-item ${this.currentTab === 'student-technique' ? 'active' : ''}" onclick="app.navigate('student-technique')">
+        <a href="${this.getPathForTab('student-technique')}" class="nav-item ${this.currentTab === 'student-technique' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-technique')">
           <i class="fa-solid fa-medal"></i> My Syllabus Progress
         </a>
-        <a class="nav-item ${this.currentTab === 'student-attendance' ? 'active' : ''}" onclick="app.navigate('student-attendance')">
+        <a href="${this.getPathForTab('student-attendance')}" class="nav-item ${this.currentTab === 'student-attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-attendance')">
           <i class="fa-solid fa-clipboard-user"></i> Attendance History
         </a>
-        <a class="nav-item ${this.currentTab === 'student-fees' ? 'active' : ''}" onclick="app.navigate('student-fees')">
+        <a href="${this.getPathForTab('student-fees')}" class="nav-item ${this.currentTab === 'student-fees' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-fees')">
           <i class="fa-solid fa-file-invoice-dollar"></i> My Invoices & Fees
         </a>
       `;
@@ -319,8 +451,23 @@ const app = {
     nav.innerHTML = html;
   },
 
-  navigate(tab) {
+  navigate(tab, updateHistory = true) {
+    if (!this.isTabAllowed(tab)) {
+      tab = this.getDefaultTab();
+    }
+
     this.currentTab = tab;
+    const targetPath = this.getPathForTab(tab);
+
+    if (updateHistory) {
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState({ tab }, '', targetPath);
+      } else {
+        window.history.replaceState({ tab }, '', targetPath);
+      }
+    }
+
+    this.updateDocumentTitle(tab);
     this.renderSidebar();
 
     const content = document.getElementById('page-content');
