@@ -2199,8 +2199,6 @@ const app = {
       r.style.display = (matchCat && matchLvl && matchSearch) ? '' : 'none';
     });
   },
-    });
-  },
 
   async loadSyllabusCategoriesTab() {
     const container = document.getElementById('syllabus-tab-content');
