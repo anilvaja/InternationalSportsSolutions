@@ -52,6 +52,20 @@ describe('Sports Syllabus, Technique Progression & Learning Tracking', () => {
     if (server) {
       await new Promise((resolve) => server.close(resolve));
     }
+    if (academy1Db) {
+      try {
+        const testTechs = academy1Db.prepare("SELECT id FROM syllabus_techniques WHERE category_id IN (SELECT id FROM syllabus_categories WHERE name LIKE '%-%')").all().map(t => t.id);
+        if (testTechs.length) {
+          academy1Db.prepare(`UPDATE student_attendance SET technique_id = NULL WHERE technique_id IN (${testTechs.join(',')})`).run();
+          academy1Db.prepare(`DELETE FROM attendance_technique_snapshots WHERE technique_id IN (${testTechs.join(',')})`).run();
+          academy1Db.prepare(`DELETE FROM student_technique_assignments WHERE technique_id IN (${testTechs.join(',')})`).run();
+          academy1Db.prepare(`DELETE FROM syllabus_techniques WHERE id IN (${testTechs.join(',')})`).run();
+        }
+        academy1Db.prepare("DELETE FROM syllabus_categories WHERE name LIKE '%-%'").run();
+      } catch (err) {
+        console.error('Test cleanup error:', err);
+      }
+    }
   });
 
   async function api(path, { method = 'GET', body, token = academy1Token, academyId = ACADEMY_1_ID } = {}) {
