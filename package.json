@@ -6,6 +6,7 @@
         "start": "node server.js",
         "server:dev": "node --watch server.js",
         "seed": "node src/db/seed.js",
+        "migrate": "node scripts/run_migrations.js",
         "test": "node --test tests/unit/**/*.test.js",
         "mobile:start": "npm --prefix mobile run start",
         "push:ftp": "powershell -ExecutionPolicy Bypass -File scripts/local_ftp_push.ps1",

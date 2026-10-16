@@ -2,6 +2,7 @@ import express from 'express';
 import { resolveTenant } from '../middleware/tenantResolver.js';
 import { requireAuth, requireAcademyStaff } from '../middleware/auth.js';
 import { streamAcademyBackup } from '../services/backupService.js';
+import { SyllabusService } from '../services/syllabusService.js';
 
 export const academyRouter = express.Router();
 
@@ -98,12 +99,21 @@ academyRouter.get('/students', (req, res) => {
              bt.start_time as batch_start_time,
              bt.end_time as batch_end_time,
              sp.name as sport_name,
-             sbe.start_date as batch_enrolled_date
+             sbe.start_date as batch_enrolled_date,
+             st.id as active_technique_id,
+             st.name as active_technique_name,
+             st.level as active_technique_level,
+             st.belt_level as active_technique_belt_level,
+             sc.name as active_technique_category_name,
+             sta.sessions_attended as active_technique_sessions
       FROM students s
       LEFT JOIN branches b ON b.id = s.branch_id
       LEFT JOIN student_batch_enrollments sbe ON sbe.student_id = s.id AND sbe.status = 'active'
       LEFT JOIN batches bt ON bt.id = sbe.batch_id
       LEFT JOIN sports sp ON sp.id = bt.sport_id
+      LEFT JOIN student_technique_assignments sta ON sta.student_id = s.id AND sta.status = 'active'
+      LEFT JOIN syllabus_techniques st ON st.id = sta.technique_id
+      LEFT JOIN syllabus_categories sc ON sc.id = st.category_id
       WHERE 1=1
     `;
     const params = [];
@@ -180,7 +190,7 @@ academyRouter.post('/students', (req, res) => {
     }
 
     // Generate unique student code: STU-XXXX
-    const studentCode = `STU-${Math.floor(1000 + Math.random() * 9000)}`;
+    const studentCode = req.body.student_code || `STU-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
 
     const insert = db.prepare(`
       INSERT INTO students (
@@ -230,6 +240,22 @@ academyRouter.post('/students', (req, res) => {
         INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
         VALUES (?, ?, DATE('now'), 'active', ?)
       `).run(newStudentId, batch.id, req.user.userId);
+    }
+
+    // Assign initial syllabus technique (Rule 3)
+    if (req.body.technique_id) {
+      try {
+        SyllabusService.assignStudentTechnique(db, req.academy.id, newStudentId, {
+          technique_id: Number(req.body.technique_id),
+          assigned_by: req.user.userId,
+          action: 'initial',
+          remarks: req.body.technique_remarks || 'Initial technique assignment on enrollment',
+        });
+      } catch (techErr) {
+        console.warn('Initial technique assignment notice:', techErr.message);
+      }
+    } else {
+      SyllabusService.autoAssignDefaultTechniqueIfNone(db, req.academy.id, newStudentId, req.user.userId);
     }
 
     // Audit log
@@ -515,7 +541,7 @@ academyRouter.post('/students/import', (req, res) => {
           }
         }
 
-        const studentCode = item.student_code || `STU-${Math.floor(1000 + Math.random() * 9000)}`;
+        const studentCode = item.student_code || `STU-IMP-${Date.now().toString().slice(-6)}-${i}-${Math.floor(100 + Math.random() * 900)}`;
 
         const ins = db.prepare(`
           INSERT INTO students (
@@ -942,7 +968,7 @@ academyRouter.get('/attendance', (req, res) => {
 
     const attendanceRecord = db.prepare('SELECT * FROM attendance WHERE batch_id = ? AND date = ?').get(Number(batch_id), date);
 
-    // List all actively enrolled students in this batch, along with marked attendance if exists
+    // List all actively enrolled students in this batch, along with marked attendance & active technique
     const roster = db.prepare(`
       SELECT 
         s.id as student_id,
@@ -950,17 +976,34 @@ academyRouter.get('/attendance', (req, res) => {
         s.first_name,
         s.last_name,
         sa.status,
-        sa.remarks
+        sa.remarks,
+        sa.technique_id as marked_technique_id,
+        sa.technique_level as marked_technique_level,
+        sa.technique_status as marked_technique_status,
+        sa.technique_remarks as marked_technique_remarks,
+        sa.attended_sessions_snapshot,
+        st.id as active_technique_id,
+        st.name as active_technique_name,
+        st.level as active_technique_level,
+        st.belt_level as active_technique_belt_level,
+        sc.name as active_category_name,
+        sta.sessions_attended as active_sessions_attended
       FROM students s
       JOIN student_batch_enrollments sbe ON sbe.student_id = s.id AND sbe.batch_id = ? AND sbe.status = 'active'
       LEFT JOIN student_attendance sa ON sa.student_id = s.id AND sa.attendance_id = ?
+      LEFT JOIN student_technique_assignments sta ON sta.student_id = s.id AND sta.status = 'active'
+      LEFT JOIN syllabus_techniques st ON st.id = sta.technique_id
+      LEFT JOIN syllabus_categories sc ON sc.id = st.category_id
       ORDER BY s.first_name ASC
     `).all(Number(batch_id), attendanceRecord ? attendanceRecord.id : -1);
+
+    const availableTechniques = SyllabusService.listTechniques(db, req.academy.id);
 
     res.json({
       success: true,
       attendanceRecord: attendanceRecord || null,
       roster,
+      availableTechniques,
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -969,7 +1012,7 @@ academyRouter.get('/attendance', (req, res) => {
 
 /**
  * POST /api/academy/attendance
- * Marks or updates attendance for a batch on a given date
+ * Marks or updates attendance for a batch on a given date with technique progression
  */
 academyRouter.post('/attendance', (req, res) => {
   try {
@@ -1005,11 +1048,14 @@ academyRouter.post('/attendance', (req, res) => {
       for (const entry of entries) {
         upsertStudentAttendance.run(attId, Number(entry.student_id), entry.status || 'present', entry.remarks || null);
       }
+
+      // Process technique progression, counting attended sessions & recording immutable snapshots
+      SyllabusService.processAttendanceProgression(db, req.academy.id, attId, entries, req.user.userId);
     });
 
     tx();
 
-    res.json({ success: true, message: `Attendance marked successfully for ${entries.length} students` });
+    res.json({ success: true, message: `Attendance and technique progression marked successfully for ${entries.length} students` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1394,5 +1440,300 @@ academyRouter.get('/backup', async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ success: false, error: err.message });
     }
+  }
+});
+
+// ==========================================
+// SYLLABUS CATEGORIES
+// ==========================================
+
+/**
+ * GET /api/academy/syllabus-categories
+ */
+academyRouter.get('/syllabus-categories', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const includeInactive = req.query.include_inactive === 'true' || req.query.all === 'true';
+    const categories = SyllabusService.listCategories(db, req.academy.id, { includeInactive });
+    res.json({ success: true, categories });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/syllabus-categories
+ */
+academyRouter.post('/syllabus-categories', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { name, description, display_order, status, academy_id } = req.body;
+
+    if (academy_id && Number(academy_id) !== req.academy.id) {
+      return res.status(403).json({ success: false, error: 'Cross-academy operations are forbidden' });
+    }
+
+    const category = SyllabusService.createCategory(db, req.academy.id, {
+      name,
+      description,
+      display_order,
+      status,
+    });
+
+    res.status(201).json({ success: true, message: 'Syllabus category created successfully', category });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/syllabus-categories/:id
+ */
+academyRouter.put('/syllabus-categories/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const categoryId = Number(req.params.id);
+    const { name, description, display_order, status, academy_id } = req.body;
+
+    if (academy_id && Number(academy_id) !== req.academy.id) {
+      return res.status(403).json({ success: false, error: 'Cross-academy operations are forbidden' });
+    }
+
+    const updated = SyllabusService.updateCategory(db, req.academy.id, categoryId, {
+      name,
+      description,
+      display_order,
+      status,
+    });
+
+    res.json({ success: true, message: 'Category updated successfully', category: updated });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/syllabus-categories/:id
+ */
+academyRouter.delete('/syllabus-categories/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const categoryId = Number(req.params.id);
+    const result = SyllabusService.deleteCategory(db, req.academy.id, categoryId);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/syllabus-categories/reorder
+ */
+academyRouter.post('/syllabus-categories/reorder', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { orderIds } = req.body;
+    const result = SyllabusService.reorderCategories(db, req.academy.id, orderIds);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// SYLLABUS TECHNIQUES
+// ==========================================
+
+/**
+ * GET /api/academy/syllabus-techniques
+ */
+academyRouter.get('/syllabus-techniques', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { category_id, level, belt_level, include_inactive } = req.query;
+    const techniques = SyllabusService.listTechniques(db, req.academy.id, {
+      categoryId: category_id,
+      level,
+      beltLevel: belt_level,
+      includeInactive: include_inactive === 'true',
+    });
+    res.json({ success: true, techniques });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/syllabus-techniques
+ */
+academyRouter.post('/syllabus-techniques', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const {
+      category_id,
+      name,
+      code,
+      description,
+      level,
+      belt_level,
+      media_url,
+      display_order,
+      status,
+      academy_id,
+    } = req.body;
+
+    if (academy_id && Number(academy_id) !== req.academy.id) {
+      return res.status(403).json({ success: false, error: 'Cross-academy operations are forbidden' });
+    }
+
+    const technique = SyllabusService.createTechnique(db, req.academy.id, {
+      category_id,
+      name,
+      code,
+      description,
+      level,
+      belt_level,
+      media_url,
+      display_order,
+      status,
+    });
+
+    res.status(201).json({ success: true, message: 'Technique created successfully', technique });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/syllabus-techniques/:id
+ */
+academyRouter.put('/syllabus-techniques/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const techniqueId = Number(req.params.id);
+    const { academy_id, ...updates } = req.body;
+
+    if (academy_id && Number(academy_id) !== req.academy.id) {
+      return res.status(403).json({ success: false, error: 'Cross-academy operations are forbidden' });
+    }
+
+    const updated = SyllabusService.updateTechnique(db, req.academy.id, techniqueId, updates);
+    res.json({ success: true, message: 'Technique updated successfully', technique: updated });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/syllabus-techniques/:id
+ */
+academyRouter.delete('/syllabus-techniques/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const techniqueId = Number(req.params.id);
+    const result = SyllabusService.deleteTechnique(db, req.academy.id, techniqueId);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/syllabus-techniques/reorder
+ */
+academyRouter.post('/syllabus-techniques/reorder', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { orderIds } = req.body;
+    const result = SyllabusService.reorderTechniques(db, req.academy.id, orderIds);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// STUDENT TECHNIQUE TRACKING & HISTORY
+// ==========================================
+
+/**
+ * GET /api/academy/students/:id/technique-history
+ */
+academyRouter.get('/students/:id/technique-history', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const studentId = Number(req.params.id);
+
+    const student = db.prepare('SELECT id, academy_id FROM students WHERE id = ?').get(studentId);
+    if (!student || student.academy_id !== req.academy.id) {
+      return res.status(404).json({ success: false, error: 'Student not found in this academy' });
+    }
+
+    const progress = SyllabusService.getStudentTechniqueHistory(db, studentId);
+    res.json({ success: true, studentId, ...progress });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/students/:id/assign-technique
+ * Assigns or transitions student technique (upgrade, downgrade, direct_jump)
+ */
+academyRouter.post('/students/:id/assign-technique', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const studentId = Number(req.params.id);
+    const { technique_id, start_date, remarks, action = 'initial', academy_id } = req.body;
+
+    if (academy_id && Number(academy_id) !== req.academy.id) {
+      return res.status(403).json({ success: false, error: 'Cross-academy operations are forbidden' });
+    }
+
+    if (!technique_id) {
+      return res.status(400).json({ success: false, error: 'technique_id is required' });
+    }
+
+    const assigned = SyllabusService.assignStudentTechnique(db, req.academy.id, studentId, {
+      technique_id: Number(technique_id),
+      assigned_by: req.user.userId,
+      start_date,
+      remarks,
+      action,
+    });
+
+    // Audit log
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, entity_id, details, ip_address)
+      VALUES (?, ?, ?, 'TECHNIQUE_ASSIGNMENT', 'students', ?, ?, ?)
+    `).run(
+      req.user.userId,
+      req.user.name,
+      req.user.role,
+      String(studentId),
+      `Assigned technique '${assigned.technique_name}' (${action.toUpperCase()}). Remarks: ${remarks || 'None'}`,
+      req.ip
+    );
+
+    res.json({ success: true, message: `Successfully assigned technique: ${assigned.technique_name}`, assignment: assigned });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// SYLLABUS REPORTS
+// ==========================================
+
+/**
+ * GET /api/academy/syllabus-reports
+ */
+academyRouter.get('/syllabus-reports', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const reports = SyllabusService.getSyllabusReports(db, req.academy.id);
+    res.json({ success: true, ...reports });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });

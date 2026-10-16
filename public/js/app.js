@@ -281,6 +281,9 @@ const app = {
         <a class="nav-item ${this.currentTab === 'attendance' ? 'active' : ''}" onclick="app.navigate('attendance')">
           <i class="fa-solid fa-clipboard-user"></i> Attendance
         </a>
+        <a class="nav-item ${this.currentTab === 'syllabus' ? 'active' : ''}" onclick="app.navigate('syllabus')">
+          <i class="fa-solid fa-graduation-cap"></i> Sports Syllabus
+        </a>
         <a class="nav-item ${this.currentTab === 'fees' ? 'active' : ''}" onclick="app.navigate('fees')">
           <i class="fa-solid fa-file-invoice-dollar"></i> Fees & Invoices
         </a>
@@ -300,6 +303,9 @@ const app = {
         <div class="nav-section-title">Student Portal</div>
         <a class="nav-item ${this.currentTab === 'student-dashboard' ? 'active' : ''}" onclick="app.navigate('student-dashboard')">
           <i class="fa-solid fa-gauge-high"></i> My Dashboard
+        </a>
+        <a class="nav-item ${this.currentTab === 'student-technique' ? 'active' : ''}" onclick="app.navigate('student-technique')">
+          <i class="fa-solid fa-medal"></i> My Syllabus Progress
         </a>
         <a class="nav-item ${this.currentTab === 'student-attendance' ? 'active' : ''}" onclick="app.navigate('student-attendance')">
           <i class="fa-solid fa-clipboard-user"></i> Attendance History
@@ -345,6 +351,9 @@ const app = {
       case 'attendance':
         this.renderAttendance();
         break;
+      case 'syllabus':
+        this.renderSyllabus();
+        break;
       case 'fees':
         this.renderFees();
         break;
@@ -359,6 +368,9 @@ const app = {
         break;
       case 'student-dashboard':
         this.renderStudentDashboard();
+        break;
+      case 'student-technique':
+        this.renderStudentTechnique();
         break;
       case 'student-attendance':
         this.renderStudentAttendance();
@@ -740,6 +752,7 @@ const app = {
                 <th>Guardian & Phone</th>
                 <th>Branch</th>
                 <th>Active Batch</th>
+                <th>Syllabus Technique</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -764,14 +777,27 @@ const app = {
                       </span>
                     ` : '<span style="color: var(--text-dim); font-size: 12px;">Unassigned</span>'}
                   </td>
+                  <td>
+                    ${s.active_technique_name ? `
+                      <span class="badge badge-purple" title="Level ${s.active_technique_level} • ${s.active_technique_belt_level || 'General'}">
+                        <i class="fa-solid fa-medal"></i> ${s.active_technique_name}
+                      </span>
+                      <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                        Lvl ${s.active_technique_level} ${s.active_technique_belt_level ? '• ' + s.active_technique_belt_level : ''} • ${s.active_technique_sessions || 0} sessions
+                      </div>
+                    ` : '<span style="color: var(--text-dim); font-size: 12px;">No Technique</span>'}
+                  </td>
                   <td><span class="badge badge-success">${s.status}</span></td>
                   <td>
                     <div style="display: flex; gap: 6px;">
+                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentTechniqueModal(${s.id}, '${s.first_name} ${s.last_name}')" title="Syllabus Technique Progression">
+                        <i class="fa-solid fa-graduation-cap" style="color: #a855f7;"></i> Syllabus
+                      </button>
                       <button class="btn btn-primary btn-sm" onclick="app.showTransferBatchModal(${s.id}, '${s.first_name} ${s.last_name}', '${s.active_batch_name || 'None'}')" title="Transfer to New Batch">
                         <i class="fa-solid fa-right-left"></i> Transfer
                       </button>
                       <button class="btn btn-secondary btn-sm" onclick="app.showStudentBatchHistory(${s.id}, '${s.first_name} ${s.last_name}')" title="View Batch History">
-                        <i class="fa-solid fa-clock-rotate-left"></i> History
+                        <i class="fa-solid fa-clock-rotate-left"></i>
                       </button>
                     </div>
                   </td>
@@ -1295,14 +1321,22 @@ const app = {
     }
 
     const roster = res.roster || [];
+    const availableTechniques = res.availableTechniques || [];
+    window._cachedAvailableTechniques = availableTechniques;
+
     if (!roster.length) {
       container.innerHTML = '<p style="color: var(--text-muted);">No students are currently enrolled in this batch.</p>';
       return;
     }
 
     container.innerHTML = `
-      <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 13px; font-weight: 600;">Enrolled Students (${roster.length})</span>
+      <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <span style="font-size: 13px; font-weight: 600;">Enrolled Students (${roster.length})</span>
+          <span style="font-size: 12px; color: var(--text-muted); margin-left: 8px;">
+            <i class="fa-solid fa-graduation-cap" style="color: #a855f7;"></i> Syllabus Progression Active
+          </span>
+        </div>
         <div style="display: flex; gap: 8px;">
           <button class="btn btn-secondary btn-sm" onclick="app.setAllAttendance('present')">All Present</button>
           <button class="btn btn-secondary btn-sm" onclick="app.setAllAttendance('absent')">All Absent</button>
@@ -1313,17 +1347,25 @@ const app = {
         <table class="custom-table">
           <thead>
             <tr>
-              <th>Code</th>
               <th>Student</th>
-              <th>Attendance Status</th>
-              <th>Remarks</th>
+              <th>Status</th>
+              <th>Current Level</th>
+              <th>Session Technique</th>
+              <th>Progression</th>
+              <th>Technique Remark</th>
+              <th>General Note</th>
             </tr>
           </thead>
           <tbody>
-            ${roster.map(r => `
+            ${roster.map(r => {
+              const currentTechId = r.marked_technique_id || r.active_technique_id;
+              const currentProgression = r.marked_technique_status || 'keep';
+              return `
               <tr data-student-id="${r.student_id}">
-                <td><code>${r.student_code}</code></td>
-                <td><strong>${r.first_name} ${r.last_name}</strong></td>
+                <td>
+                  <strong>${r.first_name} ${r.last_name}</strong>
+                  <div style="font-size: 11px; color: var(--text-muted);"><code>${r.student_code}</code></div>
+                </td>
                 <td>
                   <select class="form-select att-status-select" style="padding: 4px 8px; font-size: 12px;">
                     <option value="present" ${r.status === 'present' ? 'selected' : ''}>Present</option>
@@ -1333,17 +1375,49 @@ const app = {
                   </select>
                 </td>
                 <td>
-                  <input type="text" class="form-input att-remark-input" style="padding: 4px 8px; font-size: 12px; width: 100%; max-width: 250px;" value="${r.remarks || ''}" placeholder="Optional remark">
+                  ${r.active_technique_name ? `
+                    <span class="badge badge-purple" title="${r.active_category_name || ''}">
+                      Lvl ${r.active_technique_level} ${r.active_technique_belt_level ? '• ' + r.active_technique_belt_level : ''}
+                    </span>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                      ${r.active_sessions_attended || 0} session(s)
+                    </div>
+                  ` : '<span style="color: var(--text-dim); font-size: 11px;">Unassigned</span>'}
+                </td>
+                <td>
+                  <select class="form-select att-tech-select" style="padding: 4px 8px; font-size: 12px; max-width: 190px;">
+                    <option value="">-- Select Technique --</option>
+                    ${availableTechniques.map(t => `
+                      <option value="${t.id}" ${t.id == currentTechId ? 'selected' : ''}>
+                        ${t.name} (Lvl ${t.level}${t.belt_level ? ', ' + t.belt_level : ''})
+                      </option>
+                    `).join('')}
+                  </select>
+                </td>
+                <td>
+                  <select class="form-select att-progression-select" style="padding: 4px 8px; font-size: 12px;">
+                    <option value="keep" ${currentProgression === 'keep' ? 'selected' : ''}>Keep</option>
+                    <option value="upgrade" ${currentProgression === 'upgrade' ? 'selected' : ''}>Upgrade</option>
+                    <option value="downgrade" ${currentProgression === 'downgrade' ? 'selected' : ''}>Downgrade</option>
+                    <option value="direct_jump" ${currentProgression === 'direct_jump' ? 'selected' : ''}>Direct Jump</option>
+                  </select>
+                </td>
+                <td>
+                  <input type="text" class="form-input att-tech-remarks-input" style="padding: 4px 8px; font-size: 12px; width: 140px;" value="${r.marked_technique_remarks || ''}" placeholder="Technique remark">
+                </td>
+                <td>
+                  <input type="text" class="form-input att-remark-input" style="padding: 4px 8px; font-size: 12px; width: 130px;" value="${r.remarks || ''}" placeholder="General note">
                 </td>
               </tr>
-            `).join('')}
+            `;
+            }).join('')}
           </tbody>
         </table>
       </div>
 
       <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
         <button class="btn btn-success" onclick="app.saveAttendance(${batchId}, '${date}')">
-          <i class="fa-solid fa-floppy-disk"></i> Save Attendance
+          <i class="fa-solid fa-floppy-disk"></i> Save Attendance & Track Technique
         </button>
       </div>
     `;
@@ -1361,7 +1435,18 @@ const app = {
       const student_id = row.getAttribute('data-student-id');
       const status = row.querySelector('.att-status-select').value;
       const remarks = row.querySelector('.att-remark-input').value.trim();
-      entries.push({ student_id, status, remarks });
+      const techSelect = row.querySelector('.att-tech-select');
+      const progressionSelect = row.querySelector('.att-progression-select');
+      const techRemarkInput = row.querySelector('.att-tech-remarks-input');
+
+      entries.push({
+        student_id,
+        status,
+        remarks,
+        technique_id: techSelect && techSelect.value ? Number(techSelect.value) : null,
+        technique_status: progressionSelect ? progressionSelect.value : 'keep',
+        technique_remarks: techRemarkInput ? techRemarkInput.value.trim() : null,
+      });
     });
 
     const res = await this.apiRequest('/api/academy/attendance', {
@@ -1937,6 +2022,1090 @@ const app = {
     } else {
       this.showToast(res.error || 'Payment failed', 'danger');
     }
+  },
+
+  // ==========================================
+  // SYLLABUS & TECHNIQUE PROGRESSION UI
+  // ==========================================
+
+  currentSyllabusTab: 'techniques',
+
+  async renderSyllabus(tab = this.currentSyllabusTab || 'techniques') {
+    this.currentSyllabusTab = tab;
+    const content = document.getElementById('page-content');
+
+    content.innerHTML = `
+      <div class="content-card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title"><i class="fa-solid fa-graduation-cap" style="color: #a855f7;"></i> Sports Syllabus & Learning Progression</h2>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+              Manage sports techniques, curriculum difficulty levels, student progression, and session tracking
+            </p>
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-secondary btn-sm" onclick="app.showAddCategoryModal()">
+              <i class="fa-solid fa-folder-plus"></i> New Category
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="app.showAddTechniqueModal()">
+              <i class="fa-solid fa-plus"></i> New Technique
+            </button>
+          </div>
+        </div>
+
+        <div class="syllabus-tabs">
+          <button class="syllabus-tab-btn ${tab === 'techniques' ? 'active' : ''}" onclick="app.renderSyllabus('techniques')">
+            <i class="fa-solid fa-dumbbell"></i> Techniques Curriculum
+          </button>
+          <button class="syllabus-tab-btn ${tab === 'categories' ? 'active' : ''}" onclick="app.renderSyllabus('categories')">
+            <i class="fa-solid fa-folder-tree"></i> Syllabus Categories
+          </button>
+          <button class="syllabus-tab-btn ${tab === 'reports' ? 'active' : ''}" onclick="app.renderSyllabus('reports')">
+            <i class="fa-solid fa-chart-line"></i> Learning & Progression Reports
+          </button>
+        </div>
+
+        <div id="syllabus-tab-content" style="padding: 20px;">
+          <div style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
+        </div>
+      </div>
+    `;
+
+    if (tab === 'techniques') {
+      await this.loadSyllabusTechniquesTab();
+    } else if (tab === 'categories') {
+      await this.loadSyllabusCategoriesTab();
+    } else if (tab === 'reports') {
+      await this.loadSyllabusReportsTab();
+    }
+  },
+
+  async loadSyllabusTechniquesTab() {
+    const container = document.getElementById('syllabus-tab-content');
+    const [techRes, catRes] = await Promise.all([
+      this.apiRequest('/api/academy/syllabus-techniques?include_inactive=true'),
+      this.apiRequest('/api/academy/syllabus-categories?include_inactive=true'),
+    ]);
+
+    const techniques = techRes.techniques || [];
+    const categories = catRes.categories || [];
+    window._cachedSyllabusCategories = categories;
+    window._cachedSyllabusTechniques = techniques;
+
+    container.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <select id="tech-filter-category" class="form-select" onchange="app.filterTechniquesTable()" style="font-size: 12px;">
+            <option value="">All Categories</option>
+            ${categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+          </select>
+          <select id="tech-filter-level" class="form-select" onchange="app.filterTechniquesTable()" style="font-size: 12px;">
+            <option value="">All Difficulty Levels</option>
+            <option value="1">Level 1 (Beginner)</option>
+            <option value="2">Level 2 (Novice)</option>
+            <option value="3">Level 3 (Intermediate)</option>
+            <option value="4">Level 4 (Advanced)</option>
+            <option value="5">Level 5 (Mastery)</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary btn-sm" onclick="app.showReorderTechniquesModal()">
+            <i class="fa-solid fa-arrows-up-down"></i> Reorder
+          </button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="custom-table" id="techniques-table">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Technique Name & Code</th>
+              <th>Category</th>
+              <th>Difficulty Level</th>
+              <th>Belt / Rank</th>
+              <th>Active Students</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${techniques.length === 0 ? `
+              <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">No techniques created yet. Click "New Technique" to build your syllabus curriculum.</td></tr>
+            ` : techniques.map(t => `
+              <tr data-cat-id="${t.category_id}" data-level="${t.level}">
+                <td><code>#${t.display_order}</code></td>
+                <td>
+                  <strong>${t.name}</strong>
+                  ${t.code ? `<span style="font-size: 11px; color: var(--text-dim); margin-left: 6px;">[${t.code}]</span>` : ''}
+                  ${t.description ? `<div style="font-size: 11px; color: var(--text-muted);">${t.description}</div>` : ''}
+                  ${t.media_url ? `<div style="margin-top: 2px;"><a href="${t.media_url}" target="_blank" style="font-size: 11px; color: var(--secondary);"><i class="fa-solid fa-link"></i> Media Reference</a></div>` : ''}
+                </td>
+                <td><span class="badge badge-info">${t.category_name}</span></td>
+                <td><span class="badge badge-purple">Level ${t.level}</span></td>
+                <td>
+                  ${t.belt_level ? `<span class="badge badge-warning">${t.belt_level}</span>` : '<span style="color: var(--text-dim); font-size: 12px;">-</span>'}
+                </td>
+                <td>
+                  <strong>${t.active_students_count || 0}</strong> students
+                </td>
+                <td>
+                  <span class="badge ${t.status === 'active' ? 'badge-success' : 'badge-secondary'}">${t.status}</span>
+                </td>
+                <td>
+                  <div style="display: flex; gap: 6px;">
+                    <button class="btn btn-secondary btn-sm" onclick="app.showEditTechniqueModal(${t.id})">
+                      <i class="fa-solid fa-pen-to-square"></i>
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="app.deleteTechnique(${t.id}, '${t.name.replace(/'/g, "\\'")}')">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  filterTechniquesTable() {
+    const catId = document.getElementById('tech-filter-category').value;
+    const level = document.getElementById('tech-filter-level').value;
+    const rows = document.querySelectorAll('#techniques-table tbody tr');
+
+    rows.forEach(r => {
+      const matchCat = !catId || r.getAttribute('data-cat-id') === catId;
+      const matchLvl = !level || r.getAttribute('data-level') === level;
+      r.style.display = (matchCat && matchLvl) ? '' : 'none';
+    });
+  },
+
+  async loadSyllabusCategoriesTab() {
+    const container = document.getElementById('syllabus-tab-content');
+    const res = await this.apiRequest('/api/academy/syllabus-categories?include_inactive=true');
+    const categories = res.categories || [];
+    window._cachedSyllabusCategories = categories;
+
+    container.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <span style="font-size: 13px; font-weight: 600;">Syllabus Categories (${categories.length})</span>
+        <button class="btn btn-secondary btn-sm" onclick="app.showReorderCategoriesModal()">
+          <i class="fa-solid fa-arrows-up-down"></i> Reorder Categories
+        </button>
+      </div>
+
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Category Name</th>
+              <th>Description</th>
+              <th>Techniques Count</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${categories.length === 0 ? `
+              <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 30px;">No categories created yet. Click "New Category" to get started.</td></tr>
+            ` : categories.map(c => `
+              <tr>
+                <td><code>#${c.display_order}</code></td>
+                <td><strong>${c.name}</strong></td>
+                <td><span style="color: var(--text-muted); font-size: 12px;">${c.description || '-'}</span></td>
+                <td>
+                  <span class="badge badge-info">${c.technique_count || 0} techniques</span>
+                </td>
+                <td>
+                  <span class="badge ${c.status === 'active' ? 'badge-success' : 'badge-secondary'}">${c.status}</span>
+                </td>
+                <td>
+                  <div style="display: flex; gap: 6px;">
+                    <button class="btn btn-secondary btn-sm" onclick="app.showEditCategoryModal(${c.id})">
+                      <i class="fa-solid fa-pen-to-square"></i>
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="app.deleteCategory(${c.id}, '${c.name.replace(/'/g, "\\'")}')">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  async loadSyllabusReportsTab() {
+    const container = document.getElementById('syllabus-tab-content');
+    const res = await this.apiRequest('/api/academy/syllabus-reports');
+
+    if (!res.success) {
+      container.innerHTML = `<div class="toast danger">${res.error}</div>`;
+      return;
+    }
+
+    const { byTechnique = [], extendedDurationStudents = [], monthlyTechniqueAttendance = [] } = res;
+
+    container.innerHTML = `
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+        <!-- Card 1: Students Grouped by Technique -->
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
+          <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+            <i class="fa-solid fa-users" style="color: #3b82f6;"></i> Students by Active Technique
+          </h3>
+          <div class="table-responsive" style="max-height: 350px;">
+            <table class="custom-table" style="font-size: 12px;">
+              <thead>
+                <tr>
+                  <th>Technique</th>
+                  <th>Level</th>
+                  <th>Active</th>
+                  <th>Avg Sessions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${byTechnique.length === 0 ? '<tr><td colspan="4" style="color: var(--text-muted);">No data</td></tr>' : byTechnique.map(t => `
+                  <tr>
+                    <td><strong>${t.technique_name}</strong></td>
+                    <td><span class="badge badge-purple">Lvl ${t.level}</span></td>
+                    <td><strong>${t.student_count}</strong></td>
+                    <td>${Math.round(t.avg_sessions_attended)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Card 2: Extended Duration Alerts -->
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
+          <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+            <i class="fa-solid fa-triangle-exclamation" style="color: #f59e0b;"></i> Extended Duration Students (>25 sessions / 60+ days)
+          </h3>
+          <div class="table-responsive" style="max-height: 350px;">
+            <table class="custom-table" style="font-size: 12px;">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Technique</th>
+                  <th>Sessions</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${extendedDurationStudents.length === 0 ? '<tr><td colspan="4" style="color: var(--text-muted);">No students stuck on extended duration. Great progress!</td></tr>' : extendedDurationStudents.map(s => `
+                  <tr>
+                    <td>
+                      <strong>${s.first_name} ${s.last_name}</strong>
+                      <div style="font-size: 10px; color: var(--text-dim);">${s.student_code}</div>
+                    </td>
+                    <td><span class="badge badge-purple">${s.technique_name}</span></td>
+                    <td><span class="badge badge-warning">${s.sessions_attended} sessions</span></td>
+                    <td>
+                      <button class="btn btn-primary btn-sm" onclick="app.showStudentTechniqueModal(${s.student_id}, '${s.first_name} ${s.last_name}')">
+                        Review / Upgrade
+                      </button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Card 3: Monthly Technique Training Volume -->
+        <div style="grid-column: 1 / -1; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
+          <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+            <i class="fa-solid fa-calendar-days" style="color: #10b981;"></i> Monthly Technique Training Volume (Attended Sessions Across Months)
+          </h3>
+          <div class="table-responsive" style="max-height: 250px;">
+            <table class="custom-table" style="font-size: 12px;">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Technique</th>
+                  <th>Sessions Marked Present</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${monthlyTechniqueAttendance.length === 0 ? '<tr><td colspan="3" style="color: var(--text-muted);">No monthly attendance records yet.</td></tr>' : monthlyTechniqueAttendance.map(m => `
+                  <tr>
+                    <td><code>${m.month}</code></td>
+                    <td><strong>${m.technique_name}</strong></td>
+                    <td><span class="badge badge-success">${m.sessions_marked_present} sessions</span></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  // CATEGORY MODALS & ACTIONS
+  showAddCategoryModal() {
+    this.openModal(
+      'New Syllabus Category',
+      `
+        <form id="add-cat-form">
+          <div class="form-group">
+            <label>Category Name *</label>
+            <input type="text" id="cat-name" class="form-input" style="width: 100%;" placeholder="e.g. Punching Techniques, Kata, Kumite" required>
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <textarea id="cat-desc" class="form-textarea" style="width: 100%; height: 80px;" placeholder="Curriculum notes and objectives..."></textarea>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Display Order</label>
+              <input type="number" id="cat-order" class="form-input" style="width: 100%;" value="0">
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="cat-status" class="form-select" style="width: 100%;">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitAddCategory()"><i class="fa-solid fa-plus"></i> Create Category</button>
+      `
+    );
+  },
+
+  async submitAddCategory() {
+    const name = document.getElementById('cat-name').value.trim();
+    const description = document.getElementById('cat-desc').value.trim();
+    const display_order = Number(document.getElementById('cat-order').value) || 0;
+    const status = document.getElementById('cat-status').value;
+
+    if (!name) {
+      this.showToast('Category name is required', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/syllabus-categories', {
+      method: 'POST',
+      body: JSON.stringify({ name, description, display_order, status }),
+    });
+
+    if (res.success) {
+      this.showToast('Category created successfully', 'success');
+      this.closeModal();
+      this.renderSyllabus('categories');
+    } else {
+      this.showToast(res.error || 'Failed to create category', 'danger');
+    }
+  },
+
+  showEditCategoryModal(categoryId) {
+    const cat = (window._cachedSyllabusCategories || []).find(c => c.id === categoryId);
+    if (!cat) return;
+
+    this.openModal(
+      `Edit Category — ${cat.name}`,
+      `
+        <form id="edit-cat-form">
+          <div class="form-group">
+            <label>Category Name *</label>
+            <input type="text" id="edit-cat-name" class="form-input" style="width: 100%;" value="${cat.name}" required>
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <textarea id="edit-cat-desc" class="form-textarea" style="width: 100%; height: 80px;">${cat.description || ''}</textarea>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Display Order</label>
+              <input type="number" id="edit-cat-order" class="form-input" style="width: 100%;" value="${cat.display_order}">
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="edit-cat-status" class="form-select" style="width: 100%;">
+                <option value="active" ${cat.status === 'active' ? 'selected' : ''}>Active</option>
+                <option value="inactive" ${cat.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitEditCategory(${categoryId})"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+      `
+    );
+  },
+
+  async submitEditCategory(categoryId) {
+    const name = document.getElementById('edit-cat-name').value.trim();
+    const description = document.getElementById('edit-cat-desc').value.trim();
+    const display_order = Number(document.getElementById('edit-cat-order').value) || 0;
+    const status = document.getElementById('edit-cat-status').value;
+
+    const res = await this.apiRequest(`/api/academy/syllabus-categories/${categoryId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, description, display_order, status }),
+    });
+
+    if (res.success) {
+      this.showToast('Category updated successfully', 'success');
+      this.closeModal();
+      this.renderSyllabus('categories');
+    } else {
+      this.showToast(res.error || 'Failed to update category', 'danger');
+    }
+  },
+
+  async deleteCategory(categoryId, categoryName) {
+    if (!confirm(`Are you sure you want to delete category "${categoryName}"? Deletion is protected if techniques exist.`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/syllabus-categories/${categoryId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.renderSyllabus('categories');
+    } else {
+      this.showToast(res.error || 'Failed to delete category', 'danger');
+    }
+  },
+
+  showReorderCategoriesModal() {
+    const categories = window._cachedSyllabusCategories || [];
+    this.openModal(
+      'Reorder Categories',
+      `
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          Adjust numeric display orders to rearrange categories:
+        </p>
+        <div id="reorder-cats-list">
+          ${categories.map((c, idx) => `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px;">
+              <span><strong>${c.name}</strong></span>
+              <input type="number" class="form-input cat-reorder-input" data-id="${c.id}" value="${idx}" style="width: 70px;">
+            </div>
+          `).join('')}
+        </div>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitReorderCategories()"><i class="fa-solid fa-check"></i> Apply Order</button>
+      `
+    );
+  },
+
+  async submitReorderCategories() {
+    const inputs = document.querySelectorAll('.cat-reorder-input');
+    const sorted = Array.from(inputs).map(inp => ({
+      id: Number(inp.getAttribute('data-id')),
+      val: Number(inp.value) || 0,
+    })).sort((a, b) => a.val - b.val);
+
+    const orderIds = sorted.map(s => s.id);
+    const res = await this.apiRequest('/api/academy/syllabus-categories/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ orderIds }),
+    });
+
+    if (res.success) {
+      this.showToast('Categories reordered successfully', 'success');
+      this.closeModal();
+      this.renderSyllabus('categories');
+    } else {
+      this.showToast(res.error || 'Failed to reorder categories', 'danger');
+    }
+  },
+
+  // TECHNIQUE MODALS & ACTIONS
+  showAddTechniqueModal() {
+    const categories = window._cachedSyllabusCategories || [];
+    this.openModal(
+      'New Syllabus Technique',
+      `
+        <form id="add-tech-form">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Syllabus Category *</label>
+              <select id="tech-cat" class="form-select" style="width: 100%;" required>
+                <option value="">-- Select Category --</option>
+                ${categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Technique Code (Optional)</label>
+              <input type="text" id="tech-code" class="form-input" style="width: 100%;" placeholder="e.g. KICK-01, KATA-H1">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Technique Name *</label>
+            <input type="text" id="tech-name" class="form-input" style="width: 100%;" placeholder="e.g. Mae-Geri (Front Kick), Heian Shodan" required>
+          </div>
+          <div class="form-group">
+            <label>Description & Learning Criteria</label>
+            <textarea id="tech-desc" class="form-textarea" style="width: 100%; height: 70px;" placeholder="Execution details, stance criteria, key points..."></textarea>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Difficulty Level *</label>
+              <select id="tech-level" class="form-select" style="width: 100%;">
+                <option value="1">Level 1 — Beginner</option>
+                <option value="2">Level 2 — Novice</option>
+                <option value="3">Level 3 — Intermediate</option>
+                <option value="4">Level 4 — Advanced</option>
+                <option value="5">Level 5 — Mastery</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Belt / Rank Association</label>
+              <input type="text" id="tech-belt" class="form-input" style="width: 100%;" placeholder="e.g. White Belt, Yellow Belt, Brown Belt">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Media / Video Link</label>
+              <input type="url" id="tech-media" class="form-input" style="width: 100%;" placeholder="https://youtube.com/...">
+            </div>
+            <div class="form-group">
+              <label>Display Order</label>
+              <input type="number" id="tech-order" class="form-input" style="width: 100%;" value="0">
+            </div>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitAddTechnique()"><i class="fa-solid fa-plus"></i> Create Technique</button>
+      `
+    );
+  },
+
+  async submitAddTechnique() {
+    const category_id = document.getElementById('tech-cat').value;
+    const name = document.getElementById('tech-name').value.trim();
+    const code = document.getElementById('tech-code').value.trim();
+    const description = document.getElementById('tech-desc').value.trim();
+    const level = Number(document.getElementById('tech-level').value) || 1;
+    const belt_level = document.getElementById('tech-belt').value.trim();
+    const media_url = document.getElementById('tech-media').value.trim();
+    const display_order = Number(document.getElementById('tech-order').value) || 0;
+
+    if (!category_id || !name) {
+      this.showToast('Category and technique name are required', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/syllabus-techniques', {
+      method: 'POST',
+      body: JSON.stringify({ category_id, name, code, description, level, belt_level, media_url, display_order }),
+    });
+
+    if (res.success) {
+      this.showToast('Technique created successfully', 'success');
+      this.closeModal();
+      this.renderSyllabus('techniques');
+    } else {
+      this.showToast(res.error || 'Failed to create technique', 'danger');
+    }
+  },
+
+  showEditTechniqueModal(techniqueId) {
+    const tech = (window._cachedSyllabusTechniques || []).find(t => t.id === techniqueId);
+    const categories = window._cachedSyllabusCategories || [];
+    if (!tech) return;
+
+    this.openModal(
+      `Edit Technique — ${tech.name}`,
+      `
+        <form id="edit-tech-form">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Syllabus Category *</label>
+              <select id="edit-tech-cat" class="form-select" style="width: 100%;">
+                ${categories.map(c => `<option value="${c.id}" ${c.id === tech.category_id ? 'selected' : ''}>${c.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Technique Code</label>
+              <input type="text" id="edit-tech-code" class="form-input" style="width: 100%;" value="${tech.code || ''}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Technique Name *</label>
+            <input type="text" id="edit-tech-name" class="form-input" style="width: 100%;" value="${tech.name}" required>
+          </div>
+          <div class="form-group">
+            <label>Description & Notes</label>
+            <textarea id="edit-tech-desc" class="form-textarea" style="width: 100%; height: 70px;">${tech.description || ''}</textarea>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Difficulty Level</label>
+              <select id="edit-tech-level" class="form-select" style="width: 100%;">
+                <option value="1" ${tech.level === 1 ? 'selected' : ''}>Level 1 — Beginner</option>
+                <option value="2" ${tech.level === 2 ? 'selected' : ''}>Level 2 — Novice</option>
+                <option value="3" ${tech.level === 3 ? 'selected' : ''}>Level 3 — Intermediate</option>
+                <option value="4" ${tech.level === 4 ? 'selected' : ''}>Level 4 — Advanced</option>
+                <option value="5" ${tech.level === 5 ? 'selected' : ''}>Level 5 — Mastery</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Belt / Rank Association</label>
+              <input type="text" id="edit-tech-belt" class="form-input" style="width: 100%;" value="${tech.belt_level || ''}">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Media / Video Link</label>
+              <input type="url" id="edit-tech-media" class="form-input" style="width: 100%;" value="${tech.media_url || ''}">
+            </div>
+            <div class="form-group">
+              <label>Display Order</label>
+              <input type="number" id="edit-tech-order" class="form-input" style="width: 100%;" value="${tech.display_order}">
+            </div>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitEditTechnique(${techniqueId})"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+      `
+    );
+  },
+
+  async submitEditTechnique(techniqueId) {
+    const category_id = document.getElementById('edit-tech-cat').value;
+    const name = document.getElementById('edit-tech-name').value.trim();
+    const code = document.getElementById('edit-tech-code').value.trim();
+    const description = document.getElementById('edit-tech-desc').value.trim();
+    const level = Number(document.getElementById('edit-tech-level').value) || 1;
+    const belt_level = document.getElementById('edit-tech-belt').value.trim();
+    const media_url = document.getElementById('edit-tech-media').value.trim();
+    const display_order = Number(document.getElementById('edit-tech-order').value) || 0;
+
+    const res = await this.apiRequest(`/api/academy/syllabus-techniques/${techniqueId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ category_id, name, code, description, level, belt_level, media_url, display_order }),
+    });
+
+    if (res.success) {
+      this.showToast('Technique updated successfully', 'success');
+      this.closeModal();
+      this.renderSyllabus('techniques');
+    } else {
+      this.showToast(res.error || 'Failed to update technique', 'danger');
+    }
+  },
+
+  async deleteTechnique(techniqueId, techniqueName) {
+    if (!confirm(`Are you sure you want to delete technique "${techniqueName}"? If students have history, it will be safely archived.`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/syllabus-techniques/${techniqueId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.renderSyllabus('techniques');
+    } else {
+      this.showToast(res.error || 'Failed to delete technique', 'danger');
+    }
+  },
+
+  showReorderTechniquesModal() {
+    const techniques = window._cachedSyllabusTechniques || [];
+    this.openModal(
+      'Reorder Techniques',
+      `
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          Adjust numeric display orders to rearrange techniques:
+        </p>
+        <div style="max-height: 400px; overflow-y: auto;">
+          ${techniques.map((t, idx) => `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px;">
+              <div>
+                <strong>${t.name}</strong>
+                <span class="badge badge-purple" style="margin-left: 6px;">Lvl ${t.level}</span>
+              </div>
+              <input type="number" class="form-input tech-reorder-input" data-id="${t.id}" value="${idx}" style="width: 70px;">
+            </div>
+          `).join('')}
+        </div>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitReorderTechniques()"><i class="fa-solid fa-check"></i> Apply Order</button>
+      `
+    );
+  },
+
+  async submitReorderTechniques() {
+    const inputs = document.querySelectorAll('.tech-reorder-input');
+    const sorted = Array.from(inputs).map(inp => ({
+      id: Number(inp.getAttribute('data-id')),
+      val: Number(inp.value) || 0,
+    })).sort((a, b) => a.val - b.val);
+
+    const orderIds = sorted.map(s => s.id);
+    const res = await this.apiRequest('/api/academy/syllabus-techniques/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ orderIds }),
+    });
+
+    if (res.success) {
+      this.showToast('Techniques reordered successfully', 'success');
+      this.closeModal();
+      this.renderSyllabus('techniques');
+    } else {
+      this.showToast(res.error || 'Failed to reorder techniques', 'danger');
+    }
+  },
+
+  // ==========================================
+  // STUDENT TECHNIQUE PROGRESSION MODAL
+  // ==========================================
+
+  async showStudentTechniqueModal(studentId, studentName) {
+    this.openModal(
+      `Syllabus Progression — ${studentName}`,
+      `<div style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>`
+    );
+
+    const res = await this.apiRequest(`/api/academy/students/${studentId}/technique-history`);
+    if (!res.success) {
+      this.openModal(`Error`, `<div class="toast danger">${res.error}</div>`);
+      return;
+    }
+
+    const { currentTechnique, history = [], totalAttendedAcrossTechniques = 0, snapshots = [] } = res;
+
+    this.openModal(
+      `Syllabus Progression — ${studentName}`,
+      `
+        <div>
+          <!-- Current Active Technique Card -->
+          <div style="background: linear-gradient(135deg, rgba(168,85,247,0.15), rgba(37,99,235,0.1)); border: 1px solid rgba(168,85,247,0.3); border-radius: var(--radius-md); padding: 18px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Current Active Technique</span>
+                <h3 style="font-size: 18px; font-weight: 700; color: #fff; margin-top: 4px;">
+                  ${currentTechnique ? currentTechnique.technique_name : 'No Active Technique Assigned'}
+                </h3>
+                <div style="margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                  ${currentTechnique ? `
+                    <span class="badge badge-purple">Level ${currentTechnique.technique_level}</span>
+                    ${currentTechnique.technique_belt_level ? `<span class="badge badge-warning">${currentTechnique.technique_belt_level}</span>` : ''}
+                    <span class="badge badge-info">${currentTechnique.category_name}</span>
+                  ` : ''}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 26px; font-weight: 700; color: #38bdf8;">
+                  ${currentTechnique ? currentTechnique.sessions_attended : 0}
+                </div>
+                <div style="font-size: 11px; color: var(--text-muted);">Attended Sessions on this Technique</div>
+              </div>
+            </div>
+
+            <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <div style="font-size: 12px; color: var(--text-muted);">
+                Started: <strong>${currentTechnique ? currentTechnique.start_date : 'N/A'}</strong> | Total Career Sessions: <strong>${totalAttendedAcrossTechniques}</strong>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="app.showAssignTechniqueModal(${studentId}, '${studentName}')">
+                <i class="fa-solid fa-arrow-up-right-dots"></i> Assign / Transition Technique
+              </button>
+            </div>
+          </div>
+
+          <!-- Assignment History Timeline -->
+          <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+            <i class="fa-solid fa-clock-rotate-left"></i> Technique Assignment Timeline
+          </h4>
+          <div style="max-height: 200px; overflow-y: auto; margin-bottom: 20px;">
+            ${history.length === 0 ? '<p style="color: var(--text-muted); font-size: 13px;">No history recorded yet.</p>' : `
+              <table class="custom-table" style="font-size: 12px;">
+                <thead>
+                  <tr>
+                    <th>Technique</th>
+                    <th>Level / Belt</th>
+                    <th>Period</th>
+                    <th>Sessions</th>
+                    <th>Status</th>
+                    <th>Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${history.map(h => `
+                    <tr>
+                      <td><strong>${h.technique_name}</strong></td>
+                      <td>Lvl ${h.technique_level} ${h.technique_belt_level ? '• ' + h.technique_belt_level : ''}</td>
+                      <td><code>${h.start_date}</code> to <code>${h.end_date || 'Present'}</code></td>
+                      <td><span class="badge badge-info">${h.sessions_attended}</span></td>
+                      <td>
+                        <span class="badge ${h.status === 'active' ? 'badge-success' : (h.status === 'downgraded' ? 'badge-warning' : 'badge-secondary')}">
+                          ${h.status}
+                        </span>
+                      </td>
+                      <td><span style="color: var(--text-muted);">${h.remarks || '-'}</span></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            `}
+          </div>
+
+          <!-- Attendance Snapshots Log -->
+          <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+            <i class="fa-solid fa-camera"></i> Historical Attendance Snapshots
+          </h4>
+          <div style="max-height: 180px; overflow-y: auto;">
+            ${snapshots.length === 0 ? '<p style="color: var(--text-muted); font-size: 13px;">No attendance snapshots recorded yet.</p>' : `
+              <table class="custom-table" style="font-size: 12px;">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Batch</th>
+                    <th>Practiced Technique</th>
+                    <th>Progression Action</th>
+                    <th>Session Count</th>
+                    <th>Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${snapshots.map(s => `
+                    <tr>
+                      <td><code>${s.attendance_date}</code></td>
+                      <td>${s.batch_name}</td>
+                      <td><strong>${s.technique_name}</strong> (Lvl ${s.technique_level})</td>
+                      <td><span class="badge badge-purple">${s.progression_action}</span></td>
+                      <td><span class="badge badge-info">${s.sessions_count_at_time}</span></td>
+                      <td><span style="color: var(--text-muted);">${s.remarks || '-'}</span></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            `}
+          </div>
+        </div>
+      `,
+      `<button class="btn btn-secondary" onclick="app.closeModal()">Close</button>`
+    );
+  },
+
+  async showAssignTechniqueModal(studentId, studentName) {
+    const techRes = await this.apiRequest('/api/academy/syllabus-techniques');
+    const techniques = techRes.techniques || [];
+    const today = new Date().toISOString().split('T')[0];
+
+    this.openModal(
+      `Transition Technique — ${studentName}`,
+      `
+        <form id="assign-tech-form">
+          <div class="form-group">
+            <label>Select Target Syllabus Technique *</label>
+            <select id="assign-tech-id" class="form-select" style="width: 100%;" required>
+              <option value="">-- Choose Technique --</option>
+              ${techniques.map(t => `
+                <option value="${t.id}">
+                  ${t.name} (Lvl ${t.level}${t.belt_level ? ', ' + t.belt_level : ''} | Cat: ${t.category_name})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Progression Action *</label>
+              <select id="assign-action" class="form-select" style="width: 100%;">
+                <option value="upgrade">Upgrade (Next Level)</option>
+                <option value="downgrade">Downgrade (Refinement)</option>
+                <option value="direct_jump">Direct Jump (Exam/Special)</option>
+                <option value="initial">Initial Assignment</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Effective Date</label>
+              <input type="date" id="assign-date" class="form-input" style="width: 100%;" value="${today}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Remarks & Justification</label>
+            <input type="text" id="assign-remarks" class="form-input" style="width: 100%;" placeholder="e.g. Promoted after Belt Exam, Needs stance revision">
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitAssignTechnique(${studentId}, '${studentName}')">
+          <i class="fa-solid fa-check"></i> Confirm Assignment
+        </button>
+      `
+    );
+  },
+
+  async submitAssignTechnique(studentId, studentName) {
+    const technique_id = document.getElementById('assign-tech-id').value;
+    const action = document.getElementById('assign-action').value;
+    const start_date = document.getElementById('assign-date').value;
+    const remarks = document.getElementById('assign-remarks').value.trim();
+
+    if (!technique_id) {
+      this.showToast('Please select a technique', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/students/${studentId}/assign-technique`, {
+      method: 'POST',
+      body: JSON.stringify({ technique_id, action, start_date, remarks }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.showStudentTechniqueModal(studentId, studentName);
+    } else {
+      this.showToast(res.error || 'Failed to assign technique', 'danger');
+    }
+  },
+
+  // ==========================================
+  // STUDENT PORTAL TECHNIQUE VIEW
+  // ==========================================
+
+  async renderStudentTechnique() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const res = await this.apiRequest('/api/student/technique-history');
+    if (!res.success) {
+      content.innerHTML = `<div class="toast danger">${res.error}</div>`;
+      return;
+    }
+
+    const { currentTechnique, history = [], totalAttendedAcrossTechniques = 0, snapshots = [] } = res;
+
+    content.innerHTML = `
+      <div class="content-card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title"><i class="fa-solid fa-medal" style="color: #f59e0b;"></i> My Syllabus Learning & Technique Progress</h2>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+              Track your martial arts curriculum, belt level progression, and attended practice sessions
+            </p>
+          </div>
+        </div>
+
+        <div style="padding: 24px;">
+          <!-- Top Hero Card -->
+          <div style="background: linear-gradient(135deg, rgba(37,99,235,0.2), rgba(168,85,247,0.15)); border: 1px solid rgba(56,189,248,0.3); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+              <div>
+                <span style="font-size: 12px; text-transform: uppercase; color: #38bdf8; font-weight: 700; letter-spacing: 0.5px;">Active Training Technique</span>
+                <h2 style="font-size: 24px; font-weight: 800; color: #fff; margin-top: 6px;">
+                  ${currentTechnique ? currentTechnique.technique_name : 'No Technique Currently Assigned'}
+                </h2>
+                <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+                  ${currentTechnique ? `
+                    <span class="badge badge-purple" style="font-size: 12px; padding: 4px 10px;">Level ${currentTechnique.technique_level}</span>
+                    ${currentTechnique.technique_belt_level ? `<span class="badge badge-warning" style="font-size: 12px; padding: 4px 10px;">${currentTechnique.technique_belt_level}</span>` : ''}
+                    <span class="badge badge-info" style="font-size: 12px; padding: 4px 10px;">${currentTechnique.category_name}</span>
+                  ` : ''}
+                </div>
+              </div>
+              <div style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius-md); padding: 16px 24px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 800; color: #10b981;">
+                  ${currentTechnique ? currentTechnique.sessions_attended : 0}
+                </div>
+                <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-top: 2px;">
+                  Attended Sessions
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 13px; color: var(--text-muted);">
+              Enrolled Since: <strong>${currentTechnique ? currentTechnique.start_date : 'N/A'}</strong> | Total Career Sessions Attended: <strong>${totalAttendedAcrossTechniques}</strong>
+            </div>
+          </div>
+
+          <!-- Timeline -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+            <div style="background: rgba(255,255,255,0.01); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
+              <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+                <i class="fa-solid fa-timeline" style="color: #3b82f6;"></i> Learning Progression Timeline
+              </h3>
+              <div class="table-responsive">
+                <table class="custom-table" style="font-size: 12px;">
+                  <thead>
+                    <tr>
+                      <th>Technique</th>
+                      <th>Level / Belt</th>
+                      <th>Period</th>
+                      <th>Sessions</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${history.length === 0 ? '<tr><td colspan="5" style="color: var(--text-muted);">No learning history yet.</td></tr>' : history.map(h => `
+                      <tr>
+                        <td><strong>${h.technique_name}</strong></td>
+                        <td>Lvl ${h.technique_level} ${h.technique_belt_level ? '• ' + h.technique_belt_level : ''}</td>
+                        <td><code>${h.start_date}</code> to <code>${h.end_date || 'Present'}</code></td>
+                        <td><span class="badge badge-info">${h.sessions_attended}</span></td>
+                        <td>
+                          <span class="badge ${h.status === 'active' ? 'badge-success' : 'badge-secondary'}">${h.status}</span>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Attendance Snapshots -->
+            <div style="background: rgba(255,255,255,0.01); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
+              <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+                <i class="fa-solid fa-clipboard-check" style="color: #10b981;"></i> Recent Practice Session Logs
+              </h3>
+              <div class="table-responsive">
+                <table class="custom-table" style="font-size: 12px;">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Batch</th>
+                      <th>Technique</th>
+                      <th>Remark</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${snapshots.length === 0 ? '<tr><td colspan="4" style="color: var(--text-muted);">No session records yet.</td></tr>' : snapshots.slice(0, 15).map(s => `
+                      <tr>
+                        <td><code>${s.attendance_date}</code></td>
+                        <td>${s.batch_name}</td>
+                        <td><strong>${s.technique_name}</strong></td>
+                        <td><span style="color: var(--text-muted);">${s.remarks || 'Practiced'}</span></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
   },
 
   // ==========================================

@@ -1,6 +1,7 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { resolveTenant } from '../middleware/tenantResolver.js';
+import { SyllabusService } from '../services/syllabusService.js';
 
 export const studentRouter = express.Router();
 
@@ -254,6 +255,26 @@ studentRouter.get('/batch-history', (req, res) => {
     `).all(studentId);
 
     res.json({ success: true, history });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/student/technique-history
+ * Allows student to view their current active technique, belt level, and learning progression
+ */
+studentRouter.get('/technique-history', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const studentId = req.user.role === 'student' ? req.user.userId : Number(req.query.student_id);
+
+    if (!studentId) {
+      return res.status(400).json({ success: false, error: 'Student identifier required' });
+    }
+
+    const progress = SyllabusService.getStudentTechniqueHistory(db, studentId);
+    res.json({ success: true, studentId, ...progress });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -22,6 +22,9 @@ describe('Enforce Academy, Branch, Batch, and Student Relationships (Rules 1-16)
     academy1Db = getTenantDbById(ACADEMY_1_ID);
     academy2Db = getTenantDbById(ACADEMY_2_ID);
 
+    // Clean up test branches to keep runs idempotent
+    academy1Db.prepare("DELETE FROM branches WHERE name LIKE 'North Satellite Wing%'").run();
+
     // Create staff tokens for authentication
     academy1Token = signToken({
       userId: 1,
@@ -433,7 +436,7 @@ describe('Enforce Academy, Branch, Batch, and Student Relationships (Rules 1-16)
     const ins = academy1Db.prepare(`
       INSERT INTO students (student_code, first_name, last_name, academy_id, status)
       VALUES (?, 'Concurrent', 'TestStudent', 1, 'active')
-    `).run(`STU-${Date.now().toString().slice(-4)}`);
+    `).run(`STU-CONC-${Date.now()}-${Math.floor(Math.random() * 1000000)}`);
     const studentId = ins.lastInsertRowid;
 
     // Simulate concurrent enrollment attempts
