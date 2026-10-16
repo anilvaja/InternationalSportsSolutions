@@ -1502,7 +1502,6 @@ const app = {
               <th>Status</th>
               <th>Current Level</th>
               <th>Session Technique</th>
-              <th>Progression</th>
               <th>Technique Remark</th>
               <th>General Note</th>
             </tr>
@@ -1510,7 +1509,6 @@ const app = {
           <tbody>
             ${roster.map(r => {
               const currentTechId = r.marked_technique_id || r.active_technique_id;
-              const currentProgression = r.marked_technique_status || 'keep';
               return `
               <tr data-student-id="${r.student_id}">
                 <td>
@@ -1543,14 +1541,6 @@ const app = {
                         ${t.name} (Lvl ${t.level}${t.belt_level ? ', ' + t.belt_level : ''})
                       </option>
                     `).join('')}
-                  </select>
-                </td>
-                <td>
-                  <select class="form-select att-progression-select" style="padding: 4px 8px; font-size: 12px;">
-                    <option value="keep" ${currentProgression === 'keep' ? 'selected' : ''}>Keep</option>
-                    <option value="upgrade" ${currentProgression === 'upgrade' ? 'selected' : ''}>Upgrade</option>
-                    <option value="downgrade" ${currentProgression === 'downgrade' ? 'selected' : ''}>Downgrade</option>
-                    <option value="direct_jump" ${currentProgression === 'direct_jump' ? 'selected' : ''}>Direct Jump</option>
                   </select>
                 </td>
                 <td>
@@ -1594,7 +1584,6 @@ const app = {
       const status = row.querySelector('.att-status-select').value;
       const remarks = row.querySelector('.att-remark-input').value.trim();
       const techSelect = row.querySelector('.att-tech-select');
-      const progressionSelect = row.querySelector('.att-progression-select');
       const techRemarkInput = row.querySelector('.att-tech-remarks-input');
 
       entries.push({
@@ -1602,7 +1591,7 @@ const app = {
         status,
         remarks,
         technique_id: techSelect && techSelect.value ? Number(techSelect.value) : null,
-        technique_status: progressionSelect ? progressionSelect.value : 'keep',
+        technique_status: 'keep',
         technique_remarks: techRemarkInput ? techRemarkInput.value.trim() : null,
       });
     });
