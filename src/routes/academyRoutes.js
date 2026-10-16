@@ -541,7 +541,7 @@ academyRouter.post('/students/import', (req, res) => {
           }
         }
 
-        const studentCode = item.student_code || `STU-IMP-${Date.now().toString().slice(-6)}-${i}-${Math.floor(100 + Math.random() * 900)}`;
+        const studentCode = item.student_code || `STU-IMP-${Date.now()}-${i}-${Math.floor(1000 + Math.random() * 9000)}`;
 
         const ins = db.prepare(`
           INSERT INTO students (
