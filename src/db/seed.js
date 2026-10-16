@@ -287,6 +287,67 @@ function seedMahavirAcademyData(academyId, passwordHash) {
   insertLeave.run('student', 2, 'Diya Shah', '2026-10-14', '2026-10-14', 'Fever & medical rest', 'approved');
   insertLeave.run('student', 3, 'Vivaan Desai', '2026-11-01', '2026-11-04', 'School mid-term examinations', 'pending');
 
+  // 11. Sports Syllabus & Learning Progression
+  const insertCat = db.prepare('INSERT INTO syllabus_categories (academy_id, name, description, display_order, status) VALUES (?, ?, ?, ?, ?)');
+  const catStances = insertCat.run(academyId, 'Basic Stances & Footwork', 'Foundational balance, posture and movement drills', 1, 'active').lastInsertRowid;
+  const catPunches = insertCat.run(academyId, 'Punching & Striking', 'Direct thrusts, lunge strikes and palm techniques', 2, 'active').lastInsertRowid;
+  const catKicks = insertCat.run(academyId, 'Kicking Techniques (Geri)', 'Snap, thrust and rotational kicking curriculum', 3, 'active').lastInsertRowid;
+  const catKata = insertCat.run(academyId, 'Kata Forms (Heian Series)', 'Pre-arranged formal sequences testing timing and precision', 4, 'active').lastInsertRowid;
+  const catKumite = insertCat.run(academyId, 'Kumite & Sparring Drills', 'Controlled partner combat and defensive counters', 5, 'active').lastInsertRowid;
+
+  const insertTech = db.prepare(`
+    INSERT INTO syllabus_techniques (
+      academy_id, category_id, name, code, description, level, belt_level, media_url, display_order, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const t1 = insertTech.run(academyId, catStances, 'Zenkutsu-Dachi (Forward Stance)', 'STANCE-01', 'Low hips, 60% front leg weight distribution with locked rear ankle', 1, 'White Belt', 'https://youtu.be/example1', 1, 'active').lastInsertRowid;
+  const t2 = insertTech.run(academyId, catPunches, 'Oi-Zuki (Lunge Punch)', 'PUNCH-01', 'Coordinated step-and-punch with explosive hip rotation and seiken fist alignment', 1, 'White Belt', 'https://youtu.be/example2', 2, 'active').lastInsertRowid;
+  const t3 = insertTech.run(academyId, catKicks, 'Mae-Geri (Front Snap Kick)', 'KICK-01', 'High knee chamber with striking surface on the ball of the foot (Chusoku)', 2, 'Yellow Belt', 'https://youtu.be/example3', 3, 'active').lastInsertRowid;
+  const t4 = insertTech.run(academyId, catKata, 'Heian Shodan (Form 1)', 'KATA-01', 'First formal pattern containing 21 movements focusing on basic blocks and lunges', 2, 'Yellow Belt', 'https://youtu.be/example4', 4, 'active').lastInsertRowid;
+  const t5 = insertTech.run(academyId, catKicks, 'Mawashi-Geri (Roundhouse Kick)', 'KICK-02', 'Diagonal hip drive impacting with the instep or ball of foot', 3, 'Orange Belt', 'https://youtu.be/example5', 5, 'active').lastInsertRowid;
+  const t6 = insertTech.run(academyId, catKata, 'Heian Nidan (Form 2)', 'KATA-02', 'Intermediate pattern introducing knife-hand blocks and high kicks', 3, 'Green Belt', 'https://youtu.be/example6', 6, 'active').lastInsertRowid;
+  const t7 = insertTech.run(academyId, catKumite, 'Jiyu Ippon Kumite', 'SPAR-01', 'One-step semi-free sparring drills with predetermined attacks and counter-strikes', 4, 'Brown Belt', 'https://youtu.be/example7', 7, 'active').lastInsertRowid;
+
+  // Student Technique Assignments & Historical Progression
+  const assignTech = db.prepare(`
+    INSERT INTO student_technique_assignments (
+      academy_id, student_id, technique_id, assigned_by, start_date, end_date, status, sessions_attended, remarks
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  // Student 1 (Aarav Patel): Promoted from Oi-Zuki -> Heian Shodan
+  assignTech.run(academyId, 1, t2, 1, '2026-07-01', '2026-08-31', 'completed', 16, 'Successfully cleared 9th Kyu Yellow Belt grading');
+  assignTech.run(academyId, 1, t4, 1, '2026-09-01', null, 'active', 18, 'Active training for 8th Kyu examination');
+
+  // Student 2 (Diya Shah): Active on Mae-Geri
+  assignTech.run(academyId, 2, t3, 1, '2026-09-15', null, 'active', 12, 'Practicing high knee chamber and balance');
+
+  // Student 3 (Vivaan Desai): Active on Forward Stance
+  assignTech.run(academyId, 3, t1, 1, '2026-10-01', null, 'active', 8, 'Working on lower hip positioning');
+
+  // Student 4 (Ananya Joshi): Active on Mawashi-Geri
+  assignTech.run(academyId, 4, t5, 1, '2026-08-15', null, 'active', 28, 'Exceptional flexibility; preparing for Green Belt');
+
+  // Historical Attendance Snapshots
+  const insertSnap = db.prepare(`
+    INSERT INTO attendance_technique_snapshots (
+      attendance_id, student_id, technique_id, technique_level, progression_action, sessions_count_at_time, remarks
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertSnap.run(att1, 1, t4, 2, 'keep', 17, 'Great hip drive during Heian Shodan');
+  insertSnap.run(att1, 2, t3, 2, 'keep', 11, 'Snap execution improved');
+  insertSnap.run(att2, 1, t4, 2, 'keep', 18, 'Ready for mock test next week');
+
+  // Update existing attendance records with technique metadata
+  db.prepare('UPDATE student_attendance SET technique_id = ?, technique_level = 2, technique_status = ?, technique_remarks = ?, attended_sessions_snapshot = ? WHERE attendance_id = ? AND student_id = ?')
+    .run(t4, 'keep', 'Great hip drive during Heian Shodan', 17, att1, 1);
+  db.prepare('UPDATE student_attendance SET technique_id = ?, technique_level = 2, technique_status = ?, technique_remarks = ?, attended_sessions_snapshot = ? WHERE attendance_id = ? AND student_id = ?')
+    .run(t3, 'keep', 'Snap execution improved', 11, att1, 2);
+  db.prepare('UPDATE student_attendance SET technique_id = ?, technique_level = 2, technique_status = ?, technique_remarks = ?, attended_sessions_snapshot = ? WHERE attendance_id = ? AND student_id = ?')
+    .run(t4, 'keep', 'Ready for mock test next week', 18, att2, 1);
+
   console.log(`[Seed] Seeded operational data for Mahavir Sports Academy (ID: ${academyId})`);
 }
 

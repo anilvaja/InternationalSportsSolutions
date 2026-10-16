@@ -22,8 +22,9 @@ describe('Enforce Academy, Branch, Batch, and Student Relationships (Rules 1-16)
     academy1Db = getTenantDbById(ACADEMY_1_ID);
     academy2Db = getTenantDbById(ACADEMY_2_ID);
 
-    // Clean up test branches to keep runs idempotent
+    // Clean up test branches and test students to keep repeated test runs completely idempotent
     academy1Db.prepare("DELETE FROM branches WHERE name LIKE 'North Satellite Wing%'").run();
+    academy1Db.prepare("DELETE FROM students WHERE first_name IN ('Transfer', 'Test', 'Bulk1', 'Concurrent') OR student_code LIKE 'STU-TEST%' OR student_code LIKE 'STU-IMP%'").run();
 
     // Create staff tokens for authentication
     academy1Token = signToken({

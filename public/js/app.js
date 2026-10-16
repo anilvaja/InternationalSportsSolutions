@@ -1337,7 +1337,11 @@ const app = {
             <i class="fa-solid fa-graduation-cap" style="color: #a855f7;"></i> Syllabus Progression Active
           </span>
         </div>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <select id="bulk-att-tech-select" class="form-select" style="padding: 4px 8px; font-size: 12px; max-width: 200px;" onchange="app.setAllTechnique(this.value)">
+            <option value="">-- Apply Technique to All --</option>
+            ${availableTechniques.map(t => `<option value="${t.id}">${t.name} (Lvl ${t.level})</option>`).join('')}
+          </select>
           <button class="btn btn-secondary btn-sm" onclick="app.setAllAttendance('present')">All Present</button>
           <button class="btn btn-secondary btn-sm" onclick="app.setAllAttendance('absent')">All Absent</button>
         </div>
@@ -1425,6 +1429,13 @@ const app = {
 
   setAllAttendance(status) {
     document.querySelectorAll('.att-status-select').forEach(sel => sel.value = status);
+  },
+
+  setAllTechnique(techniqueId) {
+    if (!techniqueId) return;
+    document.querySelectorAll('.att-tech-select').forEach(sel => {
+      sel.value = techniqueId;
+    });
   },
 
   async saveAttendance(batchId, date) {
@@ -2044,6 +2055,9 @@ const app = {
             </p>
           </div>
           <div class="card-actions">
+            <button class="btn btn-secondary btn-sm" onclick="app.exportSyllabusExcel()">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Excel
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="app.showAddCategoryModal()">
               <i class="fa-solid fa-folder-plus"></i> New Category
             </button>
@@ -2095,6 +2109,7 @@ const app = {
     container.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="tech-search-input" class="form-input" placeholder="Search name, code, belt..." oninput="app.filterTechniquesTable()" style="font-size: 12px; width: 190px;">
           <select id="tech-filter-category" class="form-select" onchange="app.filterTechniquesTable()" style="font-size: 12px;">
             <option value="">All Categories</option>
             ${categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
@@ -2173,12 +2188,17 @@ const app = {
   filterTechniquesTable() {
     const catId = document.getElementById('tech-filter-category').value;
     const level = document.getElementById('tech-filter-level').value;
+    const search = (document.getElementById('tech-search-input')?.value || '').toLowerCase().trim();
     const rows = document.querySelectorAll('#techniques-table tbody tr');
 
     rows.forEach(r => {
       const matchCat = !catId || r.getAttribute('data-cat-id') === catId;
       const matchLvl = !level || r.getAttribute('data-level') === level;
-      r.style.display = (matchCat && matchLvl) ? '' : 'none';
+      const text = r.innerText.toLowerCase();
+      const matchSearch = !search || text.includes(search);
+      r.style.display = (matchCat && matchLvl && matchSearch) ? '' : 'none';
+    });
+  },
     });
   },
 
@@ -2777,6 +2797,189 @@ const app = {
   },
 
   // ==========================================
+  // SYLLABUS EXCEL EXPORT (SheetJS)
+  // ==========================================
+  async exportSyllabusExcel() {
+    try {
+      this.showToast('Preparing Syllabus Excel export...', 'info');
+      const [techRes, catRes] = await Promise.all([
+        this.apiRequest('/api/academy/syllabus-techniques?include_inactive=true'),
+        this.apiRequest('/api/academy/syllabus-categories?include_inactive=true'),
+      ]);
+
+      const techniques = techRes.techniques || [];
+      const categories = catRes.categories || [];
+
+      if (!window.XLSX) {
+        this.showToast('Excel library (SheetJS) is unavailable', 'danger');
+        return;
+      }
+
+      const techData = techniques.map((t, idx) => ({
+        'Order': t.display_order ?? (idx + 1),
+        'Technique Name': t.name,
+        'Code': t.code || '-',
+        'Category': t.category_name,
+        'Difficulty Level': `Level ${t.level}`,
+        'Belt / Rank': t.belt_level || '-',
+        'Active Students': t.active_students_count || 0,
+        'Status': t.status,
+        'Description': t.description || '-',
+        'Media Reference': t.media_url || '-'
+      }));
+
+      const catData = categories.map((c, idx) => ({
+        'Order': c.display_order ?? (idx + 1),
+        'Category Name': c.name,
+        'Description': c.description || '-',
+        'Total Techniques': c.technique_count || 0,
+        'Status': c.status
+      }));
+
+      const wb = window.XLSX.utils.book_new();
+      const wsTechniques = window.XLSX.utils.json_to_sheet(techData);
+      const wsCategories = window.XLSX.utils.json_to_sheet(catData);
+
+      window.XLSX.utils.book_append_sheet(wb, wsTechniques, 'Syllabus Techniques');
+      window.XLSX.utils.book_append_sheet(wb, wsCategories, 'Categories');
+
+      const fileName = `sports_syllabus_curriculum_${new Date().toISOString().split('T')[0]}.xlsx`;
+      window.XLSX.writeFile(wb, fileName);
+      this.showToast('Curriculum Excel downloaded successfully!', 'success');
+    } catch (err) {
+      console.error('Export error:', err);
+      this.showToast('Failed to export syllabus: ' + err.message, 'danger');
+    }
+  },
+
+  // ==========================================
+  // STUDENT BELT / PROGRESSION CERTIFICATE (jsPDF)
+  // ==========================================
+  async downloadStudentCertificate(studentId, studentName) {
+    try {
+      this.showToast('Generating official Belt & Progression Certificate...', 'info');
+      let histData;
+      if (studentId) {
+        histData = await this.apiRequest(`/api/academy/students/${studentId}/technique-history`);
+      } else {
+        histData = await this.apiRequest('/api/student/technique-history');
+        studentName = this.currentUser ? `${this.currentUser.first_name || ''} ${this.currentUser.last_name || ''}`.trim() || 'Martial Arts Student' : 'Martial Arts Student';
+      }
+
+      if (!histData || !histData.success) {
+        this.showToast('Could not load student progress details for certificate', 'danger');
+        return;
+      }
+
+      const { currentTechnique, totalAttendedAcrossTechniques = 0 } = histData;
+      const techniqueName = currentTechnique ? currentTechnique.technique_name : 'Sports Syllabus Curriculum';
+      const beltLevel = (currentTechnique && currentTechnique.technique_belt_level) ? currentTechnique.technique_belt_level : 'Graded Rank';
+      const difficultyLvl = currentTechnique ? `Level ${currentTechnique.technique_level}` : 'Foundation Level';
+      const sessions = currentTechnique ? currentTechnique.sessions_attended : totalAttendedAcrossTechniques;
+
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+        this.showToast('PDF generator library is unavailable', 'danger');
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+      // Landscape A4: 297mm x 210mm
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+      // Outer & Inner Borders
+      doc.setDrawColor(37, 99, 235); // #2563eb
+      doc.setLineWidth(3);
+      doc.rect(8, 8, 281, 194);
+
+      doc.setDrawColor(217, 119, 6); // amber/gold border
+      doc.setLineWidth(1);
+      doc.rect(12, 12, 273, 186);
+
+      // Academy Header
+      const academyName = (this.currentAcademy && this.currentAcademy.name) ? this.currentAcademy.name.toUpperCase() : 'INTERNATIONAL SPORTS ACADEMY';
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.setTextColor(30, 41, 59);
+      doc.text(academyName, 148.5, 30, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139);
+      doc.text('OFFICIAL MARTIAL ARTS & SPORTS EXCELLENCE ACCREDITATION', 148.5, 37, { align: 'center' });
+
+      // Title
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(26);
+      doc.setTextColor(168, 85, 247); // purple
+      doc.text('CERTIFICATE OF PROGRESSION', 148.5, 54, { align: 'center' });
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(13);
+      doc.setTextColor(71, 85, 105);
+      doc.text('This is proudly presented to', 148.5, 68, { align: 'center' });
+
+      // Student Name
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(26);
+      doc.setTextColor(15, 23, 42);
+      doc.text(studentName.toUpperCase(), 148.5, 83, { align: 'center' });
+
+      // Underline under student name
+      doc.setDrawColor(168, 85, 247);
+      doc.setLineWidth(0.8);
+      doc.line(80, 87, 217, 87);
+
+      // Progression Body Text
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(13);
+      doc.setTextColor(51, 65, 85);
+      doc.text('in recognition of exemplary technical competence, discipline, and milestone advancement in:', 148.5, 98, { align: 'center' });
+
+      // Technique & Belt details
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(19);
+      doc.setTextColor(37, 99, 235);
+      doc.text(`${techniqueName} — ${beltLevel} (${difficultyLvl})`, 148.5, 112, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(12);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Successfully completed ${sessions} dedicated training sessions under certified instruction.`, 148.5, 122, { align: 'center' });
+
+      // Certificate Details Box
+      const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      doc.setFontSize(10);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Certificate Ref: ISS-${studentId || 'STU'}-${Date.now().toString().slice(-6)}   |   Issued: ${todayStr}`, 148.5, 142, { align: 'center' });
+
+      // Signature Lines
+      doc.setDrawColor(148, 163, 184);
+      doc.setLineWidth(0.5);
+      doc.line(45, 172, 105, 172);
+      doc.line(192, 172, 252, 172);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Head Sensei / Chief Coach', 75, 178, { align: 'center' });
+      doc.text('Academy Director', 222, 178, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(148, 163, 184);
+      doc.text('Authorized Instructor Signature', 75, 183, { align: 'center' });
+      doc.text('Official Seal & Verification', 222, 183, { align: 'center' });
+
+      const safeName = studentName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      doc.save(`certificate_${safeName}_${beltLevel.toLowerCase().replace(/\s+/g, '_')}.pdf`);
+      this.showToast('Progression Certificate downloaded successfully!', 'success');
+    } catch (err) {
+      console.error('Certificate generation error:', err);
+      this.showToast('Failed to generate certificate: ' + err.message, 'danger');
+    }
+  },
+
+  // ==========================================
   // STUDENT TECHNIQUE PROGRESSION MODAL
   // ==========================================
 
@@ -2826,9 +3029,14 @@ const app = {
               <div style="font-size: 12px; color: var(--text-muted);">
                 Started: <strong>${currentTechnique ? currentTechnique.start_date : 'N/A'}</strong> | Total Career Sessions: <strong>${totalAttendedAcrossTechniques}</strong>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="app.showAssignTechniqueModal(${studentId}, '${studentName}')">
-                <i class="fa-solid fa-arrow-up-right-dots"></i> Assign / Transition Technique
-              </button>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-secondary btn-sm" onclick="app.downloadStudentCertificate(${studentId}, '${studentName.replace(/'/g, "\\'")}')">
+                  <i class="fa-solid fa-certificate" style="color: #f59e0b;"></i> Certificate
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="app.showAssignTechniqueModal(${studentId}, '${studentName.replace(/'/g, "\\'")}')">
+                  <i class="fa-solid fa-arrow-up-right-dots"></i> Assign / Transition
+                </button>
+              </div>
             </div>
           </div>
 
@@ -3005,6 +3213,11 @@ const app = {
             <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
               Track your martial arts curriculum, belt level progression, and attended practice sessions
             </p>
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-primary btn-sm" onclick="app.downloadStudentCertificate()">
+              <i class="fa-solid fa-certificate" style="color: #f59e0b;"></i> Download Belt Certificate
+            </button>
           </div>
         </div>
 
