@@ -5,6 +5,7 @@ import { provisionAcademyDb, getTenantDbById, closeTenantDb } from '../db/connec
 import { requireAuth, requireSuperAdmin } from '../middleware/auth.js';
 import { streamAcademyBackup, streamCentralPlatformBackup } from '../services/backupService.js';
 import { QuotaService, STANDARD_QUOTA_KEYS, DEFAULT_PLAN_VALUES } from '../services/quotaService.js';
+import { DbViewerService } from '../services/dbViewerService.js';
 
 export const centralRouter = express.Router();
 
@@ -1111,3 +1112,137 @@ centralRouter.get('/academies/:id/quota-summary', (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// ==========================================
+// SUPER ADMIN DATABASE STUDIO / TABLEPLUS API
+// ==========================================
+
+/**
+ * GET /api/central/db-viewer/databases
+ * Lists all available database files (central.db and all tenant databases)
+ */
+centralRouter.get('/db-viewer/databases', (req, res) => {
+  try {
+    const databases = DbViewerService.listDatabases();
+    res.json({ success: true, databases });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/central/db-viewer/tables
+ * Lists tables with row counts and column stats for a given database
+ */
+centralRouter.get('/db-viewer/tables', (req, res) => {
+  try {
+    const dbKey = req.query.db || 'central';
+    const tables = DbViewerService.listTables(dbKey);
+    res.json({ success: true, tables });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/central/db-viewer/schema
+ * Fetches Table Schema and Data Dictionary documentation
+ */
+centralRouter.get('/db-viewer/schema', (req, res) => {
+  try {
+    const dbKey = req.query.db || 'central';
+    const table = req.query.table;
+    if (!table) return res.status(400).json({ success: false, error: 'Table name is required' });
+
+    const schema = DbViewerService.getTableSchema(dbKey, table);
+    res.json({ success: true, schema });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/central/db-viewer/data
+ * Browses paginated table data with search and sorting
+ */
+centralRouter.get('/db-viewer/data', (req, res) => {
+  try {
+    const dbKey = req.query.db || 'central';
+    const table = req.query.table;
+    if (!table) return res.status(400).json({ success: false, error: 'Table name is required' });
+
+    const data = DbViewerService.getTableData(dbKey, table, req.query);
+    res.json({ success: true, ...data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/db-viewer/row
+ * Inserts a new record into table
+ */
+centralRouter.post('/db-viewer/row', (req, res) => {
+  try {
+    const { dbKey = 'central', table, data } = req.body;
+    if (!table || !data) return res.status(400).json({ success: false, error: 'Table and data are required' });
+
+    const result = DbViewerService.insertRow(dbKey, table, data);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/central/db-viewer/row
+ * Updates an existing record by primary key
+ */
+centralRouter.put('/db-viewer/row', (req, res) => {
+  try {
+    const { dbKey = 'central', table, pkCol, pkVal, updates } = req.body;
+    if (!table || !pkCol || pkVal === undefined || !updates) {
+      return res.status(400).json({ success: false, error: 'Table, primary key, and updates are required' });
+    }
+
+    const result = DbViewerService.updateRow(dbKey, table, pkCol, pkVal, updates);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/central/db-viewer/row
+ * Deletes a record by primary key
+ */
+centralRouter.delete('/db-viewer/row', (req, res) => {
+  try {
+    const { dbKey = 'central', table, pkCol, pkVal } = req.body;
+    if (!table || !pkCol || pkVal === undefined) {
+      return res.status(400).json({ success: false, error: 'Table, pkCol, and pkVal are required' });
+    }
+
+    const result = DbViewerService.deleteRow(dbKey, table, pkCol, pkVal);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/db-viewer/query
+ * Executes a raw SQL query in safe Super Admin console
+ */
+centralRouter.post('/db-viewer/query', (req, res) => {
+  try {
+    const { dbKey = 'central', sql } = req.body;
+    if (!sql) return res.status(400).json({ success: false, error: 'SQL query statement is required' });
+
+    const result = DbViewerService.executeRawQuery(dbKey, sql);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+

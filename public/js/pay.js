@@ -214,68 +214,318 @@ const payApp = {
   },
 
   downloadPdfReceipt(inv) {
-    this.downloadPdfReceiptDirect(
-      inv.academy_name || this.selectedAcademy.name,
-      `REC-${inv.invoice_number.slice(-4)}`,
-      inv.invoice_number,
-      `${inv.first_name} ${inv.last_name}`,
-      inv.paid_amount,
-      new Date().toISOString().split('T')[0]
-    );
+    this.downloadPdfReceiptDirect({
+      academyName: inv.academy_name || (this.selectedAcademy && this.selectedAcademy.name) || 'International Sports Academy',
+      academyCity: inv.academy_city || 'Vadodara',
+      academyAddress: inv.academy_address || null,
+      academyGst: inv.academy_gst || null,
+      academyLogo: inv.academy_logo || null,
+      receiptNumber: `REC-${inv.invoice_number ? inv.invoice_number.slice(-4) : Date.now().toString().slice(-4)}`,
+      invoiceNumber: inv.invoice_number,
+      studentName: `${inv.first_name || ''} ${inv.last_name || ''}`.trim() || 'Student',
+      studentCode: inv.student_code || 'N/A',
+      admissionNumber: inv.admission_number || null,
+      branchName: inv.branch_name || 'Main Dojo',
+      studentPhone: inv.phone || null,
+      amount: Number(inv.paid_amount || inv.net_amount || 0),
+      baseFee: Number(inv.base_fee || inv.amount || inv.net_amount || 0),
+      discountPercentage: Number(inv.discount_percentage || 0),
+      discountAmount: Number(inv.discount_amount || 0),
+      discountReason: inv.discount_reason || null,
+      taxAmount: Number(inv.tax_amount || 0),
+      netAmount: Number(inv.net_amount || inv.amount || 0),
+      balanceAmount: Number(inv.balance_amount || 0),
+      periodStart: inv.period_start || new Date().toISOString().split('T')[0],
+      periodEnd: inv.period_end || new Date().toISOString().split('T')[0],
+      monthsCount: inv.months_count || 1,
+      nextInstallmentDate: inv.next_installment_date || null,
+      paymentMode: 'Online / UPI',
+      date: new Date().toISOString().split('T')[0]
+    });
   },
 
-  downloadPdfReceiptDirect(academyName, receiptNumber, invoiceNumber, studentName, amount, date) {
+  downloadPdfReceiptDirect(opts) {
+    // Support legacy arguments if called with positional parameters
+    if (typeof opts === 'string') {
+      const [academyName, receiptNumber, invoiceNumber, studentName, amount, date] = arguments;
+      opts = { academyName, receiptNumber, invoiceNumber, studentName, amount, date };
+    }
+
+    const {
+      academyName = 'Sports Solutions Academy',
+      academyCity = 'Vadodara',
+      academyAddress = null,
+      academyGst = null,
+      receiptNumber = `REC-${Date.now().toString().slice(-4)}`,
+      invoiceNumber = 'INV-001',
+      studentName = 'Student',
+      studentCode = 'STU-001',
+      admissionNumber = null,
+      branchName = 'Main Campus',
+      studentPhone = null,
+      amount = 0,
+      baseFee = 0,
+      discountPercentage = 0,
+      discountAmount = 0,
+      discountReason = null,
+      taxAmount = 0,
+      netAmount = 0,
+      balanceAmount = 0,
+      periodStart = new Date().toISOString().split('T')[0],
+      periodEnd = new Date().toISOString().split('T')[0],
+      monthsCount = 1,
+      nextInstallmentDate = null,
+      paymentMode = 'Online / UPI',
+      date = new Date().toISOString().split('T')[0]
+    } = opts;
+
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
+    const doc = new jsPDF('p', 'mm', 'a4');
 
-    // Letterhead Header
-    doc.setFillColor(37, 99, 235); // Brand Blue
-    doc.rect(0, 0, 210, 36, 'F');
+    // 1. Top Decorative Brand Bar
+    doc.setFillColor(30, 41, 59); // Dark Slate
+    doc.rect(0, 0, 210, 4, 'F');
 
+    // 2. Academy Header (Sapphire Gradient Feel)
+    doc.setFillColor(37, 99, 235); // #2563eb Primary
+    doc.rect(0, 4, 210, 36, 'F');
+
+    // Circular Logo Emblem Badge
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(14, 10, 24, 24, 4, 4, 'F');
+    doc.setFillColor(37, 99, 235);
+    doc.circle(26, 22, 9, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.text(academyName.toUpperCase(), 14, 18);
-
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text('OFFICIAL FEE PAYMENT RECEIPT', 14, 28);
-    doc.text(`DATE: ${date}`, 155, 28);
+    doc.text('ISS', 22.5, 25.5);
 
-    // Body content
-    doc.setTextColor(30, 41, 59);
-    doc.setFontSize(12);
+    // Academy Name & Metadata
+    doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Receipt #: ${receiptNumber}`, 14, 48);
-    doc.text(`Invoice #: ${invoiceNumber}`, 140, 48);
+    doc.setFontSize(16);
+    doc.text(academyName.toUpperCase(), 44, 19);
 
-    // AutoTable
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(224, 231, 255);
+    const addressLine = `${academyAddress ? academyAddress + ', ' : ''}${academyCity}, India`;
+    doc.text(addressLine, 44, 26);
+    const subMeta = `${academyGst ? 'GSTIN: ' + academyGst + '  |  ' : ''}SAC: 999293 (Sports Coaching)  |  Official Receipt`;
+    doc.text(subMeta, 44, 32);
+
+    // 3. Receipt Sub-Header Banner
+    doc.setFillColor(248, 250, 252); // Slate 50
+    doc.rect(0, 40, 210, 14, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.line(0, 54, 210, 54);
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('OFFICIAL FEE PAYMENT RECEIPT & TAX INVOICE', 14, 49);
+
+    // Paid Stamp Pill
+    const isPaid = balanceAmount <= 0;
+    doc.setFillColor(isPaid ? 209 : 254, isPaid ? 250 : 243, isPaid ? 229 : 199);
+    doc.roundedRect(155, 43, 41, 8, 2, 2, 'F');
+    doc.setTextColor(isPaid ? 6 : 146, isPaid ? 95 : 64, isPaid ? 70 : 14);
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(isPaid ? 'PAID & VERIFIED' : 'PARTIALLY PAID', 158, 48.5);
+
+    // 4. Two-Column Metadata Cards
+    // Left Box: Student Details
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(14, 58, 88, 42, 2, 2, 'FD');
+
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, 58, 88, 8, 'F');
+    doc.setTextColor(71, 85, 105);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('STUDENT INFORMATION', 18, 63.5);
+
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.text(studentName, 18, 72);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.setFontSize(8.5);
+    doc.text(`Student Code: ${studentCode}`, 18, 78);
+    if (admissionNumber) doc.text(`Admission No: ${admissionNumber}`, 18, 83);
+    doc.text(`Branch / Dojo: ${branchName}`, 18, admissionNumber ? 88 : 84);
+    if (studentPhone) doc.text(`Phone: ${studentPhone}`, 18, admissionNumber ? 93 : 89);
+
+    // Right Box: Transaction & Coverage Period Details
+    doc.roundedRect(108, 58, 88, 42, 2, 2, 'FD');
+    doc.setFillColor(241, 245, 249);
+    doc.rect(108, 58, 88, 8, 'F');
+    doc.setTextColor(71, 85, 105);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('RECEIPT & COVERAGE DETAILS', 112, 63.5);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Receipt No:', 112, 71);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.text(receiptNumber, 142, 71);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Invoice Ref:', 112, 76);
+    doc.setTextColor(15, 23, 42);
+    doc.text(invoiceNumber, 142, 76);
+
+    doc.setTextColor(71, 85, 105);
+    doc.text('Payment Date:', 112, 81);
+    doc.setTextColor(15, 23, 42);
+    doc.text(date, 142, 81);
+
+    doc.setTextColor(71, 85, 105);
+    doc.text('Payment Mode:', 112, 86);
+    doc.setTextColor(15, 23, 42);
+    doc.text(paymentMode, 142, 86);
+
+    // Highlighted Coverage Period
+    doc.setTextColor(37, 99, 235);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Coaching Period:', 112, 91);
+    doc.text(`${periodStart} to ${periodEnd}`, 142, 91);
+
+    if (nextInstallmentDate) {
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.setFontSize(7.5);
+      doc.text(`Next Due: ${nextInstallmentDate}`, 112, 96);
+    }
+
+    // 5. Itemized Fee Breakdown Table
+    const tableBody = [
+      [
+        '1',
+        `Curriculum Coaching & Training Tuition\nCoverage: ${periodStart} to ${periodEnd} (${monthsCount} Month${monthsCount > 1 ? 's' : ''})`,
+        `₹${(baseFee || netAmount || amount).toLocaleString()}`,
+        discountAmount > 0 
+          ? `-₹${discountAmount.toLocaleString()} (${discountPercentage}%${discountReason ? ' - ' + discountReason : ''})` 
+          : 'None',
+        taxAmount > 0 ? `₹${taxAmount.toLocaleString()}` : 'Exempt / Incl.',
+        `₹${(netAmount || amount).toLocaleString()}`
+      ]
+    ];
+
     doc.autoTable({
-      startY: 55,
-      head: [['Description', 'Student Name', 'Mode', 'Amount Paid (INR)']],
-      body: [
-        ['Sports Coaching & Academy Training Fee', studentName, 'Online / UPI', `INR ${amount.toLocaleString()}`]
-      ],
-      headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
-      styles: { fontSize: 11, cellPadding: 6 },
+      startY: 104,
+      head: [['#', 'Fee Item & Coverage Period', 'Base Fee', 'Concession / Discount', 'GST (18%)', 'Net Payable']],
+      body: tableBody,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [30, 41, 59],
+        textColor: 255,
+        fontSize: 8.5,
+        fontStyle: 'bold',
+        halign: 'left',
+        cellPadding: 3
+      },
+      styles: {
+        fontSize: 8.5,
+        cellPadding: 4,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2
+      },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 70 },
+        2: { cellWidth: 26, halign: 'right' },
+        3: { cellWidth: 38, halign: 'right', textColor: discountAmount > 0 ? [185, 28, 28] : [100, 116, 139] },
+        4: { cellWidth: 22, halign: 'right' },
+        5: { cellWidth: 26, halign: 'right', fontStyle: 'bold' }
+      }
     });
 
-    const finalY = doc.lastAutoTable.finalY + 20;
+    const finalY = doc.lastAutoTable.finalY + 4;
 
-    doc.setFontSize(10);
+    // 6. Summary Totals Box (Right Aligned)
+    const totalsX = 118;
+    const totalsWidth = 78;
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(totalsX, finalY, totalsWidth, 38, 2, 2, 'FD');
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 116, 139);
     doc.setFont('helvetica', 'normal');
-    doc.text('Payment Status: PAID & VERIFIED IN REAL-TIME', 14, finalY);
-    doc.text('This is a computer-generated official receipt. No physical signature required.', 14, finalY + 8);
+    doc.text('Base Tuition Fee:', totalsX + 4, finalY + 7);
+    doc.setTextColor(30, 41, 59);
+    doc.text(`₹${(baseFee || netAmount || amount).toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 7, { align: 'right' });
 
-    // Authorized stamp box
-    doc.setDrawColor(200, 200, 200);
-    doc.rect(130, finalY, 65, 30);
-    doc.text('AUTHORIZED ACADEMY SEAL', 135, finalY + 8);
+    if (discountAmount > 0) {
+      doc.setTextColor(220, 38, 38);
+      doc.text(`Discount (${discountPercentage}%):`, totalsX + 4, finalY + 13);
+      doc.text(`-₹${discountAmount.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 13, { align: 'right' });
+    }
+
+    doc.setTextColor(100, 116, 139);
+    doc.text('Total Net Fee:', totalsX + 4, finalY + (discountAmount > 0 ? 19 : 14));
+    doc.setTextColor(30, 41, 59);
+    doc.text(`₹${(netAmount || amount).toLocaleString()}`, totalsX + totalsWidth - 4, finalY + (discountAmount > 0 ? 19 : 14), { align: 'right' });
+
+    // Amount Paid Highlight Row
+    doc.setFillColor(240, 253, 244); // Green 50
+    doc.rect(totalsX, finalY + 24, totalsWidth, 7, 'F');
+    doc.setTextColor(21, 128, 61); // Green 700
+    doc.setFont('helvetica', 'bold');
+    doc.text('Amount Paid (This Receipt):', totalsX + 4, finalY + 29);
+    doc.text(`₹${Number(amount).toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 29, { align: 'right' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.setFontSize(8);
+    doc.text('Remaining Balance:', totalsX + 4, finalY + 35);
+    doc.setTextColor(balanceAmount > 0 ? 185 : 21, balanceAmount > 0 ? 28 : 128, balanceAmount > 0 ? 28 : 61);
+    doc.setFont('helvetica', 'bold');
+    doc.text(balanceAmount > 0 ? `₹${balanceAmount.toLocaleString()}` : '₹0.00 (Fully Paid)', totalsX + totalsWidth - 4, finalY + 35, { align: 'right' });
+
+    // 7. Security Stamp & Authorized Seal (Bottom Left)
+    const sealY = finalY;
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(14, sealY, 94, 38, 2, 2);
+
+    doc.setFillColor(241, 245, 249);
+    doc.circle(28, sealY + 15, 9, 'F');
     doc.setTextColor(16, 185, 129);
     doc.setFont('helvetica', 'bold');
-    doc.text('[ VERIFIED ELECTRONICALLY ]', 133, finalY + 20);
+    doc.setFontSize(11);
+    doc.text('✓', 26, sealY + 18.5);
 
-    doc.save(`${receiptNumber}-${studentName.replace(/\s+/g, '_')}.pdf`);
+    doc.setFontSize(8.5);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SYSTEM VERIFIED & DIGITALLY STAMPED', 41, sealY + 12);
+
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Issued by: ${academyName}`, 41, sealY + 17);
+    doc.text('Status: Reconciled in Tenant Ledger', 41, sealY + 21);
+    doc.text(`Generated: ${new Date().toLocaleString('en-US')}`, 41, sealY + 25);
+    doc.text('No signature required • Official computer-generated receipt', 18, sealY + 33);
+
+    // 8. Footer Legal Note
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Thank you for your prompt payment! Keep this official receipt for grading verification and tax records.', 14, 282);
+    doc.text(`Powered by International Sports Solutions SaaS  •  ${academyName}`, 14, 286);
+
+    // Save PDF
+    const safeStudentName = studentName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    doc.save(`${receiptNumber}-${safeStudentName}.pdf`);
   }
 };
 

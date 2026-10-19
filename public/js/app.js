@@ -742,6 +742,7 @@ const app = {
     'central-plans': '/admin/plans',
     'central-stats': '/admin/analytics',
     'central-audit': '/admin/audit',
+    'central-db-viewer': '/admin/db-viewer',
 
     // Academy Operations
     'overview': '/academy/overview',
@@ -777,6 +778,7 @@ const app = {
     'central-plans': 'Subscription Plans & Quota Management',
     'central-stats': 'Platform Metrics',
     'central-audit': 'Central Audit Trail',
+    'central-db-viewer': 'Database Studio & TablePlus',
     'overview': 'Dashboard',
     'inquiries': 'Inquiries & Admission Leads',
     'branches': 'Branches',
@@ -824,6 +826,10 @@ const app = {
       '/admin/analytics': 'central-stats',
       '/admin/metrics': 'central-stats',
       '/admin/audit': 'central-audit',
+      '/admin/db-viewer': 'central-db-viewer',
+      '/admin/db': 'central-db-viewer',
+      '/admin/database': 'central-db-viewer',
+      '/admin/tableplus': 'central-db-viewer',
       '/academy': 'overview',
       '/academy/overview': 'overview',
       '/academy/dashboard': 'overview',
@@ -882,7 +888,7 @@ const app = {
     ];
     if (academyTabs.includes(tab)) return true;
     if (this.user.isSuperAdmin) {
-      return ['central-academies', 'central-plans', 'central-stats', 'central-audit'].includes(tab);
+      return ['central-academies', 'central-plans', 'central-stats', 'central-audit', 'central-db-viewer'].includes(tab);
     }
     return false;
   },
@@ -923,6 +929,9 @@ const app = {
         </a>
         <a href="${this.getPathForTab('central-audit')}" class="nav-item ${this.currentTab === 'central-audit' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-audit')">
           <i class="fa-solid fa-list-check"></i> Central Audit Trail
+        </a>
+        <a href="${this.getPathForTab('central-db-viewer')}" class="nav-item ${this.currentTab === 'central-db-viewer' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-db-viewer')">
+          <i class="fa-solid fa-database"></i> Database Studio (TablePlus)
         </a>
       `;
     }
@@ -1065,6 +1074,9 @@ const app = {
         break;
       case 'central-audit':
         this.renderCentralAudit();
+        break;
+      case 'central-db-viewer':
+        this.renderCentralDbViewer();
         break;
       case 'overview':
         this.renderAcademyOverview();
@@ -2234,6 +2246,949 @@ const app = {
   },
 
   // ==========================================
+  // SUPER ADMIN DATABASE STUDIO (TABLEPLUS / MYSQL WORKBENCH)
+  // ==========================================
+
+  dbStudio: {
+    activeDb: 'academy_1',
+    activeTable: null,
+    activeTab: 'data',
+    page: 1,
+    limit: 25,
+    search: '',
+    sortBy: '',
+    sortDir: 'ASC',
+    databases: [],
+    tables: [],
+    filteredTables: [],
+    schema: null,
+    currentRows: [],
+    totalRows: 0,
+    totalPages: 1,
+    sqlQuery: '',
+    sqlResult: null
+  },
+
+  async renderCentralDbViewer() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 14px;">
+        <div>
+          <h1 class="page-title" style="display: flex; align-items: center; gap: 10px; margin: 0;">
+            <i class="fa-solid fa-database" style="color: #3b82f6;"></i> Database Studio
+            <span class="badge badge-info" style="font-size: 11px; padding: 3px 8px;">TablePlus Inspector</span>
+          </h1>
+          <p style="font-size: 13px; color: var(--text-muted); margin: 4px 0 0 0;">
+            Inspect schema data dictionaries, browse rows, execute raw SQL queries, and manage tenant records directly.
+          </p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap;">Database:</label>
+            <select id="db-studio-db-select" class="form-control" style="min-width: 280px; font-weight: 600;" onchange="app.onDbStudioDatabaseChange(this.value)">
+              <option value="">Loading databases...</option>
+            </select>
+          </div>
+          <button class="btn btn-secondary btn-sm" title="Refresh Studio" onclick="app.refreshDbStudio()">
+            <i class="fa-solid fa-rotate"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Studio Split Pane Container -->
+      <div id="db-studio-container" style="display: grid; grid-template-columns: 280px 1fr; gap: 16px; min-height: 680px; align-items: start;">
+        <!-- Left Pane: Tables Navigator -->
+        <div class="content-card" style="padding: 14px; display: flex; flex-direction: column; max-height: calc(100vh - 200px); position: sticky; top: 80px;">
+          <div style="margin-bottom: 12px;">
+            <div style="position: relative;">
+              <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 10px; top: 10px; font-size: 12px; color: var(--text-muted);"></i>
+              <input type="text" id="db-studio-table-search" class="form-control form-control-sm" placeholder="Filter tables..." style="padding-left: 28px;" oninput="app.filterDbStudioTables(this.value)">
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; padding: 0 4px;">
+            <span>Tables & Views (<span id="db-studio-table-count">0</span>)</span>
+            <span id="db-studio-db-size" class="badge badge-secondary" style="font-size: 10px;">-</span>
+          </div>
+          <div id="db-studio-table-list" style="overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2px; padding-right: 2px;">
+            <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 12px;">Loading tables...</div>
+          </div>
+        </div>
+
+        <!-- Right Pane: Active Table Workspace -->
+        <div id="db-studio-main-workspace" class="content-card" style="min-height: 600px; display: flex; flex-direction: column;">
+          <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+            <i class="fa-solid fa-table-list fa-3x" style="opacity: 0.3; margin-bottom: 14px; display: block;"></i>
+            <h3>Select a table from the left pane</h3>
+            <p style="font-size: 13px;">View data rows, schema definitions, data dictionary, or run raw queries.</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await this.initDbStudio();
+  },
+
+  async initDbStudio() {
+    try {
+      const res = await this.apiRequest('/api/central/db-viewer/databases');
+      if (!res.success || !res.databases || res.databases.length === 0) {
+        this.showToast('Failed to load database list', 'danger');
+        return;
+      }
+
+      this.dbStudio.databases = res.databases;
+
+      const sel = document.getElementById('db-studio-db-select');
+      if (sel) {
+        sel.innerHTML = res.databases.map(d => `
+          <option value="${d.dbKey || d.id}" ${((d.dbKey || d.id) === this.dbStudio.activeDb) ? 'selected' : ''}>
+            ${d.name} (${d.sizeFormatted || '0 KB'})
+          </option>
+        `).join('');
+
+        const exists = res.databases.find(d => (d.dbKey || d.id) === this.dbStudio.activeDb);
+        if (!exists) {
+          this.dbStudio.activeDb = res.databases[0].dbKey || res.databases[0].id;
+        }
+      }
+
+      await this.loadDbStudioTables();
+    } catch (err) {
+      console.error('Error initializing DB Studio:', err);
+      this.showToast('DB Studio Error: ' + err.message, 'danger');
+    }
+  },
+
+  async onDbStudioDatabaseChange(dbKey) {
+    this.dbStudio.activeDb = dbKey;
+    this.dbStudio.activeTable = null;
+    this.dbStudio.schema = null;
+    this.dbStudio.page = 1;
+    this.dbStudio.search = '';
+    await this.loadDbStudioTables();
+  },
+
+  async refreshDbStudio() {
+    await this.loadDbStudioTables();
+    if (this.dbStudio.activeTable) {
+      await this.selectDbStudioTable(this.dbStudio.activeTable);
+    }
+  },
+
+  async loadDbStudioTables() {
+    try {
+      const dbKey = this.dbStudio.activeDb;
+      const res = await this.apiRequest(`/api/central/db-viewer/tables?db=${dbKey}`);
+      if (!res.success) {
+        this.showToast(res.error || 'Failed to load tables', 'danger');
+        return;
+      }
+
+      this.dbStudio.tables = res.tables || [];
+      this.dbStudio.filteredTables = [...this.dbStudio.tables];
+
+      const currentDb = this.dbStudio.databases.find(d => (d.dbKey || d.id) === dbKey);
+      const sizeEl = document.getElementById('db-studio-db-size');
+      if (sizeEl && currentDb) {
+        sizeEl.textContent = currentDb.sizeFormatted || '';
+      }
+
+      this.renderDbStudioTableList();
+
+      if (!this.dbStudio.activeTable && this.dbStudio.tables.length > 0) {
+        const preferred = this.dbStudio.tables.find(t => t.name === 'students') 
+                       || this.dbStudio.tables.find(t => t.name === 'academies')
+                       || this.dbStudio.tables.find(t => !t.name.startsWith('_'));
+        const targetTable = preferred ? preferred.name : this.dbStudio.tables[0].name;
+        await this.selectDbStudioTable(targetTable);
+      }
+    } catch (err) {
+      console.error('Error loading tables:', err);
+      this.showToast('Error loading tables: ' + err.message, 'danger');
+    }
+  },
+
+  filterDbStudioTables(q) {
+    const query = (q || '').trim().toLowerCase();
+    if (!query) {
+      this.dbStudio.filteredTables = [...this.dbStudio.tables];
+    } else {
+      this.dbStudio.filteredTables = this.dbStudio.tables.filter(t => t.name.toLowerCase().includes(query));
+    }
+    this.renderDbStudioTableList();
+  },
+
+  renderDbStudioTableList() {
+    const listEl = document.getElementById('db-studio-table-list');
+    const countEl = document.getElementById('db-studio-table-count');
+    if (!listEl) return;
+
+    if (countEl) countEl.textContent = this.dbStudio.filteredTables.length;
+
+    if (this.dbStudio.filteredTables.length === 0) {
+      listEl.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 12px;">No matching tables</div>';
+      return;
+    }
+
+    listEl.innerHTML = this.dbStudio.filteredTables.map(t => {
+      const isSelected = t.name === this.dbStudio.activeTable;
+      const isSystem = t.name.startsWith('_') || t.name.startsWith('sqlite_');
+      return `
+        <div onclick="app.selectDbStudioTable('${t.name}')" 
+          style="display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12.5px; transition: background 0.15s ease; ${isSelected ? 'background: rgba(37,99,235,0.15); color: #3b82f6; font-weight: 600;' : 'color: var(--text);'}"
+          onmouseover="this.style.background='${isSelected ? 'rgba(37,99,235,0.2)' : 'rgba(255,255,255,0.04)'}'"
+          onmouseout="this.style.background='${isSelected ? 'rgba(37,99,235,0.15)' : 'transparent'}'">
+          <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            <i class="fa-solid ${t.type === 'view' ? 'fa-eye' : (isSystem ? 'fa-lock' : 'fa-table')}" style="font-size: 11px; opacity: 0.7;"></i>
+            <span style="overflow: hidden; text-overflow: ellipsis;">${t.name}</span>
+          </div>
+          <span class="badge ${isSelected ? 'badge-primary' : 'badge-secondary'}" style="font-size: 10px; padding: 1px 6px;">
+            ${(t.rowCount !== undefined && t.rowCount !== null) ? Number(t.rowCount).toLocaleString() : '-'}
+          </span>
+        </div>
+      `;
+    }).join('');
+  },
+
+  async selectDbStudioTable(tableName) {
+    this.dbStudio.activeTable = tableName;
+    this.dbStudio.page = 1;
+    this.dbStudio.search = '';
+    this.dbStudio.sortBy = '';
+    this.dbStudio.sortDir = 'ASC';
+    this.renderDbStudioTableList();
+
+    const workspace = document.getElementById('db-studio-main-workspace');
+    if (!workspace) return;
+
+    workspace.innerHTML = `
+      <div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
+    `;
+
+    try {
+      const dbKey = this.dbStudio.activeDb;
+      const res = await this.apiRequest(`/api/central/db-viewer/schema?db=${dbKey}&table=${tableName}`);
+      if (!res.success) {
+        this.showToast(res.error || 'Failed to load table schema', 'danger');
+        return;
+      }
+
+      this.dbStudio.schema = res.schema;
+      this.renderDbStudioWorkspace();
+    } catch (err) {
+      console.error('Error selecting table:', err);
+      this.showToast('Error: ' + err.message, 'danger');
+    }
+  },
+
+  renderDbStudioWorkspace() {
+    const workspace = document.getElementById('db-studio-main-workspace');
+    if (!workspace || !this.dbStudio.schema) return;
+
+    const schema = this.dbStudio.schema;
+    const isView = schema.isView;
+    const pkNames = (schema.primaryKeys || []).map(p => p.name).join(', ') || 'None';
+
+    workspace.innerHTML = `
+      <!-- Workspace Header -->
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid var(--border); padding: 14px 20px;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <h2 class="card-title" style="margin: 0; font-family: monospace; font-size: 18px; color: var(--text-heading);">
+              <i class="fa-solid ${isView ? 'fa-eye' : 'fa-table'}" style="color: #3b82f6; font-size: 16px;"></i> ${schema.tableName}
+            </h2>
+            <span class="badge ${isView ? 'badge-warning' : 'badge-primary'}" style="font-size: 11px;">
+              ${isView ? 'VIEW' : 'TABLE'}
+            </span>
+            <span style="font-size: 12px; color: var(--text-muted);">
+              PK: <code style="color: #10b981;">${pkNames}</code>
+            </span>
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+            ${schema.columns.length} columns  •  Database: <strong>${this.dbStudio.activeDb}</strong>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px;">
+          ${!isView ? `
+            <button class="btn btn-primary btn-sm" onclick="app.openDbStudioInsertModal()">
+              <i class="fa-solid fa-plus"></i> Insert Row
+            </button>
+          ` : ''}
+          <button class="btn btn-secondary btn-sm" title="Export as JSON" onclick="app.exportDbStudioData('json')">
+            <i class="fa-solid fa-file-code"></i> JSON
+          </button>
+          <button class="btn btn-secondary btn-sm" title="Export as CSV" onclick="app.exportDbStudioData('csv')">
+            <i class="fa-solid fa-file-csv"></i> CSV
+          </button>
+        </div>
+      </div>
+
+      <!-- Studio Tab Navigation Bar -->
+      <div style="display: flex; background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--border); padding: 0 16px;">
+        <button class="btn btn-link btn-sm" id="db-tab-btn-data" 
+          style="padding: 10px 16px; border-radius: 0; border-bottom: 2px solid ${this.dbStudio.activeTab === 'data' ? '#3b82f6' : 'transparent'}; font-weight: 600; color: ${this.dbStudio.activeTab === 'data' ? '#3b82f6' : 'var(--text-muted)'}; text-decoration: none;"
+          onclick="app.switchDbStudioTab('data')">
+          <i class="fa-solid fa-table-cells"></i> Data Grid
+        </button>
+        <button class="btn btn-link btn-sm" id="db-tab-btn-dictionary" 
+          style="padding: 10px 16px; border-radius: 0; border-bottom: 2px solid ${this.dbStudio.activeTab === 'dictionary' ? '#3b82f6' : 'transparent'}; font-weight: 600; color: ${this.dbStudio.activeTab === 'dictionary' ? '#3b82f6' : 'var(--text-muted)'}; text-decoration: none;"
+          onclick="app.switchDbStudioTab('dictionary')">
+          <i class="fa-solid fa-book-bookmark"></i> Data Dictionary (${schema.columns.length})
+        </button>
+        <button class="btn btn-link btn-sm" id="db-tab-btn-sql" 
+          style="padding: 10px 16px; border-radius: 0; border-bottom: 2px solid ${this.dbStudio.activeTab === 'sql' ? '#3b82f6' : 'transparent'}; font-weight: 600; color: ${this.dbStudio.activeTab === 'sql' ? '#3b82f6' : 'var(--text-muted)'}; text-decoration: none;"
+          onclick="app.switchDbStudioTab('sql')">
+          <i class="fa-solid fa-terminal"></i> SQL Console
+        </button>
+      </div>
+
+      <!-- Tab Content Mount -->
+      <div id="db-studio-tab-content" style="padding: 16px; flex: 1; display: flex; flex-direction: column;">
+        <!-- Dynamic content injected by tab renderers -->
+      </div>
+    `;
+
+    this.switchDbStudioTab(this.dbStudio.activeTab);
+  },
+
+  switchDbStudioTab(tab) {
+    this.dbStudio.activeTab = tab;
+    ['data', 'dictionary', 'sql'].forEach(t => {
+      const btn = document.getElementById(`db-tab-btn-${t}`);
+      if (btn) {
+        btn.style.borderBottom = `2px solid ${t === tab ? '#3b82f6' : 'transparent'}`;
+        btn.style.color = t === tab ? '#3b82f6' : 'var(--text-muted)';
+      }
+    });
+
+    if (tab === 'data') {
+      this.loadDbStudioData();
+    } else if (tab === 'dictionary') {
+      this.renderDbStudioDictionary();
+    } else if (tab === 'sql') {
+      this.renderDbStudioSqlConsole();
+    }
+  },
+
+  async loadDbStudioData() {
+    const tabEl = document.getElementById('db-studio-tab-content');
+    if (!tabEl || !this.dbStudio.activeTable) return;
+
+    tabEl.innerHTML = `<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>`;
+
+    try {
+      const { activeDb, activeTable, page, limit, search, sortBy, sortDir } = this.dbStudio;
+      let url = `/api/central/db-viewer/data?db=${activeDb}&table=${activeTable}&page=${page}&limit=${limit}`;
+      if (search) url += `&search=${encodeURIComponent(search)}`;
+      if (sortBy) url += `&sortBy=${encodeURIComponent(sortBy)}&sortDir=${sortDir}`;
+
+      const res = await this.apiRequest(url);
+      if (!res.success) {
+        tabEl.innerHTML = `<div class="toast danger">${res.error || 'Failed to load records'}</div>`;
+        return;
+      }
+
+      this.dbStudio.currentRows = res.rows || [];
+      this.dbStudio.totalRows = res.total || 0;
+      this.dbStudio.totalPages = res.totalPages || 1;
+
+      this.renderDbStudioDataGrid(res);
+    } catch (err) {
+      console.error('Error loading DB data:', err);
+      tabEl.innerHTML = `<div class="toast danger">${err.message}</div>`;
+    }
+  },
+
+  renderDbStudioDataGrid(data) {
+    const tabEl = document.getElementById('db-studio-tab-content');
+    if (!tabEl) return;
+
+    const schema = this.dbStudio.schema;
+    const columns = (schema && schema.columns) || [];
+    const rows = this.dbStudio.currentRows;
+    const isView = schema && schema.isView;
+
+    const startIdx = (this.dbStudio.page - 1) * this.dbStudio.limit + 1;
+    const endIdx = Math.min(this.dbStudio.totalRows, this.dbStudio.page * this.dbStudio.limit);
+
+    tabEl.innerHTML = `
+      <!-- Toolbar & Filter Controls -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="position: relative; width: 260px;">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 10px; top: 9px; font-size: 11px; color: var(--text-muted);"></i>
+            <input type="text" class="form-control form-control-sm" placeholder="Search rows in table..." 
+              value="${this.escapeHtml(this.dbStudio.search)}" 
+              style="padding-left: 28px;"
+              onkeydown="if(event.key==='Enter') app.searchDbStudioData(this.value)">
+          </div>
+          ${this.dbStudio.search ? `
+            <button class="btn btn-secondary btn-sm" onclick="app.searchDbStudioData('')" title="Clear filter">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          ` : ''}
+          <span style="font-size: 12px; color: var(--text-muted);">
+            Showing <strong>${this.dbStudio.totalRows > 0 ? startIdx : 0}–${endIdx}</strong> of <strong>${this.dbStudio.totalRows}</strong> records
+          </span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <label style="font-size: 12px; color: var(--text-muted);">Page Size:</label>
+          <select class="form-control form-control-sm" style="width: 75px;" onchange="app.changeDbStudioLimit(Number(this.value))">
+            <option value="15" ${this.dbStudio.limit === 15 ? 'selected' : ''}>15</option>
+            <option value="25" ${this.dbStudio.limit === 25 ? 'selected' : ''}>25</option>
+            <option value="50" ${this.dbStudio.limit === 50 ? 'selected' : ''}>50</option>
+            <option value="100" ${this.dbStudio.limit === 100 ? 'selected' : ''}>100</option>
+          </select>
+
+          <div class="btn-group" style="display: flex;">
+            <button class="btn btn-secondary btn-sm" ${this.dbStudio.page <= 1 ? 'disabled' : ''} onclick="app.changeDbStudioPage(-1)">
+              <i class="fa-solid fa-chevron-left"></i>
+            </button>
+            <span style="padding: 4px 10px; font-size: 12px; background: rgba(0,0,0,0.1); border: 1px solid var(--border); display: flex; align-items: center;">
+              Page ${this.dbStudio.page} / ${this.dbStudio.totalPages || 1}
+            </span>
+            <button class="btn btn-secondary btn-sm" ${this.dbStudio.page >= this.dbStudio.totalPages ? 'disabled' : ''} onclick="app.changeDbStudioPage(1)">
+              <i class="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data Table Scroll Container -->
+      <div class="table-responsive" style="max-height: 520px; overflow: auto; border: 1px solid var(--border); border-radius: 6px;">
+        <table class="custom-table" style="font-size: 12px; margin-bottom: 0; white-space: nowrap;">
+          <thead style="position: sticky; top: 0; z-index: 2; background: var(--card-bg, #1e293b); box-shadow: 0 1px 2px rgba(0,0,0,0.2);">
+            <tr>
+              ${!isView ? `<th style="width: 70px; text-align: center;">Actions</th>` : ''}
+              ${columns.map(c => {
+                const isSort = this.dbStudio.sortBy === c.name;
+                const sortIcon = isSort ? (this.dbStudio.sortDir === 'ASC' ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short') : 'fa-sort';
+                return `
+                  <th style="cursor: pointer; user-select: none;" onclick="app.sortDbStudio('${c.name}')" title="${this.escapeHtml(c.description || c.type)}">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                      <span>
+                        ${c.isPrimaryKey ? '<i class="fa-solid fa-key" style="color: #f59e0b; font-size: 10px; margin-right: 4px;"></i>' : ''}
+                        <strong>${c.name}</strong>
+                        <span style="font-size: 10px; font-weight: normal; opacity: 0.6; margin-left: 4px;">(${c.type || 'TEXT'})</span>
+                      </span>
+                      <i class="fa-solid ${sortIcon}" style="font-size: 10px; opacity: ${isSort ? 1 : 0.3};"></i>
+                    </div>
+                  </th>
+                `;
+              }).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0 ? `
+              <tr>
+                <td colspan="${columns.length + (isView ? 0 : 1)}" style="text-align: center; padding: 30px; color: var(--text-muted);">
+                  <i class="fa-solid fa-database fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+                  No records found in table
+                </td>
+              </tr>
+            ` : rows.map((r, rowIdx) => `
+              <tr style="transition: background 0.15s ease;">
+                ${!isView ? `
+                  <td style="text-align: center;">
+                    <div style="display: inline-flex; gap: 4px;">
+                      <button class="btn btn-secondary btn-xs" title="Edit row" onclick="app.openDbStudioEditModal(${rowIdx})">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                      </button>
+                      <button class="btn btn-danger btn-xs" title="Delete row" onclick="app.deleteDbStudioRow(${rowIdx})">
+                        <i class="fa-solid fa-trash"></i>
+                      </button>
+                    </div>
+                  </td>
+                ` : ''}
+                ${columns.map(c => {
+                  const val = r[c.name];
+                  let displayVal = '';
+                  let cellStyle = '';
+
+                  if (val === null || val === undefined) {
+                    displayVal = '<span style="color: var(--text-dim); font-style: italic;">NULL</span>';
+                  } else if (typeof val === 'number') {
+                    displayVal = `<span style="font-family: monospace; color: #3b82f6;">${val}</span>`;
+                  } else if (typeof val === 'boolean') {
+                    displayVal = `<span class="badge ${val ? 'badge-success' : 'badge-danger'}" style="font-size: 10px;">${val ? 'TRUE' : 'FALSE'}</span>`;
+                  } else {
+                    const str = String(val);
+                    const isLong = str.length > 50;
+                    displayVal = this.escapeHtml(isLong ? str.slice(0, 48) + '...' : str);
+                    if (isLong) cellStyle = 'cursor: pointer;';
+                  }
+
+                  return `
+                    <td style="${cellStyle}" title="${val !== null && val !== undefined ? this.escapeHtml(String(val)) : 'NULL'}">
+                      ${displayVal}
+                    </td>
+                  `;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  searchDbStudioData(q) {
+    this.dbStudio.search = q;
+    this.dbStudio.page = 1;
+    this.loadDbStudioData();
+  },
+
+  changeDbStudioLimit(newLimit) {
+    this.dbStudio.limit = newLimit;
+    this.dbStudio.page = 1;
+    this.loadDbStudioData();
+  },
+
+  changeDbStudioPage(delta) {
+    const target = this.dbStudio.page + delta;
+    if (target >= 1 && target <= this.dbStudio.totalPages) {
+      this.dbStudio.page = target;
+      this.loadDbStudioData();
+    }
+  },
+
+  sortDbStudio(col) {
+    if (this.dbStudio.sortBy === col) {
+      this.dbStudio.sortDir = this.dbStudio.sortDir === 'ASC' ? 'DESC' : 'ASC';
+    } else {
+      this.dbStudio.sortBy = col;
+      this.dbStudio.sortDir = 'ASC';
+    }
+    this.loadDbStudioData();
+  },
+
+  renderDbStudioDictionary() {
+    const tabEl = document.getElementById('db-studio-tab-content');
+    if (!tabEl || !this.dbStudio.schema) return;
+
+    const schema = this.dbStudio.schema;
+    const columns = schema.columns || [];
+
+    tabEl.innerHTML = `
+      <div style="margin-bottom: 14px;">
+        <h3 style="font-size: 15px; font-weight: 700; color: var(--text-heading); margin-bottom: 4px;">
+          <i class="fa-solid fa-book-bookmark" style="color: #3b82f6;"></i> Data Dictionary & Schema Specification
+        </h3>
+        <p style="font-size: 12.5px; color: var(--text-muted); margin: 0;">
+          Column constraints, types, primary/foreign keys, and semantic domain descriptions for table <code>${schema.tableName}</code>.
+        </p>
+      </div>
+
+      <div class="table-responsive" style="border: 1px solid var(--border); border-radius: 6px;">
+        <table class="custom-table" style="font-size: 12.5px; margin-bottom: 0;">
+          <thead style="background: var(--card-bg, #1e293b);">
+            <tr>
+              <th style="width: 50px;">#</th>
+              <th>Column Name</th>
+              <th>Type</th>
+              <th>Constraint</th>
+              <th>Default</th>
+              <th>Foreign Key</th>
+              <th>Semantic Meaning / Domain Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${columns.map((c, idx) => `
+              <tr>
+                <td>${idx + 1}</td>
+                <td>
+                  <div style="font-family: monospace; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 6px;">
+                    ${c.isPrimaryKey ? '<i class="fa-solid fa-key" style="color: #f59e0b;" title="Primary Key"></i>' : ''}
+                    ${c.name}
+                  </div>
+                </td>
+                <td>
+                  <span class="badge badge-info" style="font-size: 11px; font-family: monospace;">${c.type || 'TEXT'}</span>
+                </td>
+                <td>
+                  ${c.isPrimaryKey ? '<span class="badge badge-warning" style="font-size: 10px;">PRIMARY KEY</span> ' : ''}
+                  ${c.notnull ? '<span class="badge badge-secondary" style="font-size: 10px;">NOT NULL</span>' : '<span style="color: var(--text-dim); font-size: 11px;">NULLABLE</span>'}
+                </td>
+                <td>
+                  ${c.defaultValue !== null && c.defaultValue !== undefined ? `<code style="font-size: 11px;">${this.escapeHtml(String(c.defaultValue))}</code>` : '<span style="color: var(--text-dim);">-</span>'}
+                </td>
+                <td>
+                  ${c.foreignKey ? `<span class="badge badge-primary" style="font-size: 10px;"><i class="fa-solid fa-link"></i> ${c.foreignKey.table}.${c.foreignKey.to}</span>` : '<span style="color: var(--text-dim);">-</span>'}
+                </td>
+                <td style="color: var(--text); max-width: 320px;">
+                  ${this.escapeHtml(c.description || 'Application domain field')}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  renderDbStudioSqlConsole() {
+    const tabEl = document.getElementById('db-studio-tab-content');
+    if (!tabEl) return;
+
+    const tableName = this.dbStudio.activeTable || 'students';
+    const defaultQuery = this.dbStudio.sqlQuery || `SELECT * FROM ${tableName} LIMIT 25;`;
+
+    tabEl.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 12px; height: 100%;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h3 style="font-size: 14px; font-weight: 700; color: var(--text-heading); margin-bottom: 2px;">
+              <i class="fa-solid fa-terminal" style="color: #3b82f6;"></i> SQL Query Console
+            </h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">
+              Execute direct queries against <strong>${this.dbStudio.activeDb}</strong>. (Press <kbd>Ctrl+Enter</kbd> to execute)
+            </p>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn btn-secondary btn-xs" onclick="app.setDbStudioPreset('SELECT * FROM ${tableName} LIMIT 20;')">SELECT *</button>
+            <button class="btn btn-secondary btn-xs" onclick="app.setDbStudioPreset('SELECT COUNT(*) as count FROM ${tableName};')">COUNT(*)</button>
+            <button class="btn btn-secondary btn-xs" onclick="app.setDbStudioPreset('PRAGMA table_info(${tableName});')">PRAGMA</button>
+            <button class="btn btn-primary btn-sm" onclick="app.executeDbStudioSql()">
+              <i class="fa-solid fa-play"></i> Run Query
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <textarea id="db-studio-sql-input" class="form-control" rows="5" 
+            style="font-family: monospace; font-size: 13px; line-height: 1.4; resize: vertical;" 
+            onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault(); app.executeDbStudioSql();}"
+            placeholder="Type your SQL query here...">${this.escapeHtml(defaultQuery)}</textarea>
+        </div>
+
+        <div id="db-studio-sql-results" style="flex: 1; min-height: 200px;">
+          <div style="text-align: center; padding: 30px; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px;">
+            Click <strong>Run Query</strong> or press <kbd>Ctrl+Enter</kbd> to view execution results.
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  setDbStudioPreset(sql) {
+    const input = document.getElementById('db-studio-sql-input');
+    if (input) {
+      input.value = sql;
+      this.executeDbStudioSql();
+    }
+  },
+
+  async executeDbStudioSql() {
+    const input = document.getElementById('db-studio-sql-input');
+    const resultsEl = document.getElementById('db-studio-sql-results');
+    if (!input || !resultsEl) return;
+
+    const sql = input.value.trim();
+    if (!sql) {
+      this.showToast('Please enter a SQL statement', 'warning');
+      return;
+    }
+
+    this.dbStudio.sqlQuery = sql;
+    resultsEl.innerHTML = `<div style="padding: 20px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>`;
+
+    try {
+      const res = await this.apiRequest('/api/central/db-viewer/query', {
+        method: 'POST',
+        body: JSON.stringify({
+          dbKey: this.dbStudio.activeDb,
+          sql
+        })
+      });
+
+      if (!res.success) {
+        resultsEl.innerHTML = `
+          <div class="toast danger" style="margin: 0;">
+            <i class="fa-solid fa-triangle-exclamation"></i> <strong>SQL Error:</strong> ${this.escapeHtml(res.error || 'Execution failed')}
+          </div>
+        `;
+        return;
+      }
+
+      if (res.type === 'mutation') {
+        resultsEl.innerHTML = `
+          <div style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 6px; padding: 16px;">
+            <div style="font-weight: 700; color: #10b981; font-size: 14px; margin-bottom: 4px;">
+              <i class="fa-solid fa-circle-check"></i> Query executed successfully (${res.timeMs}ms)
+            </div>
+            <div style="font-size: 12.5px; color: var(--text);">
+              Rows affected: <strong>${res.changes || 0}</strong>
+              ${res.lastInsertRowid ? `  •  Last Insert Row ID: <strong>${res.lastInsertRowid}</strong>` : ''}
+            </div>
+          </div>
+        `;
+        this.loadDbStudioTables();
+        return;
+      }
+
+      const rows = res.rows || [];
+      const columns = res.columns || (rows.length > 0 ? Object.keys(rows[0]) : []);
+
+      resultsEl.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 12px; color: var(--text-muted);">
+            Returned <strong>${rows.length}</strong> row${rows.length === 1 ? '' : 's'} in <strong>${res.timeMs}ms</strong>
+          </span>
+        </div>
+        <div class="table-responsive" style="max-height: 400px; overflow: auto; border: 1px solid var(--border); border-radius: 6px;">
+          <table class="custom-table" style="font-size: 12px; margin-bottom: 0; white-space: nowrap;">
+            <thead style="position: sticky; top: 0; background: var(--card-bg, #1e293b);">
+              <tr>
+                ${columns.map(c => `<th>${c}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length === 0 ? `
+                <tr><td colspan="${columns.length || 1}" style="text-align: center; padding: 20px; color: var(--text-muted);">Empty result set</td></tr>
+              ` : rows.map(r => `
+                <tr>
+                  ${columns.map(c => {
+                    const val = r[c];
+                    return `<td>${val === null ? '<span style="color: var(--text-dim); font-style: italic;">NULL</span>' : this.escapeHtml(String(val))}</td>`;
+                  }).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    } catch (err) {
+      console.error('SQL Execution Error:', err);
+      resultsEl.innerHTML = `
+        <div class="toast danger" style="margin: 0;">
+          <i class="fa-solid fa-triangle-exclamation"></i> ${this.escapeHtml(err.message)}
+        </div>
+      `;
+    }
+  },
+
+  openDbStudioInsertModal() {
+    const schema = this.dbStudio.schema;
+    if (!schema) return;
+
+    const columns = schema.columns.filter(c => !c.isPrimaryKey || c.type.toUpperCase() !== 'INTEGER');
+
+    const fieldsHtml = columns.map(c => {
+      const isDate = c.type.toUpperCase().includes('DATE') || c.name.includes('_date');
+      const isNum = c.type.toUpperCase().includes('INT') || c.type.toUpperCase().includes('REAL') || c.type.toUpperCase().includes('NUM');
+      const inputType = isNum ? 'number' : (isDate ? 'date' : 'text');
+
+      return `
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label style="font-size: 12px; font-weight: 600; display: flex; justify-content: space-between;">
+            <span>${c.name} ${c.notnull ? '<span style="color: #ef4444;">*</span>' : ''}</span>
+            <span style="font-weight: normal; color: var(--text-muted); font-size: 10px;">${c.type}</span>
+          </label>
+          <input type="${inputType}" class="form-control" id="db-field-${c.name}" 
+            placeholder="${c.defaultValue !== null ? 'Default: ' + c.defaultValue : (c.notnull ? 'Required' : 'Optional')}"
+            ${c.notnull && c.defaultValue === null ? 'required' : ''}>
+          ${c.description ? `<div style="font-size: 10.5px; color: var(--text-muted); margin-top: 2px;">${this.escapeHtml(c.description)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    this.showModal(`Insert Row: ${schema.tableName}`, `
+      <form id="db-studio-insert-form" onsubmit="event.preventDefault(); app.saveDbStudioRow(false)">
+        <div style="max-height: 480px; overflow-y: auto; padding-right: 4px;">
+          ${fieldsHtml}
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Insert Record</button>
+        </div>
+      </form>
+    `);
+  },
+
+  openDbStudioEditModal(rowIdx) {
+    const row = this.dbStudio.currentRows[rowIdx];
+    const schema = this.dbStudio.schema;
+    if (!row || !schema) return;
+
+    const pk = schema.primaryKeys[0] || { name: 'id' };
+    const pkVal = row[pk.name];
+
+    const fieldsHtml = schema.columns.map(c => {
+      const isPk = c.isPrimaryKey;
+      const isDate = c.type.toUpperCase().includes('DATE') || c.name.includes('_date');
+      const isNum = c.type.toUpperCase().includes('INT') || c.type.toUpperCase().includes('REAL') || c.type.toUpperCase().includes('NUM');
+      const inputType = isNum ? 'number' : (isDate ? 'date' : 'text');
+      const val = row[c.name] !== null && row[c.name] !== undefined ? String(row[c.name]) : '';
+
+      return `
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label style="font-size: 12px; font-weight: 600; display: flex; justify-content: space-between;">
+            <span>
+              ${isPk ? '<i class="fa-solid fa-key" style="color: #f59e0b; font-size: 10px;"></i> ' : ''}
+              ${c.name} ${c.notnull ? '<span style="color: #ef4444;">*</span>' : ''}
+            </span>
+            <span style="font-weight: normal; color: var(--text-muted); font-size: 10px;">${c.type}</span>
+          </label>
+          <input type="${inputType}" class="form-control" id="db-field-${c.name}" 
+            value="${this.escapeHtml(val)}"
+            ${isPk ? 'readonly style="opacity: 0.7; background: rgba(0,0,0,0.1);"' : ''}
+            ${c.notnull ? 'required' : ''}>
+          ${c.description ? `<div style="font-size: 10.5px; color: var(--text-muted); margin-top: 2px;">${this.escapeHtml(c.description)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    this.showModal(`Edit Row: ${schema.tableName} (${pk.name} = ${pkVal})`, `
+      <form id="db-studio-edit-form" onsubmit="event.preventDefault(); app.saveDbStudioRow(true, '${pk.name}', '${pkVal}')">
+        <div style="max-height: 480px; overflow-y: auto; padding-right: 4px;">
+          ${fieldsHtml}
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+        </div>
+      </form>
+    `);
+  },
+
+  async saveDbStudioRow(isEdit, pkCol, pkVal) {
+    const schema = this.dbStudio.schema;
+    if (!schema) return;
+
+    const rowData = {};
+    schema.columns.forEach(c => {
+      const el = document.getElementById(`db-field-${c.name}`);
+      if (el && !el.readOnly) {
+        let val = el.value.trim();
+        if (val === '' && !c.notnull) {
+          rowData[c.name] = null;
+        } else if (c.type.toUpperCase().includes('INT')) {
+          rowData[c.name] = val !== '' ? parseInt(val, 10) : null;
+        } else if (c.type.toUpperCase().includes('REAL') || c.type.toUpperCase().includes('NUM')) {
+          rowData[c.name] = val !== '' ? parseFloat(val) : null;
+        } else {
+          rowData[c.name] = val;
+        }
+      }
+    });
+
+    try {
+      let res;
+      if (isEdit) {
+        res = await this.apiRequest('/api/central/db-viewer/row', {
+          method: 'PUT',
+          body: JSON.stringify({
+            dbKey: this.dbStudio.activeDb,
+            table: schema.tableName,
+            pkCol,
+            pkVal,
+            updates: rowData
+          })
+        });
+      } else {
+        res = await this.apiRequest('/api/central/db-viewer/row', {
+          method: 'POST',
+          body: JSON.stringify({
+            dbKey: this.dbStudio.activeDb,
+            table: schema.tableName,
+            data: rowData
+          })
+        });
+      }
+
+      if (!res.success) {
+        this.showToast(res.error || 'Operation failed', 'danger');
+        return;
+      }
+
+      this.closeModal();
+      this.showToast(isEdit ? 'Record updated successfully' : 'Record inserted successfully', 'success');
+      this.loadDbStudioData();
+      this.loadDbStudioTables();
+    } catch (err) {
+      console.error('Save error:', err);
+      this.showToast('Error: ' + err.message, 'danger');
+    }
+  },
+
+  async deleteDbStudioRow(rowIdx) {
+    const row = this.dbStudio.currentRows[rowIdx];
+    const schema = this.dbStudio.schema;
+    if (!row || !schema) return;
+
+    const pk = schema.primaryKeys[0] || { name: 'id' };
+    const pkVal = row[pk.name];
+
+    if (!confirm(`Are you sure you want to permanently delete this row where ${pk.name} = ${pkVal}?`)) {
+      return;
+    }
+
+    try {
+      const res = await this.apiRequest('/api/central/db-viewer/row', {
+        method: 'DELETE',
+        body: JSON.stringify({
+          dbKey: this.dbStudio.activeDb,
+          table: schema.tableName,
+          pkCol: pk.name,
+          pkVal
+        })
+      });
+
+      if (!res.success) {
+        this.showToast(res.error || 'Delete failed', 'danger');
+        return;
+      }
+
+      this.showToast('Record deleted successfully', 'success');
+      this.loadDbStudioData();
+      this.loadDbStudioTables();
+    } catch (err) {
+      console.error('Delete error:', err);
+      this.showToast('Delete error: ' + err.message, 'danger');
+    }
+  },
+
+  exportDbStudioData(type) {
+    const rows = this.dbStudio.currentRows || [];
+    const tableName = this.dbStudio.activeTable || 'table_export';
+    if (rows.length === 0) {
+      this.showToast('No rows to export', 'warning');
+      return;
+    }
+
+    let blob, filename;
+    if (type === 'json') {
+      const jsonStr = JSON.stringify(rows, null, 2);
+      blob = new Blob([jsonStr], { type: 'application/json' });
+      filename = `${tableName}_${Date.now()}.json`;
+    } else {
+      const keys = Object.keys(rows[0]);
+      const csvLines = [
+        keys.join(','),
+        ...rows.map(r => keys.map(k => {
+          let val = r[k] === null || r[k] === undefined ? '' : String(r[k]);
+          if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+            val = `"${val.replace(/"/g, '""')}"`;
+          }
+          return val;
+        }).join(','))
+      ];
+      blob = new Blob([csvLines.join('\n')], { type: 'text/csv' });
+      filename = `${tableName}_${Date.now()}.csv`;
+    }
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    this.showToast(`Exported ${rows.length} rows to ${filename}`, 'success');
+  },
+
+  // ==========================================
   // ACADEMY OPERATIONS VIEWS
   // ==========================================
 
@@ -2592,6 +3547,145 @@ const app = {
           ${todayBatchesHtml}
         </div>
       </div>
+
+      <!-- Newly Joined Students & Upcoming Fees Sections -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 24px; margin-bottom: 24px;">
+        <!-- Newly Joined Students Card -->
+        <div class="content-card">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h2 class="card-title"><i class="fa-solid fa-user-plus" style="color: #10b981;"></i> Newly Joined Students</h2>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Recently enrolled in your assigned branch & dojo</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('students')">View All</button>
+          </div>
+          <div style="padding: 12px 16px;">
+            ${(!data.newlyJoinedStudents || data.newlyJoinedStudents.length === 0) ? `
+              <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px;">
+                <i class="fa-regular fa-id-card fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+                No newly admitted students found.
+              </div>
+            ` : `
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                ${data.newlyJoinedStudents.slice(0, 6).map(s => {
+                  const sName = `${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Student';
+                  const initials = sName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'ST';
+                  const admNo = s.admission_number || ('#STU-' + s.id);
+                  const joinDate = s.admission_date || (s.created_at ? s.created_at.split('T')[0] : 'Recent');
+                  return `
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;">
+                      <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(37,99,235,0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;">
+                          ${initials}
+                        </div>
+                        <div>
+                          <div style="font-size: 13px; font-weight: 600; color: var(--text-heading);">${app.escapeHtml(sName)}</div>
+                          <div style="font-size: 11.5px; color: var(--text-muted); display: flex; gap: 8px;">
+                            <span>${admNo}</span>
+                            <span>•</span>
+                            <span>${app.escapeHtml(s.branch_name || 'Main Branch')}</span>
+                            ${s.sport_name ? `<span>•</span><span>${app.escapeHtml(s.sport_name)}</span>` : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <div style="text-align: right;">
+                        <div style="font-size: 11.5px; color: var(--text-muted);"><i class="fa-regular fa-calendar"></i> ${joinDate}</div>
+                        <span class="badge badge-success" style="font-size: 10px; padding: 2px 6px;">${s.status || 'Active'}</span>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+
+        <!-- Upcoming Fees & Dues Card -->
+        <div class="content-card">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h2 class="card-title"><i class="fa-solid fa-calendar-check" style="color: #3b82f6;"></i> Upcoming Fees (Next Month & Dues)</h2>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Scheduled receivables and upcoming renewal cycles</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('fees')">Fee Ledger</button>
+          </div>
+          <div style="padding: 12px 16px;">
+            ${(!data.upcomingFees || data.upcomingFees.length === 0) ? `
+              <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px;">
+                <i class="fa-solid fa-receipt fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+                No pending or upcoming fee dues for next month.
+              </div>
+            ` : `
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                ${data.upcomingFees.slice(0, 6).map(f => {
+                  const sName = `${f.first_name || ''} ${f.last_name || ''}`.trim() || 'Student';
+                  const bal = Number(f.balance_amount || f.amount || 0);
+                  const dueDate = f.due_date || 'Upcoming';
+                  const period = (f.period_start && f.period_end) ? `${f.period_start} – ${f.period_end}` : 'Cycle Due';
+                  const isOverdue = f.status === 'overdue';
+                  return `
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;">
+                      <div>
+                        <div style="font-size: 13px; font-weight: 600; color: var(--text-heading);">${app.escapeHtml(sName)}</div>
+                        <div style="font-size: 11.5px; color: var(--text-muted); display: flex; gap: 8px; margin-top: 2px;">
+                          <span>${f.admission_number || f.receipt_number || 'INV'}</span>
+                          <span>•</span>
+                          <span><i class="fa-regular fa-calendar-days"></i> ${period}</span>
+                        </div>
+                      </div>
+                      <div style="text-align: right;">
+                        <div style="font-size: 14px; font-weight: 700; color: ${isOverdue ? '#ef4444' : '#f59e0b'};">₹${bal.toLocaleString()}</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">Due: ${dueDate}</div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+      </div>
+
+      <!-- Upcoming Events & Participant Moderation Card -->
+      ${(data.upcomingEvents && data.upcomingEvents.length > 0) ? `
+        <div class="content-card" style="margin-bottom: 24px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h2 class="card-title"><i class="fa-solid fa-trophy" style="color: #f59e0b;"></i> Upcoming Events & Student Roster Moderation</h2>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Tournament, belt test & workshop participant registrations</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('events')">All Events</button>
+          </div>
+          <div style="padding: 16px 20px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px;">
+              ${data.upcomingEvents.map(ev => `
+                <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between;">
+                  <div>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                      <span class="badge badge-primary" style="font-size: 10px; text-transform: uppercase;">${app.escapeHtml(ev.category || 'Event')}</span>
+                      <span style="font-size: 12px; color: var(--text-muted);"><i class="fa-regular fa-calendar"></i> ${ev.event_date || 'TBD'}</span>
+                    </div>
+                    <h3 style="font-size: 14px; font-weight: 700; color: var(--text-heading); margin-bottom: 4px;">${app.escapeHtml(ev.title)}</h3>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                      <i class="fa-solid fa-location-dot"></i> ${app.escapeHtml(ev.location || 'Dojo Campus')}
+                    </div>
+                    <div style="display: flex; gap: 10px; font-size: 11.5px; margin-bottom: 12px;">
+                      <span style="color: #10b981; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> ${ev.approved_count || 0} Confirmed</span>
+                      <span style="color: #f59e0b; font-weight: 600;"><i class="fa-solid fa-clock"></i> ${ev.pending_count || 0} Pending</span>
+                      <span style="color: #64748b;"><i class="fa-solid fa-users"></i> ${ev.total_participants || 0} Total</span>
+                    </div>
+                  </div>
+                  <div>
+                    <button class="btn btn-primary btn-sm" style="width: 100%; justify-content: center;" onclick="app.openEventRosterModal(${ev.id}, '${app.escapeHtml(ev.title)}')">
+                      <i class="fa-solid fa-users-gear"></i> Manage Roster (${ev.pending_count || 0} Pending)
+                    </button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      ` : ''}
 
       <div style="display: grid; grid-template-columns: ${isCoach ? '1fr' : '2fr 1fr'}; gap: 24px;">
         <div class="content-card">
@@ -6970,6 +8064,32 @@ const app = {
   // PRINTABLE / PDF RECEIPT GENERATOR
   // ==========================================
 
+  async printReceipt(receiptNumber) {
+    try {
+      const res = await this.apiRequest(`/api/academy/fees/receipt/${receiptNumber}`);
+      if (res.success && res.receipt) {
+        this.printFeeReceipt(res.receipt);
+      } else {
+        this.showToast('Could not fetch receipt details', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Error loading receipt: ' + err.message, 'danger');
+    }
+  },
+
+  async downloadReceipt(receiptNumber) {
+    try {
+      const res = await this.apiRequest(`/api/academy/fees/receipt/${receiptNumber}`);
+      if (res.success && res.receipt) {
+        this.generateFeeReceiptPdf(res.receipt);
+      } else {
+        this.showToast('Could not fetch receipt details', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Error downloading receipt: ' + err.message, 'danger');
+    }
+  },
+
   generateFeeReceiptPdf(fee) {
     if (!window.jspdf || !window.jspdf.jsPDF) {
       this.showToast('PDF generator library is initializing, please try again.', 'warning');
@@ -6977,87 +8097,273 @@ const app = {
     }
 
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
+    const doc = new jsPDF('p', 'mm', 'a4');
 
-    // Top Header Banner
+    const academyName = (fee.academy && fee.academy.name) || this.user.academyName || 'Sports Solutions Academy';
+    const academyCity = (fee.academy && fee.academy.city) || 'Vadodara';
+    const academyAddress = (fee.academy && fee.academy.address) || '';
+    const academyGst = (fee.academy && fee.academy.gst_number) || '';
+    const receiptNumber = fee.receipt_number || ('REC-' + (fee.id || Date.now().toString().slice(-4)));
+    const invoiceNumber = fee.invoice_number || ('INV-' + (fee.id || '001'));
+    const studentName = `${fee.first_name || ''} ${fee.last_name || ''}`.trim() || 'Student';
+    const studentCode = fee.student_code || 'N/A';
+    const admissionNumber = fee.admission_number || null;
+    const branchName = fee.branch_name || 'Main Campus';
+    const studentPhone = fee.phone || null;
+
+    const baseFee = Number(fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || fee.amount || 0));
+    const discountPercentage = Number(fee.discount_percentage || 0);
+    const discountAmount = Number(fee.discount_amount || 0);
+    const discountReason = fee.discount_reason || null;
+    const taxAmount = Number(fee.tax_amount || 0);
+    const netAmount = Number(fee.net_amount || fee.amount || (baseFee - discountAmount));
+    const paidAmount = Number(fee.paid_amount || fee.amount || 0);
+    const balanceAmount = Number(fee.balance_amount !== undefined ? fee.balance_amount : Math.max(0, netAmount - paidAmount));
+
+    const periodStart = fee.period_start || new Date().toISOString().split('T')[0];
+    const periodEnd = fee.period_end || new Date().toISOString().split('T')[0];
+    const monthsCount = fee.months_count || 1;
+    const nextInstallmentDate = fee.next_installment_date || null;
+    const paymentMode = (fee.payment_mode || fee.payment_method || 'Online / Cash').toUpperCase();
+    const date = fee.payment_date || new Date().toISOString().split('T')[0];
+
+    // 1. Top Decorative Brand Bar
+    doc.setFillColor(30, 41, 59); // Dark Slate
+    doc.rect(0, 0, 210, 4, 'F');
+
+    // 2. Academy Header
+    doc.setFillColor(37, 99, 235); // Sapphire Blue
+    doc.rect(0, 4, 210, 36, 'F');
+
+    // Circular Logo Emblem Badge
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(14, 10, 24, 24, 4, 4, 'F');
     doc.setFillColor(37, 99, 235);
-    doc.rect(0, 0, 210, 36, 'F');
-
+    doc.circle(26, 22, 9, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text((this.user.academyName || 'Sports Academy').toUpperCase(), 14, 18);
-
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text('OFFICIAL FEE PAYMENT RECEIPT', 14, 28);
-    doc.text(`DATE: ${new Date().toISOString().split('T')[0]}`, 155, 28);
+    const brandInitials = academyName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() || 'ISS';
+    doc.text(brandInitials, 26, 25.5, { align: 'center' });
 
-    // Student & Invoice Metadata
-    doc.setTextColor(30, 41, 59);
-    doc.setFontSize(11);
+    // Academy Name & Subheading
+    doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Student: ${fee.first_name || ''} ${fee.last_name || ''} (${fee.student_code || ''})`, 14, 46);
-    doc.text(`Invoice #: ${fee.invoice_number || '-'}`, 140, 46);
+    doc.setFontSize(15);
+    doc.text(academyName.toUpperCase(), 44, 19);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(224, 231, 255);
+    const addressLine = `${academyAddress ? academyAddress + ', ' : ''}${academyCity}, India`;
+    doc.text(addressLine, 44, 26);
+    const subMeta = `${academyGst ? 'GSTIN: ' + academyGst + '  |  ' : ''}SAC: 999293 (Sports Coaching)  |  Official Receipt`;
+    doc.text(subMeta, 44, 32);
+
+    // 3. Receipt Sub-Header Banner
+    doc.setFillColor(248, 250, 252);
+    doc.rect(0, 40, 210, 14, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.line(0, 54, 210, 54);
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('OFFICIAL FEE PAYMENT RECEIPT & TAX INVOICE', 14, 49);
+
+    // Paid Stamp Pill
+    const isPaid = balanceAmount <= 0;
+    doc.setFillColor(isPaid ? 209 : 254, isPaid ? 250 : 243, isPaid ? 229 : 199);
+    doc.roundedRect(155, 43, 41, 8, 2, 2, 'F');
+    doc.setTextColor(isPaid ? 6 : 146, isPaid ? 95 : 64, isPaid ? 70 : 14);
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(isPaid ? 'PAID & VERIFIED' : 'PARTIALLY PAID', 175.5, 48.5, { align: 'center' });
+
+    // 4. Two-Column Metadata Cards
+    // Left Box: Student Details
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(14, 58, 88, 42, 2, 2, 'FD');
+
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, 58, 88, 8, 'F');
+    doc.setTextColor(71, 85, 105);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('STUDENT INFORMATION', 18, 63.5);
 
     doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.text(studentName, 18, 72);
+
     doc.setFont('helvetica', 'normal');
-    doc.text(`Branch: ${fee.branch_name || 'Main Branch'}`, 14, 52);
-    if (fee.period_start && fee.period_end) {
-      doc.text(`Fee Period: ${fee.period_start} to ${fee.period_end} (${fee.months_count || 1} month(s))`, 140, 52);
+    doc.setTextColor(71, 85, 105);
+    doc.setFontSize(8.5);
+    doc.text(`Student Code: ${studentCode}`, 18, 78);
+    if (admissionNumber) doc.text(`Admission No: ${admissionNumber}`, 18, 83);
+    doc.text(`Branch / Dojo: ${branchName}`, 18, admissionNumber ? 88 : 84);
+    if (studentPhone) doc.text(`Phone: ${studentPhone}`, 18, admissionNumber ? 93 : 89);
+
+    // Right Box: Transaction & Coverage Details
+    doc.roundedRect(108, 58, 88, 42, 2, 2, 'FD');
+    doc.setFillColor(241, 245, 249);
+    doc.rect(108, 58, 88, 8, 'F');
+    doc.setTextColor(71, 85, 105);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('RECEIPT & COVERAGE DETAILS', 112, 63.5);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Receipt No:', 112, 71);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.text(receiptNumber, 142, 71);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text('Invoice Ref:', 112, 76);
+    doc.setTextColor(15, 23, 42);
+    doc.text(invoiceNumber, 142, 76);
+
+    doc.setTextColor(71, 85, 105);
+    doc.text('Payment Date:', 112, 81);
+    doc.setTextColor(15, 23, 42);
+    doc.text(date, 142, 81);
+
+    doc.setTextColor(71, 85, 105);
+    doc.text('Payment Mode:', 112, 86);
+    doc.setTextColor(15, 23, 42);
+    doc.text(paymentMode, 142, 86);
+
+    // Highlighted Coaching Coverage Period
+    doc.setTextColor(37, 99, 235);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Coaching Period:', 112, 91);
+    doc.text(`${periodStart} to ${periodEnd}`, 142, 91);
+
+    if (nextInstallmentDate) {
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.setFontSize(7.5);
+      doc.text(`Next Renewal Due: ${nextInstallmentDate}`, 112, 96);
     }
 
-    // Receipt Table
-    const baseFee = fee.base_fee !== undefined ? fee.base_fee : fee.net_amount;
-    const discount = fee.discount_amount || 0;
-    const paid = fee.paid_amount || fee.amount || 0;
-    const balance = fee.balance_amount !== undefined ? fee.balance_amount : 0;
+    // 5. Itemized Fee Breakdown Table
+    const tableBody = [
+      [
+        '1',
+        `${fee.title || fee.fee_title || 'Sports Curriculum & Dojo Coaching'}\nCoverage: ${periodStart} to ${periodEnd} (${monthsCount} Month${monthsCount > 1 ? 's' : ''})`,
+        `₹${baseFee.toLocaleString()}`,
+        discountAmount > 0 
+          ? `-₹${discountAmount.toLocaleString()} (${discountPercentage}%${discountReason ? ' - ' + discountReason : ''})` 
+          : 'None',
+        taxAmount > 0 ? `₹${taxAmount.toLocaleString()}` : 'Exempt / Incl.',
+        `₹${netAmount.toLocaleString()}`
+      ]
+    ];
 
     doc.autoTable({
-      startY: 58,
-      head: [['Fee Title', 'Base Fee', 'Discount', 'Net Amount', 'Paid', 'Balance', 'Status']],
-      body: [
-        [
-          fee.title || fee.fee_title || 'Sports Academy Fee',
-          `INR ${(baseFee || 0).toLocaleString()}`,
-          `INR ${(discount || 0).toLocaleString()}`,
-          `INR ${(fee.net_amount || 0).toLocaleString()}`,
-          `INR ${(paid || 0).toLocaleString()}`,
-          `INR ${(balance || 0).toLocaleString()}`,
-          (fee.status || 'PAID').toUpperCase(),
-        ]
-      ],
-      headStyles: { fillColor: [15, 23, 42], textColor: 255 },
-      styles: { fontSize: 9, cellPadding: 5 },
+      startY: 104,
+      head: [['#', 'Fee Item & Coverage Period', 'Base Fee', 'Concession / Discount', 'GST (18%)', 'Net Payable']],
+      body: tableBody,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [30, 41, 59],
+        textColor: 255,
+        fontSize: 8.5,
+        fontStyle: 'bold',
+        halign: 'left',
+        cellPadding: 3
+      },
+      styles: {
+        fontSize: 8.5,
+        cellPadding: 4,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2
+      },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 70 },
+        2: { cellWidth: 26, halign: 'right' },
+        3: { cellWidth: 38, halign: 'right', textColor: discountAmount > 0 ? [185, 28, 28] : [100, 116, 139] },
+        4: { cellWidth: 22, halign: 'right' },
+        5: { cellWidth: 26, halign: 'right', fontStyle: 'bold' }
+      }
     });
 
-    const finalY = doc.lastAutoTable.finalY + 16;
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Payment Mode: ${(fee.payment_mode || 'Cash').toUpperCase()}`, 14, finalY);
-    if (fee.transaction_reference) {
-      doc.text(`Reference: ${fee.transaction_reference}`, 14, finalY + 6);
-    }
-    if (fee.collector_name) {
-      doc.text(`Collected by: ${fee.collector_name}`, 140, finalY);
-    }
-    doc.text('Verified electronically by Academy Fee Collection & Ledger Desk.', 14, finalY + 16);
+    const finalY = doc.lastAutoTable.finalY + 4;
 
-    const filename = `Receipt-${fee.receipt_number || fee.invoice_number || 'fee'}.pdf`;
+    // 6. Summary Totals Box (Right Aligned)
+    const totalsX = 118;
+    const totalsWidth = 78;
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(totalsX, finalY, totalsWidth, 38, 2, 2, 'FD');
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 116, 139);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Base Tuition Fee:', totalsX + 4, finalY + 7);
+    doc.setTextColor(30, 41, 59);
+    doc.text(`₹${baseFee.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 7, { align: 'right' });
+
+    if (discountAmount > 0) {
+      doc.setTextColor(220, 38, 38);
+      doc.text(`Discount (${discountPercentage}%):`, totalsX + 4, finalY + 13);
+      doc.text(`-₹${discountAmount.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 13, { align: 'right' });
+    }
+
+    doc.setTextColor(100, 116, 139);
+    doc.text('Total Net Fee:', totalsX + 4, finalY + (discountAmount > 0 ? 19 : 14));
+    doc.setTextColor(30, 41, 59);
+    doc.text(`₹${netAmount.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + (discountAmount > 0 ? 19 : 14), { align: 'right' });
+
+    // Amount Paid Highlight Row
+    doc.setFillColor(240, 253, 244); // Green 50
+    doc.rect(totalsX, finalY + 24, totalsWidth, 7, 'F');
+    doc.setTextColor(21, 128, 61); // Green 700
+    doc.setFont('helvetica', 'bold');
+    doc.text('Amount Paid (This Receipt):', totalsX + 4, finalY + 29);
+    doc.text(`₹${paidAmount.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 29, { align: 'right' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.setFontSize(8);
+    doc.text('Remaining Balance:', totalsX + 4, finalY + 35);
+    doc.setTextColor(balanceAmount > 0 ? 220 : 100, balanceAmount > 0 ? 38 : 116, balanceAmount > 0 ? 38 : 139);
+    doc.text(`₹${balanceAmount.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 35, { align: 'right' });
+
+    // 7. Security Notes & Verification Seal
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.setFont('helvetica', 'normal');
+    doc.text('This is a computer generated official fee receipt and does not require physical signature.', 14, finalY + 16);
+    doc.text('All sports coaching fees are subject to academy enrollment bylaws and conditions.', 14, finalY + 21);
+    doc.text(`Generated on ${new Date().toLocaleString()} | ISS SaaS Platform`, 14, finalY + 26);
+
+    const filename = `Receipt-${receiptNumber}.pdf`;
     doc.save(filename);
     this.showToast(`PDF Receipt downloaded: ${filename}`, 'success');
   },
 
   printFeeReceipt(fee) {
-    const baseFee = fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || 0);
-    const discount = fee.discount_amount || 0;
-    const paid = fee.paid_amount || fee.amount || 0;
-    const balance = fee.balance_amount !== undefined ? fee.balance_amount : 0;
+    const academyName = (fee.academy && fee.academy.name) || this.user.academyName || 'Sports Solutions Academy';
+    const academyCity = (fee.academy && fee.academy.city) || 'Vadodara';
+    const baseFee = Number(fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || fee.amount || 0));
+    const discount = Number(fee.discount_amount || 0);
+    const discountPercentage = Number(fee.discount_percentage || 0);
+    const discountReason = fee.discount_reason || null;
+    const paid = Number(fee.paid_amount || fee.amount || 0);
+    const balance = Number(fee.balance_amount !== undefined ? fee.balance_amount : 0);
     const periodText = (fee.period_start && fee.period_end)
       ? `${fee.period_start} to ${fee.period_end} (${fee.months_count || 1} month(s))`
       : 'Standard Cycle';
 
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    const printWindow = window.open('', '_blank', 'width=850,height=750');
     if (!printWindow) {
       this.showToast('Popup blocker prevented print window. Please allow popups.', 'warning');
       return;
@@ -7069,14 +8375,21 @@ const app = {
       <head>
         <title>Receipt - ${fee.receipt_number || fee.invoice_number || 'fee'}</title>
         <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; }
+          * { box-sizing: border-box; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; background: #fff; margin: 0; }
           .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #2563eb; padding-bottom: 20px; margin-bottom: 24px; }
-          .academy-name { font-size: 24px; font-weight: 800; color: #1e293b; margin: 0; }
+          .brand-badge { display: inline-block; background: #2563eb; color: #fff; font-weight: 800; font-size: 13px; padding: 4px 8px; border-radius: 4px; margin-bottom: 6px; }
+          .academy-name { font-size: 24px; font-weight: 800; color: #1e293b; margin: 0; letter-spacing: -0.5px; }
           .receipt-badge { font-size: 13px; font-weight: 700; color: #2563eb; text-transform: uppercase; margin-top: 4px; }
-          .meta-box { display: flex; justify-content: space-between; margin-bottom: 24px; background: #f8fafc; padding: 16px; border-radius: 8px; font-size: 14px; }
+          .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+          .meta-box { background: #f8fafc; padding: 16px; border-radius: 8px; font-size: 13px; border: 1px solid #e2e8f0; }
+          .meta-box h4 { margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
           .table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-          .table th { background: #0f172a; color: #ffffff; padding: 10px 12px; text-align: left; font-size: 13px; }
+          .table th { background: #0f172a; color: #ffffff; padding: 10px 12px; text-align: left; font-size: 12px; text-transform: uppercase; }
           .table td { padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+          .totals-box { margin-left: auto; width: 320px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; font-size: 13px; margin-bottom: 24px; }
+          .totals-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+          .totals-row.paid { font-weight: 700; color: #16a34a; font-size: 15px; border-top: 1px dashed #cbd5e1; padding-top: 8px; }
           .footer { margin-top: 40px; border-top: 1px dashed #cbd5e1; padding-top: 16px; font-size: 12px; color: #64748b; display: flex; justify-content: space-between; }
           @media print {
             body { padding: 0; }
@@ -7086,28 +8399,35 @@ const app = {
       </head>
       <body>
         <div style="margin-bottom: 16px;">
-          <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">Print Now</button>
+          <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: 600;">Print / Save PDF</button>
         </div>
         <div class="header">
           <div>
-            <div class="academy-name">${(this.user.academyName || 'Sports Academy').toUpperCase()}</div>
-            <div class="receipt-badge">Official Fee Payment Receipt</div>
+            <div class="brand-badge">OFFICIAL RECEIPT</div>
+            <div class="academy-name">${academyName.toUpperCase()}</div>
+            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">${academyCity}, India &bull; SAC: 999293 (Sports Coaching Services)</div>
           </div>
           <div style="text-align: right; font-size: 13px;">
-            <div><strong>Date:</strong> ${new Date().toLocaleDateString()}</div>
-            <div><strong>Receipt #:</strong> ${fee.receipt_number || '-'}</div>
+            <div><strong>Date:</strong> ${fee.payment_date || new Date().toLocaleDateString()}</div>
+            <div><strong>Receipt #:</strong> <span style="color: #2563eb; font-weight: 700;">${fee.receipt_number || '-'}</span></div>
             <div><strong>Invoice #:</strong> ${fee.invoice_number || '-'}</div>
           </div>
         </div>
 
-        <div class="meta-box">
-          <div>
-            <strong>Student:</strong> ${fee.first_name || ''} ${fee.last_name || ''} (${fee.student_code || ''})<br/>
-            <strong>Branch:</strong> ${fee.branch_name || 'Main Campus'}
+        <div class="meta-grid">
+          <div class="meta-box">
+            <h4>Student Information</h4>
+            <div style="font-size: 15px; font-weight: 700; color: #0f172a;">${fee.first_name || ''} ${fee.last_name || ''}</div>
+            <div style="color: #64748b; margin-top: 4px;">Student Code: <strong>${fee.student_code || '-'}</strong></div>
+            ${fee.admission_number ? `<div style="color: #64748b;">Admission No: <strong>${fee.admission_number}</strong></div>` : ''}
+            <div style="color: #64748b;">Branch / Dojo: <strong>${fee.branch_name || 'Main Campus'}</strong></div>
           </div>
-          <div style="text-align: right;">
-            <strong>Fee Period:</strong> ${periodText}<br/>
-            <strong>Payment Mode:</strong> ${(fee.payment_mode || 'Cash').toUpperCase()}
+          <div class="meta-box">
+            <h4>Receipt & Coaching Coverage</h4>
+            <div style="color: #2563eb; font-weight: 700;">Coverage: ${periodText}</div>
+            <div style="color: #64748b; margin-top: 4px;">Payment Mode: <strong>${(fee.payment_mode || 'Cash').toUpperCase()}</strong></div>
+            ${fee.next_installment_date ? `<div style="color: #64748b;">Next Renewal Due: <strong>${fee.next_installment_date}</strong></div>` : ''}
+            <div style="color: #64748b;">Collected by: <strong>${fee.collector_name || 'Finance Desk'}</strong></div>
           </div>
         </div>
 
@@ -7116,7 +8436,7 @@ const app = {
             <tr>
               <th>Description</th>
               <th style="text-align: right;">Base Fee</th>
-              <th style="text-align: right;">Discount</th>
+              <th style="text-align: right;">Concession / Discount</th>
               <th style="text-align: right;">Net Payable</th>
               <th style="text-align: right;">Amount Paid</th>
               <th style="text-align: right;">Balance</th>
@@ -7124,19 +8444,49 @@ const app = {
           </thead>
           <tbody>
             <tr>
-              <td><strong>${fee.title || fee.fee_title || 'Academy Fee'}</strong></td>
+              <td>
+                <strong>${fee.title || fee.fee_title || 'Academy Fee'}</strong>
+                <div style="font-size: 11.5px; color: #64748b;">Period: ${periodText}</div>
+              </td>
               <td style="text-align: right;">INR ${Number(baseFee).toLocaleString()}</td>
-              <td style="text-align: right; color: #10b981;">INR ${Number(discount).toLocaleString()}</td>
-              <td style="text-align: right;">INR ${Number(fee.net_amount || 0).toLocaleString()}</td>
-              <td style="text-align: right; font-weight: 700; color: #10b981;">INR ${Number(paid).toLocaleString()}</td>
-              <td style="text-align: right; color: ${balance > 0 ? '#ef4444' : '#64748b'};">INR ${Number(balance).toLocaleString()}</td>
+              <td style="text-align: right; color: ${discount > 0 ? '#dc2626' : '#64748b'};">
+                ${discount > 0 ? `-INR ${Number(discount).toLocaleString()} (${discountPercentage}%${discountReason ? ' - ' + discountReason : ''})` : 'None'}
+              </td>
+              <td style="text-align: right; font-weight: 600;">INR ${Number(fee.net_amount || (baseFee - discount)).toLocaleString()}</td>
+              <td style="text-align: right; font-weight: 700; color: #16a34a;">INR ${Number(paid).toLocaleString()}</td>
+              <td style="text-align: right; color: ${balance > 0 ? '#dc2626' : '#64748b'}; font-weight: 600;">INR ${Number(balance).toLocaleString()}</td>
             </tr>
           </tbody>
         </table>
 
+        <div class="totals-box">
+          <div class="totals-row">
+            <span>Base Tuition:</span>
+            <span>INR ${Number(baseFee).toLocaleString()}</span>
+          </div>
+          ${discount > 0 ? `
+            <div class="totals-row" style="color: #dc2626;">
+              <span>Discount (${discountPercentage}%):</span>
+              <span>-INR ${Number(discount).toLocaleString()}</span>
+            </div>
+          ` : ''}
+          <div class="totals-row" style="font-weight: 600;">
+            <span>Net Payable:</span>
+            <span>INR ${Number(fee.net_amount || (baseFee - discount)).toLocaleString()}</span>
+          </div>
+          <div class="totals-row paid">
+            <span>Amount Paid:</span>
+            <span>INR ${Number(paid).toLocaleString()}</span>
+          </div>
+          <div class="totals-row" style="color: ${balance > 0 ? '#dc2626' : '#64748b'};">
+            <span>Balance Due:</span>
+            <span>INR ${Number(balance).toLocaleString()}</span>
+          </div>
+        </div>
+
         <div class="footer">
-          <div>Collected by: ${fee.collector_name || 'Accounts Desk'} &bull; Verified electronically</div>
-          <div>Status: ${(fee.status || 'PAID').toUpperCase()}</div>
+          <div>Verified electronically by Academy Fee Collection Desk &bull; SAC 999293</div>
+          <div style="font-weight: 700; color: #16a34a;">STATUS: ${(fee.status || 'PAID').toUpperCase()}</div>
         </div>
         <script>
           setTimeout(() => { window.print(); }, 400);

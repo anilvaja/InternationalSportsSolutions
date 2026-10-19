@@ -116,16 +116,18 @@ publicRouter.get('/invoice-lookup', (req, res) => {
     }
 
     const centralDb = getCentralDb();
-    const academy = centralDb.prepare('SELECT name FROM academies WHERE id = ?').get(Number(academy_id));
+    const academy = centralDb.prepare('SELECT id, name, slug, logo_url, city, address, contact_email, contact_phone, gst_number FROM academies WHERE id = ?').get(Number(academy_id));
     if (!academy) {
       return res.status(404).json({ success: false, error: 'Academy not found' });
     }
 
     const tenantDb = getTenantDbById(Number(academy_id));
     let query = `
-      SELECT sf.*, s.student_code, s.first_name, s.last_name, s.phone
+      SELECT sf.*, s.student_code, s.admission_number, s.first_name, s.last_name, s.phone,
+             b.name as branch_name
       FROM student_fees sf
       JOIN students s ON s.id = sf.student_id
+      LEFT JOIN branches b ON b.id = s.branch_id
       WHERE 1=1
     `;
     const params = [];
@@ -140,13 +142,20 @@ publicRouter.get('/invoice-lookup', (req, res) => {
     }
 
     const rawInvoices = tenantDb.prepare(query).all(...params);
-    const invoices = rawInvoices.map(inv => ({ ...inv, academy_name: academy.name }));
+    const invoices = rawInvoices.map(inv => ({
+      ...inv,
+      academy_name: academy.name,
+      academy_logo: academy.logo_url,
+      academy_city: academy.city,
+      academy_address: academy.address,
+      academy_gst: academy.gst_number,
+    }));
 
     if (!invoices.length) {
       return res.status(404).json({ success: false, error: 'No matching fee invoices found' });
     }
 
-    res.json({ success: true, invoices });
+    res.json({ success: true, invoices, academy });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -163,8 +172,16 @@ publicRouter.post('/pay', (req, res) => {
       return res.status(400).json({ success: false, error: 'academy_id, invoice_id, and amount are required' });
     }
 
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT id, name, slug, logo_url, city, address, contact_email, contact_phone, gst_number FROM academies WHERE id = ?').get(Number(academy_id));
+
     const tenantDb = getTenantDbById(Number(academy_id));
-    const invoice = tenantDb.prepare('SELECT * FROM student_fees WHERE id = ?').get(Number(invoice_id));
+    const invoice = tenantDb.prepare(`
+      SELECT sf.*, s.student_code, s.admission_number, s.first_name, s.last_name, s.phone
+      FROM student_fees sf
+      JOIN students s ON s.id = sf.student_id
+      WHERE sf.id = ?
+    `).get(Number(invoice_id));
 
     if (!invoice) {
       return res.status(404).json({ success: false, error: 'Invoice not found' });
@@ -198,6 +215,12 @@ publicRouter.post('/pay', (req, res) => {
       receiptNumber,
       amount: payAmt,
       date: new Date().toISOString().split('T')[0],
+      invoice: {
+        ...invoice,
+        paid_amount: invoice.paid_amount + payAmt,
+        balance_amount: Math.max(0, invoice.net_amount - (invoice.paid_amount + payAmt)),
+      },
+      academy,
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

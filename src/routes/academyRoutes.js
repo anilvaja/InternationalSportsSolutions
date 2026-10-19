@@ -101,6 +101,65 @@ function fetchUpcomingEvents(db) {
   }
 }
 
+function fetchNewlyJoinedStudents(db, branchIds = []) {
+  try {
+    let query = `
+      SELECT s.id, s.first_name, s.last_name, s.admission_number,
+             COALESCE(s.enrolled_at, s.created_at) as admission_date,
+             s.created_at, s.status, s.photo_url,
+             br.name as branch_name
+      FROM students s
+      LEFT JOIN branches br ON br.id = s.branch_id
+    `;
+    const params = [];
+    if (branchIds && branchIds.length > 0) {
+      query += ` WHERE s.branch_id IN (${branchIds.map(() => '?').join(',')})`;
+      params.push(...branchIds);
+    }
+    query += ` ORDER BY s.id DESC LIMIT 8`;
+    return db.prepare(query).all(...params);
+  } catch (err) {
+    return [];
+  }
+}
+
+function fetchUpcomingFees(db, branchIds = []) {
+  try {
+    let query = `
+      SELECT sf.id,
+             COALESCE(sf.invoice_number, 'INV-' || sf.id) as receipt_number,
+             sf.invoice_number,
+             sf.title,
+             sf.amount,
+             sf.paid_amount,
+             COALESCE(sf.balance_amount, sf.amount - sf.paid_amount) as balance_amount,
+             sf.due_date,
+             sf.period_start,
+             sf.period_end,
+             sf.status,
+             s.first_name,
+             s.last_name,
+             s.admission_number,
+             br.name as branch_name
+      FROM student_fees sf
+      JOIN students s ON s.id = sf.student_id
+      LEFT JOIN branches br ON br.id = s.branch_id
+      WHERE sf.status IN ('pending', 'partial', 'overdue')
+         OR (sf.balance_amount > 0)
+         OR (sf.due_date >= date('now'))
+    `;
+    const params = [];
+    if (branchIds && branchIds.length > 0) {
+      query += ` AND s.branch_id IN (${branchIds.map(() => '?').join(',')})`;
+      params.push(...branchIds);
+    }
+    query += ` ORDER BY CASE WHEN sf.due_date IS NOT NULL AND sf.due_date != '' THEN 0 ELSE 1 END, sf.due_date ASC, sf.id DESC LIMIT 8`;
+    return db.prepare(query).all(...params);
+  } catch (err) {
+    return [];
+  }
+}
+
 /**
  * GET /api/academy/dashboard
  * Aggregates role-scoped summary analytics from the tenant's isolated database
@@ -166,6 +225,13 @@ academyRouter.get('/dashboard', (req, res) => {
 
       const pendingBatchesCount = Math.max(0, todayBatches.length - markedBatchesCount);
 
+      // Scoped branch IDs for coach
+      let coachBranchIds = [];
+      if (coachId) {
+        const cBranches = db.prepare(`SELECT DISTINCT branch_id FROM batches WHERE coach_id = ? AND branch_id IS NOT NULL`).all(coachId);
+        coachBranchIds = cBranches.map(b => b.branch_id);
+      }
+
       return res.json({
         success: true,
         userRole: 'coach',
@@ -191,6 +257,8 @@ academyRouter.get('/dashboard', (req, res) => {
             completionRate: todayBatches.length > 0 ? Math.round((markedBatchesCount / todayBatches.length) * 100) : 100,
           },
         },
+        newlyJoinedStudents: fetchNewlyJoinedStudents(db, coachBranchIds),
+        upcomingFees: fetchUpcomingFees(db, coachBranchIds),
         upcomingEvents: fetchUpcomingEvents(db),
       });
     }
@@ -269,6 +337,8 @@ academyRouter.get('/dashboard', (req, res) => {
         fees: feeStats,
         pendingLeaves,
       },
+      newlyJoinedStudents: fetchNewlyJoinedStudents(db, branchIds),
+      upcomingFees: fetchUpcomingFees(db, branchIds),
       upcomingEvents: fetchUpcomingEvents(db),
       recentActivity,
     });
@@ -2999,9 +3069,15 @@ academyRouter.get('/fees/receipt/:receiptNumber', (req, res) => {
 
     const payment = db.prepare(`
       SELECT fp.*, sf.invoice_number, sf.title as fee_title, sf.period_start, sf.period_end,
-             sf.months_count, sf.base_fee, sf.discount_amount, sf.net_amount, sf.balance_amount,
-             s.student_code, s.first_name, s.last_name, s.phone, s.email,
-             b.name as branch_name, u.name as collector_name
+             sf.months_count, sf.base_fee, sf.discount_percentage, sf.discount_type, sf.discount_reason,
+             sf.discount_amount, sf.tax_amount, sf.net_amount, sf.balance_amount, sf.status as invoice_status,
+             sf.next_installment_date,
+             s.id as student_id, s.student_code, s.admission_number, s.first_name, s.last_name,
+             TRIM(s.first_name || ' ' || COALESCE(s.last_name, '')) AS student_name,
+             s.phone as student_phone, s.email as student_email, s.address as student_address,
+             s.guardian_name, s.guardian_phone,
+             b.name as branch_name, b.address as branch_address, b.phone as branch_phone,
+             u.name as collector_name
       FROM fee_payments fp
       JOIN student_fees sf ON sf.id = fp.student_fee_id
       JOIN students s ON s.id = sf.student_id
@@ -3014,7 +3090,25 @@ academyRouter.get('/fees/receipt/:receiptNumber', (req, res) => {
       return res.status(404).json({ success: false, error: 'Receipt not found' });
     }
 
-    res.json({ success: true, receipt: payment });
+    res.json({
+      success: true,
+      receipt: payment,
+      academy: {
+        id: req.academy.id,
+        name: req.academy.name,
+        slug: req.academy.slug,
+        logo_url: req.academy.logo_url,
+        contact_email: req.academy.contact_email,
+        contact_phone: req.academy.contact_phone,
+        address: req.academy.address,
+        city: req.academy.city,
+        country: req.academy.country || 'India',
+        is_gst_registered: req.academy.is_gst_registered || 0,
+        gst_number: req.academy.gst_number || null,
+        legal_business_name: req.academy.legal_business_name || req.academy.name,
+        hsn_sac_code: req.academy.hsn_sac_code || '999293',
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
