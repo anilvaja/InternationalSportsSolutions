@@ -221,7 +221,7 @@ if ($academyUser) {
     testRoute("Academy Panel", "/academy/batches", "Academy Batches Management", [], $academyUser, 'academy');
     testRoute("Academy Panel", "/academy/students", "Academy Students Directory", [], $academyUser, 'academy');
     testRoute("Academy Panel", "/academy/attendances", "Attendance Tracking Module", [], $academyUser, 'academy');
-    testRoute("Academy Panel", "/academy/fees", "Fee Records & Collect Financials", [], $academyUser, 'academy');
+    testRoute("Academy Panel", "/academy/fee-collections", "Fee Records & Collect Financials", [], $academyUser, 'academy');
     testRoute("Academy Panel", "/academy/events", "Events & Tournament Module", [], $academyUser, 'academy');
     testRoute("Academy Panel", "/academy/event-fees", "Event Fees Management", [], $academyUser, 'academy');
     testRoute("Academy Panel", "/academy/academy-roles", "Academy Roles Management", [], $academyUser, 'academy');

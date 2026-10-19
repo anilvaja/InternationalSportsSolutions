@@ -31,8 +31,16 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(authenticateToken);
 
-// Serve Static Assets
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve Static Assets with no-cache in development to ensure client always gets latest frontend
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js') || filePath.endsWith('.html') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 app.use('/storage', express.static(path.join(__dirname, 'storage')));
 
 // API Routes

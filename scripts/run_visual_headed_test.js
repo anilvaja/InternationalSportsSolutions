@@ -6,9 +6,10 @@ import { chromium } from '@playwright/test';
   console.log('   Target: http://localhost:3005 (1 Worker, SlowMo: 450ms)');
   console.log('================================================================================\n');
 
+  const isHeadless = process.argv.includes('--headless');
   const browser = await chromium.launch({
-    headless: false, // VISIBLE INTERACTIVE BROWSER ON SCREEN
-    slowMo: 450,     // DELIBERATE PACING SO YOU CAN WATCH EVERY UI LINK TESTED LIVE
+    headless: isHeadless,
+    slowMo: isHeadless ? 50 : 450,
     executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
   });
 
@@ -50,7 +51,7 @@ import { chromium } from '@playwright/test';
     record('Central Admin', 'Link: Academies & Databases (/admin/academies)', academiesTableVisible, `URL: ${page.url()}`);
 
     // Test Domain & Subdomain Management Modal
-    await page.click('button:has-text("Domains"):first-of-type');
+    await page.locator('button:has-text("Domains")').first().click();
     await page.waitForSelector('#modal-container.active', { state: 'visible' });
     await page.waitForTimeout(600);
     record('Central Admin', 'Modal: Manage Domains & Subdomains', true, 'Opened domains modal');
@@ -179,10 +180,10 @@ import { chromium } from '@playwright/test';
     const noProgression = !attHeaders.includes('Progression') && !attHeaders.includes('PROGRESSION');
     record('Academy Ops', 'Link: Attendance Sheet (/academy/attendance)', noProgression, 'Progression column verified absent');
 
-    // Mark All Present & Save Attendance
+    // Mark All Present & Save/Update Attendance
     await page.click('button:has-text("All Present")');
     await page.waitForTimeout(400);
-    await page.click('button:has-text("Save Attendance & Track Technique")');
+    await page.locator('button:has-text("Attendance & Track Technique")').first().click();
     await page.waitForTimeout(800);
     record('Academy Ops', 'Action: Mark All Present & Save Attendance', true, 'Attendance saved');
 

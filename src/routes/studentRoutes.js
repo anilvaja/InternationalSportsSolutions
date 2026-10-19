@@ -2,6 +2,7 @@ import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { resolveTenant } from '../middleware/tenantResolver.js';
 import { SyllabusService } from '../services/syllabusService.js';
+import { EventService } from '../services/eventService.js';
 
 export const studentRouter = express.Router();
 
@@ -279,4 +280,69 @@ studentRouter.get('/technique-history', (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+/**
+ * GET /api/student/events
+ * Returns published event invitations for authenticated student
+ */
+studentRouter.get('/events', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const studentId = req.user.role === 'student' ? req.user.userId : Number(req.query.student_id);
+
+    if (!studentId) {
+      return res.status(400).json({ success: false, error: 'Student identifier required' });
+    }
+
+    const events = db.prepare(`
+      SELECT e.*,
+             CASE WHEN ep.status = 'invited' THEN 'no_response' ELSE ep.status END as my_response,
+             ep.status as my_response_status,
+             ep.registration_status as my_registration_status,
+             ep.responded_at, ep.response_notes, ep.snapshot_version,
+             CASE WHEN date('now') > date(e.rsvp_deadline) THEN 1 ELSE 0 END as is_deadline_passed
+      FROM event_participants ep
+      JOIN events e ON e.id = ep.event_id
+      WHERE ep.student_id = ? AND e.status = 'published'
+      ORDER BY e.event_date ASC
+    `).all(studentId);
+
+    res.json({ success: true, events });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/student/events/:id/respond
+ * Submit or update participation response (Interested / Not interested)
+ */
+studentRouter.post('/events/:id/respond', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const studentId = req.user.role === 'student' ? req.user.userId : Number(req.body.student_id);
+    const eventId = Number(req.params.id);
+    const { response, notes } = req.body;
+
+    if (!studentId) {
+      return res.status(400).json({ success: false, error: 'Student identifier required' });
+    }
+
+    const result = EventService.recordStudentResponse(
+      db,
+      req.academy.id,
+      eventId,
+      studentId,
+      response,
+      notes || null,
+      'student',
+      studentId
+    );
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 

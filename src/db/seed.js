@@ -27,6 +27,67 @@ export function runSeed() {
   insertSetting.run('support_email', 'support@internationalsportssolutions.com');
   insertSetting.run('enable_registrations', 'true');
 
+  // 2.1. Seed Reusable Subscription Plans (Illustrative Standard plan per specification)
+  const existingStandard = centralDb.prepare("SELECT id FROM subscription_plans WHERE slug = 'standard'").get();
+  if (!existingStandard) {
+    const plansToSeed = [
+      {
+        name: 'Basic',
+        slug: 'basic',
+        description: 'Starter tier for single-branch sports clubs',
+        price: 999,
+        billing_interval: 'monthly',
+        trial_days: 14,
+        status: 'active',
+        limits: { users: 5, branches: 1, batches: 5, students: 50, students_per_batch: 20, coaches: 2 },
+      },
+      {
+        name: 'Standard',
+        slug: 'standard',
+        description: 'Illustrative standard plan for growing sports academies (development specification)',
+        price: 2499,
+        billing_interval: 'monthly',
+        trial_days: 14,
+        status: 'draft', // Draft per prompt: Illustrative development specification only
+        limits: { users: 10, branches: 2, batches: 10, students: 200, students_per_batch: 30, coaches: 5 },
+      },
+      {
+        name: 'Premium',
+        slug: 'premium',
+        description: 'Comprehensive tier for large multi-branch sports academies',
+        price: 4999,
+        billing_interval: 'monthly',
+        trial_days: 30,
+        status: 'active',
+        limits: { users: 50, branches: 10, batches: 50, students: 1000, students_per_batch: 40, coaches: 25 },
+      },
+    ];
+
+    for (const p of plansToSeed) {
+      const ins = centralDb.prepare(`
+        INSERT INTO subscription_plans (name, slug, description, price, billing_interval, trial_days, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(p.name, p.slug, p.description, p.price, p.billing_interval, p.trial_days, p.status);
+      const planId = Number(ins.lastInsertRowid);
+
+      for (const [qKey, qVal] of Object.entries(p.limits)) {
+        centralDb.prepare(`
+          INSERT INTO subscription_plan_limits (plan_id, quota_key, limit_value, counting_policy)
+          VALUES (?, ?, ?, 'active_only')
+        `).run(planId, qKey, qVal);
+      }
+
+      // Feature entitlements
+      for (const feat of ['events', 'payroll', 'syllabus', 'facilities']) {
+        centralDb.prepare(`
+          INSERT INTO subscription_plan_features (plan_id, feature_key, is_enabled)
+          VALUES (?, ?, 1)
+        `).run(planId, feat);
+      }
+    }
+    console.log('[Seed] Seeded subscription plans: Basic, Standard (Draft), Premium');
+  }
+
   // 3. Academies to provision
   const academiesToSeed = [
     {
@@ -131,6 +192,20 @@ export function runSeed() {
     }
   }
 
+  // Ensure Mahavir rich operational data is seeded
+  const mahavirAc = centralDb.prepare("SELECT id FROM academies WHERE slug IN ('mahaviracademy', 'mahavir-sports')").get();
+  if (mahavirAc) {
+    const mDb = getTenantDbById(mahavirAc.id);
+    const studentCount = mDb.prepare('SELECT COUNT(*) as c FROM students').get().c;
+    if (studentCount === 0) {
+      seedMahavirAcademyData(mahavirAc.id, mahavirPasswordHash);
+    }
+    const profileCount = mDb.prepare('SELECT COUNT(*) as c FROM staff_salary_profiles').get().c;
+    if (profileCount === 0) {
+      seedMahavirSalaryAndSessions(mDb, mahavirAc.id);
+    }
+  }
+
   // 4. Seed Default Domains & Subdomains for all Academies
   try {
     const allAcademies = centralDb.prepare('SELECT id, slug, name FROM academies').all();
@@ -181,27 +256,36 @@ function seedMahavirAcademyData(academyId, passwordHash) {
   const b1 = insertBranch.run('Main Campus - West Wing', '101 Stadium Complex, Drive-in Road', 'Ahmedabad', '+91 79 2685 0001', 'west@mahavirsports.com').lastInsertRowid;
   const b2 = insertBranch.run('East City Center', 'Sports Enclave, Nikol Road', 'Ahmedabad', '+91 79 2685 0002', 'east@mahavirsports.com').lastInsertRowid;
 
-  // 3. Sports
-  const insertSport = db.prepare('INSERT INTO sports (name, description) VALUES (?, ?)');
-  const sFootball = insertSport.run('Football', 'Professional grass turf and youth football coaching').lastInsertRowid;
-  const sCricket = insertSport.run('Cricket', 'BCCI standard turf pitches, net facilities and video analysis').lastInsertRowid;
-  const sSwimming = insertSport.run('Swimming', 'Semi-Olympic temperature controlled pool and certified trainers').lastInsertRowid;
-  const sTennis = insertSport.run('Tennis', 'Synthetic hard courts and clay court facilities').lastInsertRowid;
+  // 3. Sports (Dynamically manageable, Karate is initial primary sport for InternationalSportsSolutions)
+  const getOrInsertSport = (name, description) => {
+    const existing = db.prepare('SELECT id FROM sports WHERE LOWER(name) = LOWER(?)').get(name);
+    if (existing) return existing.id;
+    return db.prepare('INSERT INTO sports (name, description, is_active) VALUES (?, ?, 1)').run(name, description).lastInsertRowid;
+  };
+
+  const sKarate = getOrInsertSport('Karate', 'Traditional Shotokan Karate, Kata, Kumite & Belt Progression');
+  const sFootball = getOrInsertSport('Football', 'Professional grass turf and youth football coaching');
+  const sCricket = getOrInsertSport('Cricket', 'BCCI standard turf pitches, net facilities and video analysis');
+  const sSwimming = getOrInsertSport('Swimming', 'Semi-Olympic temperature controlled pool and certified trainers');
+  const sTennis = getOrInsertSport('Tennis', 'Synthetic hard courts and clay court facilities');
 
   // 4. Coaches
   const insertCoach = db.prepare('INSERT INTO coaches (name, email, phone, sport_id, branch_id, specializations, experience_years, salary_type, salary_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const cKarate = insertCoach.run('Sensei Arun Verma', 'arun.verma@mahavirsportsacademy.com', '+91 98250 44444', sKarate, b1, '4th Dan Black Belt, WKF Certified, Kata & Kumite Specialist', 10, 'monthly', 50000).lastInsertRowid;
   const c1 = insertCoach.run('Rajesh Kumar', 'rajesh.football@mahavir.com', '+91 98250 11111', sFootball, b1, 'AFC B-License, Tactical Training', 8, 'monthly', 45000).lastInsertRowid;
   const c2 = insertCoach.run('Vikram Mehta', 'vikram.cricket@mahavir.com', '+91 98250 22222', sCricket, b1, 'Level 2 Certified, Pace Bowling & Fielding', 12, 'monthly', 55000).lastInsertRowid;
   const c3 = insertCoach.run('Priya Patel', 'priya.swimming@mahavir.com', '+91 98250 33333', sSwimming, b2, 'FINA Level 1, Stroke Technique & Stamina', 6, 'monthly', 40000).lastInsertRowid;
 
   // 5. Batches
   const insertBatch = db.prepare('INSERT INTO batches (name, sport_id, branch_id, coach_id, start_time, end_time, days_of_week, max_capacity, monthly_fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const batchKarate = insertBatch.run('Karate Cadets & Kumite (Shotokan)', sKarate, b1, cKarate, '17:00', '18:30', '["Mon","Wed","Fri"]', 25, 3000).lastInsertRowid;
   const batch1 = insertBatch.run('Morning Football Elite (U-16)', sFootball, b1, c1, '06:30', '08:00', '["Mon","Wed","Fri"]', 25, 2500).lastInsertRowid;
   const batch2 = insertBatch.run('Cricket Champions Batch', sCricket, b1, c2, '07:00', '08:30', '["Tue","Thu","Sat"]', 20, 3500).lastInsertRowid;
   const batch3 = insertBatch.run('Swimming Squad - Evening', sSwimming, b2, c3, '17:30', '18:45', '["Mon","Tue","Wed","Thu","Fri"]', 15, 3000).lastInsertRowid;
 
   // 6. Fee Structures
   const insertFeeStructure = db.prepare('INSERT INTO fee_structures (name, sport_id, amount, billing_frequency, description) VALUES (?, ?, ?, ?, ?)');
+  const fsKarate = insertFeeStructure.run('Monthly Karate Training & Belt Progression', sKarate, 3000, 'monthly', 'Kata, Kumite, and regular belt evaluation sessions').lastInsertRowid;
   const fs1 = insertFeeStructure.run('Monthly Football Coaching', sFootball, 2500, 'monthly', 'Standard weekday morning training').lastInsertRowid;
   const fs2 = insertFeeStructure.run('Quarterly Cricket Coaching', sCricket, 9500, 'quarterly', 'Weekend and weekday academy sessions with match practice').lastInsertRowid;
   const fs3 = insertFeeStructure.run('Monthly Swimming Pass', sSwimming, 3000, 'monthly', 'Daily pool access with coach supervision').lastInsertRowid;
@@ -374,7 +458,130 @@ function seedMahavirAcademyData(academyId, passwordHash) {
   db.prepare('UPDATE student_attendance SET technique_id = ?, technique_level = 2, technique_status = ?, technique_remarks = ?, attended_sessions_snapshot = ? WHERE attendance_id = ? AND student_id = ?')
     .run(t4, 'keep', 'Ready for mock test next week', 18, att2, 1);
 
+  // 12. Seed Salary Profiles, Sessions, and Payroll
+  seedMahavirSalaryAndSessions(db, academyId);
+
   console.log(`[Seed] Seeded operational data for Mahavir Sports Academy (ID: ${academyId})`);
+}
+
+/**
+ * Seeds staff salary profiles, batch sessions, and payroll period for Mahavir Sports Academy
+ */
+export function seedMahavirSalaryAndSessions(db, academyId) {
+  // Ensure staff and coach users exist so foreign keys resolve
+  const insertUser = db.prepare('INSERT OR IGNORE INTO users (name, email, password_hash, role, phone, status) VALUES (?, ?, ?, ?, ?, ?)');
+  const dummyHash = '$2a$10$GBvbRxOtBxww5sVobf9NvODjxldrPlR1xxHOkMbBQN1YKI4s.IXei';
+  insertUser.run('Sarah Johnson', 'sarah.johnson@mahavirsportsacademy.com', dummyHash, 'academy_staff', '+91 98250 55555', 'active');
+  insertUser.run('Arun Verma', 'arun.verma@mahavirsportsacademy.com', dummyHash, 'coach', '+91 98250 44444', 'active');
+
+  const uAdmin = db.prepare("SELECT id FROM users WHERE role = 'academy_admin' LIMIT 1").get() || { id: 1 };
+  const uStaff = db.prepare("SELECT id FROM users WHERE email = 'sarah.johnson@mahavirsportsacademy.com'").get() || uAdmin;
+  const uCoach = db.prepare("SELECT id FROM users WHERE email = 'arun.verma@mahavirsportsacademy.com'").get() || uAdmin;
+
+  // 1. Staff Salary Profiles (Multi-mode rates)
+  const insertSalaryProfile = db.prepare(`
+    INSERT OR REPLACE INTO staff_salary_profiles (
+      id, academy_id, user_id, salary_mode, base_rate, effective_from, is_active, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+  `);
+  insertSalaryProfile.run(1, academyId, uAdmin.id, 'monthly', 45000, '2026-01-01', 'Academy Director base compensation');
+  insertSalaryProfile.run(2, academyId, uStaff.id, 'hourly', 350, '2026-01-01', 'Operations staff hourly rate (₹350/hr)');
+  insertSalaryProfile.run(3, academyId, uCoach.id, 'per_session', 600, '2026-01-01', 'Head Karate Coach per-session rate (₹600/class)');
+
+  // 2. Generate Batch Sessions for current month
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [curYear, curMonth] = todayStr.split('-');
+  const yearMonth = `${curYear}-${curMonth}`;
+  const startDate = `${yearMonth}-01`;
+  const endDate = `${yearMonth}-28`;
+
+  try {
+    const batches = db.prepare('SELECT id, branch_id, coach_id, start_time, end_time, days_of_week FROM batches').all();
+    const insertSession = db.prepare(`
+      INSERT OR IGNORE INTO batch_sessions (
+        academy_id, branch_id, batch_id, scheduled_date, start_time, end_time, coach_id, status, attendance_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', 'pending')
+    `);
+
+    const dayNameMap = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+    let cur = new Date(startDate + 'T00:00:00Z');
+    const end = new Date(endDate + 'T00:00:00Z');
+
+    while (cur <= end) {
+      const dayOfWeek = dayNameMap[cur.getUTCDay()];
+      const dStr = cur.toISOString().split('T')[0];
+
+      for (const b of batches) {
+        let days = ['Mon', 'Wed', 'Fri'];
+        try { days = JSON.parse(b.days_of_week); } catch (e) {}
+
+        if (days.includes(dayOfWeek)) {
+          insertSession.run(academyId, b.branch_id, b.id, dStr, b.start_time || '07:00', b.end_time || '08:30', b.coach_id || 1);
+        }
+      }
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
+    // Link historical attendance to sessions
+    db.prepare(`
+      UPDATE batch_sessions
+      SET status = 'completed', attendance_status = 'completed', attendance_taken_at = CURRENT_TIMESTAMP
+      WHERE (batch_id = 1 AND scheduled_date IN ('2026-10-12', '2026-10-14'))
+    `).run();
+  } catch (e) {
+    console.warn('[Seed] Warning generating sessions:', e.message);
+  }
+
+  // 3. Staff Payroll Period (Current Month)
+  try {
+    const lastDay = new Date(Number(curYear), Number(curMonth), 0).getDate();
+    const pEnd = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
+    const pIns = db.prepare(`
+      INSERT OR IGNORE INTO staff_payroll_periods (
+        academy_id, year_month, start_date, end_date, statement_visibility_day, status, expected_payment_date
+      ) VALUES (?, ?, ?, ?, 25, 'provisional', ?)
+    `).run(academyId, yearMonth, startDate, pEnd, `${yearMonth}-28`);
+
+    const periodId = pIns.lastInsertRowid || db.prepare('SELECT id FROM staff_payroll_periods WHERE academy_id = ? AND year_month = ?').get(academyId, yearMonth).id;
+
+    // Calculate initial provisional statements
+    const staffList = [
+      { id: 1, mode: 'monthly', rate: 45000, units: 31, gross: 45000 },
+      { id: 2, mode: 'hourly', rate: 350, units: 48, gross: 16800 },
+      { id: 3, mode: 'per_session', rate: 600, units: 24, gross: 14400 },
+    ];
+
+    for (const st of staffList) {
+      const insStmt = db.prepare(`
+        INSERT OR REPLACE INTO staff_salary_statements (
+          payroll_period_id, academy_id, user_id, salary_mode, applicable_rate,
+          payable_units, gross_earnings, total_additions, total_deductions,
+          net_earnings, paid_amount, balance_amount, payment_status, calculation_snapshot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, ?, 'unpaid', ?)
+      `).run(
+        periodId, academyId, st.id, st.mode, st.rate, st.units, st.gross, st.gross, st.gross,
+        JSON.stringify({
+          salary_mode: st.mode,
+          base_rate: st.rate,
+          payable_units: st.units,
+          verified_sessions: st.units,
+          period: yearMonth,
+        })
+      );
+
+      // Add a sample bonus adjustment to Coach Arun Verma
+      if (st.id === 3) {
+        const stmtId = insStmt.lastInsertRowid;
+        db.prepare(`
+          INSERT INTO staff_salary_adjustments (statement_id, type, category, amount, reason, created_by)
+          VALUES (?, 'addition', 'bonus', 1200, 'State Karate Championship Coaching Bonus', 1)
+        `).run(stmtId);
+        db.prepare('UPDATE staff_salary_statements SET total_additions = 1200, net_earnings = net_earnings + 1200, balance_amount = balance_amount + 1200 WHERE id = ?').run(stmtId);
+      }
+    }
+  } catch (e) {
+    console.warn('[Seed] Warning setting up payroll period:', e.message);
+  }
 }
 
 // Execute if run directly from CLI

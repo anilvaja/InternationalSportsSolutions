@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS attendance_technique_snapshots (
   FOREIGN KEY (technique_id) REFERENCES syllabus_techniques(id) ON DELETE RESTRICT
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_snap_attendance_student ON attendance_technique_snapshots(attendance_id, student_id);
 CREATE INDEX IF NOT EXISTS idx_snap_attendance ON attendance_technique_snapshots(attendance_id);
 CREATE INDEX IF NOT EXISTS idx_snap_student ON attendance_technique_snapshots(student_id);
 CREATE INDEX IF NOT EXISTS idx_snap_technique ON attendance_technique_snapshots(technique_id);
+

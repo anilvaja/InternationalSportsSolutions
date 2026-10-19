@@ -9,31 +9,45 @@ const app = {
   selectedAcademyId: localStorage.getItem('selectedAcademyId') || null,
   currentTab: 'overview',
   theme: localStorage.getItem('theme') || 'light',
+  colorTheme: localStorage.getItem('colorTheme') || 'blue',
   tenantSubdomain: null,
+  studentFilters: { page: 1, limit: 15, search: '', branch_id: '', batch_id: '', status: '' },
+  batchFilters: { page: 1, limit: 15, search: '', branch_id: '', sport_id: '', day: '', status: '' },
+  coachFilters: { page: 1, limit: 15, search: '', branch_id: '', sport_id: '', status: '' },
+  feesFilters: { page: 1, limit: 15, search: '', status: '', branch_id: '', batch_id: '', overdue_only: false },
+  inquiryFilters: { page: 1, limit: 15, search: '', status: '', sport_id: '', branch_id: '' },
+  eventFilters: { page: 1, limit: 15, search: '', status: '', type: '' },
+  leaveFilters: { page: 1, limit: 15, search: '', status: '', applicant_type: '' },
+  auditFilters: { page: 1, limit: 25, search: '', action: '', user_role: '' },
+  cachedBranches: null,
+  cachedSports: null,
+  cachedBatches: null,
+
+  colorThemes: [
+    { id: 'blue', name: 'Royal Oceanic', hex: '#2563eb', desc: 'Default SaaS high-contrast sapphire blue' },
+    { id: 'emerald', name: 'Tournament Emerald', hex: '#059669', desc: 'Prestige championship green' },
+    { id: 'purple', name: 'Championship Violet', hex: '#7c3aed', desc: 'Royal master belt violet' },
+    { id: 'amber', name: 'Gold Dojo', hex: '#d97706', desc: 'Warm amber & golden tournament medal' },
+    { id: 'crimson', name: 'Samurai Crimson', hex: '#dc2626', desc: 'Intense martial arts crimson red' },
+    { id: 'teal', name: 'Olympic Aquatic', hex: '#0d9488', desc: 'Clean aquatic cyan teal' },
+    { id: 'indigo', name: 'Midnight Indigo', hex: '#4f46e5', desc: 'Deep electric dusk indigo' },
+    { id: 'slate', name: 'Executive Carbon', hex: '#475569', desc: 'Monochrome slate executive tone' },
+  ],
 
   async init() {
     this.applyTheme();
     this.bindGlobalEvents();
 
-    await this.detectTenantSubdomain();
+    const host = window.location.hostname;
+    const parts = host.split('.');
+    if (parts.length > 1 && parts[0] !== 'localhost' && parts[0] !== 'www') {
+      this.tenantSubdomain = parts[0];
+    }
 
     if (this.token) {
       await this.checkAuth();
     } else {
       this.showLogin();
-    }
-  },
-
-  async detectTenantSubdomain() {
-    try {
-      const res = await this.apiRequest('/api/public/tenant-info');
-      if (res && res.success && res.isTenantSubdomain && res.academy) {
-        this.tenantSubdomain = res.academy;
-        this.selectedAcademyId = res.academy.id;
-        document.title = `${res.academy.name} — Sports Academy Portal`;
-      }
-    } catch (e) {
-      console.warn('Subdomain detection check:', e);
     }
   },
 
@@ -43,12 +57,155 @@ const app = {
     if (icon) {
       icon.className = this.theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
     }
+    this.applyColorTheme(this.colorTheme);
+  },
+
+  applyColorTheme(themeKey) {
+    const valid = this.colorThemes.find(t => t.id === themeKey) ? themeKey : 'blue';
+    this.colorTheme = valid;
+    document.documentElement.setAttribute('data-color-theme', valid);
+    
+    // Update header indicator
+    const dot = document.getElementById('header-theme-dot');
+    const name = document.getElementById('header-theme-name');
+    const themeObj = this.colorThemes.find(t => t.id === valid) || this.colorThemes[0];
+    if (dot) dot.style.backgroundColor = themeObj.hex;
+    if (name) name.innerText = themeObj.name.split(' ')[0];
   },
 
   toggleTheme() {
     this.theme = this.theme === 'dark' ? 'light' : 'dark';
     localStorage.setItem('theme', this.theme);
     this.applyTheme();
+  },
+
+  showThemePickerModal() {
+    const activeColor = this.colorTheme || 'blue';
+    const canCustomize = this.user ? (this.user.canCustomizeTheme !== false) : true;
+    const canManageBranding = this.user ? !!this.user.canManageBranding : false;
+    const roleTheme = this.user?.roleThemeColor;
+    const academyDefault = this.user?.academyDefaultTheme || 'blue';
+    const userPersonal = this.user?.themeColor;
+
+    this.openModal(
+      '🎨 Dynamic Color Theme Customizer',
+      `
+        <div style="padding-bottom: 6px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div>
+              <strong style="font-size: 14px; color: var(--text-heading); display: block;">Select Accent Color Theme</strong>
+              <span style="font-size: 12px; color: var(--text-muted);">Changes apply immediately to navigation, buttons, badges, and accents</span>
+            </div>
+            ${userPersonal ? `
+              <button type="button" class="btn btn-secondary btn-xs" onclick="app.revertToDefaultTheme()" style="font-size: 11px;">
+                <i class="fa-solid fa-rotate-left"></i> Revert to Default
+              </button>
+            ` : ''}
+          </div>
+
+          <div class="theme-swatch-grid" style="margin-bottom: 18px;">
+            ${this.colorThemes.map(t => {
+              const isActive = activeColor === t.id;
+              const isRole = roleTheme === t.id;
+              const isAcademy = academyDefault === t.id;
+              return `
+                <div class="theme-swatch-card ${isActive ? 'active' : ''}" onclick="app.setUserColorTheme('${t.id}')">
+                  <div class="theme-swatch-preview" style="background: ${t.hex};"></div>
+                  <div style="flex: 1; overflow: hidden;">
+                    <div style="font-weight: 700; font-size: 12px; color: var(--text-heading); white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">
+                      ${t.name}
+                    </div>
+                    <div style="font-size: 10px; color: var(--text-muted); display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px;">
+                      ${isActive ? '<span class="badge badge-success" style="font-size: 9px; padding: 1px 4px;">Active</span>' : ''}
+                      ${isRole ? '<span class="badge badge-purple" style="font-size: 9px; padding: 1px 4px;">Role</span>' : ''}
+                      ${isAcademy && !isRole ? '<span class="badge badge-info" style="font-size: 9px; padding: 1px 4px;">Academy</span>' : ''}
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+
+          <!-- Hierarchy Explanation & Permissions Notice -->
+          <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; font-size: 12px; color: var(--text-muted); line-height: 1.6;">
+            <div style="font-weight: 700; color: var(--text-heading); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-circle-info" style="color: var(--primary);"></i> Theme Resolution Hierarchy
+            </div>
+            <div>
+              <strong>1. Personal Theme Preference:</strong> ${userPersonal ? `Configured (<code>${userPersonal}</code>)` : '<span style="color: var(--text-dim);">None set (Using inherited default)</span>'}<br>
+              <strong>2. Assigned Role Theme Accent:</strong> ${roleTheme ? `<code>${roleTheme}</code>` : '<span style="color: var(--text-dim);">Default</span>'}<br>
+              <strong>3. Academy Default Brand:</strong> <code>${academyDefault}</code> (System default: <code>blue</code>)
+            </div>
+            ${!canCustomize ? `
+              <div style="margin-top: 8px; color: #b45309; font-weight: 600;">
+                <i class="fa-solid fa-lock"></i> Personal theme customization is restricted by academy policy for your role.
+              </div>
+            ` : ''}
+          </div>
+
+          ${canManageBranding ? `
+            <div style="margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <strong style="font-size: 12px; color: var(--text-heading); display: block;">Academy Brand Default:</strong>
+                <span style="font-size: 11px; color: var(--text-muted);">Set active theme (${activeColor}) as default for all academy members</span>
+              </div>
+              <button type="button" class="btn btn-outline-primary btn-sm" onclick="app.setAcademyDefaultTheme('${activeColor}')">
+                <i class="fa-solid fa-building"></i> Make Academy Default
+              </button>
+            </div>
+          ` : ''}
+        </div>
+      `,
+      `
+        <button type="button" class="btn btn-primary" onclick="app.closeModal()">Done</button>
+      `
+    );
+  },
+
+  async setUserColorTheme(colorId) {
+    this.applyColorTheme(colorId);
+    localStorage.setItem('colorTheme', colorId);
+
+    if (this.user) {
+      this.user.themeColor = colorId;
+      this.user.effectiveTheme = colorId;
+      await this.apiRequest('/api/auth/theme', {
+        method: 'PUT',
+        body: JSON.stringify({ theme_color: colorId }),
+      });
+      this.showToast(`Applied ${colorId} color theme`, 'success');
+      this.showThemePickerModal();
+    }
+  },
+
+  async revertToDefaultTheme() {
+    localStorage.removeItem('colorTheme');
+    if (this.user) {
+      await this.apiRequest('/api/auth/theme', {
+        method: 'PUT',
+        body: JSON.stringify({ theme_color: 'default' }),
+      });
+      this.user.themeColor = null;
+      const fallback = this.user.roleThemeColor || this.user.academyDefaultTheme || 'blue';
+      this.user.effectiveTheme = fallback;
+      this.applyColorTheme(fallback);
+      this.showToast('Reverted to default role/academy theme', 'info');
+      this.showThemePickerModal();
+    }
+  },
+
+  async setAcademyDefaultTheme(colorId) {
+    const res = await this.apiRequest('/api/academy/settings/policy', {
+      method: 'PUT',
+      body: JSON.stringify({ default_color_theme: colorId }),
+    });
+    if (res.success) {
+      if (this.user) this.user.academyDefaultTheme = colorId;
+      this.showToast(`Set ${colorId} as academy default brand theme`, 'success');
+      this.showThemePickerModal();
+    } else {
+      this.showToast(res.error || 'Failed to update academy default theme', 'danger');
+    }
   },
 
   showToast(message, type = 'info') {
@@ -61,6 +218,110 @@ const app = {
     setTimeout(() => toast.remove(), 4000);
   },
 
+  escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  },
+
+  escapeJsString(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r');
+  },
+
+  async getCachedBranches() {
+    if (!this.cachedBranches) {
+      const res = await this.apiRequest('/api/academy/branches');
+      this.cachedBranches = (res && res.branches) || [];
+    }
+    return this.cachedBranches;
+  },
+
+  async getCachedSports() {
+    if (!this.cachedSports) {
+      const res = await this.apiRequest('/api/academy/sports');
+      this.cachedSports = (res && res.sports) || [];
+    }
+    return this.cachedSports;
+  },
+
+  async getCachedBatches() {
+    if (!this.cachedBatches) {
+      const res = await this.apiRequest('/api/academy/batches');
+      this.cachedBatches = (res && res.batches) || [];
+    }
+    return this.cachedBatches;
+  },
+
+  renderPaginationHtml(pagination, onPageFn, onLimitFn) {
+    if (!pagination) return '';
+    const { page = 1, limit = 15, total = 0, totalPages = 1 } = pagination;
+    if (total === 0) return '';
+
+    const start = Math.min((page - 1) * limit + 1, total);
+    const end = Math.min(page * limit, total);
+
+    let pageButtons = '';
+    const maxVisible = 5;
+    let startPage = Math.max(1, page - Math.floor(maxVisible / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+    if (endPage - startPage + 1 < maxVisible) {
+      startPage = Math.max(1, endPage - maxVisible + 1);
+    }
+
+    if (startPage > 1) {
+      pageButtons += `<button type="button" class="pagination-btn" onclick="${onPageFn}(1)">1</button>`;
+      if (startPage > 2) pageButtons += `<span class="pagination-ellipsis">...</span>`;
+    }
+
+    for (let p = startPage; p <= endPage; p++) {
+      pageButtons += `<button type="button" class="pagination-btn ${p === page ? 'active' : ''}" onclick="${onPageFn}(${p})">${p}</button>`;
+    }
+
+    if (endPage < totalPages) {
+      if (endPage < totalPages - 1) pageButtons += `<span class="pagination-ellipsis">...</span>`;
+      pageButtons += `<button type="button" class="pagination-btn" onclick="${onPageFn}(${totalPages})">${totalPages}</button>`;
+    }
+
+    return `
+      <div class="pagination-bar">
+        <div class="pagination-info">
+          Showing <strong>${start}</strong> to <strong>${end}</strong> of <strong>${total}</strong> entries
+        </div>
+        <div class="pagination-actions">
+          <div style="display: flex; align-items: center; gap: 6px; margin-right: 12px; font-size: 12px; color: var(--text-muted);">
+            <span>Per page:</span>
+            <select class="form-select form-select-xs" style="padding: 4px 8px; font-size: 12px; border-radius: 6px; background: rgba(255,255,255,0.05); color: var(--text); border: 1px solid var(--border);" onchange="${onLimitFn}(parseInt(this.value))">
+              <option value="10" ${limit === 10 ? 'selected' : ''}>10</option>
+              <option value="15" ${limit === 15 ? 'selected' : ''}>15</option>
+              <option value="25" ${limit === 25 ? 'selected' : ''}>25</option>
+              <option value="50" ${limit === 50 ? 'selected' : ''}>50</option>
+              <option value="100" ${limit === 100 ? 'selected' : ''}>100</option>
+            </select>
+          </div>
+          <button type="button" class="pagination-btn" ${page <= 1 ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : `onclick="${onPageFn}(${page - 1})"`} title="Previous Page">
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+          <div class="pagination-numbers">
+            ${pageButtons}
+          </div>
+          <button type="button" class="pagination-btn" ${page >= totalPages ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : `onclick="${onPageFn}(${page + 1})"`} title="Next Page">
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  },
+
   bindGlobalEvents() {
     document.getElementById('login-form').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -71,6 +332,14 @@ const app = {
       if (!this.user) return;
       const tab = (e.state && e.state.tab) || this.getTabForPath(window.location.pathname) || this.getDefaultTab();
       this.navigate(tab, false);
+    });
+
+    document.addEventListener('click', (e) => {
+      const wrap = document.getElementById('tenant-search-wrap');
+      const dropdown = document.getElementById('tenant-search-dropdown');
+      if (wrap && dropdown && !wrap.contains(e.target)) {
+        dropdown.classList.remove('open');
+      }
     });
   },
 
@@ -100,8 +369,12 @@ const app = {
       });
 
       if (res.status === 401) {
-        this.logout();
-        return { success: false, error: 'Session expired' };
+        if (endpoint !== '/api/auth/login' && endpoint !== '/api/auth/logout') {
+          this.logout();
+        }
+        let data = {};
+        try { data = await res.json(); } catch (e) {}
+        return { success: false, error: data.error || 'Invalid credentials or session expired' };
       }
 
       return await res.json();
@@ -120,6 +393,12 @@ const app = {
     if (data.success && data.authenticated) {
       this.user = data.user;
       this.accessibleAcademies = data.accessibleAcademies || [];
+
+      if (data.user && data.user.effectiveTheme) {
+        this.colorTheme = data.user.effectiveTheme;
+        localStorage.setItem('colorTheme', this.colorTheme);
+        this.applyColorTheme(this.colorTheme);
+      }
 
       if (!this.selectedAcademyId && this.accessibleAcademies.length > 0) {
         this.selectedAcademyId = this.accessibleAcademies[0].id;
@@ -171,7 +450,7 @@ const app = {
     this.selectedAcademyId = null;
     localStorage.removeItem('token');
     localStorage.removeItem('selectedAcademyId');
-    this.apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
       window.history.pushState(null, '', '/login');
     }
@@ -203,10 +482,61 @@ const app = {
 
     this.renderTenantSelector();
     this.renderSidebar();
+    this.renderSidebarBrand();
 
     const urlTab = this.getTabForPath(window.location.pathname);
     const targetTab = (urlTab && this.isTabAllowed(urlTab)) ? urlTab : this.getDefaultTab();
     this.navigate(targetTab, true);
+  },
+
+  renderSidebarBrand() {
+    const iconEl = document.getElementById('sidebar-brand-icon');
+    const nameEl = document.getElementById('sidebar-brand-name');
+    const badgeEl = document.getElementById('sidebar-role-badge');
+    if (!nameEl) return;
+
+    let academyName = 'Sports Solutions';
+    let academyLogo = null;
+    let subtitle = 'Multi-Tenant SaaS';
+
+    if (this.user.isSuperAdmin) {
+      const selectedAc = this.accessibleAcademies && this.accessibleAcademies.find(a => a.id == this.selectedAcademyId);
+      if (selectedAc && (!this.currentTab || !this.currentTab.startsWith('central-'))) {
+        academyName = selectedAc.name;
+        academyLogo = selectedAc.logo_url || null;
+        subtitle = selectedAc.plan ? `${selectedAc.plan.toUpperCase()} • Central Admin` : 'Super Admin Mode';
+      } else {
+        academyName = 'International Sports Solutions';
+        academyLogo = null;
+        subtitle = 'Super Admin Panel';
+      }
+    } else {
+      academyName = this.user.academyName || (this.accessibleAcademies && this.accessibleAcademies[0] && this.accessibleAcademies[0].name) || 'Sports Academy';
+      academyLogo = this.user.academyLogo || (this.accessibleAcademies && this.accessibleAcademies[0] && this.accessibleAcademies[0].logo_url) || null;
+
+      if (this.user.role === 'student') {
+        subtitle = 'Student Portal';
+      } else if (this.user.role === 'academy_admin') {
+        subtitle = 'Academy Admin';
+      } else if (this.user.role === 'coach') {
+        subtitle = 'Coaching Staff';
+      } else {
+        subtitle = 'Academy Operations';
+      }
+    }
+
+    nameEl.innerText = academyName;
+    nameEl.title = academyName;
+    if (badgeEl) badgeEl.innerText = subtitle;
+
+    if (iconEl) {
+      if (academyLogo) {
+        iconEl.innerHTML = `<img src="${academyLogo}" alt="${academyName}" class="brand-logo-img" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'brand-monogram\\'>${academyName.charAt(0).toUpperCase()}</span>';"/>`;
+      } else {
+        const initial = academyName ? academyName.charAt(0).toUpperCase() : 'S';
+        iconEl.innerHTML = `<span class="brand-monogram">${initial}</span>`;
+      }
+    }
   },
 
   formatRole(role) {
@@ -220,17 +550,30 @@ const app = {
 
   renderTenantSelector() {
     const container = document.getElementById('tenant-selector-container');
-    if (this.user.isSuperAdmin && this.accessibleAcademies.length > 0) {
+    if (this.user.isSuperAdmin && this.accessibleAcademies && this.accessibleAcademies.length > 0) {
+      const selected = this.accessibleAcademies.find(a => a.id == this.selectedAcademyId) || this.accessibleAcademies[0];
       container.innerHTML = `
         <div style="display: flex; align-items: center; gap: 8px;">
           <span style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600;">Tenant DB Context:</span>
-          <select id="tenant-select-dropdown" class="form-select" onchange="app.switchAcademy(this.value)" style="max-width: 260px;">
-            ${this.accessibleAcademies.map(a => `
-              <option value="${a.id}" ${a.id == this.selectedAcademyId ? 'selected' : ''}>
-                ${a.name} (${a.plan})
-              </option>
-            `).join('')}
-          </select>
+          <div class="searchable-select-wrap" id="tenant-search-wrap">
+            <div class="searchable-select-trigger" onclick="app.toggleTenantDropdown(event)" id="tenant-dropdown-trigger" title="Click to switch tenant academy">
+              <div style="display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <i class="fa-solid fa-database" style="color: var(--primary); font-size: 12px;"></i>
+                <strong style="font-size: 13px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${selected.name}</strong>
+                <span class="badge badge-purple" style="font-size: 10px; padding: 1px 6px;">${selected.plan || 'standard'}</span>
+              </div>
+              <i class="fa-solid fa-chevron-down" style="font-size: 10px; color: var(--text-muted);"></i>
+            </div>
+            <div class="searchable-select-dropdown" id="tenant-search-dropdown">
+              <div class="searchable-select-search">
+                <i class="fa-solid fa-magnifying-glass" style="font-size: 12px; color: var(--text-muted);"></i>
+                <input type="text" id="tenant-search-input" placeholder="Search 150+ academies by name, city, plan..." oninput="app.filterTenantOptions(this.value)" onclick="event.stopPropagation()">
+              </div>
+              <ul class="searchable-select-list" id="tenant-options-list">
+                ${this.renderTenantOptions(this.accessibleAcademies, selected.id)}
+              </ul>
+            </div>
+          </div>
         </div>
       `;
     } else if (this.user.academyName) {
@@ -245,9 +588,79 @@ const app = {
     }
   },
 
+  toggleTenantDropdown(event) {
+    if (event) event.stopPropagation();
+    const dropdown = document.getElementById('tenant-search-dropdown');
+    if (!dropdown) return;
+    const isOpen = dropdown.classList.contains('open');
+    if (isOpen) {
+      dropdown.classList.remove('open');
+    } else {
+      dropdown.classList.add('open');
+      const input = document.getElementById('tenant-search-input');
+      if (input) {
+        input.value = '';
+        setTimeout(() => input.focus(), 50);
+        this.filterTenantOptions('');
+      }
+    }
+  },
+
+  filterTenantOptions(query = '') {
+    const q = (query || '').toLowerCase().trim();
+    const listEl = document.getElementById('tenant-options-list');
+    if (!listEl) return;
+    const filtered = (this.accessibleAcademies || []).filter(a => {
+      if (!q) return true;
+      const name = (a.name || '').toLowerCase();
+      const plan = (a.plan || '').toLowerCase();
+      const city = (a.city || '').toLowerCase();
+      const slug = (a.slug || '').toLowerCase();
+      return name.includes(q) || plan.includes(q) || city.includes(q) || slug.includes(q);
+    });
+    listEl.innerHTML = this.renderTenantOptions(filtered, this.selectedAcademyId);
+  },
+
+  renderTenantOptions(list, selectedId) {
+    if (!list || list.length === 0) {
+      return `<li style="padding: 12px; text-align: center; color: var(--text-muted); font-size: 12px;">No academies match search</li>`;
+    }
+    return list.map(a => {
+      const isSel = a.id == selectedId;
+      return `
+        <li class="searchable-select-item ${isSel ? 'selected' : ''}" onclick="app.selectAcademyFromDropdown(${a.id})">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-weight: ${isSel ? '700' : '500'};">${a.name}</span>
+              ${isSel ? '<i class="fa-solid fa-check" style="color: var(--primary); font-size: 11px;"></i>' : ''}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted);">
+              ${a.city ? `${a.city} &bull; ` : ''}<span class="badge badge-purple" style="font-size: 9px; padding: 1px 4px;">${a.plan}</span>
+            </div>
+          </div>
+          <span style="font-size: 11px; color: var(--text-muted);">#${a.id}</span>
+        </li>
+      `;
+    }).join('');
+  },
+
+  selectAcademyFromDropdown(academyId) {
+    const dropdown = document.getElementById('tenant-search-dropdown');
+    if (dropdown) dropdown.classList.remove('open');
+    this.switchAcademy(academyId);
+  },
+
   switchAcademy(academyId) {
     this.selectedAcademyId = Number(academyId);
     localStorage.setItem('selectedAcademyId', this.selectedAcademyId);
+    const selected = this.accessibleAcademies && this.accessibleAcademies.find(a => a.id == this.selectedAcademyId);
+    if (selected) {
+      this.user.academyName = selected.name;
+      this.user.academyLogo = selected.logo_url || null;
+      this.user.academySlug = selected.slug;
+    }
+    this.renderTenantSelector();
+    this.renderSidebarBrand();
     this.showToast('Switched tenant database context', 'info');
     this.navigate(this.currentTab, false);
   },
@@ -259,46 +672,68 @@ const app = {
   routes: {
     // Central SaaS Admin
     'central-academies': '/admin/academies',
+    'central-plans': '/admin/plans',
     'central-stats': '/admin/analytics',
     'central-audit': '/admin/audit',
 
     // Academy Operations
     'overview': '/academy/overview',
+    'inquiries': '/academy/inquiries',
+    'branches': '/academy/branches',
     'students': '/academy/students',
     'coaches': '/academy/coaches',
     'batches': '/academy/batches',
     'attendance': '/academy/attendance',
     'syllabus': '/academy/syllabus',
+    'sports': '/academy/sports',
     'fees': '/academy/fees',
     'leaves': '/academy/leaves',
     'facilities': '/academy/facilities',
     'audit-logs': '/academy/audit-logs',
+    'payroll': '/academy/payroll',
+    'my-salary': '/academy/my-salary',
+    'approvals': '/academy/approvals',
+    'policy-settings': '/academy/policy-settings',
+    'roles-permissions': '/academy/roles',
+    'events': '/academy/events',
 
     // Student Portal
     'student-dashboard': '/student/dashboard',
     'student-technique': '/student/syllabus',
     'student-attendance': '/student/attendance',
     'student-fees': '/student/fees',
+    'student-events': '/student/events',
   },
 
   tabTitles: {
     'central-academies': 'Academies & Databases',
+    'central-plans': 'Subscription Plans & Quota Management',
     'central-stats': 'Platform Metrics',
     'central-audit': 'Central Audit Trail',
     'overview': 'Dashboard',
-    'students': 'Students',
+    'inquiries': 'Inquiries & Admission Leads',
+    'branches': 'Branches',
+    'students': 'Students Directory',
     'coaches': 'Coaches & Staff',
     'batches': 'Batches & Schedules',
-    'attendance': 'Attendance',
+    'attendance': 'Attendance Sheet',
+    'sports': 'Sports & Disciplines Management',
     'syllabus': 'Sports Syllabus & Learning Progression',
     'fees': 'Fees & Invoices',
-    'leaves': 'Leaves',
+    'leaves': 'Leaves Management',
     'facilities': 'Facilities & Equipment',
     'audit-logs': 'Tenant Audit Log',
+    'payroll': 'Staff Payroll & Finalization',
+    'my-salary': 'My Salary & Earnings Statement',
+    'approvals': 'Approvals Inbox',
+    'policy-settings': 'Academy Policy Settings',
+    'roles-permissions': 'Roles & Permissions Access Control',
+    'events': 'Events & Tournaments',
     'student-dashboard': 'Student Dashboard',
     'student-technique': 'My Syllabus Progress',
     'student-attendance': 'Attendance History',
     'student-fees': 'My Invoices & Fees',
+    'student-events': 'Events & Invitations',
   },
 
   getPathForTab(tab) {
@@ -316,6 +751,7 @@ const app = {
     const aliases = {
       '/admin': 'central-academies',
       '/admin/academies': 'central-academies',
+      '/admin/plans': 'central-plans',
       '/admin/dashboard': 'central-academies',
       '/admin/stats': 'central-stats',
       '/admin/analytics': 'central-stats',
@@ -324,16 +760,35 @@ const app = {
       '/academy': 'overview',
       '/academy/overview': 'overview',
       '/academy/dashboard': 'overview',
+      '/academy/branches': 'branches',
+      '/academy/branches/create': 'branches',
+      '/academy/dojos': 'branches',
       '/academy/students': 'students',
       '/academy/coaches': 'coaches',
       '/academy/batches': 'batches',
       '/academy/attendance': 'attendance',
+      '/academy/sports': 'sports',
+      '/academy/disciplines': 'sports',
       '/academy/syllabus': 'syllabus',
       '/academy/techniques': 'syllabus',
       '/academy/fees': 'fees',
+      '/academy/fee-collections': 'fees',
       '/academy/leaves': 'leaves',
       '/academy/facilities': 'facilities',
       '/academy/audit-logs': 'audit-logs',
+      '/academy/payroll': 'payroll',
+      '/academy/salary': 'payroll',
+      '/academy/my-salary': 'my-salary',
+      '/academy/approvals': 'approvals',
+      '/academy/inbox': 'approvals',
+      '/academy/policy-settings': 'policy-settings',
+      '/academy/settings': 'policy-settings',
+      '/academy/roles': 'roles-permissions',
+      '/academy/permissions': 'roles-permissions',
+      '/academy/academy-roles': 'roles-permissions',
+      '/academy/users': 'roles-permissions',
+      '/academy/events': 'events',
+      '/academy/tournaments': 'events',
       '/student': 'student-dashboard',
       '/student/dashboard': 'student-dashboard',
       '/student/technique': 'student-technique',
@@ -341,6 +796,8 @@ const app = {
       '/student/syllabus': 'student-technique',
       '/student/attendance': 'student-attendance',
       '/student/fees': 'student-fees',
+      '/student/events': 'student-events',
+      '/student/invitations': 'student-events',
     };
 
     return aliases[clean] || null;
@@ -349,12 +806,16 @@ const app = {
   isTabAllowed(tab) {
     if (!this.user) return false;
     if (this.user.role === 'student') {
-      return ['student-dashboard', 'student-technique', 'student-attendance', 'student-fees'].includes(tab);
+      return ['student-dashboard', 'student-technique', 'student-attendance', 'student-fees', 'student-events'].includes(tab);
     }
-    const academyTabs = ['overview', 'students', 'coaches', 'batches', 'attendance', 'syllabus', 'fees', 'leaves', 'facilities', 'audit-logs'];
+    const academyTabs = [
+      'overview', 'inquiries', 'branches', 'students', 'coaches', 'batches', 'attendance', 
+      'sports', 'syllabus', 'fees', 'leaves', 'facilities', 'audit-logs', 
+      'payroll', 'my-salary', 'approvals', 'policy-settings', 'events', 'roles-permissions'
+    ];
     if (academyTabs.includes(tab)) return true;
     if (this.user.isSuperAdmin) {
-      return ['central-academies', 'central-stats', 'central-audit'].includes(tab);
+      return ['central-academies', 'central-plans', 'central-stats', 'central-audit'].includes(tab);
     }
     return false;
   },
@@ -373,10 +834,11 @@ const app = {
   },
 
   // ==========================================
-  // SIDEBAR NAVIGATION
+  // SIDEBAR NAVIGATION (ACCURATE LOGICAL ORDER)
   // ==========================================
 
   renderSidebar() {
+    this.renderSidebarBrand();
     const nav = document.getElementById('sidebar-nav-items');
     let html = '';
 
@@ -385,6 +847,9 @@ const app = {
         <div class="nav-section-title">Central SaaS Admin</div>
         <a href="${this.getPathForTab('central-academies')}" class="nav-item ${this.currentTab === 'central-academies' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-academies')">
           <i class="fa-solid fa-server"></i> Academies & Databases
+        </a>
+        <a href="${this.getPathForTab('central-plans')}" class="nav-item ${this.currentTab === 'central-plans' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-plans')">
+          <i class="fa-solid fa-layer-group"></i> Subscription Plans & Limits
         </a>
         <a href="${this.getPathForTab('central-stats')}" class="nav-item ${this.currentTab === 'central-stats' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-stats')">
           <i class="fa-solid fa-chart-pie"></i> Platform Metrics
@@ -397,31 +862,72 @@ const app = {
 
     if (this.user.role !== 'student') {
       html += `
-        <div class="nav-section-title">Academy Operations</div>
+        <div class="nav-section-title">Main</div>
         <a href="${this.getPathForTab('overview')}" class="nav-item ${this.currentTab === 'overview' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('overview')">
           <i class="fa-solid fa-gauge-high"></i> Dashboard
         </a>
-        <a href="${this.getPathForTab('students')}" class="nav-item ${this.currentTab === 'students' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('students')">
-          <i class="fa-solid fa-users"></i> Students
+
+        <div class="nav-section-title">Academic & Training</div>
+        <a href="${this.getPathForTab('inquiries')}" class="nav-item ${this.currentTab === 'inquiries' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('inquiries')">
+          <i class="fa-solid fa-address-book"></i> Inquiries & Leads
         </a>
-        <a href="${this.getPathForTab('coaches')}" class="nav-item ${this.currentTab === 'coaches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('coaches')">
-          <i class="fa-solid fa-user-ninja"></i> Coaches & Staff
+        <a href="${this.getPathForTab('branches')}" class="nav-item ${this.currentTab === 'branches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('branches')">
+          <i class="fa-solid fa-code-branch"></i> Branches
         </a>
         <a href="${this.getPathForTab('batches')}" class="nav-item ${this.currentTab === 'batches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('batches')">
           <i class="fa-solid fa-calendar-days"></i> Batches & Schedules
         </a>
+        <a href="${this.getPathForTab('students')}" class="nav-item ${this.currentTab === 'students' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('students')">
+          <i class="fa-solid fa-users"></i> Students Directory
+        </a>
         <a href="${this.getPathForTab('attendance')}" class="nav-item ${this.currentTab === 'attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('attendance')">
-          <i class="fa-solid fa-clipboard-user"></i> Attendance
+          <i class="fa-solid fa-clipboard-user"></i> Attendance Sheet
         </a>
         <a href="${this.getPathForTab('syllabus')}" class="nav-item ${this.currentTab === 'syllabus' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('syllabus')">
           <i class="fa-solid fa-graduation-cap"></i> Sports Syllabus
         </a>
+        <a href="${this.getPathForTab('sports')}" class="nav-item ${this.currentTab === 'sports' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('sports')">
+          <i class="fa-solid fa-medal"></i> Sports & Disciplines
+        </a>
+        <a href="${this.getPathForTab('events')}" class="nav-item ${this.currentTab === 'events' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('events')">
+          <i class="fa-solid fa-trophy"></i> Events & Tournaments
+        </a>
+
+        ${this.user.role !== 'coach' ? `
+        <div class="nav-section-title">Finance & Billing</div>
         <a href="${this.getPathForTab('fees')}" class="nav-item ${this.currentTab === 'fees' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('fees')">
           <i class="fa-solid fa-file-invoice-dollar"></i> Fees & Invoices
         </a>
-        <a href="${this.getPathForTab('leaves')}" class="nav-item ${this.currentTab === 'leaves' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('leaves')">
-          <i class="fa-solid fa-calendar-check"></i> Leaves
+        ` : ''}
+
+        <div class="nav-section-title">Staff & Operations</div>
+        <a href="${this.getPathForTab('coaches')}" class="nav-item ${this.currentTab === 'coaches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('coaches')">
+          <i class="fa-solid fa-user-ninja"></i> Coaches & Staff
         </a>
+        <a href="${this.getPathForTab('leaves')}" class="nav-item ${this.currentTab === 'leaves' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('leaves')">
+          <i class="fa-solid fa-calendar-check"></i> Leaves Management
+        </a>
+        <a href="${this.getPathForTab('approvals')}" class="nav-item ${this.currentTab === 'approvals' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('approvals')">
+          <i class="fa-solid fa-check-to-slot"></i> Approvals Inbox
+        </a>
+        <a href="${this.getPathForTab('my-salary')}" class="nav-item ${this.currentTab === 'my-salary' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('my-salary')">
+          <i class="fa-solid fa-wallet"></i> My Salary Statement
+        </a>
+        ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
+          <a href="${this.getPathForTab('payroll')}" class="nav-item ${this.currentTab === 'payroll' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('payroll')">
+            <i class="fa-solid fa-money-check-dollar"></i> Staff Payroll
+          </a>
+          <a href="${this.getPathForTab('policy-settings')}" class="nav-item ${this.currentTab === 'policy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('policy-settings')">
+            <i class="fa-solid fa-sliders"></i> Policy Settings
+          </a>
+        ` : ''}
+
+        <div class="nav-section-title">Access Control & System</div>
+        ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
+          <a href="${this.getPathForTab('roles-permissions')}" class="nav-item ${this.currentTab === 'roles-permissions' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('roles-permissions')">
+            <i class="fa-solid fa-key"></i> Roles & Permissions
+          </a>
+        ` : ''}
         <a href="${this.getPathForTab('facilities')}" class="nav-item ${this.currentTab === 'facilities' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('facilities')">
           <i class="fa-solid fa-dumbbell"></i> Facilities & Equipment
         </a>
@@ -436,11 +942,14 @@ const app = {
         <a href="${this.getPathForTab('student-dashboard')}" class="nav-item ${this.currentTab === 'student-dashboard' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-dashboard')">
           <i class="fa-solid fa-gauge-high"></i> My Dashboard
         </a>
+        <a href="${this.getPathForTab('student-attendance')}" class="nav-item ${this.currentTab === 'student-attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-attendance')">
+          <i class="fa-solid fa-clipboard-user"></i> Attendance History
+        </a>
         <a href="${this.getPathForTab('student-technique')}" class="nav-item ${this.currentTab === 'student-technique' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-technique')">
           <i class="fa-solid fa-medal"></i> My Syllabus Progress
         </a>
-        <a href="${this.getPathForTab('student-attendance')}" class="nav-item ${this.currentTab === 'student-attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-attendance')">
-          <i class="fa-solid fa-clipboard-user"></i> Attendance History
+        <a href="${this.getPathForTab('student-events')}" class="nav-item ${this.currentTab === 'student-events' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-events')">
+          <i class="fa-solid fa-trophy"></i> Events & Invitations
         </a>
         <a href="${this.getPathForTab('student-fees')}" class="nav-item ${this.currentTab === 'student-fees' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-fees')">
           <i class="fa-solid fa-file-invoice-dollar"></i> My Invoices & Fees
@@ -457,6 +966,10 @@ const app = {
     }
 
     this.currentTab = tab;
+    if (this.punchTimerInterval) {
+      clearInterval(this.punchTimerInterval);
+      this.punchTimerInterval = null;
+    }
     const targetPath = this.getPathForTab(tab);
 
     if (updateHistory) {
@@ -477,6 +990,9 @@ const app = {
       case 'central-academies':
         this.renderCentralAcademies();
         break;
+      case 'central-plans':
+        this.renderCentralPlans();
+        break;
       case 'central-stats':
         this.renderCentralStats();
         break;
@@ -485,6 +1001,12 @@ const app = {
         break;
       case 'overview':
         this.renderAcademyOverview();
+        break;
+      case 'inquiries':
+        this.renderInquiries();
+        break;
+      case 'branches':
+        this.renderBranches();
         break;
       case 'students':
         this.renderStudents();
@@ -498,8 +1020,23 @@ const app = {
       case 'attendance':
         this.renderAttendance();
         break;
+      case 'approvals':
+        this.renderApprovals();
+        break;
+      case 'my-salary':
+        this.renderMySalary();
+        break;
+      case 'payroll':
+        this.renderPayroll();
+        break;
+      case 'policy-settings':
+        this.renderPolicySettings();
+        break;
       case 'syllabus':
         this.renderSyllabus();
+        break;
+      case 'sports':
+        this.renderSports();
         break;
       case 'fees':
         this.renderFees();
@@ -513,6 +1050,9 @@ const app = {
       case 'audit-logs':
         this.renderAuditLogs();
         break;
+      case 'roles-permissions':
+        this.renderRolesAndPermissions();
+        break;
       case 'student-dashboard':
         this.renderStudentDashboard();
         break;
@@ -524,6 +1064,12 @@ const app = {
         break;
       case 'student-fees':
         this.renderStudentFees();
+        break;
+      case 'events':
+        this.renderEvents();
+        break;
+      case 'student-events':
+        this.renderStudentEvents();
         break;
       default:
         this.renderAcademyOverview();
@@ -543,6 +1089,8 @@ const app = {
       return;
     }
 
+    this.currentCentralAcademies = data.academies || [];
+
     content.innerHTML = `
       <div class="content-card">
         <div class="card-header">
@@ -551,6 +1099,9 @@ const app = {
             <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Each academy is provisioned with a physically isolated SQLite database</p>
           </div>
           <div class="card-actions">
+            <button class="btn btn-secondary btn-sm" onclick="app.exportCentralAcademiesExcel()">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Academies
+            </button>
             <a href="/api/central/backup" class="btn btn-secondary btn-sm" download>
               <i class="fa-solid fa-file-zipper"></i> Full Platform ZIP
             </a>
@@ -616,6 +1167,9 @@ const app = {
                   </td>
                   <td>
                     <div style="display: flex; gap: 6px;">
+                      <button class="btn btn-secondary btn-sm" onclick="app.showManageSubscriptionModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}')" title="Manage Subscription & Limits">
+                        <i class="fa-solid fa-sliders" style="color: #10b981;"></i> Limits
+                      </button>
                       <button class="btn btn-secondary btn-sm" onclick="app.showManageDomainsModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}')" title="Manage Domains & Subdomains">
                         <i class="fa-solid fa-globe" style="color: #3b82f6;"></i> Domains
                       </button>
@@ -802,6 +1356,460 @@ const app = {
     }
   },
 
+  exportCentralAcademiesExcel() {
+    if (!this.currentCentralAcademies || !this.currentCentralAcademies.length) {
+      this.showToast('No academies available to export', 'warning');
+      return;
+    }
+    const rows = this.currentCentralAcademies.map(ac => ({
+      'ID': ac.id,
+      'Academy Name': ac.name,
+      'Slug / Domain': `${ac.slug}.internationalsportssolutions.test`,
+      'Contact Email': ac.contact_email || '',
+      'Contact Phone': ac.contact_phone || '',
+      'City': ac.city || '',
+      'Subscription Plan': ac.plan || 'starter',
+      'Max Branches': ac.max_branches,
+      'Max Students': ac.max_students,
+      'Max Coaches': ac.max_coaches,
+      'Active Students': ac.studentCount || 0,
+      'Active Coaches': ac.coachCount || 0,
+      'Branches': ac.branchCount || 0,
+      'Status': ac.status,
+      'Created At': ac.created_at || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Tenant_Academies');
+    XLSX.writeFile(wb, `Central_Academies_${new Date().toISOString().split('T')[0]}.xlsx`);
+    this.showToast('Exported academies registry to Excel via SheetJS', 'success');
+  },
+
+  // ==========================================
+  // SUBSCRIPTION PLANS & QUOTA MANAGEMENT UI
+  // ==========================================
+
+  async renderCentralPlans() {
+    const data = await this.apiRequest('/api/central/plans');
+    const content = document.getElementById('page-content');
+
+    if (!data.success) {
+      content.innerHTML = `<div class="toast danger">${data.error}</div>`;
+      return;
+    }
+
+    content.innerHTML = `
+      <div class="content-card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title"><i class="fa-solid fa-layer-group" style="color: var(--primary);"></i> Subscription Plans & Quota Limits</h2>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Manage reusable SaaS tiers, configurable quotas, and feature entitlements</p>
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-primary btn-sm" onclick="app.showCreatePlanModal()">
+              <i class="fa-solid fa-plus"></i> Create New Plan
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Plan Name & Tier</th>
+                <th>Price & Interval</th>
+                <th>Resource Quota Limits</th>
+                <th>Enabled Features</th>
+                <th>Subscribed</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.plans.map(p => `
+                <tr>
+                  <td>
+                    <strong>${p.name}</strong>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                      <code>${p.slug}</code> — ${p.description || 'Configurable SaaS tier'}
+                    </div>
+                  </td>
+                  <td>
+                    <strong>₹${Number(p.price).toLocaleString()}</strong> / ${p.billing_interval}
+                    <div style="font-size: 11px; color: var(--text-muted);">${p.trial_days}-day trial</div>
+                  </td>
+                  <td>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; font-size: 11px;">
+                      <span><i class="fa-solid fa-users" style="color: #6366f1;"></i> Users: <strong>${p.limits.users ?? 10}</strong></span>
+                      <span><i class="fa-solid fa-code-branch" style="color: #10b981;"></i> Branches: <strong>${p.limits.branches ?? 2}</strong></span>
+                      <span><i class="fa-solid fa-calendar-days" style="color: #f59e0b;"></i> Batches: <strong>${p.limits.batches ?? 10}</strong></span>
+                      <span><i class="fa-solid fa-user-graduate" style="color: #3b82f6;"></i> Students: <strong>${p.limits.students ?? 200}</strong></span>
+                      <span><i class="fa-solid fa-layer-group" style="color: #ec4899;"></i> Batch Cap: <strong>${p.limits.students_per_batch ?? 30}</strong></span>
+                      <span><i class="fa-solid fa-user-ninja" style="color: #8b5cf6;"></i> Coaches: <strong>${p.limits.coaches ?? 5}</strong></span>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                      ${Object.entries(p.features || {}).map(([fk, isEn]) => `
+                        <span class="badge ${isEn ? 'badge-success' : 'badge-secondary'}" style="font-size: 10px;">
+                          ${fk}
+                        </span>
+                      `).join('')}
+                    </div>
+                  </td>
+                  <td>
+                    <span class="badge badge-info" style="font-size: 12px; font-weight: 600;">
+                      ${p.active_subscriptions_count || 0} academies
+                    </span>
+                  </td>
+                  <td>
+                    <span class="badge ${p.status === 'active' ? 'badge-success' : (p.status === 'draft' ? 'badge-secondary' : 'badge-danger')}">
+                      ${p.status}
+                    </span>
+                  </td>
+                  <td>
+                    <button class="btn btn-secondary btn-sm" onclick="app.showCreatePlanModal(${p.id})">
+                      <i class="fa-solid fa-pen-to-square"></i> Configure
+                    </button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  async showCreatePlanModal(planId = null) {
+    let plan = {
+      name: '',
+      slug: '',
+      description: '',
+      price: 0,
+      billing_interval: 'monthly',
+      trial_days: 14,
+      status: 'active',
+      limits: { users: 10, branches: 2, batches: 10, students: 200, students_per_batch: 30, coaches: 5 },
+      features: { events: true, payroll: true, syllabus: true, facilities: true },
+    };
+
+    if (planId) {
+      const res = await this.apiRequest(`/api/central/plans/${planId}`);
+      if (res.success && res.plan) {
+        plan = res.plan;
+      }
+    }
+
+    this.openModal(
+      planId ? `Edit Subscription Plan — ${plan.name}` : 'Create New Subscription Plan',
+      `
+        <form id="plan-form">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Plan Name *</label>
+              <input type="text" id="plan-name" class="form-input" style="width: 100%;" required value="${plan.name}" placeholder="e.g. Standard">
+            </div>
+            <div class="form-group">
+              <label>Slug</label>
+              <input type="text" id="plan-slug" class="form-input" style="width: 100%;" value="${plan.slug || ''}" placeholder="standard">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <input type="text" id="plan-desc" class="form-input" style="width: 100%;" value="${plan.description || ''}" placeholder="Plan tier summary">
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Price (₹)</label>
+              <input type="number" id="plan-price" class="form-input" style="width: 100%;" value="${plan.price || 0}">
+            </div>
+            <div class="form-group">
+              <label>Billing Interval</label>
+              <select id="plan-interval" class="form-select" style="width: 100%;">
+                <option value="monthly" ${plan.billing_interval === 'monthly' ? 'selected' : ''}>Monthly</option>
+                <option value="yearly" ${plan.billing_interval === 'yearly' ? 'selected' : ''}>Yearly</option>
+                <option value="quarterly" ${plan.billing_interval === 'quarterly' ? 'selected' : ''}>Quarterly</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="plan-status" class="form-select" style="width: 100%;">
+                <option value="active" ${plan.status === 'active' ? 'selected' : ''}>Active</option>
+                <option value="draft" ${plan.status === 'draft' ? 'selected' : ''}>Draft</option>
+                <option value="inactive" ${plan.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <h4 style="font-size: 13px; font-weight: 600; margin: 16px 0 8px; color: var(--primary);">Configurable Quota Limits</h4>
+          <div class="form-grid" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="form-group">
+              <label>Max Users</label>
+              <input type="number" id="quota-users" class="form-input" style="width: 100%;" min="1" value="${plan.limits?.users ?? 10}">
+            </div>
+            <div class="form-group">
+              <label>Max Branches</label>
+              <input type="number" id="quota-branches" class="form-input" style="width: 100%;" min="1" value="${plan.limits?.branches ?? 2}">
+            </div>
+            <div class="form-group">
+              <label>Max Batches</label>
+              <input type="number" id="quota-batches" class="form-input" style="width: 100%;" min="1" value="${plan.limits?.batches ?? 10}">
+            </div>
+            <div class="form-group">
+              <label>Max Students</label>
+              <input type="number" id="quota-students" class="form-input" style="width: 100%;" min="1" value="${plan.limits?.students ?? 200}">
+            </div>
+            <div class="form-group">
+              <label>Students / Batch</label>
+              <input type="number" id="quota-batch-cap" class="form-input" style="width: 100%;" min="1" value="${plan.limits?.students_per_batch ?? 30}">
+            </div>
+            <div class="form-group">
+              <label>Max Coaches</label>
+              <input type="number" id="quota-coaches" class="form-input" style="width: 100%;" min="1" value="${plan.limits?.coaches ?? 5}">
+            </div>
+          </div>
+
+          <div class="modal-footer" style="margin-top: 20px;">
+            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">${planId ? 'Save Plan Changes' : 'Create Plan'}</button>
+          </div>
+        </form>
+      `
+    );
+
+    document.getElementById('plan-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const payload = {
+        name: document.getElementById('plan-name').value.trim(),
+        slug: document.getElementById('plan-slug').value.trim(),
+        description: document.getElementById('plan-desc').value.trim(),
+        price: Number(document.getElementById('plan-price').value),
+        billing_interval: document.getElementById('plan-interval').value,
+        status: document.getElementById('plan-status').value,
+        limits: {
+          users: Number(document.getElementById('quota-users').value),
+          branches: Number(document.getElementById('quota-branches').value),
+          batches: Number(document.getElementById('quota-batches').value),
+          students: Number(document.getElementById('quota-students').value),
+          students_per_batch: Number(document.getElementById('quota-batch-cap').value),
+          coaches: Number(document.getElementById('quota-coaches').value),
+        },
+      };
+
+      const url = planId ? `/api/central/plans/${planId}` : '/api/central/plans';
+      const method = planId ? 'PUT' : 'POST';
+      const res = await this.apiRequest(url, { method, body: JSON.stringify(payload) });
+
+      if (res.success) {
+        this.showToast(res.message || 'Plan saved successfully', 'success');
+        this.closeModal();
+        this.renderCentralPlans();
+      } else {
+        this.showToast(res.error || 'Failed to save plan', 'danger');
+      }
+    };
+  },
+
+  async showManageSubscriptionModal(academyId, academyName) {
+    const res = await this.apiRequest(`/api/central/academies/${academyId}/subscription`);
+    const plansRes = await this.apiRequest('/api/central/plans');
+
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to fetch subscription data', 'danger');
+      return;
+    }
+
+    const { subscription, overrides, quotaSummary, academy } = res;
+    const plans = plansRes.success ? plansRes.plans : [];
+
+    this.openModal(
+      `<i class="fa-solid fa-sliders" style="color: var(--primary);"></i> Subscription & Limits — ${academyName}`,
+      `
+        <div style="margin-bottom: 20px;">
+          <!-- Section 1: Current Plan -->
+          <div style="background: var(--surface-hover); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <div>
+                <span style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600;">Current Plan</span>
+                <div style="font-size: 16px; font-weight: 700; color: var(--text-heading); margin-top: 2px;">
+                  ${subscription ? subscription.plan_name : (academy.plan || 'No Active Plan')}
+                  <span class="badge ${subscription && subscription.status === 'active' ? 'badge-success' : 'badge-secondary'}" style="margin-left: 6px;">
+                    ${subscription ? subscription.status : 'legacy'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Change Plan Form -->
+            <form id="assign-plan-form" style="display: flex; gap: 8px; align-items: flex-end; margin-top: 10px;">
+              <div style="flex: 1;">
+                <label style="font-size: 11px; color: var(--text-muted);">Assign / Change Plan</label>
+                <select id="select-new-plan" class="form-select" style="width: 100%; font-size: 12px;">
+                  ${plans.map(p => `
+                    <option value="${p.id}" ${subscription && subscription.plan_id === p.id ? 'selected' : ''}>
+                      ${p.name} (₹${p.price}/${p.billing_interval}) — ${p.limits.students} students, ${p.limits.branches} branches
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm">Update Plan</button>
+            </form>
+          </div>
+
+          <!-- Section 2: Live Quotas & Current Usage -->
+          <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 10px;">Effective Quotas & Live Usage</h4>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px;">
+            ${Object.entries(quotaSummary || {}).map(([key, q]) => {
+              const labelMap = { users: 'Users', branches: 'Branches', batches: 'Batches', students: 'Students', students_per_batch: 'Batch Capacity', coaches: 'Coaches' };
+              const barColor = q.is_over_limit ? '#ef4444' : (q.percentage > 85 ? '#f59e0b' : '#10b981');
+              return `
+                <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
+                  <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                    <span style="font-weight: 600;">${labelMap[key] || key}</span>
+                    <span><strong>${q.usage}</strong> / ${q.limit}</span>
+                  </div>
+                  <div style="background: rgba(255,255,255,0.08); height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 4px;">
+                    <div style="background: ${barColor}; height: 100%; width: ${Math.min(100, q.percentage)}%;"></div>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim);">
+                    <span>${q.remaining} remaining</span>
+                    ${q.is_over_limit ? '<span style="color: #ef4444; font-weight: 600;"><i class="fa-solid fa-triangle-exclamation"></i> Over Limit</span>' : ''}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+
+          <!-- Section 3: Academy-Specific Limit Overrides -->
+          <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 10px;">Custom Academy Limit Overrides</h4>
+          <form id="add-override-form" style="background: var(--surface-hover); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 14px;">
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+              <div class="form-group">
+                <label style="font-size: 11px;">Resource Quota</label>
+                <select id="ovr-key" class="form-select" style="width: 100%; font-size: 12px;" required>
+                  <option value="users">Users</option>
+                  <option value="branches">Branches</option>
+                  <option value="batches">Batches</option>
+                  <option value="students">Students</option>
+                  <option value="students_per_batch">Students Per Batch</option>
+                  <option value="coaches">Coaches</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label style="font-size: 11px;">Override Value</label>
+                <input type="number" id="ovr-val" class="form-input" style="width: 100%; font-size: 12px;" required min="0" placeholder="e.g. 5">
+              </div>
+              <div class="form-group">
+                <label style="font-size: 11px;">Reason (Mandatory)</label>
+                <input type="text" id="ovr-reason" class="form-input" style="width: 100%; font-size: 12px;" required placeholder="e.g. Growth promo">
+              </div>
+            </div>
+            <div style="text-align: right; margin-top: 8px;">
+              <button type="submit" class="btn btn-primary btn-sm">Apply Override</button>
+            </div>
+          </form>
+
+          <!-- Active Overrides Table -->
+          ${overrides && overrides.length > 0 ? `
+            <div class="table-responsive" style="border: 1px solid var(--border); border-radius: 6px;">
+              <table class="custom-table" style="font-size: 11px;">
+                <thead>
+                  <tr>
+                    <th>Quota Key</th>
+                    <th>Custom Limit</th>
+                    <th>Reason</th>
+                    <th>Applied At</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${overrides.map(o => `
+                    <tr>
+                      <td><strong>${o.quota_key}</strong></td>
+                      <td><span class="badge badge-info">${o.override_value}</span></td>
+                      <td>${o.reason}</td>
+                      <td>${new Date(o.created_at).toLocaleDateString()}</td>
+                      <td>
+                        <button class="btn btn-outline-danger btn-sm" style="font-size: 10px; padding: 2px 6px;" onclick="app.removeOverride(${academyId}, ${o.id}, '${academyName.replace(/'/g, "\\'")}')">
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : '<p style="font-size: 11px; color: var(--text-dim); text-align: center;">No custom overrides active. Effective limits inherit from assigned plan.</p>'}
+
+          <div style="margin-top: 16px; text-align: right; border-top: 1px solid var(--border); padding-top: 12px;">
+            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+          </div>
+        </div>
+      `
+    );
+
+    // Bind Plan Assignment Form
+    document.getElementById('assign-plan-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const planId = Number(document.getElementById('select-new-plan').value);
+      const res = await this.apiRequest(`/api/central/academies/${academyId}/subscription`, {
+        method: 'POST',
+        body: JSON.stringify({ plan_id: planId }),
+      });
+
+      if (res.success) {
+        if (res.overLimitWarnings && res.overLimitWarnings.length > 0) {
+          alert('Warning: New plan limits are lower than existing usage:\n' + res.overLimitWarnings.map(w => w.message).join('\n'));
+        }
+        this.showToast(res.message, 'success');
+        this.showManageSubscriptionModal(academyId, academyName);
+        this.renderCentralAcademies();
+      } else {
+        this.showToast(res.error || 'Failed to update subscription', 'danger');
+      }
+    };
+
+    // Bind Override Form
+    document.getElementById('add-override-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const payload = {
+        quota_key: document.getElementById('ovr-key').value,
+        override_value: Number(document.getElementById('ovr-val').value),
+        reason: document.getElementById('ovr-reason').value.trim(),
+      };
+
+      const res = await this.apiRequest(`/api/central/academies/${academyId}/overrides`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      if (res.success) {
+        if (res.warning) {
+          alert('Notice: ' + res.warning);
+        }
+        this.showToast(res.message, 'success');
+        this.showManageSubscriptionModal(academyId, academyName);
+      } else {
+        this.showToast(res.error || 'Failed to apply override', 'danger');
+      }
+    };
+  },
+
+  async removeOverride(academyId, overrideId, academyName) {
+    if (!confirm('Remove this override and revert limit to the assigned subscription plan value?')) return;
+    const res = await this.apiRequest(`/api/central/academies/${academyId}/overrides/${overrideId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.showManageSubscriptionModal(academyId, academyName);
+    } else {
+      this.showToast(res.error || 'Failed to remove override', 'danger');
+    }
+  },
+
   showProvisionAcademyModal() {
     this.openModal(
       'Provision New Academy Database',
@@ -985,106 +1993,697 @@ const app = {
       return;
     }
 
+    // Synchronize active academy branding if provided
+    if (data.academy) {
+      this.user.academyName = data.academy.name || this.user.academyName;
+      if (data.academy.logo_url) {
+        this.user.academyLogo = data.academy.logo_url;
+      }
+      this.renderSidebarBrand();
+    }
+
     const m = data.metrics;
+    const quotaRes = await this.apiRequest('/api/academy/quota-summary');
+    const quotas = quotaRes.success ? quotaRes.summary : {};
+
+    // Fetch Punch In/Out status if user is staff/coach/admin
+    let punchHtml = '';
+    let punchData = null;
+    if (this.user.role !== 'student') {
+      const punchRes = await this.apiRequest('/api/academy/punches/status');
+      if (punchRes.success) {
+        punchData = punchRes;
+        const isPunchedIn = punchData.isPunchedIn;
+        const stats = punchData.stats;
+        const hoursLogged = Math.floor(stats.totalMinutesToday / 60);
+        const minsLogged = stats.totalMinutesToday % 60;
+        const overtimeHrs = Math.floor(stats.overtimeMinutes / 60);
+        const overtimeMins = stats.overtimeMinutes % 60;
+
+        const inTimeStr = isPunchedIn && punchData.activePunch ? punchData.activePunch.punch_in_time : null;
+        const inTimeFormatted = inTimeStr ? this.parseIsoTime(inTimeStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
+
+        punchHtml = `
+          <div class="punch-card" id="staff-punch-card">
+            <div class="punch-card-header">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <span class="punch-status-badge ${isPunchedIn ? 'on-duty' : 'off-duty'}">
+                  <span class="punch-status-dot"></span>
+                  ${isPunchedIn ? 'On Duty — Active Shift' : 'Off Duty'}
+                </span>
+                <span style="font-size: 13px; color: var(--text-muted);">
+                  ${isPunchedIn && inTimeFormatted 
+                    ? `<i class="fa-solid fa-clock"></i> Punched in at <strong>${inTimeFormatted}</strong>` 
+                    : 'Not currently punched in · Ready for shift'}
+                </span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <button class="btn btn-secondary btn-sm" onclick="app.openPunchHistoryModal()">
+                  <i class="fa-solid fa-list-check"></i> Punch Logs & Overtime
+                </button>
+              </div>
+            </div>
+
+            <div class="punch-main-row">
+              <div>
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 6px; letter-spacing: 0.5px;">
+                  ${isPunchedIn ? '<i class="fa-solid fa-bolt" style="color: #10b981;"></i> Active Running Shift Timer' : '<i class="fa-solid fa-hourglass-start"></i> Shift Clock'}
+                </div>
+                <div class="punch-digital-timer ${isPunchedIn ? '' : 'off'}" id="punch-live-timer" style="${isPunchedIn ? '' : 'color: var(--text-muted); font-size: 32px; letter-spacing: 2px;'}">00:00:00</div>
+                <div id="punch-running-diff" style="font-size: 13px; font-weight: 600; margin-top: 4px; color: ${isPunchedIn ? '#10b981' : 'var(--text-dim)'};">
+                  ${isPunchedIn ? '<i class="fa-solid fa-stopwatch"></i> Elapsed Difference: 0m 0s' : `<i class="fa-regular fa-clock"></i> Total logged today: ${hoursLogged}h ${minsLogged}m`}
+                </div>
+              </div>
+
+              <div class="punch-btn-group">
+                ${isPunchedIn ? `
+                  <button class="btn-punch-out" onclick="app.confirmPunchOut()">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i> Punch Out
+                  </button>
+                ` : `
+                  <button class="btn-punch-in" onclick="app.confirmPunchIn()">
+                    <i class="fa-solid fa-fingerprint"></i> Punch In
+                  </button>
+                `}
+              </div>
+            </div>
+
+            <div class="punch-stats-row">
+              <div class="punch-stat-box">
+                <div class="punch-stat-label">Total Logged Today</div>
+                <div class="punch-stat-val">${hoursLogged}h ${minsLogged}m</div>
+              </div>
+              <div class="punch-stat-box">
+                <div class="punch-stat-label">Shift Hours (Standard)</div>
+                <div class="punch-stat-val">${Math.min(8, hoursLogged)}h / 8h</div>
+              </div>
+              <div class="punch-stat-box">
+                <div class="punch-stat-label">Overtime Hours</div>
+                <div class="punch-stat-val">
+                  ${stats.overtimeMinutes > 0 
+                    ? `<span class="overtime-badge">+${overtimeHrs}h ${overtimeMins}m Overtime</span>` 
+                    : '<span style="color: var(--text-muted); font-size: 14px;">0m</span>'}
+                </div>
+              </div>
+              <div class="punch-stat-box">
+                <div class="punch-stat-label">Today's Sessions</div>
+                <div class="punch-stat-val">${stats.punchesCountToday} Session${stats.punchesCountToday === 1 ? '' : 's'}</div>
+              </div>
+            </div>
+
+            ${punchData.todayPunches && punchData.todayPunches.length > 0 ? `
+              <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                  <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; letter-spacing: 0.5px;">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Today's Punches & Time Difference Breakdown
+                  </span>
+                  <span style="font-size: 11px; color: var(--text-muted);">
+                    ${punchData.todayPunches.length} punch session${punchData.todayPunches.length === 1 ? '' : 's'} recorded today
+                  </span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  ${punchData.todayPunches.map((p, idx) => {
+                    const inDate = app.parseIsoTime(p.punch_in_time);
+                    const inFmt = inDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    const outDate = p.punch_out_time ? app.parseIsoTime(p.punch_out_time) : null;
+                    const outFmt = outDate ? outDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (p.status === 'in_progress' ? '<span style="color: #10b981; font-weight: 600;"><i class="fa-solid fa-circle-dot fa-fade"></i> Active Shift</span>' : '-');
+                    const diffText = p.status === 'in_progress' ? '<span id="punch-session-running-diff" style="color: #10b981; font-weight: 600;">Calculating...</span>' : (p.time_difference_text || `${Math.floor((p.duration_minutes || 0) / 60)}h ${(p.duration_minutes || 0) % 60}m`);
+                    return `
+                      <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 8px 14px; border-radius: 6px; font-size: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                          <span class="badge ${p.status === 'in_progress' ? 'badge-success' : 'badge-info'}" style="font-size: 10px; padding: 2px 6px;">#${idx + 1}</span>
+                          <span><strong>Punch In:</strong> ${inFmt}</span>
+                          <span style="color: var(--text-muted);"><i class="fa-solid fa-arrow-right" style="font-size: 10px;"></i></span>
+                          <span><strong>Punch Out:</strong> ${outFmt}</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                          <span style="font-weight: 600; color: ${p.status === 'in_progress' ? '#10b981' : 'var(--text-heading)'};">
+                            <i class="fa-solid fa-hourglass-half" style="font-size: 11px;"></i> Time Difference: ${diffText}
+                          </span>
+                          ${p.overtime_minutes > 0 ? `<span class="overtime-badge" style="font-size: 10px;">+${p.overtime_minutes}m OT</span>` : ''}
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }
+    }
+
+    // Fetch Today's Scheduled Batches for Quick Attendance
+    const todayBatchesRes = await this.apiRequest('/api/academy/dashboard/today-batches');
+    const todayBatches = (todayBatchesRes && todayBatchesRes.success) ? (todayBatchesRes.batches || []) : [];
+    const todayDateStr = (todayBatchesRes && todayBatchesRes.today) || new Date().toISOString().split('T')[0];
+
+    const isCoach = (this.user.role === 'coach') || (m && m.isCoach);
+
+    // Build Role-Scoped Metrics Cards
+    let metricsCardsHtml = '';
+    if (isCoach) {
+      metricsCardsHtml = `
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon icon-blue"><i class="fa-solid fa-calendar-check"></i></div>
+            <div class="stat-details">
+              <h3>Today's Batches</h3>
+              <div class="stat-value">${m.todayBatchesCount || 0} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Scheduled</span></div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon icon-purple"><i class="fa-solid fa-users"></i></div>
+            <div class="stat-details">
+              <h3>Students to Train Today</h3>
+              <div class="stat-value">${m.studentsToTrainToday || 0} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Active</span></div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon icon-green"><i class="fa-solid fa-clipboard-check"></i></div>
+            <div class="stat-details">
+              <h3>Attendance Status</h3>
+              <div class="stat-value" id="overview-att-status-counter">
+                ${m.todayAttendance ? `${m.todayAttendance.markedBatches} / ${m.todayAttendance.scheduledBatches}` : '0 / 0'}
+                <span style="font-size: 13px; font-weight: 500; color: ${m.todayAttendance && m.todayAttendance.pendingBatches === 0 ? '#10b981' : '#f59e0b'};">
+                  ${m.todayAttendance ? `(${m.todayAttendance.completionRate}%)` : ''}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon icon-amber"><i class="fa-solid fa-user-graduate"></i></div>
+            <div class="stat-details">
+              <h3>Enrolled in My Batches</h3>
+              <div class="stat-value">${m.totalMyStudents || 0} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Students</span></div>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      metricsCardsHtml = `
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon icon-blue"><i class="fa-solid fa-user-graduate"></i></div>
+            <div class="stat-details">
+              <h3>Enrolled Students</h3>
+              <div class="stat-value">${m.totalStudents}</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon icon-purple"><i class="fa-solid fa-user-ninja"></i></div>
+            <div class="stat-details">
+              <h3>Active Coaches</h3>
+              <div class="stat-value">${m.totalCoaches}</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon icon-green"><i class="fa-solid fa-indian-rupee-sign"></i></div>
+            <div class="stat-details">
+              <h3>Fee Collections</h3>
+              <div class="stat-value">₹${m.fees ? m.fees.total_collected.toLocaleString() : '0'}</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon icon-amber"><i class="fa-solid fa-clock"></i></div>
+            <div class="stat-details">
+              <h3>Outstanding Fees</h3>
+              <div class="stat-value">₹${m.fees ? m.fees.total_outstanding.toLocaleString() : '0'}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Build Today's Assigned Batches Widget HTML
+    let todayBatchesHtml = '';
+    if (todayBatches.length === 0) {
+      todayBatchesHtml = `
+        <div style="text-align: center; padding: 36px 18px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: 8px;">
+          <div style="font-size: 32px; color: var(--text-muted); margin-bottom: 8px;"><i class="fa-regular fa-calendar-xmark"></i></div>
+          <h4 style="color: var(--text-heading); font-size: 15px; margin-bottom: 4px;">No Training Batches Scheduled for Today</h4>
+          <p style="font-size: 13px; color: var(--text-muted); max-width: 460px; margin: 0 auto;">
+            ${isCoach ? 'You do not have any batches assigned on today’s schedule.' : 'No batches match today’s day of week or branch schedule.'}
+          </p>
+        </div>
+      `;
+    } else {
+      todayBatchesHtml = `
+        <div class="today-batch-grid">
+          ${todayBatches.map(b => {
+            let statusBadge = '';
+            if (b.attendance_status === 'completed') {
+              statusBadge = `<span class="badge badge-success"><i class="fa-solid fa-circle-check"></i> Attendance Marked</span>`;
+            } else if (b.attendance_status === 'partially_marked') {
+              statusBadge = `<span class="badge badge-warning"><i class="fa-solid fa-circle-half-stroke"></i> Partially Marked (${b.marked_count}/${b.enrolled_count})</span>`;
+            } else if (b.attendance_status === 'in_progress') {
+              statusBadge = `<span class="badge badge-primary"><i class="fa-solid fa-circle-dot fa-fade"></i> Active Session Now</span>`;
+            } else if (b.attendance_status === 'upcoming') {
+              statusBadge = `<span class="badge badge-info"><i class="fa-solid fa-clock"></i> Upcoming</span>`;
+            } else {
+              statusBadge = `<span class="badge badge-danger"><i class="fa-solid fa-triangle-exclamation"></i> Not Marked</span>`;
+            }
+
+            const isDone = b.attendance_status === 'completed';
+
+            return `
+              <div class="today-batch-card status-${b.attendance_status}" id="today-batch-card-${b.id}">
+                <div>
+                  <div class="today-batch-header">
+                    <div>
+                      <div class="today-batch-title">${b.name}</div>
+                      <div class="today-batch-meta">
+                        <span><i class="fa-solid fa-medal" style="color: var(--primary);"></i> ${b.sport_name || 'Sport'}</span>
+                        <span>•</span>
+                        <span><i class="fa-solid fa-location-dot"></i> ${b.branch_name || 'Main Campus'}</span>
+                        ${!isCoach && b.coach_name ? `<span>•</span><span><i class="fa-solid fa-user-ninja"></i> ${b.coach_name}</span>` : ''}
+                      </div>
+                    </div>
+                    <div id="batch-badge-container-${b.id}">
+                      ${statusBadge}
+                    </div>
+                  </div>
+
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px;">
+                    <div class="today-batch-timing">
+                      <i class="fa-regular fa-clock"></i> ${b.start_time} – ${b.end_time}
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-muted); font-weight: 600;">
+                      <i class="fa-solid fa-users"></i> ${b.enrolled_count} Active Student${b.enrolled_count === 1 ? '' : 's'}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="today-batch-footer">
+                  <div style="font-size: 11px; color: var(--text-dim);">
+                    ${isDone ? `<span style="color: #10b981; font-weight: 600;"><i class="fa-solid fa-check"></i> ${b.present_count || b.marked_count} Present · ${b.absent_count || 0} Absent</span>` : 'Pending attendance submission'}
+                  </div>
+                  <div>
+                    ${isDone ? `
+                      <button class="btn btn-secondary btn-sm" onclick="app.openQuickAttendanceModal(${b.id}, '${b.name.replace(/'/g, "\\'")}', true)">
+                        <i class="fa-solid fa-pen-to-square"></i> View / Edit
+                      </button>
+                    ` : `
+                      <button class="btn btn-primary btn-sm" onclick="app.openQuickAttendanceModal(${b.id}, '${b.name.replace(/'/g, "\\'")}', false)">
+                        <i class="fa-solid fa-clipboard-user"></i> Take Attendance
+                      </button>
+                    `}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
     content.innerHTML = `
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-icon icon-blue"><i class="fa-solid fa-user-graduate"></i></div>
-          <div class="stat-details">
-            <h3>Enrolled Students</h3>
-            <div class="stat-value">${m.totalStudents}</div>
+      ${punchHtml}
+
+      ${metricsCardsHtml}
+
+      <!-- Today's Assigned Batches (Direct Attendance Widget) -->
+      <div class="content-card" style="margin-bottom: 24px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 class="card-title">
+              <i class="fa-solid fa-calendar-day" style="color: var(--primary);"></i> Today's Assigned Batches & Quick Attendance
+            </h2>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+              Date: <strong>${todayDateStr}</strong> · Role-scoped scheduled sessions with direct 1-click attendance marking
+            </p>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="app.renderAcademyOverview()">
+              <i class="fa-solid fa-rotate"></i> Refresh Schedule
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="app.navigate('attendance')">
+              <i class="fa-solid fa-table-list"></i> Full Attendance Sheet
+            </button>
           </div>
         </div>
-        <div class="stat-card">
-          <div class="stat-icon icon-purple"><i class="fa-solid fa-user-ninja"></i></div>
-          <div class="stat-details">
-            <h3>Active Coaches</h3>
-            <div class="stat-value">${m.totalCoaches}</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon icon-green"><i class="fa-solid fa-indian-rupee-sign"></i></div>
-          <div class="stat-details">
-            <h3>Fee Collections</h3>
-            <div class="stat-value">₹${m.fees.total_collected.toLocaleString()}</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon icon-amber"><i class="fa-solid fa-clock"></i></div>
-          <div class="stat-details">
-            <h3>Outstanding Fees</h3>
-            <div class="stat-value">₹${m.fees.total_outstanding.toLocaleString()}</div>
-          </div>
+        <div style="padding: 16px 20px;">
+          ${todayBatchesHtml}
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+      <div style="display: grid; grid-template-columns: ${isCoach ? '1fr' : '2fr 1fr'}; gap: 24px;">
         <div class="content-card">
           <div class="card-header">
-            <h2 class="card-title"><i class="fa-solid fa-clipboard-user" style="color: var(--secondary);"></i> Today's Attendance</h2>
-            <button class="btn btn-primary btn-sm" onclick="app.navigate('attendance')">Mark Attendance</button>
+            <h2 class="card-title"><i class="fa-solid fa-clipboard-user" style="color: var(--secondary);"></i> Overall Attendance Summary</h2>
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('attendance')">Detailed Sheet</button>
           </div>
           <div style="padding: 24px; display: flex; align-items: center; justify-content: space-around; text-align: center;">
             <div>
-              <div style="font-size: 28px; font-weight: 700; color: var(--text-heading);">${m.todayAttendance.marked}</div>
+              <div style="font-size: 28px; font-weight: 700; color: var(--text-heading);">${(m.todayAttendance && m.todayAttendance.marked) || 0}</div>
               <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Total Marked</div>
             </div>
             <div>
-              <div style="font-size: 28px; font-weight: 700; color: #10b981;">${m.todayAttendance.present}</div>
+              <div style="font-size: 28px; font-weight: 700; color: #10b981;">${(m.todayAttendance && m.todayAttendance.present) || 0}</div>
               <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Present</div>
             </div>
             <div>
-              <div style="font-size: 28px; font-weight: 700; color: #ef4444;">${m.todayAttendance.absent}</div>
+              <div style="font-size: 28px; font-weight: 700; color: #ef4444;">${(m.todayAttendance && m.todayAttendance.absent) || 0}</div>
               <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Absent</div>
             </div>
           </div>
         </div>
 
-        <div class="content-card">
+        ${!isCoach ? `
+          <div class="content-card">
+            <div class="card-header">
+              <h2 class="card-title"><i class="fa-solid fa-download"></i> Tenant Database Backup</h2>
+            </div>
+            <div style="padding: 20px;">
+              <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+                Download a complete standalone ZIP backup of this academy's isolated SQLite database.
+              </p>
+              <a href="/api/academy/backup" class="btn btn-secondary" style="width: 100%; justify-content: center;" download>
+                <i class="fa-solid fa-file-zipper"></i> Download academy_${data.academy.id}.db ZIP
+              </a>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+
+      <!-- Subscription Quota Capacity (Read-Only) -->
+      ${!isCoach ? `
+        <div class="content-card" style="margin-top: 24px;">
           <div class="card-header">
-            <h2 class="card-title"><i class="fa-solid fa-download"></i> Tenant Database Backup</h2>
+            <div>
+              <h2 class="card-title"><i class="fa-solid fa-sliders" style="color: var(--primary);"></i> Subscription Quota Capacity</h2>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Server-side capacity limits enforced under your SaaS plan</p>
+            </div>
+            <div>
+              <span class="badge badge-info" style="font-size: 11px;"><i class="fa-solid fa-lock"></i> Central Admin Managed</span>
+            </div>
           </div>
           <div style="padding: 20px;">
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
-              Download a complete standalone ZIP backup of this academy's isolated SQLite database.
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;">
+              ${Object.entries(quotas).map(([k, q]) => `
+                <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+                  <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;">
+                    <span style="font-weight: 600; text-transform: capitalize;">${k.replace(/_/g, ' ')}</span>
+                    <span><strong>${q.usage}</strong> / ${q.limit}</span>
+                  </div>
+                  <div style="background: rgba(255,255,255,0.08); height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 6px;">
+                    <div style="background: ${q.is_over_limit ? '#ef4444' : (q.percentage > 85 ? '#f59e0b' : '#10b981')}; height: 100%; width: ${Math.min(100, q.percentage)}%;"></div>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim);">
+                    <span>${q.remaining} remaining</span>
+                    ${q.is_over_limit ? '<span style="color: #ef4444; font-weight: 600;"><i class="fa-solid fa-triangle-exclamation"></i> Over Limit</span>' : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            <p style="font-size: 11px; color: var(--text-dim); margin-top: 14px; margin-bottom: 0;">
+              <i class="fa-solid fa-circle-info"></i> Quota limits are configured by the Super Admin. Contact your platform administrator to request increases.
             </p>
-            <a href="/api/academy/backup" class="btn btn-secondary" style="width: 100%; justify-content: center;" download>
-              <i class="fa-solid fa-file-zipper"></i> Download academy_${data.academy.id}.db ZIP
-            </a>
           </div>
         </div>
+      ` : ''}
+    `;
+
+    // Initialize timer if punched in
+    if (punchData && punchData.isPunchedIn && punchData.activePunch) {
+      this.startPunchClock(punchData.activePunch.punch_in_time);
+    } else {
+      if (this.punchTimerInterval) {
+        clearInterval(this.punchTimerInterval);
+        this.punchTimerInterval = null;
+      }
+      const timerEl = document.getElementById('punch-live-timer');
+      if (timerEl) timerEl.innerText = '00:00:00';
+    }
+  },
+
+  parseIsoTime(str) {
+    if (!str) return new Date();
+    const s = String(str).trim();
+    if (s.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(s)) {
+      return new Date(s);
+    }
+    return new Date(s.replace(' ', 'T') + 'Z');
+  },
+
+  startPunchClock(inTimeString) {
+    if (this.punchTimerInterval) {
+      clearInterval(this.punchTimerInterval);
+      this.punchTimerInterval = null;
+    }
+
+    const timerEl = document.getElementById('punch-live-timer');
+    if (!timerEl) return;
+
+    const inTime = this.parseIsoTime(inTimeString).getTime();
+
+    const updateClock = () => {
+      const now = Date.now();
+      const diffSec = Math.max(0, Math.floor((now - inTime) / 1000));
+      const h = String(Math.floor(diffSec / 3600)).padStart(2, '0');
+      const m = String(Math.floor((diffSec % 3600) / 60)).padStart(2, '0');
+      const s = String(diffSec % 60).padStart(2, '0');
+      const el = document.getElementById('punch-live-timer');
+      if (el) {
+        el.innerText = `${h}:${m}:${s}`;
+        const diffBadge = document.getElementById('punch-running-diff');
+        if (diffBadge) {
+          const hours = Math.floor(diffSec / 3600);
+          const minutes = Math.floor((diffSec % 3600) / 60);
+          const seconds = diffSec % 60;
+          diffBadge.innerHTML = `<i class="fa-solid fa-stopwatch"></i> Elapsed Difference: <strong>${hours > 0 ? `${hours}h ` : ''}${minutes}m ${seconds}s</strong>`;
+        }
+        const sessionDiff = document.getElementById('punch-session-running-diff');
+        if (sessionDiff) {
+          const hours = Math.floor(diffSec / 3600);
+          const minutes = Math.floor((diffSec % 3600) / 60);
+          const seconds = diffSec % 60;
+          sessionDiff.innerText = `${hours > 0 ? `${hours}h ` : ''}${minutes}m ${seconds}s`;
+        }
+      } else {
+        clearInterval(this.punchTimerInterval);
+        this.punchTimerInterval = null;
+      }
+    };
+
+    updateClock();
+    this.punchTimerInterval = setInterval(updateClock, 1000);
+  },
+
+  async confirmPunchIn() {
+    const res = await this.apiRequest('/api/academy/punches/in', {
+      method: 'POST',
+      body: JSON.stringify({ punch_type: 'duty' }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Punched in successfully', 'success');
+      this.renderAcademyOverview();
+    } else {
+      this.showToast(res.error || 'Failed to punch in', 'danger');
+    }
+  },
+
+  async confirmPunchOut() {
+    if (this.punchTimerInterval) {
+      clearInterval(this.punchTimerInterval);
+      this.punchTimerInterval = null;
+    }
+
+    const res = await this.apiRequest('/api/academy/punches/out', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    if (res.success) {
+      const durText = res.timeDifferenceFormatted || `${Math.floor((res.durationMinutes || 0) / 60)}h ${(res.durationMinutes || 0) % 60}m`;
+      let msg = `Punched out successfully. Session time difference: ${durText}`;
+      if (res.overtimeMinutes > 0) {
+        msg += ` (+${Math.floor(res.overtimeMinutes / 60)}h ${res.overtimeMinutes % 60}m overtime!)`;
+      }
+      this.showToast(msg, 'success');
+      this.renderAcademyOverview();
+    } else {
+      this.showToast(res.error || 'Failed to punch out', 'danger');
+    }
+  },
+
+  async openPunchHistoryModal() {
+    const isManager = this.user.isSuperAdmin || this.user.role === 'academy_admin' || (this.user.permissions && this.user.permissions.includes('view_coaches'));
+    const url = isManager ? '/api/academy/punches/history?all=true' : '/api/academy/punches/history';
+    const res = await this.apiRequest(url);
+
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to load punch logs', 'danger');
+      return;
+    }
+
+    const punches = res.punches || [];
+    let bodyHtml = `
+      <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 13px; color: var(--text-muted);">
+          Showing recent time punch records ${isManager ? '(Academy Staff & Coaches)' : '(My Personal Logs)'}
+        </span>
+      </div>
+      <div style="max-height: 400px; overflow-y: auto;">
+        <table class="punch-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              ${isManager ? '<th>Staff</th>' : ''}
+              <th>Punch In</th>
+              <th>Punch Out</th>
+              <th>Time Difference</th>
+              <th>Overtime</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${punches.length === 0 ? `
+              <tr><td colspan="${isManager ? '7' : '6'}" style="text-align: center; padding: 24px; color: var(--text-muted);">No punch records found.</td></tr>
+            ` : punches.map(p => {
+              const inDate = p.punch_in_time ? this.parseIsoTime(p.punch_in_time) : null;
+              const inTime = inDate ? inDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+              const outDate = p.punch_out_time ? this.parseIsoTime(p.punch_out_time) : null;
+              const outTime = outDate ? outDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (p.status === 'in_progress' ? '<span style="color: #10b981; font-weight: 600;"><i class="fa-solid fa-spinner fa-spin" style="font-size: 11px;"></i> Active Now</span>' : '-');
+              const hrs = Math.floor((p.duration_minutes || 0) / 60);
+              const mins = (p.duration_minutes || 0) % 60;
+              const durText = p.status === 'in_progress' 
+                ? '<span style="color: #10b981; font-weight: 600;">Running Live</span>' 
+                : (p.time_difference_text || `${hrs}h ${mins}m`);
+              const otText = p.overtime_minutes > 0 ? `<span class="overtime-badge">+${Math.floor(p.overtime_minutes / 60)}h ${p.overtime_minutes % 60}m</span>` : '<span style="color: var(--text-dim);">-</span>';
+
+              return `
+                <tr>
+                  <td><strong>${p.punch_date}</strong></td>
+                  ${isManager ? `<td>${p.user_name} <span style="font-size: 10px; color: var(--text-muted);">(${p.user_role})</span></td>` : ''}
+                  <td>${inTime}</td>
+                  <td>${outTime}</td>
+                  <td><strong style="color: ${p.status === 'in_progress' ? '#10b981' : 'inherit'};">${durText}</strong></td>
+                  <td>${otText}</td>
+                  <td>
+                    <span class="badge ${p.status === 'in_progress' ? 'badge-success' : 'badge-info'}" style="font-size: 11px;">
+                      ${p.status === 'in_progress' ? 'On Duty' : 'Completed'}
+                    </span>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
       </div>
     `;
+
+    const footerHtml = `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+    `;
+
+    this.openModal('Staff Time Punch & Overtime Logs', bodyHtml, footerHtml);
   },
 
   // STUDENTS
   async renderStudents() {
-    const data = await this.apiRequest('/api/academy/students');
     const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
 
-    const students = data.students || [];
+    const params = new URLSearchParams();
+    params.set('page', this.studentFilters.page || 1);
+    params.set('limit', this.studentFilters.limit || 15);
+    if (this.studentFilters.search) params.set('search', this.studentFilters.search);
+    if (this.studentFilters.branch_id) params.set('branch_id', this.studentFilters.branch_id);
+    if (this.studentFilters.batch_id) params.set('batch_id', this.studentFilters.batch_id);
+    if (this.studentFilters.status) params.set('status', this.studentFilters.status);
+
+    const [data, branches, batches] = await Promise.all([
+      this.apiRequest(`/api/academy/students?${params.toString()}`),
+      this.getCachedBranches(),
+      this.getCachedBatches(),
+    ]);
+
+    const students = (data && data.students) || [];
+    const totalCount = data?.total !== undefined ? data.total : students.length;
+
+    // Filter available batches by selected branch if any
+    const availableBatches = this.studentFilters.branch_id
+      ? batches.filter(b => String(b.branch_id) === String(this.studentFilters.branch_id))
+      : batches;
 
     content.innerHTML = `
       <div class="content-card">
-        <div class="card-header">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <div style="display: flex; align-items: center; gap: 12px;">
-            <h2 class="card-title"><i class="fa-solid fa-users"></i> Student Roster (${students.length})</h2>
+            <h2 class="card-title"><i class="fa-solid fa-users"></i> Student Roster (${totalCount})</h2>
           </div>
-          <div class="card-actions">
-            <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsExcel()">
-              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Excel (SheetJS)
+          <div class="card-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="app.downloadStudentSampleCsv()">
+              <i class="fa-solid fa-download"></i> Sample CSV
             </button>
-            <button class="btn btn-primary btn-sm" onclick="app.showAddStudentModal()">
-              <i class="fa-solid fa-plus"></i> Enroll Student
+            <button class="btn btn-secondary btn-sm" onclick="app.showImportStudentsModal()">
+              <i class="fa-solid fa-file-import"></i> Import CSV/Excel
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsExcel()">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Excel
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="app.openAdmissionWizard()">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Admission Wizard
+            </button>
+            <button class="btn btn-outline-primary btn-sm" onclick="app.showAddStudentModal()">
+              <i class="fa-solid fa-plus"></i> Quick Enroll
             </button>
           </div>
         </div>
 
-        <div class="table-responsive">
+        <!-- Universal Filter Bar -->
+        <div class="page-filter-bar" style="margin: 16px 20px 0 20px;">
+          <div class="filter-group" style="min-width: 220px;">
+            <input type="text" id="student-search-input" class="filter-input"
+                   placeholder="Search student, code, adm #, phone, email..."
+                   value="${this.escapeHtml(this.studentFilters.search || '')}"
+                   onkeyup="if(event.key==='Enter') app.applyStudentFilters()">
+          </div>
+          <div class="filter-group" style="min-width: 150px;">
+            <select id="student-branch-filter" class="filter-select" onchange="app.onStudentBranchChange(this.value)">
+              <option value="">All Branches</option>
+              ${branches.map(b => `
+                <option value="${b.id}" ${String(this.studentFilters.branch_id) === String(b.id) ? 'selected' : ''}>
+                  ${this.escapeHtml(b.name)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 150px;">
+            <select id="student-batch-filter" class="filter-select" onchange="app.applyStudentFilters()">
+              <option value="">All Batches</option>
+              ${availableBatches.map(b => `
+                <option value="${b.id}" ${String(this.studentFilters.batch_id) === String(b.id) ? 'selected' : ''}>
+                  ${this.escapeHtml(b.name)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 130px;">
+            <select id="student-status-filter" class="filter-select" onchange="app.applyStudentFilters()">
+              <option value="" ${!this.studentFilters.status ? 'selected' : ''}>All Statuses</option>
+              <option value="active" ${this.studentFilters.status === 'active' ? 'selected' : ''}>Active</option>
+              <option value="inactive" ${this.studentFilters.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+              <option value="suspended" ${this.studentFilters.status === 'suspended' ? 'selected' : ''}>Suspended</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.applyStudentFilters()">
+              <i class="fa-solid fa-filter"></i> Filter
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetStudentFilters()">
+              <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="margin-top: 14px;">
           <table class="custom-table" id="students-table">
             <thead>
               <tr>
-                <th>Code</th>
+                <th>Code & Adm #</th>
                 <th>Student Name</th>
                 <th>Guardian & Phone</th>
                 <th>Branch</th>
@@ -1095,45 +2694,73 @@ const app = {
               </tr>
             </thead>
             <tbody>
-              ${students.map(s => `
+              ${students.length === 0 ? `
                 <tr>
-                  <td><code>${s.student_code}</code></td>
+                  <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 36px;">
+                    <i class="fa-solid fa-user-slash fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+                    No students match the current filters. Click "Reset" or "+ Admission Wizard" to enroll a student.
+                  </td>
+                </tr>
+              ` : students.map(s => `
+                <tr>
                   <td>
-                    <strong>${s.first_name} ${s.last_name}</strong>
-                    <div style="font-size: 11px; color: var(--text-muted);">${s.email || '-'}</div>
+                    <code>${this.escapeHtml(s.student_code || '')}</code>
+                    ${s.admission_number ? `
+                      <div style="margin-top: 2px;">
+                        <span class="badge badge-secondary" style="font-size: 10px; padding: 2px 5px;" title="Admission Number">
+                          Adm #${this.escapeHtml(s.admission_number)}
+                        </span>
+                      </div>
+                    ` : ''}
                   </td>
                   <td>
-                    ${s.guardian_name || '-'}
-                    <div style="font-size: 11px; color: var(--text-muted);">${s.phone || '-'}</div>
+                    <strong>${this.escapeHtml(s.first_name || '')} ${this.escapeHtml(s.last_name || '')}</strong>
+                    <div style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(s.email || '-')}</div>
                   </td>
-                  <td>${s.branch_name || 'Main Campus'}</td>
+                  <td>
+                    ${this.escapeHtml(s.guardian_name || s.father_name || s.mother_name || '-')}
+                    <div style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(s.phone || '-')}</div>
+                  </td>
+                  <td>${this.escapeHtml(s.branch_name || 'Main Campus')}</td>
                   <td>
                     ${s.active_batch_name ? `
                       <span class="badge badge-info" title="Enrolled: ${s.batch_enrolled_date || 'N/A'}">
-                        ${s.active_batch_name}
+                        ${this.escapeHtml(s.active_batch_name)}
                       </span>
                     ` : '<span style="color: var(--text-dim); font-size: 12px;">Unassigned</span>'}
                   </td>
                   <td>
                     ${s.active_technique_name ? `
                       <span class="badge badge-purple" title="Level ${s.active_technique_level} • ${s.active_technique_belt_level || 'General'}">
-                        <i class="fa-solid fa-medal"></i> ${s.active_technique_name}
+                        <i class="fa-solid fa-medal"></i> ${this.escapeHtml(s.active_technique_name)}
                       </span>
                       <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
                         Lvl ${s.active_technique_level} ${s.active_technique_belt_level ? '• ' + s.active_technique_belt_level : ''} • ${s.active_technique_sessions || 0} sessions
                       </div>
                     ` : '<span style="color: var(--text-dim); font-size: 12px;">No Technique</span>'}
                   </td>
-                  <td><span class="badge badge-success">${s.status}</span></td>
                   <td>
-                    <div style="display: flex; gap: 6px;">
-                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentTechniqueModal(${s.id}, '${s.first_name} ${s.last_name}')" title="Syllabus Technique Progression">
+                    <span class="badge ${s.status === 'active' ? 'badge-success' : (s.status === 'suspended' ? 'badge-danger' : 'badge-warning')}">
+                      ${this.escapeHtml(s.status)}
+                    </span>
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentTechniqueModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Syllabus Technique Progression">
                         <i class="fa-solid fa-graduation-cap" style="color: #a855f7;"></i> Syllabus
                       </button>
-                      <button class="btn btn-primary btn-sm" onclick="app.showTransferBatchModal(${s.id}, '${s.first_name} ${s.last_name}', '${s.active_batch_name || 'None'}')" title="Transfer to New Batch">
+                      <button class="btn btn-primary btn-sm" onclick="app.showTransferBatchModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.active_batch_name || 'None')}')" title="Transfer to New Batch">
                         <i class="fa-solid fa-right-left"></i> Transfer
                       </button>
-                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentBatchHistory(${s.id}, '${s.first_name} ${s.last_name}')" title="View Batch History">
+                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentChecklistModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Admission Checklist & Documents">
+                        <i class="fa-solid fa-list-check"></i> Checklist
+                      </button>
+                      ${s.status !== 'active' ? `
+                        <button class="btn btn-success btn-sm" onclick="app.openRejoinModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Reactivate Student">
+                          <i class="fa-solid fa-user-plus"></i> Rejoin
+                        </button>
+                      ` : ''}
+                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentBatchHistory(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="View Batch History">
                         <i class="fa-solid fa-clock-rotate-left"></i>
                       </button>
                     </div>
@@ -1143,10 +2770,45 @@ const app = {
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination Controls -->
+        ${this.renderPaginationHtml(data, 'app.onStudentPageChange', 'app.onStudentLimitChange')}
       </div>
     `;
 
     this.currentStudentsData = students;
+  },
+
+  applyStudentFilters() {
+    this.studentFilters.search = document.getElementById('student-search-input')?.value?.trim() || '';
+    this.studentFilters.branch_id = document.getElementById('student-branch-filter')?.value || '';
+    this.studentFilters.batch_id = document.getElementById('student-batch-filter')?.value || '';
+    this.studentFilters.status = document.getElementById('student-status-filter')?.value || '';
+    this.studentFilters.page = 1;
+    this.renderStudents();
+  },
+
+  onStudentBranchChange(branchId) {
+    this.studentFilters.branch_id = branchId;
+    this.studentFilters.batch_id = '';
+    this.studentFilters.page = 1;
+    this.renderStudents();
+  },
+
+  resetStudentFilters() {
+    this.studentFilters = { page: 1, limit: this.studentFilters.limit || 15, search: '', branch_id: '', batch_id: '', status: '' };
+    this.renderStudents();
+  },
+
+  onStudentPageChange(p) {
+    this.studentFilters.page = p;
+    this.renderStudents();
+  },
+
+  onStudentLimitChange(l) {
+    this.studentFilters.limit = l;
+    this.studentFilters.page = 1;
+    this.renderStudents();
   },
 
   async showTransferBatchModal(studentId, studentName, currentBatchName) {
@@ -1262,7 +2924,7 @@ const app = {
     );
   },
 
-  async showAddStudentModal() {
+  async showAddStudentModal(preselectedBranchId = null) {
     const [branchesData, batchesData] = await Promise.all([
       this.apiRequest('/api/academy/branches'),
       this.apiRequest('/api/academy/batches'),
@@ -1272,6 +2934,9 @@ const app = {
     const batches = batchesData.batches || [];
     window._cachedBatchesForStudentForm = batches;
 
+    const pending = window._pendingStudentFormState || null;
+    window._pendingStudentFormState = null;
+
     this.openModal(
       'Enroll New Student',
       `
@@ -1279,40 +2944,50 @@ const app = {
           <div class="form-grid">
             <div class="form-group">
               <label>First Name *</label>
-              <input type="text" id="stu-fn" class="form-input" style="width: 100%;" required>
+              <input type="text" id="stu-fn" class="form-input" style="width: 100%;" value="${pending ? pending.first_name : ''}" required>
             </div>
             <div class="form-group">
               <label>Last Name *</label>
-              <input type="text" id="stu-ln" class="form-input" style="width: 100%;" required>
+              <input type="text" id="stu-ln" class="form-input" style="width: 100%;" value="${pending ? pending.last_name : ''}" required>
             </div>
           </div>
           <div class="form-grid">
             <div class="form-group">
               <label>Email</label>
-              <input type="email" id="stu-email" class="form-input" style="width: 100%;">
+              <input type="email" id="stu-email" class="form-input" style="width: 100%;" value="${pending ? pending.email : ''}">
             </div>
             <div class="form-group">
               <label>Phone</label>
-              <input type="text" id="stu-phone" class="form-input" style="width: 100%;">
+              <input type="text" id="stu-phone" class="form-input" style="width: 100%;" value="${pending ? pending.phone : ''}">
             </div>
           </div>
           <div class="form-grid">
             <div class="form-group">
               <label>Guardian Name</label>
-              <input type="text" id="stu-guardian" class="form-input" style="width: 100%;">
+              <input type="text" id="stu-guardian" class="form-input" style="width: 100%;" value="${pending ? pending.guardian_name : ''}">
             </div>
             <div class="form-group">
               <label>Date of Birth</label>
-              <input type="date" id="stu-dob" class="form-input" style="width: 100%;">
+              <input type="date" id="stu-dob" class="form-input" style="width: 100%;" value="${pending ? pending.date_of_birth : ''}">
             </div>
           </div>
           <div class="form-grid">
             <div class="form-group">
-              <label>Academy Branch *</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="margin: 0;">Academy Branch *</label>
+                <button type="button" class="btn btn-sm btn-outline" style="padding: 1px 7px; font-size: 0.72rem; line-height: 1.4;" onclick="app.showAddBranchModal('stu-branch')">
+                  <i class="fa-solid fa-plus"></i> New Branch
+                </button>
+              </div>
               <select id="stu-branch" class="form-select" style="width: 100%;" onchange="app.onStudentBranchChange(this.value)">
                 <option value="">-- Select Branch --</option>
-                ${branches.map(b => `<option value="${b.id}">${b.name} (${b.city || 'Campus'})</option>`).join('')}
+                ${branches.map(b => `<option value="${b.id}" ${(preselectedBranchId && Number(b.id) === Number(preselectedBranchId)) || (branches.length === 1) ? 'selected' : ''}>${b.name} (${b.city || 'Campus'})</option>`).join('')}
               </select>
+              ${branches.length === 0 ? `
+                <div style="margin-top: 6px; padding: 6px 10px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); border-radius: 4px; font-size: 0.8rem; color: #dc2626;">
+                  <i class="fa-solid fa-triangle-exclamation"></i> No branches found. Click <strong>+ New Branch</strong> to create one.
+                </div>
+              ` : ''}
             </div>
             <div class="form-group">
               <label>Active Training Batch (Optional)</label>
@@ -1406,24 +3081,500 @@ const app = {
     this.showToast('Excel report generated via SheetJS', 'success');
   },
 
-  // FEES & INVOICES
-  async renderFees() {
-    const data = await this.apiRequest('/api/academy/fees');
-    const content = document.getElementById('page-content');
-    const fees = data.fees || [];
+  downloadStudentSampleCsv() {
+    const csvContent = 'first_name,last_name,email,phone,date_of_birth,gender,emergency_contact,branch_id,batch_id\n' +
+      'Aarav,Patel,aarav.patel@example.com,9876543210,2010-05-15,male,9876543211,1,1\n' +
+      'Diya,Shah,diya.shah@example.com,9876543212,2012-08-20,female,9876543213,1,1\n';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'students_import_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    this.showToast('Sample CSV template downloaded', 'success');
+  },
 
-    content.innerHTML = `
-      <div class="content-card">
-        <div class="card-header">
-          <h2 class="card-title"><i class="fa-solid fa-file-invoice-dollar"></i> Student Invoices & Fee Collections</h2>
-          <div class="card-actions">
-            <button class="btn btn-secondary btn-sm" onclick="app.exportFeesExcel()">
-              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Excel (SheetJS)
+  async showImportStudentsModal() {
+    this._pendingImportStudents = [];
+    let branches = [];
+    let batches = [];
+    try {
+      const brRes = await this.apiRequest('/api/academy/branches');
+      branches = brRes.branches || [];
+      const btRes = await this.apiRequest('/api/academy/batches');
+      batches = btRes.batches || [];
+    } catch (e) {
+      console.warn('Failed to load branches/batches for import modal', e);
+    }
+
+    const branchListHtml = branches.map(b => `<code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">ID ${b.id}: ${b.name}</code>`).join(' ') || '<em>No branches created yet</em>';
+    const batchListHtml = batches.map(b => `<code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">ID ${b.id}: ${b.name} (Branch ${b.branch_id})</code>`).join(' ') || '<em>No batches created yet</em>';
+
+    this.showModal('Import Students (CSV / Excel)', `
+      <div>
+        <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: var(--radius-md); padding: 12px; margin-bottom: 16px; font-size: 13px;">
+          <div style="font-weight: 600; margin-bottom: 6px;"><i class="fa-solid fa-circle-info"></i> CSV Format & Requirements:</div>
+          <p style="margin: 0 0 8px 0; color: var(--text-muted);">
+            Column headers must include: <strong>first_name, last_name, email, phone, date_of_birth, gender, emergency_contact, branch_id, batch_id</strong>.
+          </p>
+          <div style="font-size: 12px; line-height: 1.6;">
+            <div><strong>Active Branches:</strong> ${branchListHtml}</div>
+            <div style="margin-top: 4px;"><strong>Active Batches:</strong> ${batchListHtml}</div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <label style="font-weight: 600; margin: 0; font-size: 13px;">Upload CSV or Excel File</label>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.downloadStudentSampleCsv()">
+            <i class="fa-solid fa-download"></i> Sample CSV
+          </button>
+        </div>
+
+        <div class="form-group">
+          <input type="file" id="import-student-file" class="form-input" accept=".csv, .xlsx, .xls" onchange="app.handleStudentImportFile(event)">
+        </div>
+
+        <div class="form-group">
+          <label style="font-size: 12px; color: var(--text-muted);">Or Paste Raw CSV Data Directly</label>
+          <textarea id="import-student-raw" class="form-textarea" rows="3" style="font-family: monospace; font-size: 12px;" placeholder="first_name,last_name,email,phone,date_of_birth,gender,emergency_contact,branch_id,batch_id&#10;Aarav,Patel,aarav@example.com,9876543210,2010-05-15,male,9876543211,1,1" oninput="app.handleStudentImportRaw(this.value)"></textarea>
+        </div>
+
+        <div id="import-preview-container" style="display: none; margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <h4 style="font-size: 13px; font-weight: 600; margin: 0;">
+              <i class="fa-solid fa-list-check" style="color: #10b981;"></i> Parsed Preview (<span id="import-preview-count">0</span> records)
+            </h4>
+          </div>
+          <div class="table-responsive" style="max-height: 160px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+            <table class="custom-table" style="font-size: 11px; margin: 0;" id="import-preview-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Student Name</th>
+                  <th>Phone / Email</th>
+                  <th>Branch ID</th>
+                  <th>Batch ID</th>
+                </tr>
+              </thead>
+              <tbody id="import-preview-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btn-submit-import" onclick="app.submitStudentImport()" disabled>
+            <i class="fa-solid fa-upload"></i> Import Students
+          </button>
+        </div>
+      </div>
+    `);
+  },
+
+  handleStudentImportFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target.result;
+        let jsonRows = [];
+        if (file.name.endsWith('.csv') || file.type === 'text/csv') {
+          jsonRows = this.parseCsvToJson(data);
+        } else if (typeof XLSX !== 'undefined') {
+          const workbook = XLSX.read(data, { type: 'binary' });
+          const firstSheet = workbook.SheetNames[0];
+          jsonRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
+        } else {
+          jsonRows = this.parseCsvToJson(data);
+        }
+        this.processImportRows(jsonRows);
+      } catch (err) {
+        this.showToast('Failed to parse file: ' + err.message, 'danger');
+      }
+    };
+
+    if (file.name.endsWith('.csv') || file.type === 'text/csv') {
+      reader.readAsText(file);
+    } else {
+      reader.readAsBinaryString(file);
+    }
+  },
+
+  handleStudentImportRaw(text) {
+    if (!text || !text.trim()) {
+      this.processImportRows([]);
+      return;
+    }
+    const jsonRows = this.parseCsvToJson(text);
+    this.processImportRows(jsonRows);
+  },
+
+  parseCsvToJson(csvText) {
+    const lines = csvText.trim().split(/\r\n|\n/).filter(l => l.trim().length > 0);
+    if (lines.length < 2) return [];
+
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase());
+    const rows = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const currentline = lines[i].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
+      if (currentline.length === 0 || (currentline.length === 1 && !currentline[0])) continue;
+      const obj = {};
+      for (let j = 0; j < headers.length; j++) {
+        obj[headers[j]] = currentline[j] || '';
+      }
+      rows.push(obj);
+    }
+    return rows;
+  },
+
+  processImportRows(rows) {
+    const normalized = rows.map(r => {
+      const getVal = (keys) => {
+        for (const k of keys) {
+          if (r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') {
+            return String(r[k]).trim();
+          }
+          const lowerK = k.toLowerCase().replace(/[\s_]+/g, '');
+          for (const rawKey of Object.keys(r)) {
+            if (rawKey.toLowerCase().replace(/[\s_]+/g, '') === lowerK && String(r[rawKey]).trim() !== '') {
+              return String(r[rawKey]).trim();
+            }
+          }
+        }
+        return '';
+      };
+
+      return {
+        first_name: getVal(['first_name', 'firstName', 'First Name']),
+        last_name: getVal(['last_name', 'lastName', 'Last Name']),
+        email: getVal(['email', 'Email']) || null,
+        phone: getVal(['phone', 'Phone', 'Mobile']) || null,
+        date_of_birth: getVal(['date_of_birth', 'dob', 'Date of Birth']) || '2010-01-01',
+        gender: getVal(['gender', 'Gender']) || 'other',
+        emergency_contact: getVal(['emergency_contact', 'emergencyContact', 'guardian_phone']) || null,
+        branch_id: parseInt(getVal(['branch_id', 'branchId', 'Branch ID', 'Branch'])) || null,
+        batch_id: parseInt(getVal(['batch_id', 'batchId', 'Batch ID', 'Batch'])) || null,
+      };
+    }).filter(s => s.first_name && s.last_name);
+
+    this._pendingImportStudents = normalized;
+
+    const previewContainer = document.getElementById('import-preview-container');
+    const previewCount = document.getElementById('import-preview-count');
+    const previewTbody = document.getElementById('import-preview-tbody');
+    const submitBtn = document.getElementById('btn-submit-import');
+
+    if (!previewContainer) return;
+
+    if (normalized.length > 0) {
+      previewContainer.style.display = 'block';
+      previewCount.innerText = normalized.length;
+      previewTbody.innerHTML = normalized.slice(0, 5).map((s, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td><strong>${s.first_name} ${s.last_name}</strong> (${s.gender})</td>
+          <td>${s.phone || s.email || '-'}</td>
+          <td>${s.branch_id || '<span style="color:var(--text-muted)">None</span>'}</td>
+          <td>${s.batch_id || '<span style="color:var(--text-muted)">None</span>'}</td>
+        </tr>
+      `).join('') + (normalized.length > 5 ? `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); font-style: italic;">...and ${normalized.length - 5} more records</td></tr>` : '');
+
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Import ${normalized.length} Students`;
+      }
+    } else {
+      previewContainer.style.display = 'none';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Import Students`;
+      }
+    }
+  },
+
+  async submitStudentImport() {
+    if (!this._pendingImportStudents || !this._pendingImportStudents.length) {
+      this.showToast('No valid student rows to import', 'warning');
+      return;
+    }
+
+    const submitBtn = document.getElementById('btn-submit-import');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Importing...';
+    }
+
+    try {
+      const res = await this.apiRequest('/api/academy/students/import', {
+        method: 'POST',
+        body: { students: this._pendingImportStudents },
+      });
+
+      if (res.success) {
+        this.showToast(res.message || `Successfully imported ${res.importedCount} students!`, 'success');
+        this.closeModal();
+        this.renderStudents();
+      } else {
+        this.showToast('Import failed: ' + (res.error || 'Unknown error'), 'danger');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Try Again`;
+        }
+      }
+    } catch (err) {
+      this.showToast('Import error: ' + err.message, 'danger');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Try Again`;
+      }
+    }
+  },
+
+  // ==========================================
+  // FEES, INVOICES & FINANCIAL LEDGER
+  // ==========================================
+
+  feesState: {
+    activeTab: 'invoices',
+    selectedStudentId: null,
+    filterStatus: 'all',
+    searchQuery: '',
+    studentsCache: [],
+    presetsCache: [],
+  },
+
+  async renderFees() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    try {
+      const params = new URLSearchParams();
+      params.set('page', this.feesFilters.page || 1);
+      params.set('limit', this.feesFilters.limit || 15);
+      if (this.feesFilters.search) params.set('search', this.feesFilters.search);
+      if (this.feesFilters.status) params.set('status', this.feesFilters.status);
+      if (this.feesFilters.branch_id) params.set('branch_id', this.feesFilters.branch_id);
+      if (this.feesFilters.batch_id) params.set('batch_id', this.feesFilters.batch_id);
+      if (this.feesFilters.overdue_only) params.set('overdue_only', '1');
+
+      const [feesRes, dashRes, pausesRes, presetsRes, branches, batches] = await Promise.all([
+        this.apiRequest(`/api/academy/fees?${params.toString()}`),
+        this.apiRequest('/api/academy/fees/dashboard'),
+        this.apiRequest('/api/academy/fees/pauses'),
+        this.apiRequest('/api/academy/fees/discount-presets'),
+        this.getCachedBranches(),
+        this.getCachedBatches(),
+      ]);
+
+      const fees = (feesRes && feesRes.fees) || [];
+      const dash = (dashRes && dashRes.analytics) || {
+        thisMonthCollections: 0,
+        allTimeCollections: 0,
+        totalOutstandingDues: 0,
+        unpaidInvoicesCount: 0,
+        overdueStudentsCount: 0,
+        pendingPausesCount: 0,
+        ageingBuckets: {},
+        methodsBreakdown: [],
+      };
+      const pauses = (pausesRes && pausesRes.pauses) || [];
+      this.feesState.presetsCache = (presetsRes && presetsRes.presets) || [];
+
+      this.currentFeesData = fees;
+      this.feesPaginationData = feesRes;
+      this.feesDashboard = dash;
+      this.feesPauses = pauses;
+
+      const activeTab = this.feesState.activeTab || 'invoices';
+
+      content.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; gap: 14px;">
+          <div>
+            <h2 style="font-size: 22px; font-weight: 700; margin: 0 0 6px 0;">
+              <i class="fa-solid fa-file-invoice-dollar" style="color: var(--primary);"></i> Student Fee Lifecycle & Financial Ledger
+            </h2>
+            <p style="color: var(--text-muted); margin: 0; font-size: 13px;">
+              Manage student-specific fee periods, multi-month payments, 20% capped discounts, audit ledgers, and approval-controlled pauses.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-primary btn-sm" onclick="app.showCollectStudentFeeModal()">
+              <i class="fa-solid fa-hand-holding-dollar"></i> Collect Student Fees
             </button>
-            <button class="btn btn-primary btn-sm" onclick="app.showAddInvoiceModal()">
-              <i class="fa-solid fa-plus"></i> Generate Invoice
+            <button class="btn btn-secondary btn-sm" onclick="app.showFeePauseRequestModal()">
+              <i class="fa-solid fa-pause"></i> Request Fee Pause
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.exportFeesExcel()">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Excel
             </button>
           </div>
+        </div>
+
+        <!-- 4 Key Financial Metric Cards -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div class="card" style="padding: 16px; border-left: 4px solid #10b981;">
+            <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">This Month Collections</div>
+            <div style="font-size: 24px; font-weight: 700; margin-top: 4px; color: #10b981;">
+              ₹${dash.thisMonthCollections.toLocaleString()}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+              All-Time: ₹${dash.allTimeCollections.toLocaleString()}
+            </div>
+          </div>
+
+          <div class="card" style="padding: 16px; border-left: 4px solid #f59e0b;">
+            <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">Total Outstanding Dues</div>
+            <div style="font-size: 24px; font-weight: 700; margin-top: 4px; color: #f59e0b;">
+              ₹${dash.totalOutstandingDues.toLocaleString()}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+              ${dash.unpaidInvoicesCount} invoices pending payment
+            </div>
+          </div>
+
+          <div class="card" style="padding: 16px; border-left: 4px solid #ef4444;">
+            <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">Overdue Students</div>
+            <div style="font-size: 24px; font-weight: 700; margin-top: 4px; color: #ef4444;">
+              ${dash.overdueStudentsCount}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+              Requires immediate follow-up
+            </div>
+          </div>
+
+          <div class="card" style="padding: 16px; border-left: 4px solid var(--primary); cursor: pointer;" onclick="app.switchFeesTab('pauses')">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">Pending Fee Pauses</div>
+              ${dash.pendingPausesCount > 0 ? `<span class="badge badge-warning">${dash.pendingPausesCount} Pending</span>` : ''}
+            </div>
+            <div style="font-size: 24px; font-weight: 700; margin-top: 4px; color: var(--primary);">
+              ${dash.pendingPausesCount}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+              Click to review pause requests
+            </div>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs inside Fees -->
+        <div style="display: flex; gap: 8px; border-bottom: 2px solid var(--border); margin-bottom: 20px; overflow-x: auto; padding-bottom: 2px;">
+          <button class="btn btn-sm ${activeTab === 'invoices' ? 'btn-primary' : 'btn-secondary'}" onclick="app.switchFeesTab('invoices')">
+            <i class="fa-solid fa-receipt"></i> Invoices & Collections (${fees.length})
+          </button>
+          <button class="btn btn-sm ${activeTab === 'ledger' ? 'btn-primary' : 'btn-secondary'}" onclick="app.switchFeesTab('ledger')">
+            <i class="fa-solid fa-book-journal-whills"></i> Student Fee Ledger & Timeline
+          </button>
+          <button class="btn btn-sm ${activeTab === 'pauses' ? 'btn-primary' : 'btn-secondary'}" onclick="app.switchFeesTab('pauses')">
+            <i class="fa-solid fa-clock-pause"></i> Fee Pauses & Holds (${pauses.length})
+            ${dash.pendingPausesCount > 0 ? `<span class="badge badge-warning" style="margin-left: 4px;">${dash.pendingPausesCount}</span>` : ''}
+          </button>
+          <button class="btn btn-sm ${activeTab === 'analytics' ? 'btn-primary' : 'btn-secondary'}" onclick="app.switchFeesTab('analytics')">
+            <i class="fa-solid fa-chart-pie"></i> Ageing & Revenue Reports
+          </button>
+        </div>
+
+        <!-- Tab Body Content Container -->
+        <div id="fees-tab-body">
+          ${this.renderFeesTabContent(activeTab)}
+        </div>
+      `;
+
+      if (activeTab === 'ledger' && this.feesState.selectedStudentId) {
+        this.loadStudentLedger(this.feesState.selectedStudentId);
+      }
+    } catch (err) {
+      content.innerHTML = `<div class="toast danger">Failed to load fee management data: ${err.message}</div>`;
+    }
+  },
+
+  switchFeesTab(tab, studentId = null) {
+    this.feesState.activeTab = tab;
+    if (studentId) {
+      this.feesState.selectedStudentId = studentId;
+    }
+    this.renderFees();
+  },
+
+  renderFeesTabContent(tab) {
+    if (tab === 'ledger') {
+      return this.renderLedgerTabHtml();
+    } else if (tab === 'pauses') {
+      return this.renderPausesTabHtml();
+    } else if (tab === 'analytics') {
+      return this.renderAnalyticsTabHtml();
+    }
+    return this.renderInvoicesTabHtml();
+  },
+
+  // 1. INVOICES & COLLECTIONS TAB
+  renderInvoicesTabHtml() {
+    const fees = this.currentFeesData || [];
+    const branches = this.cachedBranches || [];
+    const batches = this.cachedBatches || [];
+    const totalCount = this.feesPaginationData?.total !== undefined ? this.feesPaginationData.total : fees.length;
+
+    return `
+      <div class="content-card">
+        <!-- Universal Filter Bar for Fees -->
+        <div class="page-filter-bar" style="margin: 16px 20px 0 20px;">
+          <div class="filter-group" style="min-width: 220px;">
+            <input type="text" id="fees-search-input" class="filter-input"
+                   placeholder="Search student, code, or invoice..."
+                   value="${this.escapeHtml(this.feesFilters.search || '')}"
+                   onkeyup="if(event.key==='Enter') app.applyFeesFilters()">
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="fees-status-filter" class="filter-select" onchange="app.applyFeesFilters()">
+              <option value="" ${!this.feesFilters.status ? 'selected' : ''}>All Statuses</option>
+              <option value="pending" ${this.feesFilters.status === 'pending' ? 'selected' : ''}>Pending Dues</option>
+              <option value="partial" ${this.feesFilters.status === 'partial' ? 'selected' : ''}>Partial Payments</option>
+              <option value="paid" ${this.feesFilters.status === 'paid' ? 'selected' : ''}>Fully Paid</option>
+              <option value="overdue" ${this.feesFilters.status === 'overdue' ? 'selected' : ''}>Overdue Dues</option>
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="fees-branch-filter" class="filter-select" onchange="app.applyFeesFilters()">
+              <option value="">All Branches</option>
+              ${branches.map(b => `
+                <option value="${b.id}" ${String(this.feesFilters.branch_id) === String(b.id) ? 'selected' : ''}>
+                  ${this.escapeHtml(b.name)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="fees-batch-filter" class="filter-select" onchange="app.applyFeesFilters()">
+              <option value="">All Batches</option>
+              ${batches.map(b => `
+                <option value="${b.id}" ${String(this.feesFilters.batch_id) === String(b.id) ? 'selected' : ''}>
+                  ${this.escapeHtml(b.name)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer; white-space: nowrap;">
+              <input type="checkbox" id="fees-overdue-checkbox" ${this.feesFilters.overdue_only ? 'checked' : ''} onchange="app.applyFeesFilters()"> Overdue Only
+            </label>
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.applyFeesFilters()">
+              <i class="fa-solid fa-filter"></i> Filter
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetFeesFilters()">
+              <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px;">
+          <h3 style="font-size: 15px; margin: 0; font-weight: 600;">Student Fee Invoices (${totalCount})</h3>
+          <span style="font-size: 12px; color: var(--text-muted);">
+            Showing ${fees.length} of ${totalCount} records
+          </span>
         </div>
 
         <div class="table-responsive">
@@ -1432,44 +3583,385 @@ const app = {
               <tr>
                 <th>Invoice #</th>
                 <th>Student</th>
-                <th>Fee Title</th>
+                <th>Fee Title & Period</th>
                 <th>Due Date</th>
-                <th>Net Amount</th>
+                <th>Net Payable</th>
                 <th>Paid</th>
-                <th>Balance</th>
+                <th>Balance Due</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              ${fees.map(f => {
+              ${fees.length === 0 ? `
+                <tr>
+                  <td colspan="9" style="text-align: center; padding: 36px; color: var(--text-muted);">
+                    <i class="fa-solid fa-receipt fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+                    No fee invoices match your search/filter criteria.
+                  </td>
+                </tr>
+              ` : fees.map(f => {
                 const statusBadge = f.status === 'paid' ? 'badge-success' : (f.status === 'overdue' ? 'badge-danger' : 'badge-warning');
+                const periodText = (f.period_start && f.period_end)
+                  ? `${f.period_start} &rarr; ${f.period_end} (${f.months_count || 1} mo)`
+                  : 'Calendar Standard';
+
                 return `
                   <tr>
-                    <td><code>${f.invoice_number}</code></td>
+                    <td><code>${this.escapeHtml(f.invoice_number)}</code></td>
                     <td>
-                      <strong>${f.first_name} ${f.last_name}</strong>
-                      <div style="font-size: 11px; color: var(--text-muted);">${f.student_code}</div>
+                      <strong>${this.escapeHtml(f.first_name || '')} ${this.escapeHtml(f.last_name || '')}</strong>
+                      <div style="font-size: 11px; color: var(--text-muted);">
+                        ${this.escapeHtml(f.student_code || '')} &bull; ${this.escapeHtml(f.branch_name || 'Main Branch')}
+                      </div>
                     </td>
-                    <td>${f.title}</td>
-                    <td>${f.due_date}</td>
-                    <td>₹${f.net_amount.toLocaleString()}</td>
-                    <td style="color: #10b981; font-weight: 600;">₹${f.paid_amount.toLocaleString()}</td>
-                    <td style="color: #f59e0b; font-weight: 600;">₹${f.balance_amount.toLocaleString()}</td>
-                    <td><span class="badge ${statusBadge}">${f.status}</span></td>
                     <td>
-                      <div style="display: flex; gap: 6px;">
+                      <strong>${this.escapeHtml(f.title || 'Training Fee')}</strong>
+                      <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">
+                        ${periodText}
+                      </div>
+                    </td>
+                    <td>${this.escapeHtml(f.due_date || '')}</td>
+                    <td>₹${(f.net_amount || 0).toLocaleString()}</td>
+                    <td style="color: #10b981; font-weight: 600;">₹${(f.paid_amount || 0).toLocaleString()}</td>
+                    <td style="color: ${(f.balance_amount > 0 ? '#f59e0b' : 'var(--text-muted)')}; font-weight: 600;">
+                      ₹${(f.balance_amount || 0).toLocaleString()}
+                    </td>
+                    <td><span class="badge ${statusBadge}">${this.escapeHtml(f.status || '')}</span></td>
+                    <td>
+                      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                         ${f.balance_amount > 0 ? `
-                          <button class="btn btn-primary btn-sm" onclick="app.showCollectPaymentModal(${f.id}, '${f.invoice_number}', ${f.balance_amount}, '${f.first_name} ${f.last_name}')">
+                          <button class="btn btn-primary btn-sm" onclick="app.showCollectPaymentModal(${f.id}, '${this.escapeJsString(f.invoice_number)}', ${f.balance_amount}, '${this.escapeJsString((f.first_name || '') + ' ' + (f.last_name || ''))}', ${f.student_id})">
                             <i class="fa-solid fa-hand-holding-dollar"></i> Collect
                           </button>
                         ` : ''}
                         ${f.paid_amount > 0 ? `
-                          <button class="btn btn-secondary btn-sm" onclick="app.generateFeeReceiptPdf(${JSON.stringify(f).replace(/"/g, '&quot;')})">
-                            <i class="fa-solid fa-file-pdf"></i> Receipt
+                          <button class="btn btn-secondary btn-sm" title="Download PDF Receipt" onclick="app.generateFeeReceiptPdf(${JSON.stringify(f).replace(/"/g, '&quot;')})">
+                            <i class="fa-solid fa-file-pdf" style="color: #ef4444;"></i> PDF
+                          </button>
+                          <button class="btn btn-secondary btn-sm" title="Direct Print Receipt" onclick="app.printFeeReceipt(${JSON.stringify(f).replace(/"/g, '&quot;')})">
+                            <i class="fa-solid fa-print"></i> Print
                           </button>
                         ` : ''}
+                        <button class="btn btn-secondary btn-sm" title="View Student Fee Ledger" onclick="app.switchFeesTab('ledger', ${f.student_id})">
+                          <i class="fa-solid fa-book"></i> Ledger
+                        </button>
                       </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        ${this.renderPaginationHtml(this.feesPaginationData, 'app.onFeesPageChange', 'app.onFeesLimitChange')}
+      </div>
+    `;
+  },
+
+  applyFeesFilters() {
+    this.feesFilters.search = document.getElementById('fees-search-input')?.value?.trim() || '';
+    this.feesFilters.status = document.getElementById('fees-status-filter')?.value || '';
+    this.feesFilters.branch_id = document.getElementById('fees-branch-filter')?.value || '';
+    this.feesFilters.batch_id = document.getElementById('fees-batch-filter')?.value || '';
+    this.feesFilters.overdue_only = !!document.getElementById('fees-overdue-checkbox')?.checked;
+    this.feesFilters.page = 1;
+    this.renderFees();
+  },
+
+  resetFeesFilters() {
+    this.feesFilters = { page: 1, limit: this.feesFilters.limit || 15, search: '', status: '', branch_id: '', batch_id: '', overdue_only: false };
+    this.renderFees();
+  },
+
+  onFeesPageChange(p) {
+    this.feesFilters.page = p;
+    this.renderFees();
+  },
+
+  onFeesLimitChange(l) {
+    this.feesFilters.limit = l;
+    this.feesFilters.page = 1;
+    this.renderFees();
+  },
+
+  // 2. STUDENT FEE LEDGER & TIMELINE TAB
+  renderLedgerTabHtml() {
+    return `
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h3 class="card-title"><i class="fa-solid fa-book-journal-whills"></i> Chronological Student Fee Ledger</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;">
+              Source of truth for next installment calculations, chronological charges, credits, and approved pause date shifts.
+            </p>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <select id="ledger-student-selector" class="form-select" style="min-width: 280px;" onchange="app.onLedgerStudentSelect(this.value)">
+              <option value="">-- Select Student to View Ledger --</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="ledger-student-details-container" style="padding: 24px;">
+          <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+            <i class="fa-solid fa-user-tag fa-2x" style="margin-bottom: 12px; display: block; opacity: 0.5;"></i>
+            Select a student from the dropdown above to inspect their timeline, next installment date, and complete financial ledger.
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  async loadStudentLedgerSelector() {
+    try {
+      const res = await this.apiRequest('/api/academy/students');
+      const students = (res && res.students) || [];
+      this.feesState.studentsCache = students;
+
+      const sel = document.getElementById('ledger-student-selector');
+      if (sel) {
+        sel.innerHTML = `
+          <option value="">-- Select Student to View Ledger --</option>
+          ${students.map(s => `
+            <option value="${s.id}" ${this.feesState.selectedStudentId === s.id ? 'selected' : ''}>
+              ${s.first_name} ${s.last_name} (${s.student_code}) — ${s.active_batch_name || 'No Batch'}
+            </option>
+          `).join('')}
+        `;
+      }
+    } catch (e) {
+      console.warn('Failed to load students for ledger selector:', e);
+    }
+  },
+
+  async onLedgerStudentSelect(studentId) {
+    if (!studentId) return;
+    this.feesState.selectedStudentId = Number(studentId);
+    await this.loadStudentLedger(Number(studentId));
+  },
+
+  async loadStudentLedger(studentId) {
+    await this.loadStudentLedgerSelector();
+    const container = document.getElementById('ledger-student-details-container');
+    if (!container) return;
+
+    container.innerHTML = '<div style="padding: 30px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    try {
+      const res = await this.apiRequest(`/api/academy/fees/ledger/${studentId}`);
+      if (!res.success) {
+        container.innerHTML = `<div class="toast danger">${res.error || 'Failed to load ledger'}</div>`;
+        return;
+      }
+
+      const timeline = res.timeline;
+      const ledger = res.ledger || [];
+      const s = timeline.student;
+
+      container.innerHTML = `
+        <!-- Student Fee Timeline & Status Banner -->
+        <div style="background: rgba(37, 99, 235, 0.04); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: var(--radius-md); padding: 18px; margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 14px;">
+            <div>
+              <h4 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 700; color: var(--text-heading);">
+                ${s.first_name} ${s.last_name}
+                <span style="font-size: 12px; font-weight: 500; color: var(--text-muted); margin-left: 6px;">(${s.student_code})</span>
+              </h4>
+              <div style="font-size: 12px; color: var(--text-muted); display: flex; gap: 12px; flex-wrap: wrap;">
+                <span><i class="fa-solid fa-building"></i> Branch: <strong>${s.branch_name || 'Main'}</strong></span>
+                <span><i class="fa-solid fa-users"></i> Batch: <strong>${timeline.batchName || 'Unassigned'}</strong></span>
+                <span><i class="fa-solid fa-calendar-day"></i> Joining Date: <strong>${timeline.joiningDate}</strong></span>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-primary btn-sm" onclick="app.showCollectStudentFeeModal(${studentId})">
+                <i class="fa-solid fa-plus"></i> Collect Fees
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="app.showFeeOverrideModal(${studentId}, '${s.first_name} ${s.last_name}', ${timeline.monthlyFee})">
+                <i class="fa-solid fa-sliders"></i> Set Fee Override
+              </button>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-top: 16px; padding-top: 14px; border-top: 1px dashed rgba(37, 99, 235, 0.2);">
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Monthly Fee Rate</div>
+              <div style="font-size: 18px; font-weight: 700; color: var(--text-heading); margin-top: 2px;">
+                ₹${timeline.monthlyFee.toLocaleString()}
+                <span class="badge ${timeline.rateSource === 'student_override' ? 'badge-primary' : 'badge-secondary'}" style="font-size: 10px; margin-left: 4px;">
+                  ${timeline.rateSource === 'student_override' ? 'Custom Override' : 'Batch Rate'}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Current Paid-Through Date</div>
+              <div style="font-size: 18px; font-weight: 700; color: #10b981; margin-top: 2px;">
+                ${timeline.paidThroughDate || 'Not yet paid'}
+              </div>
+            </div>
+
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Next Installment Starts</div>
+              <div style="font-size: 18px; font-weight: 700; color: #3b82f6; margin-top: 2px;">
+                ${timeline.nextStartDate}
+              </div>
+            </div>
+
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Unpaid Balance Due</div>
+              <div style="font-size: 18px; font-weight: 700; color: ${timeline.unpaidBalance > 0 ? '#ef4444' : '#10b981'}; margin-top: 2px;">
+                ₹${timeline.unpaidBalance.toLocaleString()}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ledger Entries Table -->
+        <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text-heading);">
+          <i class="fa-solid fa-timeline"></i> Chronological Audit Ledger (${ledger.length} entries)
+        </h4>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Reference #</th>
+                <th>Period / Description</th>
+                <th style="text-align: right;">Debit (₹)</th>
+                <th style="text-align: right;">Credit (₹)</th>
+                <th style="text-align: right;">Balance (₹)</th>
+                <th>Recorded By</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ledger.length === 0 ? `
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">
+                    No ledger transactions recorded yet for this student.
+                  </td>
+                </tr>
+              ` : ledger.map(entry => {
+                const typeBadges = {
+                  charge: 'badge-primary',
+                  payment: 'badge-success',
+                  discount: 'badge-warning',
+                  pause_shift: 'badge-secondary',
+                  credit: 'badge-success',
+                  waiver: 'badge-danger',
+                };
+                const badge = typeBadges[entry.entry_type] || 'badge-secondary';
+                const period = (entry.period_start && entry.period_end)
+                  ? `<div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${entry.period_start} &rarr; ${entry.period_end}</div>`
+                  : '';
+
+                return `
+                  <tr>
+                    <td>${entry.entry_date}</td>
+                    <td><span class="badge ${badge}">${entry.entry_type}</span></td>
+                    <td><code>${entry.receipt_number || entry.invoice_number || '-'}</code></td>
+                    <td>
+                      <div>${entry.notes || '-'}</div>
+                      ${period}
+                    </td>
+                    <td style="text-align: right; color: ${entry.debit_amount > 0 ? '#ef4444' : 'var(--text-muted)'}; font-weight: 600;">
+                      ${entry.debit_amount > 0 ? `₹${entry.debit_amount.toLocaleString()}` : '-'}
+                    </td>
+                    <td style="text-align: right; color: ${entry.credit_amount > 0 ? '#10b981' : 'var(--text-muted)'}; font-weight: 600;">
+                      ${entry.credit_amount > 0 ? `₹${entry.credit_amount.toLocaleString()}` : '-'}
+                    </td>
+                    <td style="text-align: right; font-weight: 700; color: ${entry.balance > 0 ? '#f59e0b' : 'var(--text-main)'};">
+                      ₹${(entry.balance || 0).toLocaleString()}
+                    </td>
+                    <td style="font-size: 11px; color: var(--text-muted);">${entry.created_by_name || 'System'}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    } catch (err) {
+      container.innerHTML = `<div class="toast danger">Failed to fetch ledger: ${err.message}</div>`;
+    }
+  },
+
+  // 3. FEE PAUSES & MEMBERSHIP HOLDS TAB
+  renderPausesTabHtml() {
+    const pauses = this.feesPauses || [];
+
+    return `
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h3 class="card-title"><i class="fa-solid fa-clock-pause"></i> Fee Pauses & Membership Holds</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;">
+              Temporary holds with branch-scoped review. Approving a pause automatically shifts future fee period starts on the ledger.
+            </p>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="app.showFeePauseRequestModal()">
+            <i class="fa-solid fa-plus"></i> Request New Pause
+          </button>
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Branch / Batch</th>
+                <th>Type</th>
+                <th>Requested Period</th>
+                <th>Approved Period</th>
+                <th>Reason</th>
+                <th>Status</th>
+                <th>Reviewer</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pauses.length === 0 ? `
+                <tr>
+                  <td colspan="9" style="text-align: center; padding: 32px; color: var(--text-muted);">
+                    No fee pause or membership hold requests found.
+                  </td>
+                </tr>
+              ` : pauses.map(p => {
+                const statusBadge = p.status === 'approved' ? 'badge-success' : (p.status === 'rejected' ? 'badge-danger' : 'badge-warning');
+                return `
+                  <tr>
+                    <td>
+                      <strong>${p.first_name} ${p.last_name}</strong>
+                      <div style="font-size: 11px; color: var(--text-muted);">${p.student_code}</div>
+                    </td>
+                    <td>
+                      <div>${p.branch_name || 'Main Branch'}</div>
+                      <div style="font-size: 11px; color: var(--text-muted);">${p.batch_name || 'No Batch'}</div>
+                    </td>
+                    <td><span class="badge badge-secondary">${p.pause_type}</span></td>
+                    <td><code>${p.requested_start_date} &rarr; ${p.requested_end_date}</code></td>
+                    <td>${p.approved_start_date ? `<code>${p.approved_start_date} &rarr; ${p.approved_end_date}</code>` : '<span style="color: var(--text-muted);">-</span>'}</td>
+                    <td style="max-width: 200px; font-size: 12px;">${p.reason}</td>
+                    <td><span class="badge ${statusBadge}">${p.status}</span></td>
+                    <td style="font-size: 11px; color: var(--text-muted);">
+                      ${p.approver_name || (p.status === 'pending' ? 'Pending Review' : '-')}
+                    </td>
+                    <td>
+                      ${p.status === 'pending' ? `
+                        <button class="btn btn-primary btn-sm" onclick="app.showReviewPauseModal(${p.id}, '${p.first_name} ${p.last_name}', '${p.requested_start_date}', '${p.requested_end_date}', '${(p.reason || '').replace(/'/g, "\\'")}', ${p.branch_id})">
+                          <i class="fa-solid fa-gavel"></i> Review
+                        </button>
+                      ` : `
+                        <button class="btn btn-secondary btn-sm" onclick="app.switchFeesTab('ledger', ${p.student_id})">
+                          <i class="fa-solid fa-book"></i> Ledger
+                        </button>
+                      `}
                     </td>
                   </tr>
                 `;
@@ -1479,24 +3971,710 @@ const app = {
         </div>
       </div>
     `;
-
-    this.currentFeesData = fees;
   },
 
-  showCollectPaymentModal(invoiceId, invoiceNumber, balance, studentName) {
+  // 4. AGEING & REVENUE REPORTS TAB
+  renderAnalyticsTabHtml() {
+    const dash = this.feesDashboard || {};
+    const ageing = dash.ageingBuckets || {};
+    const methods = dash.methodsBreakdown || [];
+
+    const totalOverdue = Object.values(ageing).reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+
+    return `
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+        <!-- Ageing Buckets Card -->
+        <div class="content-card">
+          <div class="card-header">
+            <h3 class="card-title"><i class="fa-solid fa-hourglass-half" style="color: #f59e0b;"></i> Overdue Receivables Ageing</h3>
+          </div>
+          <div style="padding: 20px;">
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+              Distribution of outstanding dues across invoice overdue ageing buckets:
+            </p>
+
+            ${[
+              { label: '1 - 7 Days', key: '1-7 Days', color: '#10b981' },
+              { label: '8 - 30 Days', key: '8-30 Days', color: '#3b82f6' },
+              { label: '31 - 60 Days', key: '31-60 Days', color: '#f59e0b' },
+              { label: '> 60 Days (Critical)', key: '>60 Days', color: '#ef4444' },
+            ].map(b => {
+              const val = ageing[b.key] || 0;
+              const pct = Math.min(100, Math.round((val / totalOverdue) * 100));
+              return `
+                <div style="margin-bottom: 14px;">
+                  <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                    <strong>${b.label}</strong>
+                    <span style="font-weight: 700; color: ${b.color};">₹${val.toLocaleString()} (${pct}%)</span>
+                  </div>
+                  <div style="height: 8px; background: var(--bg-input); border-radius: 4px; overflow: hidden;">
+                    <div style="height: 100%; width: ${pct}%; background: ${b.color}; border-radius: 4px; transition: width 0.3s;"></div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- Payment Methods Breakdown Card -->
+        <div class="content-card">
+          <div class="card-header">
+            <h3 class="card-title"><i class="fa-solid fa-wallet" style="color: var(--primary);"></i> Collections by Payment Mode</h3>
+          </div>
+          <div style="padding: 20px;">
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+              Breakdown of all completed payments received across modes:
+            </p>
+
+            ${methods.length === 0 ? `
+              <div style="text-align: center; color: var(--text-muted); padding: 20px;">No payments recorded yet.</div>
+            ` : methods.map(m => {
+              const icons = {
+                upi: '<i class="fa-solid fa-mobile-screen" style="color: #6366f1;"></i> UPI',
+                cash: '<i class="fa-solid fa-money-bill-wave" style="color: #10b981;"></i> Cash',
+                bank_transfer: '<i class="fa-solid fa-building-columns" style="color: #3b82f6;"></i> Bank Transfer',
+                card: '<i class="fa-solid fa-credit-card" style="color: #f59e0b;"></i> Card / POS',
+                cheque: '<i class="fa-solid fa-money-check" style="color: #8b5cf6;"></i> Cheque',
+              };
+              return `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border);">
+                  <div style="font-size: 13px; font-weight: 600;">
+                    ${icons[m.payment_mode] || m.payment_mode}
+                  </div>
+                  <div style="text-align: right;">
+                    <div style="font-weight: 700; font-size: 14px;">₹${(m.total || 0).toLocaleString()}</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${m.count} transaction(s)</div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  // ==========================================
+  // COLLECT STUDENT FEES MODAL WITH LIVE PREVIEW
+  // ==========================================
+
+  async showCollectStudentFeeModal(preselectedStudentId = null) {
+    this.openModal(
+      'Collect Student Fees',
+      '<div style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>'
+    );
+
+    try {
+      const res = await this.apiRequest('/api/academy/students');
+      const students = (res && res.students) || [];
+      this.feesState.studentsCache = students;
+
+      if (students.length === 0) {
+        this.openModal('Collect Student Fees', '<div class="toast danger">No active students found in academy.</div>');
+        return;
+      }
+
+      const activeStudentId = preselectedStudentId || students[0].id;
+
+      const bodyHtml = `
+        <div style="max-height: 70vh; overflow-y: auto; padding-right: 4px;">
+          <!-- 1. Student Selection -->
+          <div class="form-group">
+            <label style="font-weight: 600;">Select Student *</label>
+            <select id="collect-fee-student" class="form-select" style="width: 100%; font-size: 14px;" onchange="app.onCollectFeeStudentChange()">
+              ${students.map(s => `
+                <option value="${s.id}" ${s.id === activeStudentId ? 'selected' : ''}>
+                  ${s.first_name} ${s.last_name} (${s.student_code}) — ${s.active_batch_name || 'No Batch'}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+
+          <!-- Student Info / Timeline Details Banner -->
+          <div id="collect-fee-student-info" style="background: rgba(37, 99, 235, 0.05); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 12px;">
+              <div>Joining: <strong id="collect-info-joining">-</strong></div>
+              <div>Paid Through: <strong id="collect-info-paidthrough">-</strong></div>
+              <div>Monthly Rate: <strong id="collect-info-rate">₹0</strong></div>
+            </div>
+          </div>
+
+          <!-- 2. Months Count & Start Date -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+            <div class="form-group" style="margin: 0;">
+              <label style="font-weight: 600;">Number of Months *</label>
+              <select id="collect-fee-months" class="form-select" style="width: 100%;" onchange="app.recalculateFeeLive()">
+                <option value="1" selected>1 month</option>
+                <option value="2">2 months</option>
+                <option value="3">3 months (Quarterly)</option>
+                <option value="4">4 months</option>
+                <option value="5">5 months</option>
+                <option value="6">6 months (Half Yearly)</option>
+                <option value="9">9 months</option>
+                <option value="12">12 months (Annual)</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="margin: 0;">
+              <label style="font-weight: 600;">Fee Period Starts *</label>
+              <input type="date" id="collect-fee-start-date" class="form-input" style="width: 100%;" onchange="app.recalculateFeeLive()">
+            </div>
+          </div>
+
+          <!-- Live Period & Installment Preview Banner -->
+          <div style="background: var(--bg-input); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px; font-size: 12px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: var(--text-muted);">Period Ends:</span>
+              <strong id="calc-period-end" style="color: var(--text-heading); font-family: monospace;">-</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Next Installment Starts:</span>
+              <strong id="calc-next-inst" style="color: #3b82f6; font-family: monospace;">-</strong>
+            </div>
+          </div>
+
+          <!-- Base Fee & Live Calculation Display -->
+          <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
+              <span>Base Fee:</span>
+              <strong id="calc-base-fee">₹0</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #10b981;">
+              <span>Discount:</span>
+              <strong id="calc-discount-display">&minus; ₹0</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; border-top: 1px solid var(--border); padding-top: 6px;">
+              <span>Net Payable:</span>
+              <span id="calc-net-payable" style="color: var(--primary);">₹0</span>
+            </div>
+          </div>
+
+          <!-- 3. Discount Settings (Capped at 20%) -->
+          <div style="border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px; background: rgba(245, 158, 11, 0.02);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <label style="font-weight: 600; font-size: 13px; margin: 0;">
+                <i class="fa-solid fa-tags" style="color: #f59e0b;"></i> Discount Settings (Max 20%)
+              </label>
+              <span id="calc-max-discount-badge" class="badge badge-secondary" style="font-size: 11px;">Max 20%: ₹0</span>
+            </div>
+
+            <div style="display: flex; gap: 16px; margin-bottom: 10px; font-size: 13px;">
+              <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <input type="radio" name="fee-disc-type" value="none" checked onchange="app.recalculateFeeLive()"> No Discount
+              </label>
+              <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <input type="radio" name="fee-disc-type" value="percentage" onchange="app.recalculateFeeLive()"> Percentage (%)
+              </label>
+              <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <input type="radio" name="fee-disc-type" value="fixed" onchange="app.recalculateFeeLive()"> Fixed Amount (₹)
+              </label>
+            </div>
+
+            <div id="fee-disc-inputs" style="display: none;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
+                <div class="form-group" style="margin: 0;">
+                  <label id="fee-disc-val-label" style="font-size: 12px;">Discount Value</label>
+                  <input type="number" id="collect-fee-discount-val" class="form-input" style="width: 100%;" min="0" step="any" value="0" oninput="app.recalculateFeeLive()">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 12px;">Discount Reason *</label>
+                  <input type="text" id="collect-fee-discount-reason" class="form-input" style="width: 100%;" placeholder="e.g. Sibling concession / Merit">
+                </div>
+              </div>
+              <div id="calc-discount-error" style="color: #ef4444; font-size: 12px; font-weight: 600; display: none;"></div>
+            </div>
+          </div>
+
+          <!-- 4. Payment Collection Details -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+            <div class="form-group" style="margin: 0;">
+              <label style="font-weight: 600;">Amount Paying Now (₹) *</label>
+              <input type="number" id="collect-fee-pay-now" class="form-input" style="width: 100%; font-weight: 700;" min="0" step="any" required>
+              <small style="color: var(--text-muted); font-size: 11px;">Allows partial or full payment</small>
+            </div>
+
+            <div class="form-group" style="margin: 0;">
+              <label style="font-weight: 600;">Payment Mode *</label>
+              <select id="collect-fee-mode" class="form-select" style="width: 100%;">
+                <option value="upi">UPI (GPay / PhonePe / Paytm)</option>
+                <option value="cash">Cash</option>
+                <option value="bank_transfer">Bank Transfer / NEFT</option>
+                <option value="card">Card / POS</option>
+                <option value="cheque">Cheque</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+            <div class="form-group" style="margin: 0;">
+              <label>Transaction Ref / Cheque #</label>
+              <input type="text" id="collect-fee-ref" class="form-input" style="width: 100%;" placeholder="e.g. UPI/20261016/98765">
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label>Receipt Notes / Remarks</label>
+              <input type="text" id="collect-fee-notes" class="form-input" style="width: 100%;" placeholder="e.g. Paid in full for Karate training">
+            </div>
+          </div>
+        </div>
+      `;
+
+      const footerHtml = `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button id="collect-fee-submit-btn" class="btn btn-success" onclick="app.submitCollectFee()">
+          <i class="fa-solid fa-check"></i> Record Payment & Generate Receipt
+        </button>
+      `;
+
+      this.openModal('Collect Student Fees', bodyHtml, footerHtml);
+
+      // Trigger student change to populate timeline and initial calculation
+      await this.onCollectFeeStudentChange();
+    } catch (err) {
+      this.openModal('Collect Student Fees', `<div class="toast danger">${err.message}</div>`);
+    }
+  },
+
+  async onCollectFeeStudentChange() {
+    const studentSelect = document.getElementById('collect-fee-student');
+    if (!studentSelect) return;
+    const studentId = Number(studentSelect.value);
+
+    try {
+      const res = await this.apiRequest(`/api/academy/fees/timeline/${studentId}`);
+      if (res.success && res.timeline) {
+        const t = res.timeline;
+        this.currentTimelineData = t;
+
+        document.getElementById('collect-info-joining').innerText = t.joiningDate || '-';
+        document.getElementById('collect-info-paidthrough').innerText = t.paidThroughDate || 'None';
+        document.getElementById('collect-info-rate').innerText = `₹${t.monthlyFee.toLocaleString()}`;
+
+        const startDateInput = document.getElementById('collect-fee-start-date');
+        if (startDateInput) {
+          startDateInput.value = t.nextStartDate;
+        }
+
+        await this.recalculateFeeLive();
+      }
+    } catch (e) {
+      console.warn('Failed to fetch timeline for fee calculation:', e);
+    }
+  },
+
+  async recalculateFeeLive() {
+    const studentSelect = document.getElementById('collect-fee-student');
+    const monthsSelect = document.getElementById('collect-fee-months');
+    const startDateInput = document.getElementById('collect-fee-start-date');
+    const discTypeRadio = document.querySelector('input[name="fee-disc-type"]:checked');
+    const discValInput = document.getElementById('collect-fee-discount-val');
+    const discInputsContainer = document.getElementById('fee-disc-inputs');
+    const discError = document.getElementById('calc-discount-error');
+    const submitBtn = document.getElementById('collect-fee-submit-btn');
+
+    if (!studentSelect || !monthsSelect || !startDateInput) return;
+
+    const student_id = Number(studentSelect.value);
+    const months_count = Number(monthsSelect.value);
+    const start_date = startDateInput.value;
+    const discount_type = discTypeRadio ? discTypeRadio.value : 'none';
+    const discount_value = Number(discValInput ? discValInput.value : 0) || 0;
+
+    if (discInputsContainer) {
+      discInputsContainer.style.display = discount_type === 'none' ? 'none' : 'block';
+    }
+
+    try {
+      const query = new URLSearchParams({
+        student_id,
+        months_count,
+        start_date,
+        discount_type,
+        discount_value,
+      }).toString();
+
+      const res = await this.apiRequest(`/api/academy/fees/calculate?${query}`);
+      if (!res.success) {
+        if (discError) {
+          discError.innerText = res.error;
+          discError.style.display = 'block';
+        }
+        if (submitBtn) submitBtn.disabled = true;
+        return;
+      }
+
+      const calc = res.calculation;
+      this.lastCalculation = calc;
+
+      document.getElementById('calc-period-end').innerText = calc.periodEnd;
+      document.getElementById('calc-next-inst').innerText = calc.nextInstallmentDate;
+      document.getElementById('calc-base-fee').innerText = `₹${calc.baseFee.toLocaleString()} (${calc.monthsCount} × ₹${calc.monthlyRate.toLocaleString()})`;
+      document.getElementById('calc-discount-display').innerText = `− ₹${calc.totalDiscountAmount.toLocaleString()}`;
+      document.getElementById('calc-net-payable').innerText = `₹${calc.payableAmount.toLocaleString()}`;
+      document.getElementById('calc-max-discount-badge').innerText = `Max 20%: ₹${calc.maxAllowedDiscount.toLocaleString()}`;
+
+      // Set pay now default if empty or previously matched net payable
+      const payNowInput = document.getElementById('collect-fee-pay-now');
+      if (payNowInput && (!payNowInput.value || payNowInput.value === '0' || payNowInput.dataset.autoFilled === 'true')) {
+        payNowInput.value = calc.payableAmount;
+        payNowInput.dataset.autoFilled = 'true';
+      }
+
+      if (discError) {
+        discError.style.display = 'none';
+      }
+      if (submitBtn) {
+        submitBtn.disabled = false;
+      }
+    } catch (e) {
+      if (discError) {
+        discError.innerText = e.message || 'Calculation error';
+        discError.style.display = 'block';
+      }
+      if (submitBtn) submitBtn.disabled = true;
+    }
+  },
+
+  async submitCollectFee() {
+    const studentSelect = document.getElementById('collect-fee-student');
+    const monthsSelect = document.getElementById('collect-fee-months');
+    const startDateInput = document.getElementById('collect-fee-start-date');
+    const discTypeRadio = document.querySelector('input[name="fee-disc-type"]:checked');
+    const discValInput = document.getElementById('collect-fee-discount-val');
+    const discReasonInput = document.getElementById('collect-fee-discount-reason');
+    const payNowInput = document.getElementById('collect-fee-pay-now');
+    const payModeSelect = document.getElementById('collect-fee-mode');
+    const payRefInput = document.getElementById('collect-fee-ref');
+    const notesInput = document.getElementById('collect-fee-notes');
+
+    const student_id = Number(studentSelect.value);
+    const months_count = Number(monthsSelect.value);
+    const start_date = startDateInput.value;
+    const discount_type = discTypeRadio ? discTypeRadio.value : 'none';
+    const discount_value = Number(discValInput ? discValInput.value : 0) || 0;
+    const discount_reason = discReasonInput ? discReasonInput.value.trim() : '';
+    const payment_amount = Number(payNowInput ? payNowInput.value : 0);
+    const payment_mode = payModeSelect ? payModeSelect.value : 'cash';
+    const transaction_reference = payRefInput ? payRefInput.value.trim() : '';
+    const notes = notesInput ? notesInput.value.trim() : '';
+
+    if (discount_type !== 'none' && discount_value > 0 && !discount_reason) {
+      this.showToast('Please provide a reason for the discount', 'warning');
+      return;
+    }
+
+    if (payment_amount < 0) {
+      this.showToast('Payment amount cannot be negative', 'danger');
+      return;
+    }
+
+    const payload = {
+      student_id,
+      months_count,
+      start_date,
+      payment_amount,
+      payment_mode,
+      transaction_reference,
+      notes,
+      discount_type,
+      discount_value,
+      discount_reason,
+    };
+
+    const res = await this.apiRequest('/api/academy/fees/collect', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (res.success) {
+      this.showToast(`Fee recorded! Invoice: ${res.invoiceNumber}${res.receiptNumber ? ` | Receipt: ${res.receiptNumber}` : ''}`, 'success');
+      this.closeModal();
+      await this.renderFees();
+
+      // Show receipt confirmation modal
+      if (res.receiptNumber) {
+        this.openModal(
+          `Payment Receipt — ${res.receiptNumber}`,
+          `
+            <div style="text-align: center; padding: 20px;">
+              <div style="color: #10b981; font-size: 48px; margin-bottom: 12px;">
+                <i class="fa-solid fa-circle-check"></i>
+              </div>
+              <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">Payment Recorded Successfully!</h3>
+              <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+                Receipt <strong>${res.receiptNumber}</strong> generated for Invoice <strong>${res.invoiceNumber}</strong>.
+              </p>
+              <div style="background: var(--bg-input); padding: 12px; border-radius: var(--radius-sm); font-size: 13px; text-align: left; margin-bottom: 16px;">
+                <div>Period: <strong>${res.periodStart} &rarr; ${res.periodEnd} (${res.monthsCount} month(s))</strong></div>
+                <div>Next Installment: <strong style="color: #3b82f6;">${res.nextInstallmentDate}</strong></div>
+                <div>Amount Paid: <strong style="color: #10b981;">₹${(payment_amount || 0).toLocaleString()}</strong></div>
+                <div>Remaining Balance: <strong>₹${(res.remainingBalance || 0).toLocaleString()}</strong></div>
+              </div>
+              <button class="btn btn-primary" onclick="app.downloadReceiptByNumber('${res.receiptNumber}')">
+                <i class="fa-solid fa-file-pdf"></i> Download Official PDF Receipt
+              </button>
+            </div>
+          `,
+          `<button class="btn btn-secondary" onclick="app.closeModal()">Close</button>`
+        );
+      }
+    } else {
+      this.showToast(res.error || 'Failed to record fee collection', 'danger');
+    }
+  },
+
+  async downloadReceiptByNumber(receiptNumber) {
+    try {
+      const res = await this.apiRequest(`/api/academy/fees/receipt/${receiptNumber}`);
+      if (res.success && res.receipt) {
+        this.generateFeeReceiptPdf(res.receipt);
+      } else {
+        this.showToast('Could not fetch receipt details', 'danger');
+      }
+    } catch (e) {
+      this.showToast('Failed to generate receipt PDF: ' + e.message, 'danger');
+    }
+  },
+
+  // ==========================================
+  // FEE PAUSES & MEMBERSHIP HOLDS WORKFLOW
+  // ==========================================
+
+  async showFeePauseRequestModal(preselectedStudentId = null) {
+    try {
+      const res = await this.apiRequest('/api/academy/students');
+      const students = (res && res.students) || [];
+      const today = new Date().toISOString().split('T')[0];
+
+      this.openModal(
+        'Request Fee Pause / Membership Hold',
+        `
+          <div>
+            <div class="form-group">
+              <label>Select Student *</label>
+              <select id="pause-student-id" class="form-select" style="width: 100%;">
+                ${students.map(s => `
+                  <option value="${s.id}" ${s.id === preselectedStudentId ? 'selected' : ''}>
+                    ${s.first_name} ${s.last_name} (${s.student_code}) — ${s.active_batch_name || 'No Batch'}
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Pause Type *</label>
+              <select id="pause-type" class="form-select" style="width: 100%;">
+                <option value="fee_pause">Standard Fee Pause</option>
+                <option value="injury_hold">Medical / Injury Hold</option>
+                <option value="exam_hold">Academic / Exam Break</option>
+                <option value="travel_hold">Personal Travel Hold</option>
+              </select>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+              <div class="form-group" style="margin: 0;">
+                <label>Requested Start Date *</label>
+                <input type="date" id="pause-start-date" class="form-input" style="width: 100%;" value="${today}">
+              </div>
+              <div class="form-group" style="margin: 0;">
+                <label>Requested End Date *</label>
+                <input type="date" id="pause-end-date" class="form-input" style="width: 100%;">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Reason for Pause *</label>
+              <textarea id="pause-reason" class="form-textarea" rows="3" style="width: 100%;" placeholder="State reason for pause or attach notes..." required></textarea>
+            </div>
+          </div>
+        `,
+        `
+          <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="app.submitFeePauseRequest()"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
+        `
+      );
+    } catch (e) {
+      this.showToast('Failed to open pause modal: ' + e.message, 'danger');
+    }
+  },
+
+  async submitFeePauseRequest() {
+    const student_id = Number(document.getElementById('pause-student-id').value);
+    const pause_type = document.getElementById('pause-type').value;
+    const requested_start_date = document.getElementById('pause-start-date').value;
+    const requested_end_date = document.getElementById('pause-end-date').value;
+    const reason = document.getElementById('pause-reason').value.trim();
+
+    if (!student_id || !requested_start_date || !requested_end_date || !reason) {
+      this.showToast('Please fill all required pause request fields', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/fees/pauses', {
+      method: 'POST',
+      body: JSON.stringify({ student_id, pause_type, requested_start_date, requested_end_date, reason }),
+    });
+
+    if (res.success) {
+      this.showToast('Fee pause request submitted for review', 'success');
+      this.closeModal();
+      this.feesState.activeTab = 'pauses';
+      this.renderFees();
+    } else {
+      this.showToast(res.error || 'Failed to submit pause request', 'danger');
+    }
+  },
+
+  showReviewPauseModal(pauseId, studentName, reqStart, reqEnd, reason, branchId) {
+    this.openModal(
+      `Review Fee Pause — ${studentName}`,
+      `
+        <div>
+          <div style="background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 16px; font-size: 13px;">
+            <div>Student: <strong>${studentName}</strong></div>
+            <div>Requested Window: <strong>${reqStart} &rarr; ${reqEnd}</strong></div>
+            <div style="margin-top: 4px;">Reason: <em>${reason || 'None provided'}</em></div>
+          </div>
+
+          <div class="form-group">
+            <label style="font-weight: 600;">Decision *</label>
+            <select id="review-decision" class="form-select" style="width: 100%;">
+              <option value="approved">Approve Pause Request</option>
+              <option value="rejected">Reject Pause Request</option>
+            </select>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+            <div class="form-group" style="margin: 0;">
+              <label>Approved Start Date</label>
+              <input type="date" id="review-start-date" class="form-input" style="width: 100%;" value="${reqStart}">
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label>Approved End Date</label>
+              <input type="date" id="review-end-date" class="form-input" style="width: 100%;" value="${reqEnd}">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Review Notes / Comments</label>
+            <input type="text" id="review-notes" class="form-input" style="width: 100%;" placeholder="e.g. Approved as per medical certificate">
+          </div>
+        </div>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitPauseReview(${pauseId})"><i class="fa-solid fa-check"></i> Submit Decision</button>
+      `
+    );
+  },
+
+  async submitPauseReview(pauseId) {
+    const decision = document.getElementById('review-decision').value;
+    const approved_start_date = document.getElementById('review-start-date').value;
+    const approved_end_date = document.getElementById('review-end-date').value;
+    const approval_notes = document.getElementById('review-notes').value.trim();
+
+    const res = await this.apiRequest(`/api/academy/fees/pauses/${pauseId}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({ decision, approved_start_date, approved_end_date, approval_notes }),
+    });
+
+    if (res.success) {
+      this.showToast(`Pause request ${decision}!`, 'success');
+      this.closeModal();
+      this.feesState.activeTab = 'pauses';
+      this.renderFees();
+    } else {
+      this.showToast(res.error || 'Failed to review pause request', 'danger');
+    }
+  },
+
+  // ==========================================
+  // STUDENT SPECIFIC FEE OVERRIDE MODAL
+  // ==========================================
+
+  showFeeOverrideModal(studentId, studentName, currentMonthlyFee) {
+    const today = new Date().toISOString().split('T')[0];
+
+    this.openModal(
+      `Set Student Fee Override — ${studentName}`,
+      `
+        <div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            Overrides batch standard fee for this student. Takes immediate precedence in subsequent fee calculations.
+          </p>
+
+          <div class="form-group">
+            <label>Custom Monthly Fee (₹) *</label>
+            <input type="number" id="override-fee-amt" class="form-input" style="width: 100%; font-weight: 700;" value="${currentMonthlyFee}" min="0" step="any" required>
+          </div>
+
+          <div class="form-group">
+            <label>Reason / Authorization *</label>
+            <input type="text" id="override-fee-reason" class="form-input" style="width: 100%;" placeholder="e.g. Sibling discount / Financial aid / Sponsored" required>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+            <div class="form-group" style="margin: 0;">
+              <label>Effective From</label>
+              <input type="date" id="override-effective-from" class="form-input" style="width: 100%;" value="${today}">
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label>Effective Until (Optional)</label>
+              <input type="date" id="override-effective-until" class="form-input" style="width: 100%;" placeholder="Permanent if empty">
+            </div>
+          </div>
+        </div>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitFeeOverride(${studentId})"><i class="fa-solid fa-save"></i> Save Override</button>
+      `
+    );
+  },
+
+  async submitFeeOverride(studentId) {
+    const custom_monthly_fee = Number(document.getElementById('override-fee-amt').value);
+    const reason = document.getElementById('override-fee-reason').value.trim();
+    const effective_from = document.getElementById('override-effective-from').value;
+    const effective_until = document.getElementById('override-effective-until').value || null;
+
+    if (custom_monthly_fee === undefined || isNaN(custom_monthly_fee) || custom_monthly_fee < 0 || !reason) {
+      this.showToast('Please provide a valid custom monthly fee and reason', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/fees/override', {
+      method: 'POST',
+      body: JSON.stringify({ student_id: studentId, custom_monthly_fee, reason, effective_from, effective_until }),
+    });
+
+    if (res.success) {
+      this.showToast('Student fee override saved successfully', 'success');
+      this.closeModal();
+      await this.loadStudentLedger(studentId);
+    } else {
+      this.showToast(res.error || 'Failed to set fee override', 'danger');
+    }
+  },
+
+  // ==========================================
+  // INVOICE PAYMENT COLLECTION MODAL
+  // ==========================================
+
+  showCollectPaymentModal(invoiceId, invoiceNumber, balance, studentName, studentId = null) {
     this.openModal(
       `Collect Payment — ${invoiceNumber}`,
       `
         <div>
           <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
-            Student: <strong>${studentName}</strong> | Outstanding: <strong>₹${balance.toLocaleString()}</strong>
+            Student: <strong>${studentName}</strong> | Outstanding Balance: <strong style="color: #f59e0b;">₹${balance.toLocaleString()}</strong>
           </p>
           <div class="form-group">
             <label>Amount (₹) *</label>
-            <input type="number" id="pay-amt" class="form-input" style="width: 100%;" value="${balance}" max="${balance}" required>
+            <input type="number" id="pay-amt" class="form-input" style="width: 100%; font-weight: 700;" value="${balance}" max="${balance}" min="1" step="any" required>
           </div>
           <div class="form-group">
-            <label>Payment Mode</label>
+            <label>Payment Mode *</label>
             <select id="pay-mode" class="form-select" style="width: 100%;">
               <option value="upi">UPI (GPay / PhonePe / Paytm)</option>
               <option value="cash">Cash</option>
@@ -1506,8 +4684,8 @@ const app = {
             </select>
           </div>
           <div class="form-group">
-            <label>Reference / Transaction Note</label>
-            <input type="text" id="pay-ref" class="form-input" style="width: 100%;" placeholder="e.g. UPI/20261015/12345">
+            <label>Transaction Reference / Cheque #</label>
+            <input type="text" id="pay-ref" class="form-input" style="width: 100%;" placeholder="e.g. UPI/20261016/12345">
           </div>
         </div>
       `,
@@ -1542,10 +4720,20 @@ const app = {
     }
   },
 
+  // ==========================================
+  // PRINTABLE / PDF RECEIPT GENERATOR
+  // ==========================================
+
   generateFeeReceiptPdf(fee) {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      this.showToast('PDF generator library is initializing, please try again.', 'warning');
+      return;
+    }
+
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
+    // Top Header Banner
     doc.setFillColor(37, 99, 235);
     doc.rect(0, 0, 210, 36, 'F');
 
@@ -1559,48 +4747,186 @@ const app = {
     doc.text('OFFICIAL FEE PAYMENT RECEIPT', 14, 28);
     doc.text(`DATE: ${new Date().toISOString().split('T')[0]}`, 155, 28);
 
+    // Student & Invoice Metadata
     doc.setTextColor(30, 41, 59);
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Student: ${fee.first_name} ${fee.last_name} (${fee.student_code})`, 14, 48);
-    doc.text(`Invoice #: ${fee.invoice_number}`, 140, 48);
+    doc.text(`Student: ${fee.first_name || ''} ${fee.last_name || ''} (${fee.student_code || ''})`, 14, 46);
+    doc.text(`Invoice #: ${fee.invoice_number || '-'}`, 140, 46);
 
-    doc.autoTable({
-      startY: 55,
-      head: [['Fee Title', 'Total Net (INR)', 'Paid (INR)', 'Balance (INR)', 'Status']],
-      body: [
-        [fee.title, `INR ${fee.net_amount.toLocaleString()}`, `INR ${fee.paid_amount.toLocaleString()}`, `INR ${fee.balance_amount.toLocaleString()}`, fee.status.toUpperCase()]
-      ],
-      headStyles: { fillColor: [15, 23, 42], textColor: 255 },
-      styles: { fontSize: 10, cellPadding: 6 },
-    });
-
-    const finalY = doc.lastAutoTable.finalY + 20;
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text('Verified electronically by Academy Fee Collection Desk.', 14, finalY);
+    doc.text(`Branch: ${fee.branch_name || 'Main Branch'}`, 14, 52);
+    if (fee.period_start && fee.period_end) {
+      doc.text(`Fee Period: ${fee.period_start} to ${fee.period_end} (${fee.months_count || 1} month(s))`, 140, 52);
+    }
 
-    doc.save(`Receipt-${fee.invoice_number}.pdf`);
-    this.showToast('Letterhead PDF Receipt downloaded via jsPDF', 'success');
+    // Receipt Table
+    const baseFee = fee.base_fee !== undefined ? fee.base_fee : fee.net_amount;
+    const discount = fee.discount_amount || 0;
+    const paid = fee.paid_amount || fee.amount || 0;
+    const balance = fee.balance_amount !== undefined ? fee.balance_amount : 0;
+
+    doc.autoTable({
+      startY: 58,
+      head: [['Fee Title', 'Base Fee', 'Discount', 'Net Amount', 'Paid', 'Balance', 'Status']],
+      body: [
+        [
+          fee.title || fee.fee_title || 'Sports Academy Fee',
+          `INR ${(baseFee || 0).toLocaleString()}`,
+          `INR ${(discount || 0).toLocaleString()}`,
+          `INR ${(fee.net_amount || 0).toLocaleString()}`,
+          `INR ${(paid || 0).toLocaleString()}`,
+          `INR ${(balance || 0).toLocaleString()}`,
+          (fee.status || 'PAID').toUpperCase(),
+        ]
+      ],
+      headStyles: { fillColor: [15, 23, 42], textColor: 255 },
+      styles: { fontSize: 9, cellPadding: 5 },
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 16;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Payment Mode: ${(fee.payment_mode || 'Cash').toUpperCase()}`, 14, finalY);
+    if (fee.transaction_reference) {
+      doc.text(`Reference: ${fee.transaction_reference}`, 14, finalY + 6);
+    }
+    if (fee.collector_name) {
+      doc.text(`Collected by: ${fee.collector_name}`, 140, finalY);
+    }
+    doc.text('Verified electronically by Academy Fee Collection & Ledger Desk.', 14, finalY + 16);
+
+    const filename = `Receipt-${fee.receipt_number || fee.invoice_number || 'fee'}.pdf`;
+    doc.save(filename);
+    this.showToast(`PDF Receipt downloaded: ${filename}`, 'success');
+  },
+
+  printFeeReceipt(fee) {
+    const baseFee = fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || 0);
+    const discount = fee.discount_amount || 0;
+    const paid = fee.paid_amount || fee.amount || 0;
+    const balance = fee.balance_amount !== undefined ? fee.balance_amount : 0;
+    const periodText = (fee.period_start && fee.period_end)
+      ? `${fee.period_start} to ${fee.period_end} (${fee.months_count || 1} month(s))`
+      : 'Standard Cycle';
+
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      this.showToast('Popup blocker prevented print window. Please allow popups.', 'warning');
+      return;
+    }
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Receipt - ${fee.receipt_number || fee.invoice_number || 'fee'}</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #2563eb; padding-bottom: 20px; margin-bottom: 24px; }
+          .academy-name { font-size: 24px; font-weight: 800; color: #1e293b; margin: 0; }
+          .receipt-badge { font-size: 13px; font-weight: 700; color: #2563eb; text-transform: uppercase; margin-top: 4px; }
+          .meta-box { display: flex; justify-content: space-between; margin-bottom: 24px; background: #f8fafc; padding: 16px; border-radius: 8px; font-size: 14px; }
+          .table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+          .table th { background: #0f172a; color: #ffffff; padding: 10px 12px; text-align: left; font-size: 13px; }
+          .table td { padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+          .footer { margin-top: 40px; border-top: 1px dashed #cbd5e1; padding-top: 16px; font-size: 12px; color: #64748b; display: flex; justify-content: space-between; }
+          @media print {
+            body { padding: 0; }
+            button { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div style="margin-bottom: 16px;">
+          <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">Print Now</button>
+        </div>
+        <div class="header">
+          <div>
+            <div class="academy-name">${(this.user.academyName || 'Sports Academy').toUpperCase()}</div>
+            <div class="receipt-badge">Official Fee Payment Receipt</div>
+          </div>
+          <div style="text-align: right; font-size: 13px;">
+            <div><strong>Date:</strong> ${new Date().toLocaleDateString()}</div>
+            <div><strong>Receipt #:</strong> ${fee.receipt_number || '-'}</div>
+            <div><strong>Invoice #:</strong> ${fee.invoice_number || '-'}</div>
+          </div>
+        </div>
+
+        <div class="meta-box">
+          <div>
+            <strong>Student:</strong> ${fee.first_name || ''} ${fee.last_name || ''} (${fee.student_code || ''})<br/>
+            <strong>Branch:</strong> ${fee.branch_name || 'Main Campus'}
+          </div>
+          <div style="text-align: right;">
+            <strong>Fee Period:</strong> ${periodText}<br/>
+            <strong>Payment Mode:</strong> ${(fee.payment_mode || 'Cash').toUpperCase()}
+          </div>
+        </div>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th style="text-align: right;">Base Fee</th>
+              <th style="text-align: right;">Discount</th>
+              <th style="text-align: right;">Net Payable</th>
+              <th style="text-align: right;">Amount Paid</th>
+              <th style="text-align: right;">Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>${fee.title || fee.fee_title || 'Academy Fee'}</strong></td>
+              <td style="text-align: right;">INR ${Number(baseFee).toLocaleString()}</td>
+              <td style="text-align: right; color: #10b981;">INR ${Number(discount).toLocaleString()}</td>
+              <td style="text-align: right;">INR ${Number(fee.net_amount || 0).toLocaleString()}</td>
+              <td style="text-align: right; font-weight: 700; color: #10b981;">INR ${Number(paid).toLocaleString()}</td>
+              <td style="text-align: right; color: ${balance > 0 ? '#ef4444' : '#64748b'};">INR ${Number(balance).toLocaleString()}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="footer">
+          <div>Collected by: ${fee.collector_name || 'Accounts Desk'} &bull; Verified electronically</div>
+          <div>Status: ${(fee.status || 'PAID').toUpperCase()}</div>
+        </div>
+        <script>
+          setTimeout(() => { window.print(); }, 400);
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
   },
 
   exportFeesExcel() {
-    if (!this.currentFeesData || !this.currentFeesData.length) return;
+    if (!this.currentFeesData || !this.currentFeesData.length) {
+      this.showToast('No fees data available to export', 'warning');
+      return;
+    }
     const rows = this.currentFeesData.map(f => ({
       'Invoice #': f.invoice_number,
       'Student Code': f.student_code,
       'Student Name': `${f.first_name} ${f.last_name}`,
+      'Branch': f.branch_name || 'Main',
       'Fee Title': f.title,
+      'Period Start': f.period_start || '',
+      'Period End': f.period_end || '',
+      'Months': f.months_count || 1,
       'Due Date': f.due_date,
-      'Amount': f.net_amount,
+      'Base Fee': f.base_fee || f.net_amount,
+      'Discount': f.discount_amount || 0,
+      'Net Amount': f.net_amount,
       'Paid': f.paid_amount,
       'Balance Due': f.balance_amount,
       'Status': f.status,
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Fees');
-    XLSX.writeFile(wb, `Fees_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'Fees_Ledger');
+    XLSX.writeFile(wb, `Fees_Ledger_${new Date().toISOString().split('T')[0]}.xlsx`);
     this.showToast('Exported fees report via SheetJS', 'success');
   },
 
@@ -1613,26 +4939,42 @@ const app = {
 
     content.innerHTML = `
       <div class="content-card">
-        <div class="card-header">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
           <h2 class="card-title"><i class="fa-solid fa-clipboard-user"></i> Batch Attendance Marking</h2>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="app.showSwitchSessionModal()">
+              <i class="fa-solid fa-arrows-split-up-and-left"></i> Switch Session
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.showAttendanceCorrectionModal()">
+              <i class="fa-solid fa-clock-rotate-left"></i> Request Correction
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.showOvertimeModal()">
+              <i class="fa-solid fa-stopwatch"></i> Log Overtime
+            </button>
+          </div>
         </div>
+
         <div style="padding: 20px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.01);">
           <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end;">
-            <div class="form-group" style="margin: 0; min-width: 220px;">
+            <div class="form-group" style="margin: 0; min-width: 240px;">
               <label>Select Training Batch</label>
-              <select id="att-batch-select" class="form-select" style="width: 100%;">
+              <select id="att-batch-select" class="form-select" style="width: 100%;" onchange="app.onAttendanceBatchChange()">
                 ${batches.map(b => `<option value="${b.id}">${b.name} (${b.sport_name})</option>`).join('')}
               </select>
             </div>
             <div class="form-group" style="margin: 0;">
-              <label>Date</label>
-              <input type="date" id="att-date-input" class="form-input" value="${today}">
+              <label>Date (Allowed: Today + past 2 days)</label>
+              <input type="date" id="att-date-input" class="form-input" value="${today}" onchange="app.onAttendanceDateChange()">
             </div>
             <button class="btn btn-primary" onclick="app.loadAttendanceRoster()">
               <i class="fa-solid fa-magnifying-glass"></i> Load Roster
             </button>
           </div>
+
+          <!-- Session Eligibility Notice -->
+          <div id="attendance-session-notice" style="margin-top: 14px;"></div>
         </div>
+
         <div id="attendance-roster-container" style="padding: 20px;">
           <p style="color: var(--text-muted); font-size: 13px;">Select a batch and date above to load student attendance.</p>
         </div>
@@ -1640,20 +4982,110 @@ const app = {
     `;
 
     if (batches.length > 0) {
-      this.loadAttendanceRoster();
+      await this.onAttendanceBatchChange();
     }
   },
 
+  async onAttendanceBatchChange() {
+    const batchSelect = document.getElementById('att-batch-select');
+    if (!batchSelect) return;
+    const batchId = batchSelect.value;
+    const noticeContainer = document.getElementById('attendance-session-notice');
+
+    // Fetch next eligible session for this batch
+    try {
+      const res = await this.apiRequest(`/api/academy/attendance/eligible-session?batch_id=${batchId}`);
+      if (res && res.success && res.hasSession) {
+        const s = res.session;
+        const dateInput = document.getElementById('att-date-input');
+        if (dateInput && s.scheduled_date) {
+          dateInput.value = s.scheduled_date;
+        }
+
+        const statusBadge = s.attendance_status === 'completed'
+          ? '<span class="badge badge-success"><i class="fa-solid fa-check"></i> Attendance Completed</span>'
+          : '<span class="badge badge-warning"><i class="fa-solid fa-clock"></i> Pending Entry</span>';
+
+        noticeContainer.innerHTML = `
+          <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: var(--radius-md); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="badge badge-primary" style="font-size: 12px;"><i class="fa-solid fa-calendar-check"></i> Next Eligible Scheduled Session</span>
+              <strong style="color: var(--text-heading); font-size: 13px;">${s.scheduled_date} (${s.start_time} - ${s.end_time})</strong>
+              <span style="font-size: 12px; color: var(--text-muted);">&bull; Batch: ${s.batch_name}</span>
+            </div>
+            <div>${statusBadge}</div>
+          </div>
+        `;
+      } else {
+        noticeContainer.innerHTML = `
+          <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: var(--radius-md); padding: 10px 14px; font-size: 13px; color: #f59e0b;">
+            <i class="fa-solid fa-triangle-exclamation"></i> No scheduled session found in the allowed 3-day window (Today & previous 2 days). Please select a specific date or request a correction.
+          </div>
+        `;
+      }
+    } catch (e) {
+      console.warn('Eligible session lookup failed:', e);
+    }
+
+    this.loadAttendanceRoster();
+  },
+
+  onAttendanceDateChange() {
+    this.loadAttendanceRoster();
+  },
+
   async loadAttendanceRoster() {
-    const batchId = document.getElementById('att-batch-select').value;
-    const date = document.getElementById('att-date-input').value;
+    const batchSelect = document.getElementById('att-batch-select');
+    const dateInput = document.getElementById('att-date-input');
+    if (!batchSelect || !dateInput) return;
+
+    const batchId = batchSelect.value;
+    const date = dateInput.value;
     const container = document.getElementById('attendance-roster-container');
 
     container.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading roster...';
 
+    // Calculate calendar days difference from today
+    const today = new Date().toISOString().split('T')[0];
+    const todayObj = new Date(today + 'T00:00:00Z');
+    const targetObj = new Date(date + 'T00:00:00Z');
+    const diffDays = Math.round((todayObj.getTime() - targetObj.getTime()) / (1000 * 60 * 60 * 24));
+
+    let bannerHtml = '';
+    let disableSaving = false;
+
+    if (diffDays < 0) {
+      disableSaving = true;
+      bannerHtml = `
+        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 16px; color: #ef4444; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-ban fa-lg"></i>
+          <div>
+            <strong>Future Attendance Prohibited:</strong> Attendance cannot be marked prior to scheduled class execution date under academy backend rules.
+          </div>
+        </div>
+      `;
+    } else if (diffDays > 2) {
+      bannerHtml = `
+        <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 16px; color: #f59e0b; font-size: 13px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-clock-rotate-left fa-lg"></i>
+            <div>
+              <strong>Outside 2-Day Cutoff:</strong> Selected date (${date}) is ${diffDays} calendar days in the past. Saving requires an approved administrative correction.
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="app.showAttendanceCorrectionModal(${batchId}, '${date}')">
+            <i class="fa-solid fa-paper-plane"></i> Request Approval
+          </button>
+        </div>
+      `;
+    }
+
     const res = await this.apiRequest(`/api/academy/attendance?batch_id=${batchId}&date=${date}`);
     if (!res.success) {
-      container.innerHTML = `<div class="toast danger">${res.error}</div>`;
+      container.innerHTML = `
+        ${bannerHtml}
+        <div class="toast danger">${res.error}</div>
+      `;
       return;
     }
 
@@ -1662,11 +5094,33 @@ const app = {
     window._cachedAvailableTechniques = availableTechniques;
 
     if (!roster.length) {
-      container.innerHTML = '<p style="color: var(--text-muted);">No students are currently enrolled in this batch.</p>';
+      container.innerHTML = `
+        ${bannerHtml}
+        <p style="color: var(--text-muted);">No students are currently enrolled in this batch.</p>
+      `;
       return;
     }
 
+    this._cachedAttendanceRoster = roster;
+    this._cachedAttendanceDate = date;
+    this._cachedAttendanceBatchId = batchId;
+
+    const isAlreadyRecorded = !!res.attendanceRecord;
+    let recordedBannerHtml = '';
+    if (isAlreadyRecorded) {
+      recordedBannerHtml = `
+        <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 16px; color: #10b981; font-size: 13px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <i class="fa-solid fa-circle-check"></i> <strong>Attendance already recorded for ${date}:</strong> Showing current saved records. Saving will update the existing session.
+          </div>
+          <span class="badge badge-success"><i class="fa-solid fa-check"></i> Recorded</span>
+        </div>
+      `;
+    }
+
     container.innerHTML = `
+      ${bannerHtml}
+      ${recordedBannerHtml}
       <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <div>
           <span style="font-size: 13px; font-weight: 600;">Enrolled Students (${roster.length})</span>
@@ -1681,6 +5135,9 @@ const app = {
           </select>
           <button class="btn btn-secondary btn-sm" onclick="app.setAllAttendance('present')">All Present</button>
           <button class="btn btn-secondary btn-sm" onclick="app.setAllAttendance('absent')">All Absent</button>
+          <button class="btn btn-secondary btn-sm" onclick="app.exportAttendanceExcel()">
+            <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Roster
+          </button>
         </div>
       </div>
 
@@ -1698,7 +5155,8 @@ const app = {
           </thead>
           <tbody>
             ${roster.map(r => {
-              const currentTechId = r.marked_technique_id || r.active_technique_id;
+              const defaultTechId = availableTechniques[0] ? availableTechniques[0].id : '';
+              const currentTechId = r.marked_technique_id || r.active_technique_id || defaultTechId;
               return `
               <tr data-student-id="${r.student_id}">
                 <td>
@@ -1707,7 +5165,7 @@ const app = {
                 </td>
                 <td>
                   <select class="form-select att-status-select" style="padding: 4px 8px; font-size: 12px;">
-                    <option value="present" ${r.status === 'present' ? 'selected' : ''}>Present</option>
+                    <option value="present" ${(!r.status || r.status === 'present') ? 'selected' : ''}>Present</option>
                     <option value="absent" ${r.status === 'absent' ? 'selected' : ''}>Absent</option>
                     <option value="late" ${r.status === 'late' ? 'selected' : ''}>Late</option>
                     <option value="excused" ${r.status === 'excused' ? 'selected' : ''}>Excused</option>
@@ -1719,9 +5177,17 @@ const app = {
                       Lvl ${r.active_technique_level} ${r.active_technique_belt_level ? '• ' + r.active_technique_belt_level : ''}
                     </span>
                     <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                      ${r.active_sessions_attended || 0} session(s)
+                      <strong>${r.batch_attended_sessions !== undefined ? r.batch_attended_sessions : (r.total_attended_sessions || r.active_sessions_attended || 0)}</strong> total session(s)
+                      <div style="font-size: 10px; color: var(--primary); margin-top: 1px;">
+                        <i class="fa-solid fa-graduation-cap"></i> ${r.active_sessions_attended || 0} on this technique
+                      </div>
                     </div>
-                  ` : '<span style="color: var(--text-dim); font-size: 11px;">Unassigned</span>'}
+                  ` : `
+                    <span style="color: var(--text-dim); font-size: 11px;">Unassigned</span>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                      <strong>${r.batch_attended_sessions !== undefined ? r.batch_attended_sessions : (r.total_attended_sessions || 0)}</strong> total session(s)
+                    </div>
+                  `}
                 </td>
                 <td>
                   <select class="form-select att-tech-select" style="padding: 4px 8px; font-size: 12px; max-width: 190px;">
@@ -1746,9 +5212,9 @@ const app = {
         </table>
       </div>
 
-      <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
-        <button class="btn btn-success" onclick="app.saveAttendance(${batchId}, '${date}')">
-          <i class="fa-solid fa-floppy-disk"></i> Save Attendance & Track Technique
+      <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="btn ${isAlreadyRecorded ? 'btn-primary' : 'btn-success'}" id="btn-save-attendance" ${disableSaving ? 'disabled' : ''} onclick="app.saveAttendance(${batchId}, '${date}')">
+          <i class="fa-solid ${isAlreadyRecorded ? 'fa-pen-to-square' : 'fa-floppy-disk'}"></i> ${isAlreadyRecorded ? 'Update Attendance & Track Technique' : 'Save Attendance & Track Technique'}
         </button>
       </div>
     `;
@@ -1763,6 +5229,36 @@ const app = {
     document.querySelectorAll('.att-tech-select').forEach(sel => {
       sel.value = techniqueId;
     });
+  },
+
+  exportAttendanceExcel() {
+    if (!this._cachedAttendanceRoster || !this._cachedAttendanceRoster.length) {
+      this.showToast('No roster loaded to export', 'warning');
+      return;
+    }
+    const exportRows = this._cachedAttendanceRoster.map(r => {
+      const rowElem = document.querySelector(`tr[data-student-id="${r.student_id}"]`);
+      const status = rowElem ? rowElem.querySelector('.att-status-select')?.value : (r.status || 'present');
+      const remark = rowElem ? rowElem.querySelector('.att-remark-input')?.value : (r.remarks || '');
+      const techRemark = rowElem ? rowElem.querySelector('.att-tech-remarks-input')?.value : (r.marked_technique_remarks || '');
+      return {
+        'Date': this._cachedAttendanceDate || new Date().toISOString().split('T')[0],
+        'Batch ID': this._cachedAttendanceBatchId || '',
+        'Student Code': r.student_code,
+        'Student Name': `${r.first_name} ${r.last_name}`,
+        'Status': (status || 'present').toUpperCase(),
+        'Current Technique': r.active_technique_name || r.marked_technique_name || 'General',
+        'Technique Level': r.active_technique_level || r.marked_technique_level || 1,
+        'Technique Remark': techRemark,
+        'General Remark': remark,
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance');
+    XLSX.writeFile(workbook, `Attendance_${this._cachedAttendanceDate || 'session'}.xlsx`);
+    this.showToast('Attendance exported to Excel via SheetJS', 'success');
   },
 
   async saveAttendance(batchId, date) {
@@ -1793,24 +5289,451 @@ const app = {
 
     if (res.success) {
       this.showToast(res.message, 'success');
+      this.onAttendanceBatchChange();
     } else {
-      this.showToast(res.error || 'Failed to save attendance', 'danger');
+      if (res.requiresCorrection) {
+        this.showToast(res.error, 'danger');
+        this.showAttendanceCorrectionModal(batchId, date);
+      } else {
+        this.showToast(res.error || 'Failed to save attendance', 'danger');
+      }
+    }
+  },
+
+  // MODAL: Attendance Correction Request
+  async showAttendanceCorrectionModal(prefillBatchId = null, prefillDate = null) {
+    const batchId = prefillBatchId || (document.getElementById('att-batch-select') ? document.getElementById('att-batch-select').value : 1);
+    const date = prefillDate || (document.getElementById('att-date-input') ? document.getElementById('att-date-input').value : new Date().toISOString().split('T')[0]);
+
+    this.openModal('Request Attendance Correction', `
+      <form id="attendance-correction-form" onsubmit="event.preventDefault(); app.submitAttendanceCorrection();">
+        <input type="hidden" id="corr-batch-id" value="${batchId}">
+        <div class="form-group">
+          <label>Date for Correction</label>
+          <input type="date" id="corr-date" class="form-input" value="${date}" required>
+        </div>
+        <div class="form-group">
+          <label>Mandatory Correction Reason</label>
+          <textarea id="corr-reason" class="form-input" rows="3" required placeholder="State reason for late submission (e.g. coach illness, biometric system outage, paper log verified)..."></textarea>
+        </div>
+        <p style="font-size: 12px; color: var(--text-muted);">
+          Submissions older than the 2-calendar-day window require authorized Branch Admin or Academy Admin approval before they can be marked.
+        </p>
+      </form>
+    `, `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="app.submitAttendanceCorrection()">
+        <i class="fa-solid fa-paper-plane"></i> Submit Request
+      </button>
+    `);
+  },
+
+  async submitAttendanceCorrection() {
+    const batch_id = document.getElementById('corr-batch-id').value;
+    const date = document.getElementById('corr-date').value;
+    const reason = document.getElementById('corr-reason').value.trim();
+
+    if (!reason) {
+      this.showToast('A detailed reason is mandatory for late attendance requests', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/attendance/corrections', {
+      method: 'POST',
+      body: JSON.stringify({ batch_id, date, reason }),
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast('Correction request submitted for administrative review', 'success');
+    } else {
+      this.showToast(res.error || 'Failed to submit correction request', 'danger');
+    }
+  },
+
+  // MODAL: Switch Session (Temporary Student Swap)
+  async showSwitchSessionModal(prefillBatchId = null) {
+    const studentsRes = await this.apiRequest('/api/academy/students');
+    const students = studentsRes.students || [];
+
+    const sessionsRes = await this.apiRequest('/api/academy/attendance/sessions');
+    const sessions = sessionsRes.sessions || [];
+
+    this.openModal('Switch Session / Guest Student Attendance', `
+      <form id="switch-session-form" onsubmit="event.preventDefault(); app.submitSessionSwap();">
+        <div class="form-group">
+          <label>Select Student</label>
+          <select id="swap-student-id" class="form-select" required>
+            ${students.map(s => `<option value="${s.id}">${s.first_name} ${s.last_name} (${s.student_code})</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Original Scheduled Session</label>
+          <select id="swap-orig-session" class="form-select" required>
+            ${sessions.map(s => `<option value="${s.id}">${s.scheduled_date} (${s.start_time} - ${s.end_time}) &bull; ${s.batch_name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Replacement Session to Attend</label>
+          <select id="swap-repl-session" class="form-select" required>
+            ${sessions.map(s => `<option value="${s.id}">${s.scheduled_date} (${s.start_time} - ${s.end_time}) &bull; ${s.batch_name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Reason for Session Swap</label>
+          <input type="text" id="swap-reason" class="form-input" required placeholder="e.g. Exam conflict, medical swap, trial guest session">
+        </div>
+        <p style="font-size: 12px; color: var(--text-muted);">
+          Note: Temporary session swapping allows attendance credit in the replacement class without altering the student's permanent batch membership.
+        </p>
+      </form>
+    `, `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="app.submitSessionSwap()">
+        <i class="fa-solid fa-arrows-split-up-and-left"></i> Apply Session Swap
+      </button>
+    `);
+  },
+
+  async submitSessionSwap() {
+    const student_id = document.getElementById('swap-student-id').value;
+    const original_session_id = document.getElementById('swap-orig-session').value;
+    const replacement_session_id = document.getElementById('swap-repl-session').value;
+    const reason = document.getElementById('swap-reason').value.trim();
+
+    if (!reason) {
+      this.showToast('Please provide a reason for the session swap', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/attendance/switch-session', {
+      method: 'POST',
+      body: JSON.stringify({ student_id, original_session_id, replacement_session_id, reason }),
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast('Session swap recorded successfully', 'success');
+      this.loadAttendanceRoster();
+    } else {
+      this.showToast(res.error || 'Failed to switch session', 'danger');
+    }
+  },
+
+  // MODAL: Log Overtime Request
+  showOvertimeModal() {
+    const today = new Date().toISOString().split('T')[0];
+
+    this.openModal('Log Coach / Staff Overtime', `
+      <form id="overtime-form" onsubmit="event.preventDefault(); app.submitOvertimeRequest();">
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="ot-date" class="form-input" value="${today}" required>
+        </div>
+        <div class="form-group">
+          <label>Overtime Duration (Minutes)</label>
+          <input type="number" id="ot-minutes" class="form-input" min="1" max="600" value="45" required oninput="app.checkOvertimeThresholdNotice(this.value)">
+          <div id="ot-threshold-notice" style="font-size: 12px; margin-top: 4px; color: #f59e0b;">
+            <i class="fa-solid fa-circle-info"></i> Overtime exceeding 30 minutes triggers mandatory approval workflow.
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Reason (Mandatory if exceeding 30 mins)</label>
+          <textarea id="ot-reason" class="form-input" rows="2" placeholder="e.g. Tournament overtime coaching, extended recovery debrief"></textarea>
+        </div>
+      </form>
+    `, `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="app.submitOvertimeRequest()">
+        <i class="fa-solid fa-check"></i> Submit Overtime
+      </button>
+    `);
+  },
+
+  checkOvertimeThresholdNotice(minutes) {
+    const notice = document.getElementById('ot-threshold-notice');
+    if (!notice) return;
+    const mins = Number(minutes);
+    if (mins > 30) {
+      notice.innerHTML = `<span style="color: #f59e0b;"><i class="fa-solid fa-triangle-exclamation"></i> ${mins} mins exceeds the 30-min threshold &bull; Requires branch/academy admin approval</span>`;
+    } else {
+      notice.innerHTML = `<span style="color: #10b981;"><i class="fa-solid fa-check-circle"></i> ${mins} mins &le; 30 mins &bull; Auto-approved under normal academy policy</span>`;
+    }
+  },
+
+  async submitOvertimeRequest() {
+    const date = document.getElementById('ot-date').value;
+    const overtime_minutes = document.getElementById('ot-minutes').value;
+    const reason = document.getElementById('ot-reason').value.trim();
+
+    const res = await this.apiRequest('/api/academy/overtime/requests', {
+      method: 'POST',
+      body: JSON.stringify({ date, overtime_minutes, reason }),
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast(res.message, 'success');
+    } else {
+      this.showToast(res.error || 'Failed to submit overtime', 'danger');
+    }
+  },
+
+  // QUICK ATTENDANCE (Role-Scoped Overview 1-Click Drawer)
+  async openQuickAttendanceModal(batchId, batchName, isEdit = false) {
+    const today = new Date().toISOString().split('T')[0];
+    const res = await this.apiRequest(`/api/academy/attendance?batch_id=${batchId}&date=${today}`);
+    const roster = (res && res.roster) || [];
+
+    if (roster.length === 0) {
+      this.showToast('No active students enrolled in this batch.', 'info');
+      return;
+    }
+
+    this._quickAttendanceState = {
+      batchId,
+      batchName,
+      date: today,
+      students: roster.map(s => ({
+        student_id: s.student_id,
+        first_name: s.first_name,
+        last_name: s.last_name,
+        student_code: s.student_code,
+        status: s.status || 'present',
+        remarks: s.remarks || '',
+      })),
+    };
+
+    this.renderQuickAttendanceModal();
+  },
+
+  renderQuickAttendanceModal() {
+    const state = this._quickAttendanceState;
+    if (!state) return;
+
+    const presentCount = state.students.filter(s => s.status === 'present').length;
+    const absentCount = state.students.filter(s => s.status === 'absent').length;
+    const lateCount = state.students.filter(s => s.status === 'late').length;
+    const leaveCount = state.students.filter(s => s.status === 'leave' || s.status === 'excused').length;
+
+    const modalBody = `
+      <div style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+          <div>
+            <div style="font-size: 14px; font-weight: 700; color: var(--text-heading);">${this.escapeHtml(state.batchName)}</div>
+            <div style="font-size: 12px; color: var(--text-muted);"><i class="fa-regular fa-calendar"></i> Today: <strong>${state.date}</strong> &bull; Total Students: <strong>${state.students.length}</strong></div>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-sm btn-outline-success" onclick="app.markAllQuickAtt('present')">
+              <i class="fa-solid fa-check-double"></i> All Present
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="app.markAllQuickAtt('absent')">
+              <i class="fa-solid fa-xmark"></i> All Absent
+            </button>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; font-size: 12px;">
+          <span style="color: #10b981; font-weight: 600;">Present: ${presentCount}</span>
+          <span style="color: #ef4444; font-weight: 600;">Absent: ${absentCount}</span>
+          <span style="color: #f59e0b; font-weight: 600;">Late: ${lateCount}</span>
+          <span style="color: #6366f1; font-weight: 600;">Leave: ${leaveCount}</span>
+        </div>
+
+        <div style="max-height: 420px; overflow-y: auto; padding-right: 4px;" class="custom-scrollbar">
+          ${state.students.map((s, idx) => `
+            <div class="quick-att-student-card" id="quick-att-row-${s.student_id}">
+              <div class="student-info">
+                <div class="student-name">${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</div>
+                <div class="student-sub"><code>${this.escapeHtml(s.student_code)}</code></div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <div class="att-status-chips">
+                  <span class="att-chip ${s.status === 'present' ? 'active-present' : ''}" onclick="app.setQuickAttStatus(${s.student_id}, 'present')">Present</span>
+                  <span class="att-chip ${s.status === 'absent' ? 'active-absent' : ''}" onclick="app.setQuickAttStatus(${s.student_id}, 'absent')">Absent</span>
+                  <span class="att-chip ${s.status === 'late' ? 'active-late' : ''}" onclick="app.setQuickAttStatus(${s.student_id}, 'late')">Late</span>
+                  <span class="att-chip ${(s.status === 'leave' || s.status === 'excused') ? 'active-leave' : ''}" onclick="app.setQuickAttStatus(${s.student_id}, 'leave')">Leave</span>
+                </div>
+                <input type="text" class="form-input" style="width: 140px; font-size: 11px; padding: 4px 8px;"
+                       placeholder="Remark..."
+                       value="${this.escapeHtml(s.remarks || '')}"
+                       onchange="app.setQuickAttRemark(${s.student_id}, this.value)">
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    const modalFooter = `
+      <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+        <span style="font-size: 12px; color: var(--text-muted);"><i class="fa-solid fa-lock"></i> Scoped to assigned batch</span>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btn-submit-quick-att" onclick="app.submitQuickAttendance(${state.batchId})">
+            <i class="fa-solid fa-floppy-disk"></i> Submit Attendance
+          </button>
+        </div>
+      </div>
+    `;
+
+    this.openModal(`Quick Attendance — ${state.batchName}`, modalBody, modalFooter);
+  },
+
+  setQuickAttStatus(studentId, status) {
+    if (!this._quickAttendanceState) return;
+    const st = this._quickAttendanceState.students.find(s => s.student_id === studentId);
+    if (st) {
+      st.status = status;
+      this.renderQuickAttendanceModal();
+    }
+  },
+
+  setQuickAttRemark(studentId, remark) {
+    if (!this._quickAttendanceState) return;
+    const st = this._quickAttendanceState.students.find(s => s.student_id === studentId);
+    if (st) st.remarks = remark;
+  },
+
+  markAllQuickAtt(status) {
+    if (!this._quickAttendanceState) return;
+    this._quickAttendanceState.students.forEach(s => s.status = status);
+    this.renderQuickAttendanceModal();
+  },
+
+  async submitQuickAttendance(batchId) {
+    if (!this._quickAttendanceState) return;
+    const state = this._quickAttendanceState;
+    const submitBtn = document.getElementById('btn-submit-quick-att');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting...';
+    }
+
+    const entries = state.students.map(s => ({
+      student_id: s.student_id,
+      status: s.status,
+      remarks: s.remarks,
+      technique_status: 'keep',
+    }));
+
+    const res = await this.apiRequest('/api/academy/attendance', {
+      method: 'POST',
+      body: JSON.stringify({
+        batch_id: state.batchId,
+        date: state.date,
+        entries,
+      }),
+    });
+
+    if (res.success) {
+      this.showToast('Attendance recorded successfully!', 'success');
+      this.closeModal();
+
+      // Immediately update DOM badge and button for this batch on Overview page if present
+      const badge = document.getElementById(`batch-att-badge-${batchId}`);
+      if (badge) {
+        badge.className = 'status-completed';
+        badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Completed';
+      }
+      const btn = document.getElementById(`batch-att-btn-${batchId}`);
+      if (btn) {
+        btn.className = 'btn btn-secondary btn-sm';
+        btn.innerHTML = '<i class="fa-solid fa-eye"></i> View Attendance';
+        btn.setAttribute('onclick', `app.openQuickAttendanceModal(${batchId}, '${this.escapeJsString(state.batchName)}', true)`);
+      }
+    } else {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Submit Attendance';
+      }
+      this.showToast(res.error || 'Failed to submit attendance', 'danger');
     }
   },
 
   // COACHES
   async renderCoaches() {
-    const data = await this.apiRequest('/api/academy/coaches');
     const content = document.getElementById('page-content');
-    const coaches = data.coaches || [];
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const params = new URLSearchParams();
+    params.set('page', this.coachFilters.page || 1);
+    params.set('limit', this.coachFilters.limit || 15);
+    if (this.coachFilters.search) params.set('search', this.coachFilters.search);
+    if (this.coachFilters.branch_id) params.set('branch_id', this.coachFilters.branch_id);
+    if (this.coachFilters.sport_id) params.set('sport_id', this.coachFilters.sport_id);
+    if (this.coachFilters.status !== undefined && this.coachFilters.status !== '') params.set('status', this.coachFilters.status);
+
+    const [data, branches, sports] = await Promise.all([
+      this.apiRequest(`/api/academy/coaches?${params.toString()}`),
+      this.getCachedBranches(),
+      this.getCachedSports(),
+    ]);
+
+    const coaches = (data && data.coaches) || [];
+    const totalCount = data?.total !== undefined ? data.total : coaches.length;
 
     content.innerHTML = `
       <div class="content-card">
-        <div class="card-header">
-          <h2 class="card-title"><i class="fa-solid fa-user-ninja"></i> Coaching & Staff Team (${coaches.length})</h2>
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <h2 class="card-title"><i class="fa-solid fa-user-ninja"></i> Coaching & Staff Team (${totalCount})</h2>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="app.exportCoachesExcel()">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Coaches
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="app.showAddCoachModal()">
+              <i class="fa-solid fa-plus"></i> New Coach / Staff
+            </button>
+          </div>
         </div>
-        <div class="table-responsive">
-          <table class="custom-table">
+
+        <!-- Universal Filter Bar -->
+        <div class="page-filter-bar" style="margin: 16px 20px 0 20px;">
+          <div class="filter-group" style="min-width: 220px;">
+            <input type="text" id="coach-search-input" class="filter-input"
+                   placeholder="Search coach, email, phone, specialization..."
+                   value="${this.escapeHtml(this.coachFilters.search || '')}"
+                   onkeyup="if(event.key==='Enter') app.applyCoachFilters()">
+          </div>
+          <div class="filter-group" style="min-width: 150px;">
+            <select id="coach-branch-filter" class="filter-select" onchange="app.applyCoachFilters()">
+              <option value="">All Branches</option>
+              ${branches.map(b => `
+                <option value="${b.id}" ${String(this.coachFilters.branch_id) === String(b.id) ? 'selected' : ''}>
+                  ${this.escapeHtml(b.name)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 150px;">
+            <select id="coach-sport-filter" class="filter-select" onchange="app.applyCoachFilters()">
+              <option value="">All Sports</option>
+              ${sports.map(s => `
+                <option value="${s.id}" ${String(this.coachFilters.sport_id) === String(s.id) ? 'selected' : ''}>
+                  ${this.escapeHtml(s.name)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 130px;">
+            <select id="coach-status-filter" class="filter-select" onchange="app.applyCoachFilters()">
+              <option value="" ${this.coachFilters.status === '' ? 'selected' : ''}>All Statuses</option>
+              <option value="active" ${this.coachFilters.status === 'active' ? 'selected' : ''}>Active</option>
+              <option value="0" ${this.coachFilters.status === '0' ? 'selected' : ''}>Inactive</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.applyCoachFilters()">
+              <i class="fa-solid fa-filter"></i> Filter
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetCoachFilters()">
+              <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="margin-top: 14px;">
+          <table class="custom-table" id="coaches-table">
             <thead>
               <tr>
                 <th>Coach Name</th>
@@ -1819,72 +5742,579 @@ const app = {
                 <th>Experience & Specialization</th>
                 <th>Active Batches</th>
                 <th>Salary</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              ${coaches.map(c => `
+              ${coaches.length === 0 ? `
+                <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 36px;">No coaches found matching current filters.</td></tr>
+              ` : coaches.map(c => `
                 <tr>
                   <td>
-                    <strong>${c.name}</strong>
-                    <div style="font-size: 11px; color: var(--text-muted);">${c.email || c.phone || '-'}</div>
+                    <strong>${this.escapeHtml(c.name)}</strong>
+                    <div style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(c.email || c.phone || '-')}</div>
                   </td>
-                  <td><span class="badge badge-info">${c.sport_name || 'General'}</span></td>
-                  <td>${c.branch_name || 'Main Campus'}</td>
+                  <td><span class="badge badge-info">${this.escapeHtml(c.sport_name || 'General')}</span></td>
+                  <td>${this.escapeHtml(c.branch_name || 'Main Campus')}</td>
                   <td>
-                    <div style="font-size: 12px;">${c.experience_years} years exp.</div>
-                    <div style="font-size: 11px; color: var(--text-dim);">${c.specializations || '-'}</div>
+                    <div style="font-size: 12px;">${c.experience_years || 0} years exp.</div>
+                    <div style="font-size: 11px; color: var(--text-dim);">${this.escapeHtml(c.specializations || '-')}</div>
                   </td>
-                  <td>${c.active_batches} batches</td>
-                  <td>₹${c.salary_amount.toLocaleString()} / ${c.salary_type}</td>
+                  <td>${c.active_batches || 0} batches</td>
+                  <td>₹${(c.salary_amount || 0).toLocaleString()} / ${(c.salary_type || 'monthly').replace('_', ' ')}</td>
+                  <td>
+                    <span class="badge ${c.is_active === 0 ? 'badge-danger' : 'badge-success'}">
+                      ${c.is_active === 0 ? 'Inactive' : 'Active'}
+                    </span>
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 6px;">
+                      <button class="btn btn-secondary btn-sm" onclick="app.showEditCoachModal(${c.id})" title="Edit Coach Details">
+                        <i class="fa-solid fa-pen-to-square"></i> Edit
+                      </button>
+                      <button class="btn btn-danger btn-sm" onclick="app.deleteCoach(${c.id}, '${this.escapeJsString(c.name)}')" title="Delete Coach">
+                        <i class="fa-solid fa-trash"></i>
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination Controls -->
+        ${this.renderPaginationHtml(data, 'app.onCoachPageChange', 'app.onCoachLimitChange')}
       </div>
     `;
+    this.currentCoachesData = coaches;
   },
 
-  // BATCHES
-  async renderBatches() {
-    const data = await this.apiRequest('/api/academy/batches');
+  applyCoachFilters() {
+    this.coachFilters.search = document.getElementById('coach-search-input')?.value?.trim() || '';
+    this.coachFilters.branch_id = document.getElementById('coach-branch-filter')?.value || '';
+    this.coachFilters.sport_id = document.getElementById('coach-sport-filter')?.value || '';
+    this.coachFilters.status = document.getElementById('coach-status-filter')?.value || '';
+    this.coachFilters.page = 1;
+    this.renderCoaches();
+  },
+
+  resetCoachFilters() {
+    this.coachFilters = { page: 1, limit: this.coachFilters.limit || 15, search: '', branch_id: '', sport_id: '', status: '' };
+    this.renderCoaches();
+  },
+
+  onCoachPageChange(p) {
+    this.coachFilters.page = p;
+    this.renderCoaches();
+  },
+
+  onCoachLimitChange(l) {
+    this.coachFilters.limit = l;
+    this.coachFilters.page = 1;
+    this.renderCoaches();
+  },
+
+  exportCoachesExcel() {
+    if (!this.currentCoachesData || !this.currentCoachesData.length) {
+      this.showToast('No coaches available to export', 'warning');
+      return;
+    }
+    const rows = this.currentCoachesData.map(c => ({
+      'Coach Name': c.name,
+      'Email': c.email || '',
+      'Phone': c.phone || '',
+      'Sport': c.sport_name || 'General',
+      'Branch': c.branch_name || 'Main Campus',
+      'Experience (Years)': c.experience_years || 0,
+      'Specializations': c.specializations || '',
+      'Active Batches': c.active_batches || 0,
+      'Salary Type': c.salary_type || 'monthly',
+      'Salary Amount': c.salary_amount || 0,
+      'Status': c.is_active === 0 ? 'Inactive' : 'Active',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Coaches');
+    XLSX.writeFile(wb, `Coaches_${new Date().toISOString().split('T')[0]}.xlsx`);
+    this.showToast('Exported coaches to Excel via SheetJS', 'success');
+  },
+
+  async showAddCoachModal(preselectedBranchId = null) {
+    const [branchesData, sportsData] = await Promise.all([
+      this.apiRequest('/api/academy/branches'),
+      this.apiRequest('/api/academy/sports'),
+    ]);
+
+    const branches = branchesData.branches || [];
+    const sports = sportsData.sports || [];
+
+    const pending = window._pendingCoachFormState || null;
+    window._pendingCoachFormState = null;
+
+    this.openModal(
+      'New User, Role & Employment Onboarding',
+      `
+        <form id="add-coach-form">
+          <div style="background: rgba(59, 130, 246, 0.06); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 12px; color: var(--text-heading);">
+            <i class="fa-solid fa-user-shield" style="color: var(--primary);"></i>
+            <strong>User Identity First:</strong> Creates user login identity first, then assigns primary role, branch access, employment details, and compensation policy.
+          </div>
+
+          <!-- Section 1: User Account & Identity -->
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Full Name *</label>
+              <input type="text" id="coach-name" class="form-input" style="width: 100%;" placeholder="e.g. Rahul Dravid" value="${pending ? pending.name : ''}" required>
+            </div>
+            <div class="form-group">
+              <label>System Role *</label>
+              <select id="coach-role" class="form-select" style="width: 100%; font-weight: 600;" onchange="app.onCoachRoleChange(this.value)" required>
+                <option value="coach" ${(!pending || pending.role === 'coach') ? 'selected' : ''}>Coach (Sports Coach)</option>
+                <option value="head_coach" ${pending && pending.role === 'head_coach' ? 'selected' : ''}>Headcoach (Head Coach & Mentor)</option>
+                <option value="academy_admin" ${pending && pending.role === 'academy_admin' ? 'selected' : ''}>Admin (Academy Administrator)</option>
+                <option value="receptionist" ${pending && pending.role === 'receptionist' ? 'selected' : ''}>Receptionist (Front Desk)</option>
+                <option value="front_desk" ${pending && pending.role === 'front_desk' ? 'selected' : ''}>Front Desk Staff</option>
+                <option value="finance_manager" ${pending && pending.role === 'finance_manager' ? 'selected' : ''}>Finance Manager</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Email Address (User Login) *</label>
+              <input type="email" id="coach-email" class="form-input" style="width: 100%;" placeholder="e.g. coach@academy.com" value="${pending ? pending.email : ''}" required>
+            </div>
+            <div class="form-group">
+              <label>Login Password</label>
+              <input type="password" id="coach-password" class="form-input" style="width: 100%;" placeholder="Default: password123">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Phone Number</label>
+              <input type="text" id="coach-phone" class="form-input" style="width: 100%;" placeholder="+91 98765 43210" value="${pending ? pending.phone : ''}">
+            </div>
+            <div class="form-group">
+              <label>Designation / Title</label>
+              <input type="text" id="coach-designation" class="form-input" style="width: 100%;" placeholder="e.g. Senior Martial Arts Instructor" value="${pending ? (pending.designation || '') : ''}">
+            </div>
+          </div>
+
+          <!-- Section 2: Branch & Sport Assignment -->
+          <div class="form-grid">
+            <div class="form-group">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="margin: 0;">Primary Branch *</label>
+                <button type="button" class="btn btn-sm btn-outline" style="padding: 1px 7px; font-size: 0.72rem; line-height: 1.4;" onclick="app.showAddBranchModal('coach-branch')">
+                  <i class="fa-solid fa-plus"></i> New Branch
+                </button>
+              </div>
+              <select id="coach-branch" class="form-select" style="width: 100%;" required>
+                <option value="">-- Select Branch --</option>
+                ${branches.map(b => `<option value="${b.id}" ${(preselectedBranchId && Number(b.id) === Number(preselectedBranchId)) || (branches.length === 1) ? 'selected' : ''}>${b.name} (${b.city || 'Campus'})</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group" id="coach-sport-group">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="margin: 0;">Primary Sport</label>
+                <button type="button" class="btn btn-sm btn-outline" style="padding: 1px 7px; font-size: 0.72rem; line-height: 1.4;" onclick="app.showQuickAddSportModal('coach-sport')">
+                  <i class="fa-solid fa-plus"></i> New Sport
+                </button>
+              </div>
+              <select id="coach-sport" class="form-select" style="width: 100%;">
+                <option value="">-- Select Sport (or General) --</option>
+                ${sports.map(s => `<option value="${s.id}" ${(pending && pending.sport_id && Number(s.id) === Number(pending.sport_id)) || (!pending && s.name.toLowerCase() === 'karate') ? 'selected' : ''}>${s.name}${s.name.toLowerCase() === 'karate' ? ' 🥋 (Karate Academy)' : ''}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+
+          <!-- Section 3: Coaching Experience (Shown for Coach/Head Coach) -->
+          <div class="form-grid" id="coach-exp-spec-grid">
+            <div class="form-group">
+              <label>Experience (Years)</label>
+              <input type="number" id="coach-exp" class="form-input" style="width: 100%;" value="${pending ? pending.experience_years : '3'}" min="0">
+            </div>
+            <div class="form-group">
+              <label>Specializations / Certifications</label>
+              <input type="text" id="coach-spec" class="form-input" style="width: 100%;" placeholder="e.g. Black Belt 3rd Dan, Level 2 Coach" value="${pending ? pending.specializations : ''}">
+            </div>
+          </div>
+
+          <!-- Section 4: Compensation Policy (Separate from work hours) -->
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Compensation Policy Mode</label>
+              <select id="coach-salary-type" class="form-select" style="width: 100%;">
+                <option value="monthly" ${(!pending || pending.salary_type === 'monthly') ? 'selected' : ''}>Fixed Monthly Salary</option>
+                <option value="hourly" ${pending && pending.salary_type === 'hourly' ? 'selected' : ''}>Hourly Rate (₹/hr)</option>
+                <option value="per_day" ${pending && pending.salary_type === 'per_day' ? 'selected' : ''}>Daily Rate (₹/day)</option>
+                <option value="per_session" ${pending && pending.salary_type === 'per_session' ? 'selected' : ''}>Per Batch / Session (₹/session)</option>
+                <option value="per_minute" ${pending && pending.salary_type === 'per_minute' ? 'selected' : ''}>Per Minute Rate</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Salary / Base Rate (₹) *</label>
+              <input type="number" id="coach-salary-amount" class="form-input" style="width: 100%; font-weight: 700;" value="${pending ? pending.salary_amount : '35000'}" min="0" required>
+            </div>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitAddCoach()"><i class="fa-solid fa-check"></i> Complete Onboarding</button>
+      `
+    );
+  },
+
+  onCoachRoleChange(role) {
+    const expSpecGrid = document.getElementById('coach-exp-spec-grid');
+    const designationInput = document.getElementById('coach-designation');
+    if (role === 'academy_admin') {
+      if (designationInput && !designationInput.value) designationInput.value = 'Academy Administrator';
+      if (expSpecGrid) expSpecGrid.style.display = 'none';
+    } else if (role === 'receptionist' || role === 'front_desk') {
+      if (designationInput && !designationInput.value) designationInput.value = 'Front Desk Receptionist';
+      if (expSpecGrid) expSpecGrid.style.display = 'none';
+    } else if (role === 'head_coach') {
+      if (designationInput && !designationInput.value) designationInput.value = 'Head Coach & Technical Director';
+      if (expSpecGrid) expSpecGrid.style.display = 'grid';
+    } else {
+      if (designationInput && !designationInput.value) designationInput.value = 'Sports Coach';
+      if (expSpecGrid) expSpecGrid.style.display = 'grid';
+    }
+  },
+
+  async submitAddCoach() {
+    const name = document.getElementById('coach-name').value.trim();
+    const role = document.getElementById('coach-role').value;
+    const email = document.getElementById('coach-email').value.trim();
+    const password = document.getElementById('coach-password').value.trim();
+    const phone = document.getElementById('coach-phone').value.trim();
+    const designation = document.getElementById('coach-designation').value.trim();
+    const branch_id = document.getElementById('coach-branch').value;
+    const sport_id = document.getElementById('coach-sport') ? document.getElementById('coach-sport').value : null;
+    const experience_years = document.getElementById('coach-exp') ? document.getElementById('coach-exp').value : 0;
+    const specializations = document.getElementById('coach-spec') ? document.getElementById('coach-spec').value.trim() : null;
+    const salary_type = document.getElementById('coach-salary-type').value;
+    const salary_amount = document.getElementById('coach-salary-amount').value;
+
+    if (!name) {
+      this.showToast('Full name is required', 'danger');
+      return;
+    }
+    if (!email) {
+      this.showToast('Email address is required for user account', 'danger');
+      return;
+    }
+    if (!branch_id) {
+      this.showToast('Please select a branch', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/coaches', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        role: role || 'coach',
+        email,
+        password: password || 'password123',
+        phone: phone || null,
+        designation: designation || null,
+        branch_id: Number(branch_id),
+        sport_id: sport_id ? Number(sport_id) : null,
+        experience_years: Number(experience_years) || 0,
+        specializations: specializations || null,
+        salary_type: salary_type || 'monthly',
+        salary_amount: Number(salary_amount) || 0,
+      }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'User onboarded successfully', 'success');
+      this.closeModal();
+      this.renderCoaches();
+    } else {
+      this.showToast(res.error || 'Failed to onboard user', 'danger');
+    }
+  },
+
+  async showEditCoachModal(coachId) {
+    const [coachRes, branchesData, sportsData] = await Promise.all([
+      this.apiRequest(`/api/academy/coaches/${coachId}`),
+      this.apiRequest('/api/academy/branches'),
+      this.apiRequest('/api/academy/sports'),
+    ]);
+
+    if (!coachRes || !coachRes.success || !coachRes.coach) {
+      this.showToast('Failed to load coach details', 'danger');
+      return;
+    }
+
+    const c = coachRes.coach;
+    const branches = branchesData.branches || [];
+    const sports = sportsData.sports || [];
+
+    this.openModal(
+      `Edit Coach — ${c.name}`,
+      `
+        <form id="edit-coach-form">
+          <div class="form-group">
+            <label>Coach Full Name *</label>
+            <input type="text" id="edit-coach-name" class="form-input" style="width: 100%;" value="${c.name || ''}" required>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Email Address</label>
+              <input type="email" id="edit-coach-email" class="form-input" style="width: 100%;" value="${c.email || ''}">
+            </div>
+            <div class="form-group">
+              <label>Phone Number</label>
+              <input type="text" id="edit-coach-phone" class="form-input" style="width: 100%;" value="${c.phone || ''}">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Branch</label>
+              <select id="edit-coach-branch" class="form-select" style="width: 100%;">
+                <option value="">-- Select Branch --</option>
+                ${branches.map(b => `<option value="${b.id}" ${b.id === c.branch_id ? 'selected' : ''}>${b.name} (${b.city || 'Campus'})</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="margin: 0;">Sport</label>
+                <button type="button" class="btn btn-sm btn-outline" style="padding: 1px 7px; font-size: 0.72rem; line-height: 1.4;" onclick="app.showQuickAddSportModal('edit-coach-sport')">
+                  <i class="fa-solid fa-plus"></i> New Sport
+                </button>
+              </div>
+              <select id="edit-coach-sport" class="form-select" style="width: 100%;">
+                <option value="">-- Select Sport --</option>
+                ${sports.map(s => `<option value="${s.id}" ${s.id === c.sport_id ? 'selected' : ''}>${s.name}${s.name.toLowerCase() === 'karate' ? ' 🥋' : ''}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Experience (Years)</label>
+              <input type="number" id="edit-coach-exp" class="form-input" style="width: 100%;" value="${c.experience_years || 0}" min="0">
+            </div>
+            <div class="form-group">
+              <label>Specializations / Certifications</label>
+              <input type="text" id="edit-coach-spec" class="form-input" style="width: 100%;" value="${c.specializations || ''}">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Salary Mode</label>
+              <select id="edit-coach-salary-type" class="form-select" style="width: 100%;">
+                <option value="monthly" ${c.salary_type === 'monthly' ? 'selected' : ''}>Monthly Fixed</option>
+                <option value="per_session" ${c.salary_type === 'per_session' ? 'selected' : ''}>Per Session</option>
+                <option value="contract" ${c.salary_type === 'contract' ? 'selected' : ''}>Contractual</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Salary Amount (₹)</label>
+              <input type="number" id="edit-coach-salary-amount" class="form-input" style="width: 100%;" value="${c.salary_amount || 0}" min="0">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="edit-coach-status" class="form-select" style="width: 100%;">
+              <option value="1" ${c.is_active !== 0 ? 'selected' : ''}>Active</option>
+              <option value="0" ${c.is_active === 0 ? 'selected' : ''}>Inactive / Suspended</option>
+            </select>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitEditCoach(${coachId})"><i class="fa-solid fa-check"></i> Save Changes</button>
+      `
+    );
+  },
+
+  async submitEditCoach(coachId) {
+    const name = document.getElementById('edit-coach-name').value.trim();
+    const email = document.getElementById('edit-coach-email').value.trim();
+    const phone = document.getElementById('edit-coach-phone').value.trim();
+    const branch_id = document.getElementById('edit-coach-branch').value;
+    const sport_id = document.getElementById('edit-coach-sport').value;
+    const experience_years = document.getElementById('edit-coach-exp').value;
+    const specializations = document.getElementById('edit-coach-spec').value.trim();
+    const salary_type = document.getElementById('edit-coach-salary-type').value;
+    const salary_amount = document.getElementById('edit-coach-salary-amount').value;
+    const is_active = document.getElementById('edit-coach-status').value;
+
+    if (!name) {
+      this.showToast('Coach name is required', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/coaches/${coachId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        name,
+        email: email || null,
+        phone: phone || null,
+        branch_id: branch_id ? Number(branch_id) : null,
+        sport_id: sport_id ? Number(sport_id) : null,
+        experience_years: Number(experience_years) || 0,
+        specializations: specializations || null,
+        salary_type: salary_type || 'monthly',
+        salary_amount: Number(salary_amount) || 0,
+        is_active: Number(is_active),
+      }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Coach updated successfully', 'success');
+      this.closeModal();
+      this.renderCoaches();
+    } else {
+      this.showToast(res.error || 'Failed to update coach', 'danger');
+    }
+  },
+
+  async deleteCoach(coachId, coachName) {
+    if (!confirm(`Are you sure you want to remove coach "${coachName}"?`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/coaches/${coachId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Coach removed successfully', 'success');
+      this.renderCoaches();
+    } else {
+      this.showToast(res.error || 'Failed to remove coach', 'danger');
+    }
+  },
+
+  // ==========================================
+  // BRANCHES & DOJOS MANAGEMENT
+  // ==========================================
+  async renderBranches() {
+    const data = await this.apiRequest('/api/academy/branches');
     const content = document.getElementById('page-content');
-    const batches = data.batches || [];
+    const branches = data.branches || [];
+
+    const activeCount = branches.filter(b => b.is_active !== 0).length;
+    const totalBatches = branches.reduce((acc, b) => acc + (b.batch_count || 0), 0);
+    const totalStudents = branches.reduce((acc, b) => acc + (b.student_count || 0), 0);
 
     content.innerHTML = `
-      <div class="content-card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-          <h2 class="card-title"><i class="fa-solid fa-calendar-days"></i> Training Batches & Schedules (${batches.length})</h2>
-          <button class="btn btn-primary btn-sm" onclick="app.showAddBatchModal()">
-            <i class="fa-solid fa-plus"></i> New Training Batch
-          </button>
+      <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
+        <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px;">
+          <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Total Branches</div>
+          <div style="font-size: 26px; font-weight: 800; color: var(--text-heading); margin-top: 4px;">${branches.length}</div>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">${activeCount} Active Training Centers</div>
         </div>
+        <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px;">
+          <div style="font-size: 11px; text-transform: uppercase; color: var(--primary); font-weight: 600;">Active Batches</div>
+          <div style="font-size: 26px; font-weight: 800; color: var(--primary); margin-top: 4px;">${totalBatches}</div>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Spread across branches</div>
+        </div>
+        <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px;">
+          <div style="font-size: 11px; text-transform: uppercase; color: #10b981; font-weight: 600;">Enrolled Students</div>
+          <div style="font-size: 26px; font-weight: 800; color: #10b981; margin-top: 4px;">${totalStudents}</div>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Active academy practitioners</div>
+        </div>
+      </div>
+
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 class="card-title" style="display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-code-branch" style="color: var(--primary);"></i> Academy Branches (${branches.length})
+            </h2>
+            <p style="margin: 4px 0 0; font-size: 13px; color: var(--text-muted);">
+              Manage physical training facilities, campus branches, and satellite centers. Each batch belongs strictly to 1 branch.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="app.exportBranchesExcel()">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Branches
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('batches')">
+              <i class="fa-solid fa-calendar-days"></i> View Batches
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="app.showAddBranchModal()">
+              <i class="fa-solid fa-plus"></i> New Branch
+            </button>
+          </div>
+        </div>
+
         <div class="table-responsive">
           <table class="custom-table">
             <thead>
               <tr>
-                <th>Batch Name</th>
-                <th>Sport</th>
-                <th>Branch</th>
-                <th>Coach</th>
-                <th>Timing & Schedule</th>
-                <th>Capacity</th>
-                <th>Monthly Fee</th>
+                <th>Branch Name</th>
+                <th>City / Location</th>
+                <th>Contact</th>
+                <th>Batches</th>
+                <th>Students</th>
+                <th>Coaches</th>
+                <th>Status</th>
+                <th style="text-align: right;">Actions</th>
               </tr>
             </thead>
             <tbody>
-              ${batches.map(b => `
+              ${branches.length === 0 ? `
                 <tr>
-                  <td><strong>${b.name}</strong></td>
-                  <td><span class="badge badge-info">${b.sport_name}</span></td>
-                  <td>${b.branch_name || 'Main Campus'}</td>
-                  <td>${b.coach_name || 'Assigned Coach'}</td>
-                  <td>
-                    <div style="font-size: 12px; font-weight: 600;">${b.start_time} - ${b.end_time}</div>
-                    <div style="font-size: 11px; color: var(--text-muted);">${b.days_of_week}</div>
+                  <td colspan="8" style="text-align: center; padding: 36px; color: var(--text-muted);">
+                    <div style="font-size: 32px; margin-bottom: 8px;">🏢</div>
+                    <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">No branches created yet</div>
+                    <div style="font-size: 13px; margin-bottom: 16px;">Create your first academy branch to start enrolling students and scheduling training batches.</div>
+                    <button class="btn btn-primary btn-sm" onclick="app.showAddBranchModal()">
+                      <i class="fa-solid fa-plus"></i> Create Branch
+                    </button>
                   </td>
-                  <td>${b.enrolled_count} / ${b.max_capacity}</td>
-                  <td>₹${b.monthly_fee.toLocaleString()}</td>
+                </tr>
+              ` : branches.map(b => `
+                <tr>
+                  <td>
+                    <strong>${b.name}</strong>
+                    ${b.address ? `<div style="font-size: 11px; color: var(--text-muted);">${b.address}</div>` : ''}
+                  </td>
+                  <td>
+                    <span class="badge badge-secondary">${b.city || 'Main Campus'}</span>
+                  </td>
+                  <td>
+                    <div style="font-size: 12px;">${b.phone || '-'}</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${b.email || ''}</div>
+                  </td>
+                  <td>
+                    <span class="badge badge-info">${b.batch_count || 0} batches</span>
+                  </td>
+                  <td>
+                    <span class="badge badge-primary">${b.student_count || 0} students</span>
+                  </td>
+                  <td>
+                    <span class="badge badge-secondary">${b.coach_count || 0} coaches</span>
+                  </td>
+                  <td>
+                    <span class="badge ${b.is_active ? 'badge-success' : 'badge-danger'}">
+                      ${b.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td style="text-align: right;">
+                    <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                      <button class="btn btn-sm btn-outline" title="Edit Branch" onclick="app.showEditBranchModal(${b.id})">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                      </button>
+                      <button class="btn btn-sm ${b.is_active ? 'btn-outline' : 'btn-success'}" title="${b.is_active ? 'Deactivate Branch' : 'Activate Branch'}" onclick="app.toggleBranchStatus(${b.id}, ${b.is_active ? 1 : 0})">
+                        <i class="fa-solid ${b.is_active ? 'fa-ban' : 'fa-check'}"></i>
+                      </button>
+                      <button class="btn btn-sm btn-danger" title="Delete Branch" onclick="app.deleteBranch(${b.id}, '${b.name.replace(/'/g, "\\'")}')">
+                        <i class="fa-solid fa-trash"></i>
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               `).join('')}
             </tbody>
@@ -1892,9 +6322,482 @@ const app = {
         </div>
       </div>
     `;
+
+    this.currentBranchesData = branches;
   },
 
-  async showAddBatchModal() {
+  exportBranchesExcel() {
+    if (!this.currentBranchesData || !this.currentBranchesData.length) {
+      this.showToast('No branches available to export', 'warning');
+      return;
+    }
+    const rows = this.currentBranchesData.map(b => ({
+      'Branch Name': b.name,
+      'City': b.city || '',
+      'Address': b.address || '',
+      'Phone': b.phone || '',
+      'Email': b.email || '',
+      'Batches': b.batch_count || 0,
+      'Students': b.student_count || 0,
+      'Coaches': b.coach_count || 0,
+      'Status': b.is_active === 0 ? 'Inactive' : 'Active',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Branches');
+    XLSX.writeFile(wb, `Branches_${new Date().toISOString().split('T')[0]}.xlsx`);
+    this.showToast('Exported branches to Excel via SheetJS', 'success');
+  },
+
+  async showAddBranchModal(targetSelectId = null) {
+    if (targetSelectId === 'batch-branch') {
+      window._pendingBatchFormState = {
+        name: document.getElementById('batch-name') ? document.getElementById('batch-name').value : '',
+        sport_id: document.getElementById('batch-sport') ? document.getElementById('batch-sport').value : '',
+        coach_id: document.getElementById('batch-coach') ? document.getElementById('batch-coach').value : '',
+        monthly_fee: document.getElementById('batch-fee') ? document.getElementById('batch-fee').value : '2500',
+        start_time: document.getElementById('batch-start-time') ? document.getElementById('batch-start-time').value : '06:30',
+        end_time: document.getElementById('batch-end-time') ? document.getElementById('batch-end-time').value : '08:00',
+        max_capacity: document.getElementById('batch-capacity') ? document.getElementById('batch-capacity').value : '25',
+      };
+    } else if (targetSelectId === 'stu-branch') {
+      window._pendingStudentFormState = {
+        first_name: document.getElementById('stu-fn') ? document.getElementById('stu-fn').value : '',
+        last_name: document.getElementById('stu-ln') ? document.getElementById('stu-ln').value : '',
+        email: document.getElementById('stu-email') ? document.getElementById('stu-email').value : '',
+        phone: document.getElementById('stu-phone') ? document.getElementById('stu-phone').value : '',
+        guardian_name: document.getElementById('stu-guardian') ? document.getElementById('stu-guardian').value : '',
+        date_of_birth: document.getElementById('stu-dob') ? document.getElementById('stu-dob').value : '',
+      };
+    } else if (targetSelectId === 'coach-branch') {
+      window._pendingCoachFormState = {
+        name: document.getElementById('coach-name') ? document.getElementById('coach-name').value : '',
+        email: document.getElementById('coach-email') ? document.getElementById('coach-email').value : '',
+        phone: document.getElementById('coach-phone') ? document.getElementById('coach-phone').value : '',
+        sport_id: document.getElementById('coach-sport') ? document.getElementById('coach-sport').value : '',
+        experience_years: document.getElementById('coach-exp') ? document.getElementById('coach-exp').value : '3',
+        specializations: document.getElementById('coach-spec') ? document.getElementById('coach-spec').value : '',
+        salary_type: document.getElementById('coach-salary-type') ? document.getElementById('coach-salary-type').value : 'monthly',
+        salary_amount: document.getElementById('coach-salary-amount') ? document.getElementById('coach-salary-amount').value : '35000',
+      };
+    }
+
+    const cancelAction = targetSelectId === 'batch-branch'
+      ? 'app.showAddBatchModal()'
+      : (targetSelectId === 'stu-branch' ? 'app.showAddStudentModal()' : (targetSelectId === 'coach-branch' ? 'app.showAddCoachModal()' : 'app.closeModal()'));
+
+    this.openModal(
+      'Create New Branch',
+      `
+        <form id="add-branch-form" onsubmit="event.preventDefault(); app.submitAddBranch(${targetSelectId ? `'${targetSelectId}'` : 'null'});">
+          <div class="form-group">
+            <label>Branch Name *</label>
+            <input type="text" id="branch-name" class="form-input" style="width: 100%;" placeholder="e.g. Main Branch / Central Campus" required autofocus>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>City / Region *</label>
+              <input type="text" id="branch-city" class="form-input" style="width: 100%;" placeholder="e.g. Mumbai, Ahmedabad, Delhi" required>
+            </div>
+            <div class="form-group">
+              <label>Contact Phone</label>
+              <input type="text" id="branch-phone" class="form-input" style="width: 100%;" placeholder="e.g. +91 98765 43210">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Contact Email</label>
+              <input type="email" id="branch-email" class="form-input" style="width: 100%;" placeholder="branch@academy.com">
+            </div>
+            <div class="form-group">
+              <label>Street Address / Premises</label>
+              <input type="text" id="branch-address" class="form-input" style="width: 100%;" placeholder="e.g. 101 Martial Arts Center, Ring Road">
+            </div>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="${cancelAction}">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitAddBranch(${targetSelectId ? `'${targetSelectId}'` : 'null'})">
+          <i class="fa-solid fa-check"></i> Create Branch
+        </button>
+      `
+    );
+  },
+
+  async submitAddBranch(targetSelectId = null) {
+    const name = document.getElementById('branch-name').value.trim();
+    const city = document.getElementById('branch-city').value.trim();
+    const phone = document.getElementById('branch-phone').value.trim();
+    const email = document.getElementById('branch-email').value.trim();
+    const address = document.getElementById('branch-address').value.trim();
+
+    if (!name) {
+      this.showToast('Branch name is required', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/branches', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        city: city || null,
+        phone: phone || null,
+        email: email || null,
+        address: address || null,
+      }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || `Branch "${name}" created successfully`, 'success');
+      const newBranchId = res.branchId || (res.branch && res.branch.id);
+
+      if (targetSelectId === 'batch-branch') {
+        this.showAddBatchModal(newBranchId);
+      } else if (targetSelectId === 'stu-branch') {
+        this.showAddStudentModal(newBranchId);
+      } else if (targetSelectId === 'coach-branch') {
+        this.showAddCoachModal(newBranchId);
+      } else {
+        this.closeModal();
+        if (this.currentTab === 'batches') {
+          this.renderBatches();
+        } else if (this.currentTab === 'branches') {
+          this.renderBranches();
+        }
+      }
+    } else {
+      this.showToast(res.error || 'Failed to create branch', 'danger');
+    }
+  },
+
+  async showEditBranchModal(branchId) {
+    const branch = (this.currentBranchesData || []).find(b => b.id === branchId);
+    if (!branch) {
+      this.showToast('Branch details not found', 'danger');
+      return;
+    }
+
+    this.openModal(
+      `Edit Branch — ${branch.name}`,
+      `
+        <form id="edit-branch-form" onsubmit="event.preventDefault(); app.submitEditBranch(${branchId});">
+          <div class="form-group">
+            <label>Branch Name *</label>
+            <input type="text" id="edit-branch-name" class="form-input" style="width: 100%;" value="${branch.name || ''}" required>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>City / Region</label>
+              <input type="text" id="edit-branch-city" class="form-input" style="width: 100%;" value="${branch.city || ''}">
+            </div>
+            <div class="form-group">
+              <label>Contact Phone</label>
+              <input type="text" id="edit-branch-phone" class="form-input" style="width: 100%;" value="${branch.phone || ''}">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Contact Email</label>
+              <input type="email" id="edit-branch-email" class="form-input" style="width: 100%;" value="${branch.email || ''}">
+            </div>
+            <div class="form-group">
+              <label>Street Address / Premises</label>
+              <input type="text" id="edit-branch-address" class="form-input" style="width: 100%;" value="${branch.address || ''}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="edit-branch-active" ${branch.is_active ? 'checked' : ''}>
+              <span>Active Training Center</span>
+            </label>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitEditBranch(${branchId})">
+          <i class="fa-solid fa-check"></i> Save Changes
+        </button>
+      `
+    );
+  },
+
+  async submitEditBranch(branchId) {
+    const name = document.getElementById('edit-branch-name').value.trim();
+    const city = document.getElementById('edit-branch-city').value.trim();
+    const phone = document.getElementById('edit-branch-phone').value.trim();
+    const email = document.getElementById('edit-branch-email').value.trim();
+    const address = document.getElementById('edit-branch-address').value.trim();
+    const is_active = document.getElementById('edit-branch-active').checked ? 1 : 0;
+
+    if (!name) {
+      this.showToast('Branch name is required', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/branches/${branchId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, city, phone, email, address, is_active }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Branch updated successfully', 'success');
+      this.closeModal();
+      this.renderBranches();
+    } else {
+      this.showToast(res.error || 'Failed to update branch', 'danger');
+    }
+  },
+
+  async toggleBranchStatus(branchId, currentActive) {
+    const res = await this.apiRequest(`/api/academy/branches/${branchId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_active: currentActive ? 0 : 1 }),
+    });
+
+    if (res.success) {
+      this.showToast(`Branch ${currentActive ? 'deactivated' : 'activated'} successfully`, 'success');
+      this.renderBranches();
+    } else {
+      this.showToast(res.error || 'Failed to update branch status', 'danger');
+    }
+  },
+
+  async deleteBranch(branchId, branchName) {
+    if (!confirm(`Are you sure you want to delete branch "${branchName}"?`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/branches/${branchId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Branch deleted successfully', 'success');
+      this.renderBranches();
+    } else {
+      this.showToast(res.error || 'Failed to delete branch', 'danger');
+    }
+  },
+
+  // BATCHES
+  async renderBatches() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const params = new URLSearchParams();
+    params.set('page', this.batchFilters.page || 1);
+    params.set('limit', this.batchFilters.limit || 15);
+    if (this.batchFilters.search) params.set('search', this.batchFilters.search);
+    if (this.batchFilters.branch_id) params.set('branch_id', this.batchFilters.branch_id);
+    if (this.batchFilters.sport_id) params.set('sport_id', this.batchFilters.sport_id);
+    if (this.batchFilters.day) params.set('day', this.batchFilters.day);
+    if (this.batchFilters.status !== undefined && this.batchFilters.status !== '') params.set('status', this.batchFilters.status);
+
+    const [data, branches, sports] = await Promise.all([
+      this.apiRequest(`/api/academy/batches?${params.toString()}`),
+      this.getCachedBranches(),
+      this.getCachedSports(),
+    ]);
+
+    const batches = (data && data.batches) || [];
+    const totalCount = data?.total !== undefined ? data.total : batches.length;
+
+    content.innerHTML = `
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 class="card-title"><i class="fa-solid fa-calendar-days"></i> Training Batches & Schedules (${totalCount})</h2>
+            <p style="font-size: 13px; color: var(--text-muted); margin: 4px 0 0;">
+              Manage schedules, timing, enrolled student counts, and branch assignments.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="app.exportBatchesExcel()">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Batches
+            </button>
+            <button class="btn btn-outline-primary btn-sm" onclick="app.showAddBranchModal()">
+              <i class="fa-solid fa-code-branch"></i> + New Branch
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="app.showAddBatchModal()">
+              <i class="fa-solid fa-plus"></i> New Training Batch
+            </button>
+          </div>
+        </div>
+
+        <!-- Universal Filter Bar -->
+        <div class="page-filter-bar" style="margin: 16px 20px 0 20px;">
+          <div class="filter-group" style="min-width: 200px;">
+            <input type="text" id="batch-search-input" class="filter-input"
+                   placeholder="Search batch or coach name..."
+                   value="${this.escapeHtml(this.batchFilters.search || '')}"
+                   onkeyup="if(event.key==='Enter') app.applyBatchFilters()">
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="batch-branch-filter" class="filter-select" onchange="app.applyBatchFilters()">
+              <option value="">All Branches</option>
+              ${branches.map(b => `
+                <option value="${b.id}" ${String(this.batchFilters.branch_id) === String(b.id) ? 'selected' : ''}>
+                  ${this.escapeHtml(b.name)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="batch-sport-filter" class="filter-select" onchange="app.applyBatchFilters()">
+              <option value="">All Sports</option>
+              ${sports.map(s => `
+                <option value="${s.id}" ${String(this.batchFilters.sport_id) === String(s.id) ? 'selected' : ''}>
+                  ${this.escapeHtml(s.name)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 130px;">
+            <select id="batch-day-filter" class="filter-select" onchange="app.applyBatchFilters()">
+              <option value="">All Days</option>
+              ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => `
+                <option value="${d}" ${this.batchFilters.day === d ? 'selected' : ''}>${d}</option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 120px;">
+            <select id="batch-status-filter" class="filter-select" onchange="app.applyBatchFilters()">
+              <option value="" ${this.batchFilters.status === '' ? 'selected' : ''}>All Statuses</option>
+              <option value="active" ${this.batchFilters.status === 'active' ? 'selected' : ''}>Active</option>
+              <option value="0" ${this.batchFilters.status === '0' ? 'selected' : ''}>Inactive</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.applyBatchFilters()">
+              <i class="fa-solid fa-filter"></i> Filter
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetBatchFilters()">
+              <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        ${batches.length === 0 ? `
+          <div style="text-align: center; padding: 48px 24px; background: var(--bg-surface); border: 1px dashed var(--border); border-radius: var(--radius-md); margin: 20px;">
+            <div style="font-size: 40px; margin-bottom: 12px; color: var(--primary);">🥋</div>
+            <h3 style="margin-bottom: 8px; font-size: 18px; color: var(--text-heading);">No Batches Found</h3>
+            <p style="color: var(--text-muted); max-width: 520px; margin: 0 auto 20px; font-size: 14px; line-height: 1.5;">
+              No training batches match your current filter criteria. Click Reset to view all or create a new batch.
+            </p>
+            <div style="display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
+              <button class="btn btn-secondary btn-sm" onclick="app.resetBatchFilters()">
+                <i class="fa-solid fa-rotate-left"></i> Reset Filters
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="app.showAddBatchModal()">
+                <i class="fa-solid fa-plus"></i> Create Training Batch
+              </button>
+            </div>
+          </div>
+        ` : `
+          <div class="table-responsive" style="margin-top: 14px;">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th>Batch Name</th>
+                  <th>Sport</th>
+                  <th>Branch</th>
+                  <th>Coach</th>
+                  <th>Timing & Schedule</th>
+                  <th>Capacity</th>
+                  <th>Monthly Fee</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${batches.map(b => `
+                  <tr>
+                    <td><strong>${this.escapeHtml(b.name)}</strong></td>
+                    <td><span class="badge badge-info">${this.escapeHtml(b.sport_name || 'General')}</span></td>
+                    <td>${this.escapeHtml(b.branch_name || 'Main Campus')}</td>
+                    <td>${this.escapeHtml(b.coach_name || 'Assigned Coach')}</td>
+                    <td>
+                      <div style="font-size: 12px; font-weight: 600;">${this.escapeHtml(b.start_time || '')} - ${this.escapeHtml(b.end_time || '')}</div>
+                      <div style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(b.days_of_week || '')}</div>
+                    </td>
+                    <td>${b.enrolled_count || 0} / ${b.max_capacity || 0}</td>
+                    <td>₹${(b.monthly_fee || 0).toLocaleString()}</td>
+                    <td style="text-align: right;">
+                      <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                        <button class="btn btn-secondary btn-sm" onclick="app.showEditBatchModal(${b.id})" title="Edit Training Batch">
+                          <i class="fa-solid fa-pen-to-square"></i> Edit
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="app.deleteBatch(${b.id}, '${this.escapeJsString(b.name)}')" title="Delete Training Batch">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+
+        <!-- Pagination Controls -->
+        ${this.renderPaginationHtml(data, 'app.onBatchPageChange', 'app.onBatchLimitChange')}
+      </div>
+    `;
+    this.currentBatchesData = batches;
+  },
+
+  applyBatchFilters() {
+    this.batchFilters.search = document.getElementById('batch-search-input')?.value?.trim() || '';
+    this.batchFilters.branch_id = document.getElementById('batch-branch-filter')?.value || '';
+    this.batchFilters.sport_id = document.getElementById('batch-sport-filter')?.value || '';
+    this.batchFilters.day = document.getElementById('batch-day-filter')?.value || '';
+    this.batchFilters.status = document.getElementById('batch-status-filter')?.value || '';
+    this.batchFilters.page = 1;
+    this.renderBatches();
+  },
+
+  resetBatchFilters() {
+    this.batchFilters = { page: 1, limit: this.batchFilters.limit || 15, search: '', branch_id: '', sport_id: '', day: '', status: '' };
+    this.renderBatches();
+  },
+
+  onBatchPageChange(p) {
+    this.batchFilters.page = p;
+    this.renderBatches();
+  },
+
+  onBatchLimitChange(l) {
+    this.batchFilters.limit = l;
+    this.batchFilters.page = 1;
+    this.renderBatches();
+  },
+
+  exportBatchesExcel() {
+    if (!this.currentBatchesData || !this.currentBatchesData.length) {
+      this.showToast('No batches available to export', 'warning');
+      return;
+    }
+    const rows = this.currentBatchesData.map(b => ({
+      'Batch Name': b.name,
+      'Sport': b.sport_name || '',
+      'Branch': b.branch_name || 'Main Campus',
+      'Coach': b.coach_name || 'Assigned Coach',
+      'Start Time': b.start_time || '',
+      'End Time': b.end_time || '',
+      'Days of Week': b.days_of_week || '',
+      'Enrolled Students': b.enrolled_count || 0,
+      'Capacity': b.max_capacity || 0,
+      'Monthly Fee (INR)': b.monthly_fee || 0,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Batches');
+    XLSX.writeFile(wb, `Batches_${new Date().toISOString().split('T')[0]}.xlsx`);
+    this.showToast('Exported batches to Excel via SheetJS', 'success');
+  },
+
+  async showAddBatchModal(preselectedBranchId = null) {
     const [branchesData, sportsData, coachesData] = await Promise.all([
       this.apiRequest('/api/academy/branches'),
       this.apiRequest('/api/academy/sports'),
@@ -1905,27 +6808,53 @@ const app = {
     const sports = sportsData.sports || [];
     const coaches = coachesData.coaches || [];
 
+    const pending = window._pendingBatchFormState || null;
+    window._pendingBatchFormState = null;
+
+    const defaultName = pending ? pending.name : '';
+    const defaultSport = pending ? pending.sport_id : '';
+    const defaultCoach = pending ? pending.coach_id : '';
+    const defaultFee = pending ? pending.monthly_fee : '2500';
+    const defaultStart = pending ? pending.start_time : '06:30';
+    const defaultEnd = pending ? pending.end_time : '08:00';
+    const defaultCap = pending ? pending.max_capacity : '25';
+
     this.openModal(
       'Create New Training Batch',
       `
         <form id="add-batch-form">
           <div class="form-group">
             <label>Batch Name *</label>
-            <input type="text" id="batch-name" class="form-input" style="width: 100%;" placeholder="e.g. Under-17 Elite Champions" required>
+            <input type="text" id="batch-name" class="form-input" style="width: 100%;" placeholder="e.g. Under-17 Elite Champions" value="${defaultName}" required>
           </div>
           <div class="form-grid">
             <div class="form-group">
-              <label>Branch * (Rule C: 1 Batch belongs to 1 Branch)</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="margin: 0;">Branch * (Rule C: 1 Batch belongs to 1 Branch)</label>
+                <button type="button" class="btn btn-sm btn-outline" style="padding: 1px 7px; font-size: 0.72rem; line-height: 1.4;" onclick="app.showAddBranchModal('batch-branch')">
+                  <i class="fa-solid fa-plus"></i> New Branch
+                </button>
+              </div>
               <select id="batch-branch" class="form-select" style="width: 100%;" required>
                 <option value="">-- Select Branch --</option>
-                ${branches.map(b => `<option value="${b.id}">${b.name} (${b.city || 'Campus'})</option>`).join('')}
+                ${branches.map(b => `<option value="${b.id}" ${(preselectedBranchId && Number(b.id) === Number(preselectedBranchId)) || (branches.length === 1) ? 'selected' : ''}>${b.name} (${b.city || 'Campus'})</option>`).join('')}
               </select>
+              ${branches.length === 0 ? `
+                <div id="batch-branch-empty-warning" style="margin-top: 6px; padding: 6px 10px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); border-radius: 4px; font-size: 0.8rem; color: #dc2626;">
+                  <i class="fa-solid fa-triangle-exclamation"></i> No branches found in academy. Click <strong>+ New Branch</strong> above to add your branch first.
+                </div>
+              ` : ''}
             </div>
             <div class="form-group">
-              <label>Sport *</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="margin: 0;">Sport *</label>
+                <button type="button" class="btn btn-sm btn-outline" style="padding: 1px 7px; font-size: 0.72rem; line-height: 1.4;" onclick="app.showQuickAddSportModal('batch-sport')">
+                  <i class="fa-solid fa-plus"></i> New Sport
+                </button>
+              </div>
               <select id="batch-sport" class="form-select" style="width: 100%;" required>
                 <option value="">-- Select Sport --</option>
-                ${sports.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+                ${sports.map(s => `<option value="${s.id}" ${(defaultSport && Number(s.id) === Number(defaultSport)) || (!defaultSport && s.name.toLowerCase() === 'karate') ? 'selected' : ''}>${s.name}${s.name.toLowerCase() === 'karate' ? ' 🥋 (Karate Academy)' : ''}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -1934,27 +6863,41 @@ const app = {
               <label>Coach</label>
               <select id="batch-coach" class="form-select" style="width: 100%;">
                 <option value="">-- Select Coach (Optional) --</option>
-                ${coaches.map(c => `<option value="${c.id}">${c.name} (${c.sport_name || 'Coach'})</option>`).join('')}
+                ${coaches.map(c => `<option value="${c.id}" ${defaultCoach && Number(c.id) === Number(defaultCoach) ? 'selected' : ''}>${c.name} (${c.sport_name || 'Coach'})</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
               <label>Monthly Fee (₹)</label>
-              <input type="number" id="batch-fee" class="form-input" style="width: 100%;" value="2500" min="0">
+              <input type="number" id="batch-fee" class="form-input" style="width: 100%;" value="${defaultFee}" min="0">
             </div>
           </div>
           <div class="form-grid">
             <div class="form-group">
               <label>Start Time * (HH:MM)</label>
-              <input type="time" id="batch-start-time" class="form-input" style="width: 100%;" value="06:30" required>
+              <input type="time" id="batch-start-time" class="form-input" style="width: 100%;" value="${defaultStart}" required>
             </div>
             <div class="form-group">
               <label>End Time * (HH:MM)</label>
-              <input type="time" id="batch-end-time" class="form-input" style="width: 100%;" value="08:00" required>
+              <input type="time" id="batch-end-time" class="form-input" style="width: 100%;" value="${defaultEnd}" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Days of Week *</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Select schedule days</span>
+            </label>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; padding: 10px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm);">
+              ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => `
+                <label style="display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 500; cursor: pointer; margin: 0; padding: 4px 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;">
+                  <input type="checkbox" name="add-batch-days" value="${day}" ${['Mon', 'Wed', 'Fri'].includes(day) ? 'checked' : ''}>
+                  ${day}
+                </label>
+              `).join('')}
             </div>
           </div>
           <div class="form-group">
             <label>Max Student Capacity</label>
-            <input type="number" id="batch-capacity" class="form-input" style="width: 100%;" value="25" min="1">
+            <input type="number" id="batch-capacity" class="form-input" style="width: 100%;" value="${defaultCap}" min="1">
           </div>
         </form>
       `,
@@ -1975,12 +6918,18 @@ const app = {
     const monthly_fee = document.getElementById('batch-fee').value;
     const max_capacity = document.getElementById('batch-capacity').value;
 
+    const selectedDays = Array.from(document.querySelectorAll('input[name="add-batch-days"]:checked')).map(cb => cb.value);
+
     if (!name || !start_time || !end_time) {
       this.showToast('Batch name and start/end times are required', 'danger');
       return;
     }
     if (!branch_id) {
       this.showToast('Every batch must belong to a branch (Rule C)', 'danger');
+      return;
+    }
+    if (selectedDays.length === 0) {
+      this.showToast('Please select at least one day of the week', 'danger');
       return;
     }
 
@@ -1993,6 +6942,7 @@ const app = {
         coach_id: coach_id ? Number(coach_id) : null,
         start_time,
         end_time,
+        days_of_week: selectedDays.join(', '),
         monthly_fee: Number(monthly_fee) || 0,
         max_capacity: Number(max_capacity) || 30,
       }),
@@ -2007,18 +6957,245 @@ const app = {
     }
   },
 
+  async showEditBatchModal(batchId) {
+    const batch = (this.currentBatchesData || []).find(b => b.id === batchId);
+    if (!batch) {
+      this.showToast('Batch details not found', 'danger');
+      return;
+    }
+
+    const [branchesData, sportsData, coachesData] = await Promise.all([
+      this.apiRequest('/api/academy/branches'),
+      this.apiRequest('/api/academy/sports'),
+      this.apiRequest('/api/academy/coaches'),
+    ]);
+
+    const branches = branchesData.branches || [];
+    const sports = sportsData.sports || [];
+    const coaches = coachesData.coaches || [];
+
+    let currentDays = [];
+    if (Array.isArray(batch.days_of_week)) {
+      currentDays = batch.days_of_week;
+    } else if (typeof batch.days_of_week === 'string') {
+      try {
+        const parsed = JSON.parse(batch.days_of_week);
+        if (Array.isArray(parsed)) currentDays = parsed;
+        else currentDays = batch.days_of_week.split(',').map(d => d.trim());
+      } catch (e) {
+        currentDays = batch.days_of_week.split(',').map(d => d.trim());
+      }
+    }
+    if (currentDays.length === 0) currentDays = ['Mon', 'Wed', 'Fri'];
+
+    this.openModal(
+      `Edit Training Batch — ${batch.name}`,
+      `
+        <form id="edit-batch-form" onsubmit="event.preventDefault(); app.submitEditBatch(${batchId});">
+          <div class="form-group">
+            <label>Batch Name *</label>
+            <input type="text" id="edit-batch-name" class="form-input" style="width: 100%;" value="${batch.name || ''}" required autofocus>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Branch * (Rule C: 1 Batch belongs to 1 Branch)</label>
+              <select id="edit-batch-branch" class="form-select" style="width: 100%;" required>
+                <option value="">-- Select Branch --</option>
+                ${branches.map(b => `<option value="${b.id}" ${Number(b.id) === Number(batch.branch_id) ? 'selected' : ''}>${b.name} (${b.city || 'Campus'})</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Sport Discipline *</label>
+              <select id="edit-batch-sport" class="form-select" style="width: 100%;" required>
+                <option value="">-- Select Sport --</option>
+                ${sports.map(s => `<option value="${s.id}" ${Number(s.id) === Number(batch.sport_id) ? 'selected' : ''}>${s.name}${s.name.toLowerCase() === 'karate' ? ' 🥋 (Primary Sport)' : ''}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Assigned Coach</label>
+              <select id="edit-batch-coach" class="form-select" style="width: 100%;">
+                <option value="">-- Unassigned / Any Coach --</option>
+                ${coaches.map(c => `<option value="${c.id}" ${Number(c.id) === Number(batch.coach_id) ? 'selected' : ''}>${c.name} (${c.sport_name || 'Coach'})</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Monthly Fee (₹)</label>
+              <input type="number" id="edit-batch-fee" class="form-input" style="width: 100%;" value="${batch.monthly_fee !== undefined ? batch.monthly_fee : 2500}" min="0">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Start Time * (HH:MM)</label>
+              <input type="time" id="edit-batch-start-time" class="form-input" style="width: 100%;" value="${batch.start_time || '06:30'}" required>
+            </div>
+            <div class="form-group">
+              <label>End Time * (HH:MM)</label>
+              <input type="time" id="edit-batch-end-time" class="form-input" style="width: 100%;" value="${batch.end_time || '08:00'}" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Days of Week *</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Select schedule days</span>
+            </label>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; padding: 10px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm);">
+              ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => `
+                <label style="display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 500; cursor: pointer; margin: 0; padding: 4px 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;">
+                  <input type="checkbox" name="edit-batch-days" value="${day}" ${currentDays.some(d => d.toLowerCase().startsWith(day.toLowerCase())) ? 'checked' : ''}>
+                  ${day}
+                </label>
+              `).join('')}
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Max Student Capacity</label>
+            <input type="number" id="edit-batch-capacity" class="form-input" style="width: 100%;" value="${batch.max_capacity || 25}" min="1">
+          </div>
+          <div class="form-group">
+            <label>Batch Status</label>
+            <select id="edit-batch-status" class="form-select" style="width: 100%;">
+              <option value="1" ${batch.is_active !== 0 ? 'selected' : ''}>Active (Accepting enrollments & attendance)</option>
+              <option value="0" ${batch.is_active === 0 ? 'selected' : ''}>Inactive / Suspended</option>
+            </select>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitEditBatch(${batchId})">
+          <i class="fa-solid fa-check"></i> Save Changes
+        </button>
+      `
+    );
+  },
+
+  async submitEditBatch(batchId) {
+    const name = document.getElementById('edit-batch-name').value.trim();
+    const branch_id = document.getElementById('edit-batch-branch').value;
+    const sport_id = document.getElementById('edit-batch-sport').value;
+    const coach_id = document.getElementById('edit-batch-coach').value;
+    const start_time = document.getElementById('edit-batch-start-time').value;
+    const end_time = document.getElementById('edit-batch-end-time').value;
+    const monthly_fee = document.getElementById('edit-batch-fee').value;
+    const max_capacity = document.getElementById('edit-batch-capacity').value;
+    const is_active = document.getElementById('edit-batch-status').value;
+
+    const selectedDays = Array.from(document.querySelectorAll('input[name="edit-batch-days"]:checked')).map(cb => cb.value);
+
+    if (!name || !start_time || !end_time) {
+      this.showToast('Batch name and start/end times are required', 'danger');
+      return;
+    }
+    if (!branch_id) {
+      this.showToast('Every batch must belong to a branch (Rule C)', 'danger');
+      return;
+    }
+    if (selectedDays.length === 0) {
+      this.showToast('Please select at least one day of the week', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/batches/${batchId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        name,
+        branch_id: Number(branch_id),
+        sport_id: sport_id ? Number(sport_id) : null,
+        coach_id: coach_id ? Number(coach_id) : null,
+        start_time,
+        end_time,
+        days_of_week: selectedDays.join(', '),
+        monthly_fee: Number(monthly_fee) || 0,
+        max_capacity: Number(max_capacity) || 30,
+        is_active: Number(is_active),
+      }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Batch updated successfully', 'success');
+      this.closeModal();
+      this.renderBatches();
+    } else {
+      this.showToast(res.error || 'Failed to update batch', 'danger');
+    }
+  },
+
+  async deleteBatch(batchId, batchName) {
+    if (!confirm(`Are you sure you want to delete training batch "${batchName}"?`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/batches/${batchId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Batch deleted successfully', 'success');
+      this.renderBatches();
+    } else {
+      this.showToast(res.error || 'Failed to delete batch', 'danger');
+    }
+  },
+
   // LEAVES
   async renderLeaves() {
-    const data = await this.apiRequest('/api/academy/leaves');
     const content = document.getElementById('page-content');
-    const leaves = data.leaves || [];
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const params = new URLSearchParams();
+    params.set('page', this.leaveFilters.page || 1);
+    params.set('limit', this.leaveFilters.limit || 15);
+    if (this.leaveFilters.search) params.set('search', this.leaveFilters.search);
+    if (this.leaveFilters.status) params.set('status', this.leaveFilters.status);
+    if (this.leaveFilters.applicant_type) params.set('applicant_type', this.leaveFilters.applicant_type);
+
+    const data = await this.apiRequest(`/api/academy/leaves?${params.toString()}`);
+    const leaves = (data && data.leaves) || [];
+    const totalCount = data?.total !== undefined ? data.total : leaves.length;
 
     content.innerHTML = `
       <div class="content-card">
-        <div class="card-header">
-          <h2 class="card-title"><i class="fa-solid fa-calendar-check"></i> Leave Requests</h2>
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <h2 class="card-title"><i class="fa-solid fa-calendar-check"></i> Leave Requests (${totalCount})</h2>
         </div>
-        <div class="table-responsive">
+
+        <!-- Universal Filter Bar -->
+        <div class="page-filter-bar" style="margin: 16px 20px 0 20px;">
+          <div class="filter-group" style="min-width: 200px;">
+            <input type="text" id="leave-search-input" class="filter-input"
+                   placeholder="Search applicant or reason..."
+                   value="${this.escapeHtml(this.leaveFilters.search || '')}"
+                   onkeyup="if(event.key==='Enter') app.applyLeaveFilters()">
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="leave-status-filter" class="filter-select" onchange="app.applyLeaveFilters()">
+              <option value="" ${!this.leaveFilters.status ? 'selected' : ''}>All Statuses</option>
+              <option value="pending" ${this.leaveFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
+              <option value="approved" ${this.leaveFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
+              <option value="rejected" ${this.leaveFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="leave-type-filter" class="filter-select" onchange="app.applyLeaveFilters()">
+              <option value="" ${!this.leaveFilters.applicant_type ? 'selected' : ''}>All Applicant Types</option>
+              <option value="coach" ${this.leaveFilters.applicant_type === 'coach' ? 'selected' : ''}>Coach</option>
+              <option value="staff" ${this.leaveFilters.applicant_type === 'staff' ? 'selected' : ''}>Staff</option>
+              <option value="student" ${this.leaveFilters.applicant_type === 'student' ? 'selected' : ''}>Student</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.applyLeaveFilters()">
+              <i class="fa-solid fa-filter"></i> Filter
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetLeaveFilters()">
+              <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="margin-top: 14px;">
           <table class="custom-table">
             <thead>
               <tr>
@@ -2031,30 +7208,59 @@ const app = {
               </tr>
             </thead>
             <tbody>
-              ${leaves.map(l => `
+              ${leaves.length === 0 ? `
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 36px;">No leave requests found matching filters.</td></tr>
+              ` : leaves.map(l => `
                 <tr>
-                  <td><strong>${l.applicant_name}</strong></td>
-                  <td><span class="badge badge-info">${l.applicant_type}</span></td>
-                  <td>${l.start_date} to ${l.end_date}</td>
-                  <td>${l.reason}</td>
+                  <td><strong>${this.escapeHtml(l.applicant_name)}</strong></td>
+                  <td><span class="badge badge-info">${this.escapeHtml(l.applicant_type)}</span></td>
+                  <td>${this.escapeHtml(l.start_date)} to ${this.escapeHtml(l.end_date)}</td>
+                  <td>${this.escapeHtml(l.reason)}</td>
                   <td>
                     <span class="badge ${l.status === 'approved' ? 'badge-success' : (l.status === 'rejected' ? 'badge-danger' : 'badge-warning')}">
-                      ${l.status}
+                      ${this.escapeHtml(l.status)}
                     </span>
                   </td>
                   <td>
                     ${l.status === 'pending' ? `
                       <button class="btn btn-success btn-sm" onclick="app.updateLeave(${l.id}, 'approved')">Approve</button>
                       <button class="btn btn-danger btn-sm" onclick="app.updateLeave(${l.id}, 'rejected')">Reject</button>
-                    ` : '-'}
+                    ` : (l.reviewer_comments ? `<span style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(l.reviewer_comments)}</span>` : '-')}
                   </td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination Controls -->
+        ${this.renderPaginationHtml(data, 'app.onLeavePageChange', 'app.onLeaveLimitChange')}
       </div>
     `;
+  },
+
+  applyLeaveFilters() {
+    this.leaveFilters.search = document.getElementById('leave-search-input')?.value?.trim() || '';
+    this.leaveFilters.status = document.getElementById('leave-status-filter')?.value || '';
+    this.leaveFilters.applicant_type = document.getElementById('leave-type-filter')?.value || '';
+    this.leaveFilters.page = 1;
+    this.renderLeaves();
+  },
+
+  resetLeaveFilters() {
+    this.leaveFilters = { page: 1, limit: this.leaveFilters.limit || 15, search: '', status: '', applicant_type: '' };
+    this.renderLeaves();
+  },
+
+  onLeavePageChange(p) {
+    this.leaveFilters.page = p;
+    this.renderLeaves();
+  },
+
+  onLeaveLimitChange(l) {
+    this.leaveFilters.limit = l;
+    this.leaveFilters.page = 1;
+    this.renderLeaves();
   },
 
   async updateLeave(id, status) {
@@ -2142,18 +7348,343 @@ const app = {
     `;
   },
 
-  // AUDIT LOGS
-  async renderAuditLogs() {
-    const data = await this.apiRequest('/api/academy/audit-logs');
+  // ==========================================
+  // SPORTS & DISCIPLINES MANAGEMENT
+  // ==========================================
+  async showQuickAddSportModal(targetSelectId) {
+    const sportName = prompt('Enter new Sport / Discipline Name (e.g. Judo, Taekwondo, Boxing):');
+    if (!sportName || !sportName.trim()) return;
+
+    const trimmed = sportName.trim();
+    try {
+      const res = await this.apiRequest('/api/academy/sports', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: trimmed,
+          description: `Added dynamically for academy training`,
+          is_active: 1
+        })
+      });
+
+      if (!res.success) {
+        this.showToast(res.error || 'Failed to add sport', 'danger');
+        return;
+      }
+
+      this.showToast(res.message || `Sport "${trimmed}" added!`, 'success');
+
+      // Refresh sports list in target select
+      const sportsRes = await this.apiRequest('/api/academy/sports');
+      const sports = sportsRes.sports || [];
+      const selectEl = document.getElementById(targetSelectId);
+      if (selectEl) {
+        selectEl.innerHTML = `
+          <option value="">-- Select Sport --</option>
+          ${sports.map(s => `<option value="${s.id}" ${s.id === res.sport.id ? 'selected' : ''}>${s.name}${s.name.toLowerCase() === 'karate' ? ' 🥋 (Karate Academy)' : ''}</option>`).join('')}
+        `;
+        selectEl.value = res.sport.id;
+      }
+    } catch (e) {
+      this.showToast(e.message, 'danger');
+    }
+  },
+
+  async renderSports() {
+    const data = await this.apiRequest('/api/academy/sports?all=1');
     const content = document.getElementById('page-content');
-    const logs = data.logs || [];
+    const sports = data.sports || [];
 
     content.innerHTML = `
       <div class="content-card">
-        <div class="card-header">
-          <h2 class="card-title"><i class="fa-solid fa-shield-halved"></i> Isolated Tenant Audit Trail</h2>
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 class="card-title" style="display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-medal"></i> Sports & Disciplines (${sports.length})
+              <span class="badge badge-primary" style="font-size: 0.72rem; padding: 3px 8px; font-weight: normal;">
+                🥋 Primary: Karate Academy
+              </span>
+            </h2>
+            <p style="margin: 4px 0 0; font-size: 13px; color: var(--text-muted);">
+              Manage athletic disciplines and martial arts offered by the academy. InternationalSportsSolutions is initialized for Karate, with full dynamic support for future sports and events.
+            </p>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="app.showAddSportModal()">
+            <i class="fa-solid fa-plus"></i> Add New Sport
+          </button>
         </div>
+
         <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Sport / Discipline</th>
+                <th>Description</th>
+                <th>Assigned Coaches</th>
+                <th>Active Batches</th>
+                <th>Status</th>
+                <th style="text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sports.length === 0 ? `
+                <tr>
+                  <td colspan="6" style="text-align: center; padding: 28px; color: var(--text-muted);">
+                    No sports found. Click "Add New Sport" to create one.
+                  </td>
+                </tr>
+              ` : sports.map(s => {
+                const isKarate = s.name.toLowerCase() === 'karate';
+                return `
+                  <tr>
+                    <td>
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.15rem;">${isKarate ? '🥋' : '🏅'}</span>
+                        <div>
+                          <strong>${s.name}</strong>
+                          ${isKarate ? '<span class="badge badge-warning" style="margin-left: 6px; font-size: 0.7rem;">Primary Sport</span>' : ''}
+                        </div>
+                      </div>
+                    </td>
+                    <td style="max-width: 280px; font-size: 13px; color: var(--text-muted);">
+                      ${s.description || '<em>No description provided</em>'}
+                    </td>
+                    <td>
+                      <span class="badge badge-info">${s.coach_count || 0} coaches</span>
+                    </td>
+                    <td>
+                      <span class="badge badge-secondary">${s.batch_count || 0} batches</span>
+                    </td>
+                    <td>
+                      <span class="badge ${s.is_active ? 'badge-success' : 'badge-danger'}">
+                        ${s.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td style="text-align: right;">
+                      <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                        <button class="btn btn-sm btn-outline" title="Edit Sport" onclick="app.showEditSportModal(${s.id})">
+                          <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button class="btn btn-sm ${s.is_active ? 'btn-outline' : 'btn-success'}" title="${s.is_active ? 'Deactivate' : 'Activate'}" onclick="app.toggleSportStatus(${s.id}, ${s.is_active ? 1 : 0})">
+                          <i class="fa-solid ${s.is_active ? 'fa-ban' : 'fa-check'}"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" title="Delete Sport" onclick="app.deleteSport(${s.id}, '${s.name.replace(/'/g, "\\'")}')">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    this.currentSportsData = sports;
+  },
+
+  showAddSportModal() {
+    this.openModal(
+      'Add New Sport / Discipline',
+      `
+        <form id="add-sport-form">
+          <div class="form-group">
+            <label>Sport Name *</label>
+            <input type="text" id="sport-name" class="form-input" style="width: 100%;" placeholder="e.g. Karate, Judo, Boxing, Swimming" required>
+          </div>
+          <div class="form-group">
+            <label>Description & Objectives</label>
+            <textarea id="sport-description" class="form-input" style="width: 100%; min-height: 80px;" placeholder="Brief overview of curriculum, techniques, rules, or equipment needed"></textarea>
+          </div>
+          <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="sport-active" checked>
+              <span>Set as Active Sport (available in Coach & Batch assignments)</span>
+            </label>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitAddSport()"><i class="fa-solid fa-check"></i> Add Sport</button>
+      `
+    );
+  },
+
+  async submitAddSport() {
+    const name = document.getElementById('sport-name').value.trim();
+    const description = document.getElementById('sport-description').value.trim();
+    const is_active = document.getElementById('sport-active').checked ? 1 : 0;
+
+    if (!name) {
+      this.showToast('Sport name is required', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/sports', {
+      method: 'POST',
+      body: JSON.stringify({ name, description, is_active }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Sport created successfully', 'success');
+      this.closeModal();
+      this.renderSports();
+    } else {
+      this.showToast(res.error || 'Failed to create sport', 'danger');
+    }
+  },
+
+  async showEditSportModal(sportId) {
+    const sport = (this.currentSportsData || []).find(s => s.id === sportId);
+    if (!sport) {
+      this.showToast('Sport details not found', 'danger');
+      return;
+    }
+
+    this.openModal(
+      `Edit Sport — ${sport.name}`,
+      `
+        <form id="edit-sport-form">
+          <div class="form-group">
+            <label>Sport Name *</label>
+            <input type="text" id="edit-sport-name" class="form-input" style="width: 100%;" value="${sport.name || ''}" required>
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <textarea id="edit-sport-desc" class="form-input" style="width: 100%; min-height: 80px;">${sport.description || ''}</textarea>
+          </div>
+          <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="edit-sport-active" ${sport.is_active ? 'checked' : ''}>
+              <span>Active Sport</span>
+            </label>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitEditSport(${sportId})"><i class="fa-solid fa-check"></i> Save Changes</button>
+      `
+    );
+  },
+
+  async submitEditSport(sportId) {
+    const name = document.getElementById('edit-sport-name').value.trim();
+    const description = document.getElementById('edit-sport-desc').value.trim();
+    const is_active = document.getElementById('edit-sport-active').checked ? 1 : 0;
+
+    if (!name) {
+      this.showToast('Sport name cannot be empty', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/sports/${sportId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, description, is_active }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Sport updated successfully', 'success');
+      this.closeModal();
+      this.renderSports();
+    } else {
+      this.showToast(res.error || 'Failed to update sport', 'danger');
+    }
+  },
+
+  async toggleSportStatus(sportId, currentActive) {
+    const res = await this.apiRequest(`/api/academy/sports/${sportId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_active: currentActive ? 0 : 1 }),
+    });
+
+    if (res.success) {
+      this.showToast(`Sport ${currentActive ? 'deactivated' : 'activated'} successfully`, 'success');
+      this.renderSports();
+    } else {
+      this.showToast(res.error || 'Failed to update status', 'danger');
+    }
+  },
+
+  async deleteSport(sportId, sportName) {
+    if (!confirm(`Are you sure you want to delete or deactivate "${sportName}"?`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/sports/${sportId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Sport removed', res.deactivated ? 'info' : 'success');
+      this.renderSports();
+    } else {
+      this.showToast(res.error || 'Failed to delete sport', 'danger');
+    }
+  },
+
+  // AUDIT LOGS
+  async renderAuditLogs() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const params = new URLSearchParams();
+    params.set('page', this.auditFilters.page || 1);
+    params.set('limit', this.auditFilters.limit || 25);
+    if (this.auditFilters.search) params.set('search', this.auditFilters.search);
+    if (this.auditFilters.action) params.set('action', this.auditFilters.action);
+    if (this.auditFilters.user_role) params.set('user_role', this.auditFilters.user_role);
+
+    const data = await this.apiRequest(`/api/academy/audit-logs?${params.toString()}`);
+    const logs = (data && data.logs) || [];
+    const totalCount = data?.total !== undefined ? data.total : logs.length;
+
+    content.innerHTML = `
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <h2 class="card-title"><i class="fa-solid fa-shield-halved"></i> Isolated Tenant Audit Trail (${totalCount})</h2>
+        </div>
+
+        <!-- Universal Filter Bar -->
+        <div class="page-filter-bar" style="margin: 16px 20px 0 20px;">
+          <div class="filter-group" style="min-width: 200px;">
+            <input type="text" id="audit-search-input" class="filter-input"
+                   placeholder="Search user, entity, IP, details..."
+                   value="${this.escapeHtml(this.auditFilters.search || '')}"
+                   onkeyup="if(event.key==='Enter') app.applyAuditFilters()">
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="audit-action-filter" class="filter-select" onchange="app.applyAuditFilters()">
+              <option value="" ${!this.auditFilters.action ? 'selected' : ''}>All Actions</option>
+              <option value="CREATE" ${this.auditFilters.action === 'CREATE' ? 'selected' : ''}>CREATE</option>
+              <option value="UPDATE" ${this.auditFilters.action === 'UPDATE' ? 'selected' : ''}>UPDATE</option>
+              <option value="DELETE" ${this.auditFilters.action === 'DELETE' ? 'selected' : ''}>DELETE</option>
+              <option value="LOGIN" ${this.auditFilters.action === 'LOGIN' ? 'selected' : ''}>LOGIN</option>
+              <option value="APPROVE" ${this.auditFilters.action === 'APPROVE' ? 'selected' : ''}>APPROVE</option>
+              <option value="ATTENDANCE" ${this.auditFilters.action === 'ATTENDANCE' ? 'selected' : ''}>ATTENDANCE</option>
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="audit-role-filter" class="filter-select" onchange="app.applyAuditFilters()">
+              <option value="" ${!this.auditFilters.user_role ? 'selected' : ''}>All Roles</option>
+              <option value="coach" ${this.auditFilters.user_role === 'coach' ? 'selected' : ''}>Coach</option>
+              <option value="branch_admin" ${this.auditFilters.user_role === 'branch_admin' ? 'selected' : ''}>Branch Admin</option>
+              <option value="academy_admin" ${this.auditFilters.user_role === 'academy_admin' ? 'selected' : ''}>Academy Admin</option>
+              <option value="student" ${this.auditFilters.user_role === 'student' ? 'selected' : ''}>Student</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.applyAuditFilters()">
+              <i class="fa-solid fa-filter"></i> Filter
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetAuditFilters()">
+              <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="margin-top: 14px;">
           <table class="custom-table">
             <thead>
               <tr>
@@ -2166,21 +7697,702 @@ const app = {
               </tr>
             </thead>
             <tbody>
-              ${logs.map(l => `
+              ${logs.length === 0 ? `
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 36px;">No audit log records found matching filters.</td></tr>
+              ` : logs.map(l => `
                 <tr>
                   <td>${new Date(l.created_at).toLocaleString()}</td>
-                  <td>${l.user_name || 'Staff'}</td>
-                  <td><span class="badge badge-info">${l.user_role}</span></td>
-                  <td><span class="badge badge-success">${l.action}</span></td>
-                  <td>${l.entity}</td>
-                  <td>${l.details || '-'}</td>
+                  <td>${this.escapeHtml(l.user_name || 'Staff')}</td>
+                  <td><span class="badge badge-info">${this.escapeHtml(l.user_role)}</span></td>
+                  <td><span class="badge badge-success">${this.escapeHtml(l.action)}</span></td>
+                  <td>${this.escapeHtml(l.entity)}</td>
+                  <td>${this.escapeHtml(l.details || '-')}</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination Controls -->
+        ${this.renderPaginationHtml(data, 'app.onAuditPageChange', 'app.onAuditLimitChange')}
       </div>
     `;
+  },
+
+  applyAuditFilters() {
+    this.auditFilters.search = document.getElementById('audit-search-input')?.value?.trim() || '';
+    this.auditFilters.action = document.getElementById('audit-action-filter')?.value || '';
+    this.auditFilters.user_role = document.getElementById('audit-role-filter')?.value || '';
+    this.auditFilters.page = 1;
+    this.renderAuditLogs();
+  },
+
+  resetAuditFilters() {
+    this.auditFilters = { page: 1, limit: this.auditFilters.limit || 25, search: '', action: '', user_role: '' };
+    this.renderAuditLogs();
+  },
+
+  onAuditPageChange(p) {
+    this.auditFilters.page = p;
+    this.renderAuditLogs();
+  },
+
+  onAuditLimitChange(l) {
+    this.auditFilters.limit = l;
+    this.auditFilters.page = 1;
+    this.renderAuditLogs();
+  },
+
+  // ==========================================
+  // ROLES & PERMISSIONS ACCESS CONTROL
+  // ==========================================
+
+  currentRolesData: [],
+  currentStaffUsersData: [],
+  currentPermissionsCatalog: [],
+  activeRolesTab: 'roles',
+
+  async renderRolesAndPermissions(activeTab = null) {
+    if (activeTab) this.activeRolesTab = activeTab;
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const [rolesRes, usersRes, permsRes] = await Promise.all([
+      this.apiRequest('/api/academy/roles'),
+      this.apiRequest('/api/academy/users'),
+      this.apiRequest('/api/academy/permissions'),
+    ]);
+
+    if (!rolesRes.success) {
+      content.innerHTML = `<div class="toast danger">${rolesRes.error || 'Failed to load roles'}</div>`;
+      return;
+    }
+
+    this.currentRolesData = rolesRes.roles || [];
+    this.currentStaffUsersData = usersRes.users || [];
+    this.currentPermissionsCatalog = permsRes.categories || [];
+
+    const totalPermissions = this.currentPermissionsCatalog.reduce((sum, cat) => sum + (cat.permissions ? cat.permissions.length : 0), 0);
+
+    content.innerHTML = `
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+          <div>
+            <h2 class="card-title">
+              <i class="fa-solid fa-key" style="color: var(--primary);"></i> Roles & Permissions Access Control
+            </h2>
+            <p style="font-size: 13px; color: var(--text-muted); margin: 4px 0 0;">
+              Configure academy operational roles, granular capabilities (${totalPermissions} total), and assign roles to staff members & coaches.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-outline-primary btn-sm" onclick="app.showCreateRoleModal()">
+              <i class="fa-solid fa-plus"></i> New Custom Role
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="app.showAddStaffModal()">
+              <i class="fa-solid fa-user-plus"></i> New Staff Member
+            </button>
+          </div>
+        </div>
+
+        <!-- Sub-Navigation Tabs -->
+        <div style="display: flex; gap: 10px; border-bottom: 1px solid var(--border); padding: 0 20px; background: var(--bg-surface);">
+          <button type="button" class="btn btn-sm" onclick="app.renderRolesAndPermissions('roles')" 
+            style="border: none; border-radius: 0; border-bottom: 2px solid ${this.activeRolesTab === 'roles' ? 'var(--primary)' : 'transparent'}; background: none; font-weight: ${this.activeRolesTab === 'roles' ? '700' : '500'}; color: ${this.activeRolesTab === 'roles' ? 'var(--primary)' : 'var(--text-muted)'}; padding: 12px 16px; cursor: pointer;">
+            <i class="fa-solid fa-shield-halved"></i> Academy Roles Matrix (${this.currentRolesData.length})
+          </button>
+          <button type="button" class="btn btn-sm" onclick="app.renderRolesAndPermissions('staff')" 
+            style="border: none; border-radius: 0; border-bottom: 2px solid ${this.activeRolesTab === 'staff' ? 'var(--primary)' : 'transparent'}; background: none; font-weight: ${this.activeRolesTab === 'staff' ? '700' : '500'}; color: ${this.activeRolesTab === 'staff' ? 'var(--primary)' : 'var(--text-muted)'}; padding: 12px 16px; cursor: pointer;">
+            <i class="fa-solid fa-users-gear"></i> Staff & Employee Role Assignments (${this.currentStaffUsersData.length})
+          </button>
+        </div>
+
+        <div style="padding: 20px;">
+          ${this.activeRolesTab === 'roles' ? this.renderRolesMatrixTab() : this.renderStaffAssignmentsTab()}
+        </div>
+      </div>
+    `;
+  },
+
+  renderRolesMatrixTab() {
+    return `
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 18px;">
+        ${this.currentRolesData.map(r => {
+          const isSystem = r.is_system;
+          const isAll = r.permissions.includes('all');
+          return `
+            <div class="role-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: var(--shadow-sm);">
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                  <div>
+                    <h3 style="font-size: 16px; font-weight: 700; color: var(--text-heading); margin: 0;">${r.display_name}</h3>
+                    <div style="font-size: 11px; font-family: monospace; color: var(--text-dim); margin-top: 2px;"><code>${r.name}</code></div>
+                  </div>
+                  <span class="badge ${isSystem ? 'badge-primary' : 'badge-secondary'}" style="font-size: 11px;">
+                    ${isSystem ? '<i class="fa-solid fa-lock" style="font-size: 9px; margin-right: 4px;"></i> System Role' : '<i class="fa-solid fa-sliders" style="font-size: 9px; margin-right: 4px;"></i> Custom'}
+                  </span>
+                </div>
+
+                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.4; margin-bottom: 14px; min-height: 36px;">
+                  ${r.description || 'No description provided.'}
+                </p>
+
+                <div style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px dashed var(--border); display: flex; align-items: center; justify-content: space-between;">
+                  <span style="font-size: 12px; color: var(--text-muted);">Assigned Employees:</span>
+                  <span class="badge badge-info" style="font-weight: 600;">
+                    <i class="fa-solid fa-user-check"></i> ${r.user_count} staff member(s)
+                  </span>
+                </div>
+
+                <div style="margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px dashed var(--border); display: flex; align-items: center; justify-content: space-between;">
+                  <span style="font-size: 12px; color: var(--text-muted);">Role Signature Theme:</span>
+                  ${(() => {
+                    const matchedTheme = (this.colorThemes || []).find(t => t.id === r.theme_color) || (this.colorThemes || [])[0] || { name: 'Royal Oceanic', hex: '#2563eb' };
+                    return `
+                      <span class="badge" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-heading); font-size: 11px;">
+                        <span style="width: 10px; height: 10px; border-radius: 50%; background: ${matchedTheme.hex}; display: inline-block;"></span>
+                        ${matchedTheme.name}
+                      </span>
+                    `;
+                  })()}
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                  <div style="font-size: 11px; text-transform: uppercase; font-weight: 600; color: var(--text-dim); margin-bottom: 8px;">
+                    Granted Capabilities (${isAll ? 'All' : r.permissions.length}):
+                  </div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 5px; max-height: 90px; overflow-y: auto;">
+                    ${isAll ? `
+                      <span class="badge badge-success" style="font-size: 11px; padding: 4px 8px;">
+                        <i class="fa-solid fa-circle-check"></i> Unrestricted Full Access (All Capabilities)
+                      </span>
+                    ` : (r.permissions.length === 0 ? `
+                      <span style="font-size: 12px; color: var(--text-dim); font-style: italic;">No permissions assigned</span>
+                    ` : r.permissions.slice(0, 6).map(p => `
+                      <span class="badge badge-secondary" style="font-size: 10px; padding: 3px 6px;">
+                        ${p}
+                      </span>
+                    `).join('') + (r.permissions.length > 6 ? `<span class="badge badge-secondary" style="font-size: 10px; padding: 3px 6px;">+${r.permissions.length - 6} more</span>` : ''))}
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 8px; justify-content: flex-end; padding-top: 14px; border-top: 1px solid var(--border);">
+                ${r.name !== 'academy_admin' ? `
+                  <button class="btn btn-secondary btn-sm" onclick="app.showEditRoleModal(${r.id})" style="flex: 1;">
+                    <i class="fa-solid fa-sliders"></i> Configure Permissions
+                  </button>
+                ` : `
+                  <button class="btn btn-secondary btn-sm" disabled style="opacity: 0.6; flex: 1;" title="Super Admin / Academy Admin inherently possesses all permissions">
+                    <i class="fa-solid fa-shield-check"></i> Root Permissions (Locked)
+                  </button>
+                `}
+                ${!isSystem ? `
+                  <button class="btn btn-danger btn-sm" onclick="app.deleteRole(${r.id}, '${r.display_name.replace(/'/g, "\\'")}')" title="Delete custom role">
+                    <i class="fa-solid fa-trash"></i>
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  },
+
+  renderStaffAssignmentsTab() {
+    return `
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Employee / User</th>
+              <th>Email</th>
+              <th>Assigned Role</th>
+              <th>Theme Preference</th>
+              <th>Specialization / Dept</th>
+              <th>Custom Overrides</th>
+              <th>Status</th>
+              <th style="text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${this.currentStaffUsersData.length === 0 ? `
+              <tr>
+                <td colspan="8" style="text-align: center; padding: 30px; color: var(--text-muted);">
+                  No staff members or employees found. Click "New Staff Member" to add one.
+                </td>
+              </tr>
+            ` : this.currentStaffUsersData.map(u => {
+              const matchedRole = this.currentRolesData.find(r => r.name === u.role);
+              const roleDisplay = matchedRole ? matchedRole.display_name : this.formatRole(u.role);
+              const customPerms = u.custom_permissions || [];
+              return `
+                <tr>
+                  <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <div style="width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 13px;">
+                        ${u.name ? u.name.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                      <div>
+                        <strong>${u.name}</strong>
+                        ${u.phone ? `<div style="font-size: 11px; color: var(--text-dim);">${u.phone}</div>` : ''}
+                      </div>
+                    </div>
+                  </td>
+                  <td><code>${u.email}</code></td>
+                  <td>
+                    <span class="badge ${u.role === 'academy_admin' ? 'badge-primary' : (u.role === 'coach' ? 'badge-purple' : 'badge-info')}" style="font-size: 12px;">
+                      ${roleDisplay}
+                    </span>
+                  </td>
+                  <td>
+                    ${u.theme_color ? (() => {
+                      const personalTheme = (this.colorThemes || []).find(t => t.id === u.theme_color) || { name: u.theme_color, hex: '#2563eb' };
+                      return `
+                        <span class="badge" style="font-size: 11px; background: var(--bg-surface); border: 1px solid var(--border); display: inline-flex; align-items: center; gap: 5px; color: var(--text-heading);">
+                          <span style="width: 8px; height: 8px; border-radius: 50%; background: ${personalTheme.hex};"></span>
+                          ${personalTheme.name} <span style="font-size: 9px; opacity: 0.7;">(User)</span>
+                        </span>
+                      `;
+                    })() : (() => {
+                      const roleTheme = (this.colorThemes || []).find(t => t.id === (matchedRole ? matchedRole.theme_color : null)) || { name: 'Role Default', hex: '#64748b' };
+                      return `
+                        <span style="font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px;">
+                          <span style="width: 7px; height: 7px; border-radius: 50%; background: ${roleTheme.hex};"></span>
+                          Inherit (${roleTheme.name})
+                        </span>
+                      `;
+                    })()}
+                  </td>
+                  <td>
+                    ${u.coach_id ? `
+                      <span class="badge badge-secondary" style="font-size: 11px;">
+                        <i class="fa-solid fa-medal"></i> ${u.sport_name || 'Coach'}
+                      </span>
+                    ` : '<span style="color: var(--text-dim); font-size: 12px;">Administration / General</span>'}
+                  </td>
+                  <td>
+                    ${customPerms.length > 0 ? `
+                      <span class="badge badge-warning" style="font-size: 11px;">
+                        +${customPerms.length} override(s)
+                      </span>
+                    ` : '<span style="color: var(--text-dim); font-size: 12px;">Role Default</span>'}
+                  </td>
+                  <td>
+                    <span class="badge ${u.status === 'active' ? 'badge-success' : 'badge-danger'}">
+                      ${u.status}
+                    </span>
+                  </td>
+                  <td style="text-align: right;">
+                    <button class="btn btn-primary btn-sm" onclick="app.showAssignRoleModal(${u.id}, '${u.name.replace(/'/g, "\\'")}', '${u.role}')">
+                      <i class="fa-solid fa-user-gear"></i> Assign Role
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  buildPermissionsCheckboxMatrix(selectedPermissions = []) {
+    const isAll = selectedPermissions.includes('all');
+    return this.currentPermissionsCatalog.map((cat, idx) => {
+      return `
+        <div style="margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; background: var(--bg-surface);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 6px;">
+            <div style="font-weight: 700; font-size: 13px; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid ${cat.icon || 'fa-check'}" style="color: var(--primary);"></i>
+              ${cat.category}
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="btn btn-secondary btn-xs" onclick="app.togglePermissionCategory(${idx}, true)" style="font-size: 10px; padding: 2px 6px;">Select All</button>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="app.togglePermissionCategory(${idx}, false)" style="font-size: 10px; padding: 2px 6px;">Clear</button>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px;">
+            ${cat.permissions.map(p => {
+              const checked = isAll || selectedPermissions.includes(p.key);
+              return `
+                <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; cursor: pointer; padding: 4px; border-radius: 4px;">
+                  <input type="checkbox" name="role_perms" value="${p.key}" class="perm-cat-${idx}" ${checked ? 'checked' : ''} style="margin-top: 2px;">
+                  <div>
+                    <strong style="color: var(--text-heading);">${p.label}</strong>
+                    <div style="font-size: 11px; color: var(--text-dim);">${p.desc}</div>
+                  </div>
+                </label>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  togglePermissionCategory(categoryIndex, selectAll) {
+    const checkboxes = document.querySelectorAll(`.perm-cat-${categoryIndex}`);
+    checkboxes.forEach(cb => cb.checked = selectAll);
+  },
+
+  showCreateRoleModal() {
+    this.openModal(
+      'Create New Operational Role',
+      `
+        <form id="create-role-form" onsubmit="event.preventDefault(); app.submitCreateRole();">
+          <div class="form-grid" style="margin-bottom: 14px;">
+            <div class="form-group">
+              <label>Role Display Name *</label>
+              <input type="text" id="new-role-display" class="form-input" placeholder="e.g. Finance & Fee Officer" required autofocus>
+            </div>
+            <div class="form-group">
+              <label>Role Identifier (auto-generated if empty)</label>
+              <input type="text" id="new-role-name" class="form-input" placeholder="e.g. finance_officer">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label>Description & Scope of Authority</label>
+            <input type="text" id="new-role-desc" class="form-input" placeholder="Brief explanation of responsibilities and access level">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label style="font-weight: 700; margin-bottom: 6px; display: block;">Default Role Theme Accent</label>
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+              Staff assigned to this role will default to this signature color theme (unless personally overridden).
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px;">
+              ${(this.colorThemes || []).map((t, idx) => `
+                <label style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-surface);">
+                  <input type="radio" name="new_role_theme" value="${t.id}" ${idx === 0 ? 'checked' : ''}>
+                  <span style="width: 10px; height: 10px; border-radius: 50%; background: ${t.hex};"></span>
+                  <span style="font-size: 12px; font-weight: 600;">${t.name}</span>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+
+          <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-weight: 700; margin: 0;">Configure Capability Permissions</label>
+            <span style="font-size: 12px; color: var(--text-muted);">Check all permissions authorized for this role</span>
+          </div>
+
+          <div style="max-height: 400px; overflow-y: auto; padding-right: 6px;">
+            ${this.buildPermissionsCheckboxMatrix([])}
+          </div>
+
+          <div id="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
+            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Create Custom Role</button>
+          </div>
+        </form>
+      `
+    );
+  },
+
+  async submitCreateRole() {
+    const display_name = document.getElementById('new-role-display').value.trim();
+    const name = document.getElementById('new-role-name').value.trim() || display_name.toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+    const description = document.getElementById('new-role-desc').value.trim();
+
+    const themeRadio = document.querySelector('input[name="new_role_theme"]:checked');
+    const theme_color = themeRadio ? themeRadio.value : 'blue';
+
+    const selectedCheckboxes = document.querySelectorAll('input[name="role_perms"]:checked');
+    const permissions = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+    const res = await this.apiRequest('/api/academy/roles', {
+      method: 'POST',
+      body: JSON.stringify({ name, display_name, description, permissions, theme_color }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Custom role created successfully', 'success');
+      this.closeModal();
+      this.renderRolesAndPermissions('roles');
+    } else {
+      this.showToast(res.error || 'Failed to create role', 'danger');
+    }
+  },
+
+  showEditRoleModal(roleId) {
+    const role = this.currentRolesData.find(r => r.id === roleId);
+    if (!role) {
+      this.showToast('Role not found', 'danger');
+      return;
+    }
+
+    this.openModal(
+      `Configure Permissions — ${role.display_name}`,
+      `
+        <form id="edit-role-form" onsubmit="event.preventDefault(); app.submitEditRole(${roleId});">
+          <div class="form-grid" style="margin-bottom: 14px;">
+            <div class="form-group">
+              <label>Role Display Label *</label>
+              <input type="text" id="edit-role-display" class="form-input" value="${role.display_name}" required>
+            </div>
+            <div class="form-group">
+              <label>Role Identifier</label>
+              <input type="text" class="form-input" value="${role.name}" disabled style="opacity: 0.7;">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label>Description & Responsibilities</label>
+            <input type="text" id="edit-role-desc" class="form-input" value="${role.description || ''}">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label style="font-weight: 700; margin-bottom: 6px; display: block;">Default Role Theme Accent</label>
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+              Staff assigned to this role will default to this signature color theme.
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px;">
+              ${(this.colorThemes || []).map(t => `
+                <label style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-surface);">
+                  <input type="radio" name="edit_role_theme" value="${t.id}" ${(role.theme_color || 'blue') === t.id ? 'checked' : ''}>
+                  <span style="width: 10px; height: 10px; border-radius: 50%; background: ${t.hex};"></span>
+                  <span style="font-size: 12px; font-weight: 600;">${t.name}</span>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+
+          <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-weight: 700; margin: 0;">Authorized Capability Permissions</label>
+            <span style="font-size: 12px; color: var(--text-muted);">${role.permissions.length} active permission(s)</span>
+          </div>
+
+          <div style="max-height: 400px; overflow-y: auto; padding-right: 6px;">
+            ${this.buildPermissionsCheckboxMatrix(role.permissions || [])}
+          </div>
+
+          <div id="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
+            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Permissions Matrix</button>
+          </div>
+        </form>
+      `
+    );
+  },
+
+  async submitEditRole(roleId) {
+    const display_name = document.getElementById('edit-role-display').value.trim();
+    const description = document.getElementById('edit-role-desc').value.trim();
+
+    const themeRadio = document.querySelector('input[name="edit_role_theme"]:checked');
+    const theme_color = themeRadio ? themeRadio.value : 'blue';
+
+    const selectedCheckboxes = document.querySelectorAll('input[name="role_perms"]:checked');
+    const permissions = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+    const res = await this.apiRequest(`/api/academy/roles/${roleId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ display_name, description, permissions, theme_color }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Role permissions updated successfully', 'success');
+      this.closeModal();
+      this.renderRolesAndPermissions('roles');
+    } else {
+      this.showToast(res.error || 'Failed to update role', 'danger');
+    }
+  },
+
+  async deleteRole(roleId, roleName) {
+    if (!confirm(`Are you sure you want to delete custom role "${roleName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/roles/${roleId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Role deleted successfully', 'success');
+      this.renderRolesAndPermissions('roles');
+    } else {
+      this.showToast(res.error || 'Failed to delete role', 'danger');
+    }
+  },
+
+  showAssignRoleModal(userId, userName, currentRole) {
+    const user = this.currentStaffUsersData.find(u => u.id === userId);
+    const customPerms = (user && user.custom_permissions) || [];
+
+    this.openModal(
+      `Assign Role & Permissions — ${userName}`,
+      `
+        <form id="assign-role-form" onsubmit="event.preventDefault(); app.submitAssignRole(${userId});">
+          <div style="background: var(--bg-surface); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 18px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="font-size: 15px; color: var(--text-heading);">${userName}</strong>
+                <div style="font-size: 12px; color: var(--text-muted);">${user ? user.email : ''}</div>
+              </div>
+              <div>
+                <span style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600;">Current Role:</span>
+                <span class="badge badge-primary" style="margin-left: 6px;">${this.formatRole(currentRole)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 18px;">
+            <label>Select New Operational Role *</label>
+            <select id="assign-role-select" class="form-select" style="width: 100%; font-size: 14px;" required>
+              ${this.currentRolesData.map(r => `
+                <option value="${r.name}" ${r.name === currentRole ? 'selected' : ''}>
+                  ${r.display_name} (${r.name}) ${r.is_system ? '[System]' : '[Custom]'}
+                </option>
+              `).join('')}
+            </select>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+              Role assignment determines default capabilities across student registers, batches, attendance, and finance.
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 18px;">
+            <label style="font-weight: 700; margin-bottom: 6px; display: block;">Theme Preference & UI Accent</label>
+            <select id="assign-theme-select" class="form-select" style="width: 100%; font-size: 13px;">
+              <option value="" ${!user || !user.theme_color ? 'selected' : ''}>— Inherit from Role Default Accent —</option>
+              ${(this.colorThemes || []).map(t => `
+                <option value="${t.id}" ${user && user.theme_color === t.id ? 'selected' : ''}>
+                  ${t.name} (${t.desc})
+                </option>
+              `).join('')}
+            </select>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+              Override this employee's personal interface color theme, or inherit their assigned role's default theme accent.
+            </div>
+          </div>
+
+          <div style="margin-bottom: 12px;">
+            <label style="font-weight: 700; margin: 0;">Specific Custom Permission Overrides (Optional)</label>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 10px;">
+              Grant specific extra capabilities to this employee beyond their base role's permissions.
+            </p>
+          </div>
+
+          <div style="max-height: 280px; overflow-y: auto; padding-right: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; background: var(--bg-surface);">
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;">
+              ${this.currentPermissionsCatalog.flatMap(cat => cat.permissions).map(p => {
+                const checked = customPerms.includes(p.key);
+                return `
+                  <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+                    <input type="checkbox" name="custom_perms" value="${p.key}" ${checked ? 'checked' : ''}>
+                    <span>${p.label}</span>
+                  </label>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <div id="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
+            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-user-check"></i> Save Role Assignment</button>
+          </div>
+        </form>
+      `
+    );
+  },
+
+  async submitAssignRole(userId) {
+    const role = document.getElementById('assign-role-select').value;
+    const theme_color = document.getElementById('assign-theme-select').value || null;
+    const selectedCheckboxes = document.querySelectorAll('input[name="custom_perms"]:checked');
+    const custom_permissions = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+    const res = await this.apiRequest(`/api/academy/users/${userId}/role`, {
+      method: 'PUT',
+      body: JSON.stringify({ role, custom_permissions, theme_color }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Staff role assigned successfully', 'success');
+      this.closeModal();
+      this.renderRolesAndPermissions('staff');
+    } else {
+      this.showToast(res.error || 'Failed to assign role', 'danger');
+    }
+  },
+
+  showAddStaffModal() {
+    this.openModal(
+      'Register New Staff Member / Employee',
+      `
+        <form id="add-staff-form" onsubmit="event.preventDefault(); app.submitAddStaff();">
+          <div class="form-grid" style="margin-bottom: 14px;">
+            <div class="form-group">
+              <label>Full Name *</label>
+              <input type="text" id="new-staff-name" class="form-input" placeholder="e.g. Ramesh Shah" required autofocus>
+            </div>
+            <div class="form-group">
+              <label>Email Address *</label>
+              <input type="email" id="new-staff-email" class="form-input" placeholder="e.g. ramesh.shah@example.com" required>
+            </div>
+          </div>
+
+          <div class="form-grid" style="margin-bottom: 14px;">
+            <div class="form-group">
+              <label>Initial Password *</label>
+              <input type="password" id="new-staff-password" class="form-input" value="password123" required>
+            </div>
+            <div class="form-group">
+              <label>Contact Phone</label>
+              <input type="text" id="new-staff-phone" class="form-input" placeholder="+91 98250 12345">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 18px;">
+            <label>Assigned Operational Role *</label>
+            <select id="new-staff-role" class="form-select" style="width: 100%; font-size: 14px;" required>
+              ${this.currentRolesData.map(r => `
+                <option value="${r.name}" ${r.name === 'academy_staff' ? 'selected' : ''}>
+                  ${r.display_name} (${r.name})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom: 18px;">
+            <label>Color Theme Preference (Optional)</label>
+            <select id="new-staff-theme" class="form-select" style="width: 100%; font-size: 13px;">
+              <option value="">— Inherit Role Default Accent —</option>
+              ${(this.colorThemes || []).map(t => `
+                <option value="${t.id}">${t.name} (${t.desc})</option>
+              `).join('')}
+            </select>
+          </div>
+
+          <div id="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
+            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-user-plus"></i> Create & Enroll Staff</button>
+          </div>
+        </form>
+      `
+    );
+  },
+
+  async submitAddStaff() {
+    const name = document.getElementById('new-staff-name').value.trim();
+    const email = document.getElementById('new-staff-email').value.trim();
+    const password = document.getElementById('new-staff-password').value.trim();
+    const phone = document.getElementById('new-staff-phone').value.trim();
+    const role = document.getElementById('new-staff-role').value;
+    const theme_color = document.getElementById('new-staff-theme').value || null;
+
+    const res = await this.apiRequest('/api/academy/users', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password, phone, role, theme_color }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Staff member created successfully', 'success');
+      this.closeModal();
+      this.renderRolesAndPermissions('staff');
+    } else {
+      this.showToast(res.error || 'Failed to create staff member', 'danger');
+    }
   },
 
   // ==========================================
@@ -2324,15 +8536,19 @@ const app = {
                     </span>
                   </td>
                   <td>
-                    ${inv.balance_amount > 0 ? `
-                      <button class="btn btn-primary btn-sm" onclick="app.payStudentFeeOnline(${inv.id}, ${inv.balance_amount}, '${inv.invoice_number}')">
-                        <i class="fa-solid fa-credit-card"></i> Pay Online
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                      ${inv.balance_amount > 0 ? `
+                        <button class="btn btn-primary btn-sm" onclick="app.payStudentFeeOnline(${inv.id}, ${inv.balance_amount}, '${inv.invoice_number}')">
+                          <i class="fa-solid fa-credit-card"></i> Pay Online
+                        </button>
+                      ` : ''}
+                      <button class="btn btn-secondary btn-sm" title="Direct Print Receipt" onclick="app.printFeeReceipt(${JSON.stringify(inv).replace(/"/g, '&quot;')})">
+                        <i class="fa-solid fa-print"></i> Print
                       </button>
-                    ` : `
-                      <button class="btn btn-secondary btn-sm" onclick="app.generateFeeReceiptPdf(${JSON.stringify(inv).replace(/"/g, '&quot;')})">
-                        <i class="fa-solid fa-file-pdf"></i> Receipt
+                      <button class="btn btn-secondary btn-sm" title="Download PDF Receipt" onclick="app.generateFeeReceiptPdf(${JSON.stringify(inv).replace(/"/g, '&quot;')})">
+                        <i class="fa-solid fa-file-pdf"></i> PDF
                       </button>
-                    `}
+                    </div>
                   </td>
                 </tr>
               `).join('')}
@@ -3412,7 +9628,7 @@ const app = {
       return;
     }
 
-    const { currentTechnique, history = [], totalAttendedAcrossTechniques = 0, snapshots = [] } = res;
+    const { currentTechnique, history = [], totalAttendedAcrossTechniques = 0, snapshots = [], attendanceLogs = [] } = res;
 
     this.openModal(
       `Syllabus Progression — ${studentName}`,
@@ -3499,7 +9715,7 @@ const app = {
             <i class="fa-solid fa-camera"></i> Historical Attendance Snapshots
           </h4>
           <div style="max-height: 180px; overflow-y: auto;">
-            ${snapshots.length === 0 ? '<p style="color: var(--text-muted); font-size: 13px;">No attendance snapshots recorded yet.</p>' : `
+            ${snapshots.length > 0 ? `
               <table class="custom-table" style="font-size: 12px;">
                 <thead>
                   <tr>
@@ -3524,7 +9740,32 @@ const app = {
                   `).join('')}
                 </tbody>
               </table>
-            `}
+            ` : (attendanceLogs.length > 0 ? `
+              <table class="custom-table" style="font-size: 12px;">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Batch</th>
+                    <th>Status</th>
+                    <th>Technique</th>
+                    <th>Session Snapshot</th>
+                    <th>Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${attendanceLogs.map(l => `
+                    <tr>
+                      <td><code>${l.attendance_date}</code></td>
+                      <td>${l.batch_name}</td>
+                      <td><span class="badge ${l.status === 'present' ? 'badge-success' : (l.status === 'late' ? 'badge-warning' : 'badge-danger')}">${l.status}</span></td>
+                      <td>${l.technique_name ? `<strong>${l.technique_name}</strong> (Lvl ${l.technique_level})` : '<span style="color:var(--text-dim);">Baseline Practice</span>'}</td>
+                      <td><span class="badge badge-info">${l.attended_sessions_snapshot || 1}</span></td>
+                      <td><span style="color: var(--text-muted);">${l.remarks || '-'}</span></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : '<p style="color: var(--text-muted); font-size: 13px;">No attendance sessions recorded yet.</p>')}
           </div>
         </div>
       `,
@@ -3739,6 +9980,3747 @@ const app = {
   },
 
   // ==========================================
+  // APPROVALS INBOX (Attendance & Overtime)
+  // ==========================================
+
+  async renderApprovals() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const res = await this.apiRequest('/api/academy/approvals');
+    if (!res.success) {
+      content.innerHTML = `<div class="toast danger">${res.error}</div>`;
+      return;
+    }
+
+    const { pendingCorrections = [], pendingOvertime = [], totalPending = 0 } = res;
+
+    content.innerHTML = `
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h2 class="card-title"><i class="fa-solid fa-check-to-slot" style="color: var(--primary);"></i> Administrative Approval Inbox</h2>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+              Review late attendance corrections and coach overtime requests exceeding the 30-minute threshold.
+            </p>
+          </div>
+          <div>
+            <span class="badge ${totalPending > 0 ? 'badge-warning' : 'badge-success'}" style="font-size: 13px; padding: 6px 12px;">
+              <i class="fa-solid ${totalPending > 0 ? 'fa-bell' : 'fa-circle-check'}"></i> ${totalPending} Pending Approvals
+            </span>
+          </div>
+        </div>
+
+        <div style="padding: 24px;">
+          <!-- 1. Late Attendance & Corrections -->
+          <div style="margin-bottom: 32px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h3 style="font-size: 16px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-clock-rotate-left" style="color: #f59e0b;"></i> Late Attendance Corrections (${pendingCorrections.length})
+              </h3>
+            </div>
+
+            ${pendingCorrections.length === 0 ? `
+              <div style="padding: 20px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: var(--radius-md); text-align: center; color: var(--text-muted); font-size: 13px;">
+                <i class="fa-solid fa-clipboard-check fa-lg" style="color: #10b981; margin-bottom: 6px;"></i><br>
+                All late attendance requests have been reviewed and decided.
+              </div>
+            ` : `
+              <div class="table-responsive">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Date & Batch</th>
+                      <th>Student</th>
+                      <th>Requested By</th>
+                      <th>Mandatory Reason</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${pendingCorrections.map(c => `
+                      <tr>
+                        <td>
+                          <strong>${c.date}</strong>
+                          <div style="font-size: 11px; color: var(--text-muted);">${c.batch_name}</div>
+                        </td>
+                        <td>${c.first_name ? `${c.first_name} ${c.last_name}` : '<span style="color: var(--text-muted);">Entire Batch</span>'}</td>
+                        <td>${c.requester_name || 'Coach'}</td>
+                        <td style="max-width: 280px; font-size: 12px;">${c.reason}</td>
+                        <td>
+                          <div style="display: flex; gap: 6px;">
+                            <button class="btn btn-success btn-sm" onclick="app.reviewAttendanceCorrection(${c.id}, 'approved')">
+                              <i class="fa-solid fa-check"></i> Approve
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="app.reviewAttendanceCorrection(${c.id}, 'rejected')">
+                              <i class="fa-solid fa-xmark"></i> Reject
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+
+          <!-- 2. Overtime Requests (>30m) -->
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h3 style="font-size: 16px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-stopwatch" style="color: #3b82f6;"></i> Overtime Approval Requests (${pendingOvertime.length})
+              </h3>
+            </div>
+
+            ${pendingOvertime.length === 0 ? `
+              <div style="padding: 20px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: var(--radius-md); text-align: center; color: var(--text-muted); font-size: 13px;">
+                <i class="fa-solid fa-circle-check fa-lg" style="color: #10b981; margin-bottom: 6px;"></i><br>
+                No pending overtime requests exceeding the 30-minute threshold.
+              </div>
+            ` : `
+              <div class="table-responsive">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Date</th>
+                      <th>Overtime Duration</th>
+                      <th>Payable Amount</th>
+                      <th>Reason</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${pendingOvertime.map(o => `
+                      <tr>
+                        <td>
+                          <strong>${o.employee_name}</strong>
+                          <div style="font-size: 11px; color: var(--text-muted);">${o.employee_role}</div>
+                        </td>
+                        <td>${o.date}</td>
+                        <td>
+                          <span class="badge badge-warning">
+                            <i class="fa-solid fa-stopwatch"></i> ${o.overtime_minutes} mins
+                          </span>
+                          <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">(&gt;30m threshold)</span>
+                        </td>
+                        <td><strong>₹${Number(o.payable_amount || 0).toLocaleString()}</strong></td>
+                        <td style="max-width: 260px; font-size: 12px;">${o.reason || '<em style="color: var(--text-muted);">No reason supplied</em>'}</td>
+                        <td>
+                          <div style="display: flex; gap: 6px;">
+                            <button class="btn btn-success btn-sm" onclick="app.reviewOvertimeRequest(${o.id}, 'approved')">
+                              <i class="fa-solid fa-check"></i> Approve
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="app.reviewOvertimeRequest(${o.id}, 'rejected')">
+                              <i class="fa-solid fa-xmark"></i> Reject
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  async reviewAttendanceCorrection(correctionId, status) {
+    const reviewer_notes = prompt(`Enter optional reviewer notes for marking this request as ${status}:`, '');
+    if (reviewer_notes === null) return;
+
+    const res = await this.apiRequest(`/api/academy/attendance/corrections/${correctionId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, reviewer_notes }),
+    });
+
+    if (res.success) {
+      this.showToast(`Attendance correction request marked as ${status}`, 'success');
+      this.renderApprovals();
+    } else {
+      this.showToast(res.error || 'Failed to update correction', 'danger');
+    }
+  },
+
+  async reviewOvertimeRequest(requestId, status) {
+    const reviewer_notes = prompt(`Enter optional reviewer notes for marking this overtime as ${status}:`, '');
+    if (reviewer_notes === null) return;
+
+    const res = await this.apiRequest(`/api/academy/overtime/requests/${requestId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, reviewer_notes }),
+    });
+
+    if (res.success) {
+      this.showToast(`Overtime request marked as ${status}`, 'success');
+      this.renderApprovals();
+    } else {
+      this.showToast(res.error || 'Failed to review overtime', 'danger');
+    }
+  },
+
+  // ==========================================
+  // EMPLOYEE MY SALARY STATEMENT
+  // ==========================================
+
+  async renderMySalary(selectedMonth = null) {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const yearMonth = selectedMonth || new Date().toISOString().slice(0, 7);
+    const res = await this.apiRequest(`/api/academy/payroll/my-salary?year_month=${yearMonth}`);
+
+    if (!res.success) {
+      content.innerHTML = `<div class="toast danger">${res.error}</div>`;
+      return;
+    }
+
+    const { 
+      statement, 
+      user, 
+      period, 
+      adjustments = [], 
+      payments = [], 
+      approvedOvertime = [], 
+      pendingOvertime = [], 
+      visibility = {},
+      calendarDays = [],
+      attendanceSummary = {}
+    } = res;
+    window._cachedStatementData = res;
+
+    content.innerHTML = `
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 class="card-title"><i class="fa-solid fa-wallet" style="color: var(--secondary);"></i> My Monthly Salary Statement</h2>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+              Employee: <strong>${user.name}</strong> (${this.formatRole(user.role)}) &bull; Cycle: ${period.year_month}
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <input type="month" id="salary-month-select" class="form-input" style="padding: 6px 10px; font-size: 13px;" value="${yearMonth}" onchange="app.renderMySalary(this.value)">
+            <button class="btn btn-secondary btn-sm" onclick="app.exportSalaryExcel()">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Excel
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.exportSalaryPdf()">
+              <i class="fa-solid fa-file-pdf" style="color: #ef4444;"></i> PDF
+            </button>
+          </div>
+        </div>
+
+        <div style="padding: 24px;">
+          <!-- 25th Visibility Status Banner -->
+          <div style="margin-bottom: 24px;">
+            ${visibility.isProvisional ? `
+              <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.3); border-radius: var(--radius-md); padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span class="badge badge-primary" style="font-size: 12px;"><i class="fa-solid fa-clock"></i> Provisional Statement</span>
+                  <span style="font-size: 13px; color: var(--text-heading);">
+                    ${visibility.displayLabel}. Final monthly compensation locks after month-end administrative review.
+                  </span>
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted);">
+                  Expected Payday: <strong>${period.expected_payment_date || '1st of month'}</strong>
+                </div>
+              </div>
+            ` : `
+              <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span class="badge badge-success" style="font-size: 12px;"><i class="fa-solid fa-lock"></i> Finalized Payroll</span>
+                  <span style="font-size: 13px; color: var(--text-heading);">
+                    This statement is closed and locked. Payment disbursements are tracked below.
+                  </span>
+                </div>
+              </div>
+            `}
+          </div>
+
+          <!-- 4 KPI Metrics Cards -->
+          <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
+              <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Base Gross Earnings</span>
+              <div style="font-size: 26px; font-weight: 800; color: var(--text-heading); margin-top: 4px;">
+                ₹${Number(statement.gross_earnings || 0).toLocaleString()}
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                Mode: <span class="badge badge-purple">${statement.salary_mode}</span> &bull; Rate: ₹${statement.applicable_rate}
+              </div>
+            </div>
+
+            <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
+              <span style="font-size: 11px; text-transform: uppercase; color: #10b981; font-weight: 600;">Additions (Overtime / Bonus)</span>
+              <div style="font-size: 26px; font-weight: 800; color: #10b981; margin-top: 4px;">
+                +₹${Number(statement.total_additions || 0).toLocaleString()}
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                ${approvedOvertime.length} approved overtime session(s)
+              </div>
+            </div>
+
+            <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
+              <span style="font-size: 11px; text-transform: uppercase; color: #ef4444; font-weight: 600;">Deductions (Unpaid Leave)</span>
+              <div style="font-size: 26px; font-weight: 800; color: #ef4444; margin-top: 4px;">
+                -₹${Number(statement.total_deductions || 0).toLocaleString()}
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                Authorized policy adjustments
+              </div>
+            </div>
+
+            <div class="stat-card" style="background: var(--bg-card); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 18px;">
+              <span style="font-size: 11px; text-transform: uppercase; color: #10b981; font-weight: 700;">Net Payable Salary</span>
+              <div style="font-size: 26px; font-weight: 800; color: #10b981; margin-top: 4px;">
+                ₹${Number(statement.net_earnings || 0).toLocaleString()}
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                Outstanding: <strong>₹${Number(statement.balance_amount || 0).toLocaleString()}</strong> &bull; Status: <span class="badge ${statement.payment_status === 'paid' ? 'badge-success' : 'badge-warning'}">${statement.payment_status}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pending Overtime Callout Notice (if any) -->
+          ${pendingOvertime.length > 0 ? `
+            <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 24px;">
+              <div style="font-size: 13px; color: #f59e0b; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>You have ${pendingOvertime.length} pending overtime request(s) totaling ₹${pendingOvertime.reduce((s, o) => s + (o.payable_amount || 0), 0).toFixed(2)}</span>
+              </div>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Backend Rule: Overtime exceeding 30 minutes is strictly excluded from payable earnings until approved by an authorized branch or academy administrator.
+              </p>
+            </div>
+          ` : ''}
+
+          <!-- Monthly Attendance & Duty Calendar -->
+          <div class="salary-calendar-container">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+              <div>
+                <h3 style="font-size: 16px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px; margin: 0;">
+                  <i class="fa-solid fa-calendar-days" style="color: var(--primary);"></i> Monthly Duty & Attendance Calendar
+                </h3>
+                <p style="font-size: 12px; color: var(--text-muted); margin: 3px 0 0 0;">
+                  Visual daily record of scheduled shifts, actual biometric punches, overtime, and leave status for ${period.year_month}
+                </p>
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted);">
+                <i class="fa-solid fa-hand-pointer" style="color: var(--primary);"></i> Click any day to highlight attendance log
+              </div>
+            </div>
+
+            <!-- Summary Stats Pills -->
+            <div class="calendar-stats-row">
+              <div class="calendar-stat-pill">
+                <span style="color: #10b981;">●</span>
+                <span>Present: <strong>${attendanceSummary.daysPresent || 0}</strong> days</span>
+              </div>
+              ${attendanceSummary.halfDays > 0 ? `
+                <div class="calendar-stat-pill">
+                  <span style="color: #f59e0b;">●</span>
+                  <span>Half Day: <strong>${attendanceSummary.halfDays}</strong> days</span>
+                </div>
+              ` : ''}
+              <div class="calendar-stat-pill">
+                <span style="color: #6366f1;">●</span>
+                <span>Leaves: <strong>${(attendanceSummary.paidLeaves || 0) + (attendanceSummary.unpaidLeaves || 0)}</strong> days</span>
+              </div>
+              <div class="calendar-stat-pill">
+                <span style="color: #a855f7;">●</span>
+                <span>Holidays: <strong>${attendanceSummary.holidays || 0}</strong> days</span>
+              </div>
+              <div class="calendar-stat-pill">
+                <span style="color: #94a3b8;">●</span>
+                <span>Weekly Offs: <strong>${attendanceSummary.weeklyOffs || 0}</strong> days</span>
+              </div>
+              ${attendanceSummary.absentDays > 0 ? `
+                <div class="calendar-stat-pill" style="border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.05);">
+                  <span style="color: #ef4444;">●</span>
+                  <span style="color: #ef4444;">Absent: <strong>${attendanceSummary.absentDays}</strong> days</span>
+                </div>
+              ` : ''}
+              <div class="calendar-stat-pill" style="background: rgba(37, 99, 235, 0.08); border-color: rgba(37, 99, 235, 0.3);">
+                <i class="fa-solid fa-clock" style="color: var(--primary); font-size: 11px;"></i>
+                <span>Worked: <strong>${attendanceSummary.totalActualWorkedHours || 0}h</strong> / ${attendanceSummary.totalScheduledHours || 0}h</span>
+              </div>
+              ${(attendanceSummary.totalOvertimeHours || 0) > 0 ? `
+                <div class="calendar-stat-pill" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.3);">
+                  <i class="fa-solid fa-bolt" style="color: #10b981; font-size: 11px;"></i>
+                  <span>Overtime: <strong>+${attendanceSummary.totalOvertimeHours}h</strong> (+₹${attendanceSummary.totalOvertimeAmount || 0})</span>
+                </div>
+              ` : ''}
+            </div>
+
+            <!-- Legend Bar -->
+            <div class="calendar-legend-bar">
+              <span class="legend-item"><span class="legend-dot" style="background: #10b981;"></span> Present</span>
+              <span class="legend-item"><span class="legend-dot" style="background: #f59e0b;"></span> Half Day</span>
+              <span class="legend-item"><span class="legend-dot" style="background: #6366f1;"></span> Leave</span>
+              <span class="legend-item"><span class="legend-dot" style="background: #a855f7;"></span> Holiday</span>
+              <span class="legend-item"><span class="legend-dot" style="background: #94a3b8;"></span> Weekly Off</span>
+              <span class="legend-item"><span class="legend-dot" style="background: #ef4444;"></span> Absent</span>
+              <span class="legend-item"><span class="legend-dot" style="background: #cbd5e1;"></span> Upcoming</span>
+            </div>
+
+            <!-- 7-Column Day Headers (Mon - Sun) -->
+            <div class="salary-calendar-grid" style="margin-bottom: 4px;">
+              <div class="calendar-day-header">Mon</div>
+              <div class="calendar-day-header">Tue</div>
+              <div class="calendar-day-header">Wed</div>
+              <div class="calendar-day-header">Thu</div>
+              <div class="calendar-day-header">Fri</div>
+              <div class="calendar-day-header">Sat</div>
+              <div class="calendar-day-header">Sun</div>
+            </div>
+
+            <!-- 7-Column Day Cells Grid -->
+            <div class="salary-calendar-grid">
+              ${this.renderCalendarGridCells(calendarDays)}
+            </div>
+          </div>
+
+          <!-- Itemized Daily Attendance & Biometric Log Table -->
+          <div style="margin-bottom: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px;">
+              <div>
+                <h3 style="font-size: 15px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px; margin: 0;">
+                  <i class="fa-solid fa-clipboard-user" style="color: var(--primary);"></i> Daily Shift Attendance & Biometric Punch Log
+                </h3>
+                <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;">
+                  Day-by-day itemized shift schedule, actual punch in/out, time difference, overtime and payable impact
+                </p>
+              </div>
+              <!-- Quick Filter Buttons -->
+              <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                <button class="attendance-filter-btn active" id="filter-all" onclick="app.filterAttendanceRows('all')">All Days (${calendarDays.length})</button>
+                <button class="attendance-filter-btn" id="filter-present" onclick="app.filterAttendanceRows('present')">Present (${(attendanceSummary.daysPresent || 0) + (attendanceSummary.halfDays || 0)})</button>
+                <button class="attendance-filter-btn" id="filter-absent" onclick="app.filterAttendanceRows('absent_or_leave')">Leaves & Absences (${(attendanceSummary.absentDays || 0) + (attendanceSummary.paidLeaves || 0) + (attendanceSummary.unpaidLeaves || 0)})</button>
+                <button class="attendance-filter-btn" id="filter-overtime" onclick="app.filterAttendanceRows('overtime')">Overtime (${calendarDays.filter(d => (d.overtimeMinutes || 0) > 0 || (d.overtimeAmount || 0) > 0).length})</button>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="custom-table" id="attendance-log-table">
+                <thead>
+                  <tr>
+                    <th>Date & Day</th>
+                    <th>Scheduled Shift</th>
+                    <th>Punch In</th>
+                    <th>Punch Out</th>
+                    <th>Worked Duration</th>
+                    <th>Time Variance</th>
+                    <th>Overtime</th>
+                    <th>Status</th>
+                    <th>Salary Impact</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${this.renderAttendanceTableRows(calendarDays)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Itemized Additions & Deductions Breakdown -->
+          <div style="margin-bottom: 30px;">
+            <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 12px; color: var(--text-heading);">
+              <i class="fa-solid fa-list-ol"></i> Itemized Salary Adjustments & Overtime
+            </h3>
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Category</th>
+                    <th>Amount</th>
+                    <th>Traceable Reason</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${adjustments.length === 0 && approvedOvertime.length === 0 ? `
+                    <tr>
+                      <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 13px;">
+                        No additions or deductions applied to this pay period.
+                      </td>
+                    </tr>
+                  ` : `
+                    ${approvedOvertime.map(ot => `
+                      <tr>
+                        <td><span class="badge badge-success">+ Addition</span></td>
+                        <td>Approved Overtime</td>
+                        <td><strong>+₹${Number(ot.payable_amount || 0).toLocaleString()}</strong></td>
+                        <td style="font-size: 12px;">Overtime on ${ot.date} (${ot.overtime_minutes} mins) &bull; ${ot.reason || 'Biometric overtime'}</td>
+                        <td>${ot.date}</td>
+                      </tr>
+                    `).join('')}
+                    ${adjustments.map(a => `
+                      <tr>
+                        <td>
+                          <span class="badge ${a.type === 'addition' ? 'badge-success' : 'badge-danger'}">
+                            ${a.type === 'addition' ? '+ Addition' : '- Deduction'}
+                          </span>
+                        </td>
+                        <td>${a.category}</td>
+                        <td><strong>${a.type === 'addition' ? '+' : '-'}₹${Number(a.amount).toLocaleString()}</strong></td>
+                        <td style="font-size: 12px;">${a.reason}</td>
+                        <td>${a.created_at ? a.created_at.slice(0, 10) : 'N/A'}</td>
+                      </tr>
+                    `).join('')}
+                  `}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Payout History & Ledger -->
+          <div>
+            <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 12px; color: var(--text-heading);">
+              <i class="fa-solid fa-receipt"></i> Payment Disbursements & Settlements
+            </h3>
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Payment Date</th>
+                    <th>Method</th>
+                    <th>Reference #</th>
+                    <th>Amount Paid</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${payments.length === 0 ? `
+                    <tr>
+                      <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 13px;">
+                        No salary payouts recorded yet. Outstanding balance remains ₹${Number(statement.balance_amount || 0).toLocaleString()}.
+                      </td>
+                    </tr>
+                  ` : `
+                    ${payments.map(p => `
+                      <tr>
+                        <td><strong>${p.payment_date}</strong></td>
+                        <td><span class="badge badge-purple">${p.payment_method}</span></td>
+                        <td><code>${p.reference_number || 'N/A'}</code></td>
+                        <td><strong style="color: #10b981;">₹${Number(p.amount).toLocaleString()}</strong></td>
+                        <td style="font-size: 12px;">${p.notes || '-'}</td>
+                      </tr>
+                    `).join('')}
+                  `}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  exportSalaryExcel() {
+    if (!window._cachedStatementData) return;
+    const { statement, user, period, adjustments = [] } = window._cachedStatementData;
+
+    const summaryRows = [
+      { Metric: 'Employee Name', Value: user.name },
+      { Metric: 'Pay Period', Value: period.year_month },
+      { Metric: 'Salary Mode', Value: statement.salary_mode },
+      { Metric: 'Base Rate', Value: statement.applicable_rate },
+      { Metric: 'Payable Units', Value: statement.payable_units },
+      { Metric: 'Gross Base Salary', Value: statement.gross_earnings },
+      { Metric: 'Total Additions', Value: statement.total_additions },
+      { Metric: 'Total Deductions', Value: statement.total_deductions },
+      { Metric: 'Net Earnings', Value: statement.net_earnings },
+      { Metric: 'Amount Paid', Value: statement.paid_amount },
+      { Metric: 'Balance Outstanding', Value: statement.balance_amount },
+      { Metric: 'Status', Value: statement.payment_status },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(summaryRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'SalaryStatement');
+    XLSX.writeFile(wb, `SalaryStatement_${user.name}_${period.year_month}.xlsx`);
+    this.showToast('Downloaded salary statement via SheetJS Excel', 'success');
+  },
+
+  exportSalaryPdf() {
+    if (!window._cachedStatementData) return;
+    const { statement, user, period } = window._cachedStatementData;
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFontSize(18);
+    doc.text('SPORTS ACADEMY — SALARY STATEMENT', 14, 20);
+    doc.setFontSize(11);
+    doc.text(`Employee: ${user.name} (${user.email})`, 14, 30);
+    doc.text(`Pay Period: ${period.year_month} | Status: ${statement.payment_status.toUpperCase()}`, 14, 37);
+
+    const rows = [
+      ['Salary Mode', statement.salary_mode],
+      ['Base Rate', `Rs. ${statement.applicable_rate}`],
+      ['Payable Units (Sessions/Days/Hours)', String(statement.payable_units)],
+      ['Gross Earnings', `Rs. ${statement.gross_earnings}`],
+      ['Total Additions (Overtime/Bonus)', `+Rs. ${statement.total_additions}`],
+      ['Total Deductions (Unpaid Leaves)', `-Rs. ${statement.total_deductions}`],
+      ['Net Payable Compensation', `Rs. ${statement.net_earnings}`],
+      ['Disbursed Amount Paid', `Rs. ${statement.paid_amount}`],
+      ['Outstanding Balance', `Rs. ${statement.balance_amount}`],
+    ];
+
+    doc.autoTable({
+      startY: 45,
+      head: [['Component', 'Amount / Detail']],
+      body: rows,
+      theme: 'grid',
+    });
+
+    doc.save(`SalaryStatement-${user.name}-${period.year_month}.pdf`);
+    this.showToast('Downloaded official PDF salary statement', 'success');
+  },
+
+  renderCalendarGridCells(calendarDays) {
+    if (!calendarDays || calendarDays.length === 0) return '';
+    const firstDate = new Date(calendarDays[0].date + 'T00:00:00');
+    const jsDay = firstDate.getDay();
+    const prefixBlanks = jsDay === 0 ? 6 : jsDay - 1;
+
+    let html = '';
+    for (let i = 0; i < prefixBlanks; i++) {
+      html += '<div class="calendar-day-cell empty-pad"></div>';
+    }
+
+    for (const day of calendarDays) {
+      const isTodayClass = day.isToday ? 'is-today' : '';
+      const statusClass = `status-${day.status}`;
+      const chipClass = `chip-${day.status}`;
+
+      let punchText = '';
+      if (day.firstPunchIn && day.lastPunchOut) {
+        punchText = `${this.formatTimeShort(day.firstPunchIn)} - ${this.formatTimeShort(day.lastPunchOut)}`;
+      } else if (day.firstPunchIn) {
+        punchText = `In: ${this.formatTimeShort(day.firstPunchIn)}`;
+      } else if (day.scheduledHours > 0) {
+        punchText = `Shift: ${day.scheduledHours}h`;
+      } else {
+        punchText = day.statusLabel;
+      }
+
+      let varianceTag = '';
+      if (day.durationMinutes > 0 && day.scheduledMinutes > 0) {
+        if (day.timeDiffMinutes > 0) {
+          varianceTag = `<span class="variance-pos">+${day.timeDiffMinutes}m</span>`;
+        } else if (day.timeDiffMinutes < 0) {
+          varianceTag = `<span class="variance-neg">${day.timeDiffMinutes}m</span>`;
+        } else {
+          varianceTag = `<span class="variance-zero">On Time</span>`;
+        }
+      }
+
+      html += `
+        <div class="calendar-day-cell ${statusClass} ${isTodayClass}" 
+             id="cal-cell-${day.date}"
+             onclick="app.selectCalendarDay('${day.date}')"
+             title="${day.date} (${day.dayName}): ${day.statusLabel} • ${day.financialImpact}">
+          <div class="calendar-cell-top">
+            <span class="calendar-cell-num ${day.isToday ? 'today-pill' : ''}">${day.dayNumber}</span>
+            <span class="calendar-cell-chip ${chipClass}">${day.statusLabel}</span>
+          </div>
+          <div class="calendar-cell-times" title="Punch or Shift Schedule">
+            ${day.status === 'active_now' ? '<span style="color: #3b82f6;"><i class="fa-solid fa-spinner fa-spin"></i> Active Now</span>' : punchText}
+          </div>
+          <div class="calendar-cell-financial">
+            <span>${varianceTag}</span>
+            <span style="font-size: 9px; color: var(--text-muted);">${day.durationMinutes > 0 ? `${(day.durationMinutes / 60).toFixed(1)}h` : ''}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    return html;
+  },
+
+  renderAttendanceTableRows(calendarDays) {
+    if (!calendarDays || calendarDays.length === 0) {
+      return `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 20px;">No attendance records found for this period.</td></tr>`;
+    }
+
+    return calendarDays.map(day => {
+      let punchInHtml = day.firstPunchIn 
+        ? `<strong style="color: #10b981;"><i class="fa-solid fa-arrow-right-to-bracket" style="font-size: 11px;"></i> ${this.formatDisplayTime(day.firstPunchIn)}</strong>`
+        : '<span style="color: var(--text-muted);">-</span>';
+
+      let punchOutHtml = day.lastPunchOut
+        ? `<strong style="color: #ef4444;"><i class="fa-solid fa-arrow-right-from-bracket" style="font-size: 11px;"></i> ${this.formatDisplayTime(day.lastPunchOut)}</strong>`
+        : (day.status === 'active_now' ? '<span class="badge badge-primary"><i class="fa-solid fa-spinner fa-spin"></i> Punched In</span>' : '<span style="color: var(--text-muted);">-</span>');
+
+      let workedDurationHtml = day.durationMinutes > 0
+        ? `<strong>${Math.floor(day.durationMinutes / 60)}h ${day.durationMinutes % 60}m</strong>`
+        : '<span style="color: var(--text-muted);">-</span>';
+
+      let varianceHtml = '<span style="color: var(--text-muted);">-</span>';
+      if (day.durationMinutes > 0 && day.scheduledMinutes > 0) {
+        if (day.timeDiffMinutes > 0) {
+          varianceHtml = `<span class="variance-pos"><i class="fa-solid fa-caret-up"></i> +${Math.floor(day.timeDiffMinutes / 60)}h ${day.timeDiffMinutes % 60}m</span>`;
+        } else if (day.timeDiffMinutes < 0) {
+          const absDiff = Math.abs(day.timeDiffMinutes);
+          varianceHtml = `<span class="variance-neg"><i class="fa-solid fa-caret-down"></i> -${Math.floor(absDiff / 60)}h ${absDiff % 60}m</span>`;
+        } else {
+          varianceHtml = `<span class="variance-zero"><i class="fa-solid fa-check"></i> Exact On Time</span>`;
+        }
+      }
+
+      let overtimeHtml = '<span style="color: var(--text-muted);">-</span>';
+      if ((day.overtimeMinutes || 0) > 0 || (day.overtimeAmount || 0) > 0) {
+        const otStatusBadge = day.overtimeStatus === 'approved' || day.overtimeStatus === 'auto_approved'
+          ? '<span class="badge badge-success" style="font-size: 10px;">Approved</span>'
+          : (day.overtimeStatus === 'pending' ? '<span class="badge badge-warning" style="font-size: 10px;">Pending</span>' : '');
+        overtimeHtml = `
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <strong style="color: #d97706;">+${day.overtimeMinutes || 0}m (${((day.overtimeMinutes || 0) / 60).toFixed(1)}h)</strong>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              ${otStatusBadge}
+              ${day.overtimeAmount > 0 ? `<span style="font-size: 11px; font-weight: 700; color: #10b981;">+₹${day.overtimeAmount}</span>` : ''}
+            </div>
+          </div>
+        `;
+      }
+
+      let shiftInfo = day.scheduledHours > 0
+        ? `<div><strong>${day.shifts && day.shifts[0] ? day.shifts[0].shift_name : 'Regular Shift'}</strong></div>
+           <div style="font-size: 11px; color: var(--text-muted);">${day.shifts && day.shifts[0] ? `${day.shifts[0].start_time} - ${day.shifts[0].end_time}` : ''} (${day.scheduledHours}h)</div>`
+        : `<span style="color: var(--text-muted);">${day.isWeeklyOff ? 'Weekly Off' : (day.isHoliday ? 'Holiday' : 'No Shift')}</span>`;
+
+      let dayStatusBadge = `<span class="badge ${day.badgeClass}">${day.statusLabel}</span>`;
+
+      return `
+        <tr id="att-row-${day.date}" class="att-row att-status-${day.status} ${day.isToday ? 'is-today-row' : ''}">
+          <td>
+            <div style="font-weight: 700; color: var(--text-heading);">${day.date}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">${day.dayName}${day.isToday ? ' &bull; <strong style="color: var(--primary);">Today</strong>' : ''}</div>
+          </td>
+          <td>${shiftInfo}</td>
+          <td>${punchInHtml}</td>
+          <td>${punchOutHtml}</td>
+          <td>${workedDurationHtml}</td>
+          <td>${varianceHtml}</td>
+          <td>${overtimeHtml}</td>
+          <td>${dayStatusBadge}</td>
+          <td>
+            <span style="font-size: 12px; font-weight: 600;">${day.financialImpact}</span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  },
+
+  selectCalendarDay(dateStr) {
+    document.querySelectorAll('.calendar-day-cell').forEach(c => c.style.outline = 'none');
+    const cell = document.getElementById(`cal-cell-${dateStr}`);
+    if (cell) cell.style.outline = '2px solid var(--primary)';
+
+    const row = document.getElementById(`att-row-${dateStr}`);
+    if (row) {
+      document.querySelectorAll('.att-row').forEach(r => r.style.background = '');
+      row.style.background = 'rgba(59, 130, 246, 0.12)';
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  },
+
+  filterAttendanceRows(filter) {
+    document.querySelectorAll('.attendance-filter-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById(`filter-${filter === 'absent_or_leave' ? 'absent' : filter}`);
+    if (btn) btn.classList.add('active');
+
+    const rows = document.querySelectorAll('.att-row');
+    rows.forEach(r => {
+      if (filter === 'all') {
+        r.style.display = '';
+      } else if (filter === 'present') {
+        r.style.display = (r.classList.contains('att-status-present') || r.classList.contains('att-status-half_day') || r.classList.contains('att-status-active_now')) ? '' : 'none';
+      } else if (filter === 'absent_or_leave') {
+        r.style.display = (r.classList.contains('att-status-absent') || r.classList.contains('att-status-paid_leave') || r.classList.contains('att-status-unpaid_leave')) ? '' : 'none';
+      } else if (filter === 'overtime') {
+        const otCell = r.querySelector('td:nth-child(7)');
+        r.style.display = (otCell && otCell.innerText.trim() !== '-') ? '' : 'none';
+      }
+    });
+  },
+
+  formatTimeShort(isoStr) {
+    if (!isoStr) return '';
+    try {
+      if (isoStr.length === 5 && isoStr.includes(':')) return isoStr;
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr.slice(11, 16) || isoStr;
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    } catch (e) {
+      return isoStr;
+    }
+  },
+
+  formatDisplayTime(isoStr) {
+    if (!isoStr) return '-';
+    try {
+      if (isoStr.length === 5 && isoStr.includes(':')) {
+        const [h, m] = isoStr.split(':').map(Number);
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 || 12;
+        return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+      }
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    } catch (e) {
+      return isoStr;
+    }
+  },
+
+  // ==========================================
+  // ACADEMY STAFF PAYROLL MANAGEMENT
+  // ==========================================
+
+  async renderPayroll() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const periodsRes = await this.apiRequest('/api/academy/payroll/periods');
+    if (!periodsRes.success) {
+      content.innerHTML = `<div class="toast danger">${periodsRes.error}</div>`;
+      return;
+    }
+
+    const periods = periodsRes.periods || [];
+    const activePeriod = periods[0] || null;
+
+    let statements = [];
+    if (activePeriod) {
+      const stmtRes = await this.apiRequest(`/api/academy/payroll/periods/${activePeriod.id}/statements`);
+      if (stmtRes && stmtRes.success) {
+        statements = stmtRes.statements || [];
+      }
+    }
+
+    content.innerHTML = `
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 class="card-title"><i class="fa-solid fa-money-check-dollar" style="color: var(--primary);"></i> Staff Payroll & Finalization Dashboard</h2>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+              Multi-mode attendance calculations, itemized additions/deductions, explicit period finalization, and disbursements.
+            </p>
+          </div>
+          ${activePeriod && activePeriod.status !== 'finalized' ? `
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" onclick="app.recalculatePayrollPeriod(${activePeriod.id})">
+                <i class="fa-solid fa-arrows-rotate"></i> Recalculate Period
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="app.finalizePayrollPeriod(${activePeriod.id}, '${activePeriod.year_month}')">
+                <i class="fa-solid fa-lock"></i> Finalize Payroll
+              </button>
+            </div>
+          ` : ''}
+        </div>
+
+        <div style="padding: 24px;">
+          <!-- Periods List Tabs / Table -->
+          <div style="margin-bottom: 24px;">
+            <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 10px; color: var(--text-heading);">Payroll Periods</h3>
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Month Cycle</th>
+                    <th>Status</th>
+                    <th>Staff Statements</th>
+                    <th>Total Net Payroll</th>
+                    <th>Disbursed Payout</th>
+                    <th>Expected Payday</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${periods.map(p => `
+                    <tr>
+                      <td><strong>${p.year_month}</strong></td>
+                      <td>
+                        <span class="badge ${p.status === 'finalized' ? 'badge-success' : (p.status === 'provisional' ? 'badge-primary' : 'badge-warning')}">
+                          ${p.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td>${p.statements_count || 0}</td>
+                      <td><strong>₹${Number(p.total_net_payroll || 0).toLocaleString()}</strong></td>
+                      <td><strong style="color: #10b981;">₹${Number(p.total_paid || 0).toLocaleString()}</strong></td>
+                      <td>${p.expected_payment_date || '1st of month'}</td>
+                      <td>
+                        <button class="btn btn-secondary btn-sm" onclick="app.loadPayrollPeriodStatements(${p.id})">
+                          <i class="fa-solid fa-list"></i> View
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Staff Statements for Active Period -->
+          <div id="payroll-statements-container">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h3 style="font-size: 15px; font-weight: 700; color: var(--text-heading);">
+                Staff Salary Statements (${activePeriod ? activePeriod.year_month : ''})
+              </h3>
+            </div>
+
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Salary Mode</th>
+                    <th>Rate</th>
+                    <th>Payable Units</th>
+                    <th>Gross</th>
+                    <th>Additions</th>
+                    <th>Deductions</th>
+                    <th>Net Salary</th>
+                    <th>Paid</th>
+                    <th>Balance</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${statements.map(s => `
+                    <tr>
+                      <td>
+                        <strong>${s.employee_name}</strong>
+                        <div style="font-size: 11px; color: var(--text-muted);">${s.employee_role}</div>
+                      </td>
+                      <td><span class="badge badge-purple">${s.salary_mode}</span></td>
+                      <td>₹${s.applicable_rate}</td>
+                      <td>${s.payable_units}</td>
+                      <td>₹${Number(s.gross_earnings).toLocaleString()}</td>
+                      <td style="color: #10b981;">+₹${Number(s.total_additions).toLocaleString()}</td>
+                      <td style="color: #ef4444;">-₹${Number(s.total_deductions).toLocaleString()}</td>
+                      <td><strong>₹${Number(s.net_earnings).toLocaleString()}</strong></td>
+                      <td>₹${Number(s.paid_amount).toLocaleString()}</td>
+                      <td><strong style="color: ${s.balance_amount > 0 ? '#f59e0b' : '#10b981'};">₹${Number(s.balance_amount).toLocaleString()}</strong></td>
+                      <td><span class="badge ${s.payment_status === 'paid' ? 'badge-success' : 'badge-warning'}">${s.payment_status}</span></td>
+                      <td>
+                        <div style="display: flex; gap: 4px;">
+                          <button class="btn btn-secondary btn-sm" title="Add Adjustment" onclick="app.showAddAdjustmentModal(${s.id}, '${s.employee_name}')">
+                            <i class="fa-solid fa-plus"></i> Adj
+                          </button>
+                          <button class="btn btn-primary btn-sm" title="Record Payment" onclick="app.showRecordPaymentModal(${s.id}, '${s.employee_name}', ${s.balance_amount})">
+                            <i class="fa-solid fa-money-bill-wave"></i> Pay
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  async recalculatePayrollPeriod(periodId) {
+    const res = await this.apiRequest(`/api/academy/payroll/periods/${periodId}/calculate`, { method: 'POST' });
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.renderPayroll();
+    } else {
+      this.showToast(res.error || 'Failed to recalculate payroll', 'danger');
+    }
+  },
+
+  async finalizePayrollPeriod(periodId, yearMonth) {
+    if (!confirm(`Are you sure you want to finalize payroll for ${yearMonth}? This will freeze calculations into an immutable snapshot and lock historical statements.`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/payroll/periods/${periodId}/finalize`, { method: 'POST' });
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.renderPayroll();
+    } else {
+      this.showToast(res.error || 'Failed to finalize payroll', 'danger');
+    }
+  },
+
+  showAddAdjustmentModal(statementId, employeeName) {
+    this.openModal(`Add Adjustment for ${employeeName}`, `
+      <form id="adjustment-form" onsubmit="event.preventDefault(); app.submitSalaryAdjustment();">
+        <input type="hidden" id="adj-statement-id" value="${statementId}">
+        <div class="form-group">
+          <label>Type</label>
+          <select id="adj-type" class="form-select">
+            <option value="addition">Addition (+)</option>
+            <option value="deduction">Deduction (-)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <select id="adj-category" class="form-select">
+            <option value="bonus">Bonus / Incentive</option>
+            <option value="overtime">Overtime Payout</option>
+            <option value="unpaid_leave">Unpaid Leave</option>
+            <option value="penalty">Penalty / Fine</option>
+            <option value="reimbursement">Expense Reimbursement</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Amount (₹)</label>
+          <input type="number" id="adj-amount" class="form-input" min="1" step="0.01" required placeholder="e.g. 1500">
+        </div>
+        <div class="form-group">
+          <label>Traceable Reason (Mandatory)</label>
+          <input type="text" id="adj-reason" class="form-input" required placeholder="e.g. Tournament winning bonus, 2 days unauthorized absence">
+        </div>
+      </form>
+    `, `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="app.submitSalaryAdjustment()">
+        <i class="fa-solid fa-check"></i> Apply Adjustment
+      </button>
+    `);
+  },
+
+  async submitSalaryAdjustment() {
+    const statement_id = document.getElementById('adj-statement-id').value;
+    const type = document.getElementById('adj-type').value;
+    const category = document.getElementById('adj-category').value;
+    const amount = document.getElementById('adj-amount').value;
+    const reason = document.getElementById('adj-reason').value.trim();
+
+    if (!amount || !reason) {
+      this.showToast('Amount and a traceable reason are required', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/payroll/statements/${statement_id}/adjustments`, {
+      method: 'POST',
+      body: JSON.stringify({ type, category, amount, reason }),
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast('Salary adjustment recorded successfully', 'success');
+      this.renderPayroll();
+    } else {
+      this.showToast(res.error || 'Failed to add adjustment', 'danger');
+    }
+  },
+
+  showRecordPaymentModal(statementId, employeeName, balanceAmount) {
+    const today = new Date().toISOString().split('T')[0];
+
+    this.openModal(`Record Salary Payout for ${employeeName}`, `
+      <form id="payment-form" onsubmit="event.preventDefault(); app.submitSalaryPayment();">
+        <input type="hidden" id="pay-statement-id" value="${statementId}">
+        <div class="form-group">
+          <label>Payment Date</label>
+          <input type="date" id="pay-date" class="form-input" value="${today}" required>
+        </div>
+        <div class="form-group">
+          <label>Amount (₹) [Outstanding Balance: ₹${Number(balanceAmount || 0).toLocaleString()}]</label>
+          <input type="number" id="pay-amount" class="form-input" min="1" step="0.01" value="${balanceAmount || 0}" required>
+        </div>
+        <div class="form-group">
+          <label>Payment Method</label>
+          <select id="pay-method" class="form-select">
+            <option value="bank_transfer">Bank Transfer (NEFT/RTGS/IMPS)</option>
+            <option value="upi">UPI / Online</option>
+            <option value="cheque">Cheque</option>
+            <option value="cash">Cash</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Reference Number</label>
+          <input type="text" id="pay-reference" class="form-input" placeholder="e.g. UTR-99881122 or Cheque #">
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <input type="text" id="pay-notes" class="form-input" placeholder="e.g. Monthly salary disbursement">
+        </div>
+      </form>
+    `, `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="app.submitSalaryPayment()">
+        <i class="fa-solid fa-check"></i> Record Payment
+      </button>
+    `);
+  },
+
+  async submitSalaryPayment() {
+    const statement_id = document.getElementById('pay-statement-id').value;
+    const payment_date = document.getElementById('pay-date').value;
+    const amount = document.getElementById('pay-amount').value;
+    const payment_method = document.getElementById('pay-method').value;
+    const reference_number = document.getElementById('pay-reference').value.trim();
+    const notes = document.getElementById('pay-notes').value.trim();
+
+    if (!amount || Number(amount) <= 0) {
+      this.showToast('Please specify a positive disbursement amount', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/payroll/statements/${statement_id}/payments`, {
+      method: 'POST',
+      body: JSON.stringify({ payment_date, amount, payment_method, reference_number, notes }),
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast('Salary payout recorded successfully', 'success');
+      this.renderPayroll();
+    } else {
+      this.showToast(res.error || 'Failed to record payout', 'danger');
+    }
+  },
+
+  // ==========================================
+  // ACADEMY POLICY SETTINGS
+  // ==========================================
+
+  async renderPolicySettings() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const res = await this.apiRequest('/api/academy/settings/policy');
+    if (!res.success) {
+      content.innerHTML = `<div class="toast danger">${res.error}</div>`;
+      return;
+    }
+
+    const p = res.policy || {};
+    this.currentPolicyData = p;
+
+    // Helper date calculations for dynamic preview
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const cutoffDays = p.attendance_cutoff_days ?? 2;
+    const otMins = p.overtime_threshold_minutes ?? 30;
+    const otMode = p.overtime_compensation_mode || 'standard_rate';
+    const visDay = p.statement_visibility_day ?? 25;
+    const payDay = p.expected_payday ?? 1;
+    const tz = p.timezone || 'Asia/Kolkata';
+    const allowFuture = !!p.allow_future_attendance;
+
+    content.innerHTML = `
+      <div class="policy-settings-container">
+        
+        <!-- HERO BANNER -->
+        <div class="policy-hero-card">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+            <div style="display: flex; gap: 16px; align-items: center;">
+              <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);">
+                <i class="fa-solid fa-sliders"></i>
+              </div>
+              <div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <h1 style="font-size: 20px; font-weight: 800; color: var(--text-heading); margin: 0;">Academy Governance & Policy Rules</h1>
+                  <span class="badge badge-success" style="font-size: 11px;">
+                    <i class="fa-solid fa-shield-check"></i> Enforced by Backend
+                  </span>
+                </div>
+                <p style="font-size: 13px; color: var(--text-muted); margin: 4px 0 0;">
+                  Configure operational thresholds, attendance backdating limits, overtime approval boundaries, and payroll schedules.
+                </p>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetPolicyDefaults()">
+                <i class="fa-solid fa-rotate-left"></i> Recommended Defaults
+              </button>
+            </div>
+          </div>
+
+          <!-- DYNAMIC POLICY IMPACT PREVIEW METRICS -->
+          <div class="policy-impact-grid">
+            <div class="policy-impact-item">
+              <span class="policy-impact-label"><i class="fa-solid fa-calendar-check" style="color: var(--primary);"></i> Attendance Allowed</span>
+              <span class="policy-impact-val" id="preview-cutoff-text">Past ${cutoffDays} Days</span>
+              <span class="policy-impact-sub" id="preview-cutoff-dates">Calculated from today</span>
+            </div>
+
+            <div class="policy-impact-item">
+              <span class="policy-impact-label"><i class="fa-solid fa-stopwatch" style="color: #f59e0b;"></i> Overtime Threshold</span>
+              <span class="policy-impact-val" id="preview-ot-text">> ${otMins} mins approval</span>
+              <span class="policy-impact-sub" id="preview-ot-sub">≤ ${otMins}m auto-recorded</span>
+            </div>
+
+            <div class="policy-impact-item">
+              <span class="policy-impact-label"><i class="fa-solid fa-file-invoice" style="color: #10b981;"></i> Statement Visibility</span>
+              <span class="policy-impact-val" id="preview-vis-text">${visDay}${this.getOrdinalSuffix(visDay)} of Month</span>
+              <span class="policy-impact-sub">Provisional draft view</span>
+            </div>
+
+            <div class="policy-impact-item">
+              <span class="policy-impact-label"><i class="fa-solid fa-money-bill-wave" style="color: #8b5cf6;"></i> Salary Disbursement</span>
+              <span class="policy-impact-val" id="preview-pay-text">${payDay}${this.getOrdinalSuffix(payDay)} of Month</span>
+              <span class="policy-impact-sub">Official payday</span>
+            </div>
+          </div>
+        </div>
+
+        <form id="policy-settings-form" onsubmit="event.preventDefault(); app.savePolicySettings();">
+          
+          <!-- SECTION 1: ATTENDANCE & SESSION RECORDING GOVERNANCE -->
+          <div class="policy-section-card" style="margin-bottom: 22px;">
+            <div class="policy-section-header">
+              <div class="policy-section-title">
+                <div class="policy-section-icon"><i class="fa-solid fa-clipboard-user"></i></div>
+                <div>
+                  <div>Attendance Window & Session Recording Rules</div>
+                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
+                    Controls how far back coaches can take attendance and prevents illegitimate forward-dated records.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="policy-section-body">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+                
+                <!-- Attendance Cutoff Window -->
+                <div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label style="font-weight: 700; color: var(--text-heading); margin: 0;">Attendance Cutoff Window</label>
+                    <span class="badge badge-primary" id="cutoff-badge-display" style="font-size: 12px; font-weight: 700;">
+                      ${cutoffDays} Calendar Day(s)
+                    </span>
+                  </div>
+                  
+                  <div style="display: flex; align-items: center; gap: 12px; margin: 10px 0;">
+                    <input type="range" id="setting-cutoff-slider" min="0" max="14" value="${cutoffDays}" style="flex: 1; accent-color: var(--primary);" oninput="app.syncCutoffFromSlider(this.value)">
+                    <input type="number" id="setting-cutoff" class="form-input" min="0" max="14" value="${cutoffDays}" style="width: 70px; text-align: center; font-weight: 700;" required oninput="app.syncCutoffFromInput(this.value)">
+                  </div>
+
+                  <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+                    Coaches can record attendance for today and up to <strong><span id="cutoff-explanation-days">${cutoffDays}</span> days prior</strong>. Dates older than this require an approved Attendance Correction Request.
+                  </div>
+
+                  <div class="policy-preset-group">
+                    <span style="font-size: 11px; color: var(--text-dim); margin-right: 4px;">Quick Presets:</span>
+                    <button type="button" class="policy-preset-pill ${cutoffDays === 1 ? 'active' : ''}" onclick="app.setPolicyCutoff(1)">Strict (1 Day)</button>
+                    <button type="button" class="policy-preset-pill ${cutoffDays === 2 ? 'active' : ''}" onclick="app.setPolicyCutoff(2)">Standard (2 Days)</button>
+                    <button type="button" class="policy-preset-pill ${cutoffDays === 5 ? 'active' : ''}" onclick="app.setPolicyCutoff(5)">Flexible (5 Days)</button>
+                    <button type="button" class="policy-preset-pill ${cutoffDays === 7 ? 'active' : ''}" onclick="app.setPolicyCutoff(7)">Weekly (7 Days)</button>
+                  </div>
+                </div>
+
+                <!-- Future Attendance Policy Toggle -->
+                <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px; display: flex; flex-direction: column; justify-content: space-between;">
+                  <div>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                      <div>
+                        <strong style="font-size: 14px; color: var(--text-heading); display: block;">Pre-recording Future Attendance</strong>
+                        <span style="font-size: 12px; color: var(--text-muted);">Allow or prohibit marking attendance for upcoming calendar dates</span>
+                      </div>
+                      <label class="policy-toggle-switch">
+                        <input type="checkbox" id="setting-future-attendance" ${allowFuture ? 'checked' : ''} onchange="app.updatePolicyLivePreview()">
+                        <span class="policy-toggle-slider"></span>
+                      </label>
+                    </div>
+                    <div id="future-attendance-status-box" style="padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; display: flex; align-items: center; gap: 8px;">
+                      <!-- Injected dynamically -->
+                    </div>
+                  </div>
+                  <div style="font-size: 11px; color: var(--text-dim); margin-top: 10px;">
+                    <i class="fa-solid fa-circle-info"></i> Keeping this disabled ensures students cannot be marked present before training occurs.
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 2: OVERTIME & COMPENSATION RULES -->
+          <div class="policy-section-card" style="margin-bottom: 22px;">
+            <div class="policy-section-header">
+              <div class="policy-section-title">
+                <div class="policy-section-icon" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;"><i class="fa-solid fa-stopwatch"></i></div>
+                <div>
+                  <div>Overtime Tracking & Approval Thresholds</div>
+                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
+                    Sets when extra coaching hours require management sign-off and how coaches get paid for extra sessions.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="policy-section-body">
+              
+              <!-- Overtime Threshold Input -->
+              <div style="margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <label style="font-weight: 700; color: var(--text-heading); margin: 0;">Overtime Approval Trigger (Minutes)</label>
+                  <span class="badge badge-warning" id="ot-badge-display" style="font-size: 12px; font-weight: 700;">
+                    ${otMins} Minutes
+                  </span>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 12px; margin: 8px 0;">
+                  <input type="number" id="setting-ot-thresh" class="form-input" min="5" max="240" step="5" value="${otMins}" style="width: 110px; font-weight: 700;" required oninput="app.updatePolicyLivePreview()">
+                  <span style="font-size: 12px; color: var(--text-muted);">
+                    Sessions exceeding this threshold automatically transition to <code>pending</code> status awaiting Admin approval.
+                  </span>
+                </div>
+
+                <div class="policy-preset-group">
+                  <span style="font-size: 11px; color: var(--text-dim); margin-right: 4px;">Common Thresholds:</span>
+                  <button type="button" class="policy-preset-pill ${otMins === 15 ? 'active' : ''}" onclick="app.setPolicyOvertime(15)">15 Mins</button>
+                  <button type="button" class="policy-preset-pill ${otMins === 30 ? 'active' : ''}" onclick="app.setPolicyOvertime(30)">30 Mins (Default)</button>
+                  <button type="button" class="policy-preset-pill ${otMins === 45 ? 'active' : ''}" onclick="app.setPolicyOvertime(45)">45 Mins</button>
+                  <button type="button" class="policy-preset-pill ${otMins === 60 ? 'active' : ''}" onclick="app.setPolicyOvertime(60)">60 Mins (1 Hour)</button>
+                </div>
+              </div>
+
+              <!-- Overtime Compensation Cards -->
+              <div style="margin-top: 14px;">
+                <label style="font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 8px;">
+                  Overtime Compensation Multiplier
+                </label>
+                
+                <div class="policy-choices-grid">
+                  
+                  <div class="policy-choice-card ${otMode === 'standard_rate' ? 'active' : ''}" onclick="app.selectOvertimeMode('standard_rate')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-coins" style="color: var(--primary);"></i> Standard Prorated (1.0x)
+                      </span>
+                      <input type="radio" name="ot_mode_radio" value="standard_rate" class="policy-choice-radio" ${otMode === 'standard_rate' ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Prorated at the coach's regular base hourly rate with no extra premium.
+                    </div>
+                  </div>
+
+                  <div class="policy-choice-card ${otMode === 'overtime_rate' ? 'active' : ''}" onclick="app.selectOvertimeMode('overtime_rate')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-bolt" style="color: #f59e0b;"></i> Overtime Premium (1.5x)
+                      </span>
+                      <input type="radio" name="ot_mode_radio" value="overtime_rate" class="policy-choice-radio" ${otMode === 'overtime_rate' ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Time-and-a-half rate (150%) applied to approved extra sessions and clinics.
+                    </div>
+                  </div>
+
+                  <div class="policy-choice-card ${otMode === 'none' ? 'active' : ''}" onclick="app.selectOvertimeMode('none')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-ban" style="color: var(--text-muted);"></i> Salaried Only (No Extra Pay)
+                      </span>
+                      <input type="radio" name="ot_mode_radio" value="none" class="policy-choice-radio" ${otMode === 'none' ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Fixed monthly compensation; overtime hours tracked for logging purposes only.
+                    </div>
+                  </div>
+
+                </div>
+                <input type="hidden" id="setting-ot-mode" value="${otMode}">
+              </div>
+
+            </div>
+          </div>
+
+          <!-- SECTION 3: PAYROLL SCHEDULE & STATEMENT VISIBILITY -->
+          <div class="policy-section-card" style="margin-bottom: 22px;">
+            <div class="policy-section-header">
+              <div class="policy-section-title">
+                <div class="policy-section-icon" style="background: rgba(16, 185, 129, 0.12); color: #10b981;"><i class="fa-solid fa-money-check-dollar"></i></div>
+                <div>
+                  <div>Staff Payroll Timeline & Statement Visibility</div>
+                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
+                    Define monthly calendar milestones for earnings statement releases and salary disbursement.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="policy-section-body">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
+                
+                <div class="form-group">
+                  <label style="font-weight: 700; color: var(--text-heading);">Provisional Statement Release Day</label>
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="position: relative; width: 100%;">
+                      <input type="number" id="setting-vis-day" class="form-input" min="1" max="31" value="${visDay}" style="width: 100%; font-weight: 700; padding-left: 36px;" required oninput="app.updatePolicyLivePreview()">
+                      <i class="fa-solid fa-calendar-day" style="position: absolute; left: 12px; top: 12px; color: var(--text-muted);"></i>
+                    </div>
+                    <span style="font-size: 13px; font-weight: 600; color: var(--text-muted); white-space: nowrap;">of every month</span>
+                  </div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+                    Employees can inspect their draft monthly statement in the "My Salary" portal starting on this day.
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label style="font-weight: 700; color: var(--text-heading);">Expected Salary Payday</label>
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="position: relative; width: 100%;">
+                      <input type="number" id="setting-payday" class="form-input" min="1" max="31" value="${payDay}" style="width: 100%; font-weight: 700; padding-left: 36px;" required oninput="app.updatePolicyLivePreview()">
+                      <i class="fa-solid fa-wallet" style="position: absolute; left: 12px; top: 12px; color: #10b981;"></i>
+                    </div>
+                    <span style="font-size: 13px; font-weight: 600; color: var(--text-muted); white-space: nowrap;">of every month</span>
+                  </div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+                    Disbursement target displayed on coach earnings statements and payroll summaries.
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 4: TIMEZONE & LOCALIZATION -->
+          <div class="policy-section-card" style="margin-bottom: 24px;">
+            <div class="policy-section-header">
+              <div class="policy-section-title">
+                <div class="policy-section-icon" style="background: rgba(139, 92, 246, 0.12); color: #8b5cf6;"><i class="fa-solid fa-globe"></i></div>
+                <div>
+                  <div>Regional Operating Timezone & Localization</div>
+                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
+                    Governs calendar day boundaries for attendance checkouts, late fees, and statement periods.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="policy-section-body">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; align-items: center;">
+                
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-weight: 700; color: var(--text-heading);">Academy Base Timezone</label>
+                  <select id="setting-timezone-select" class="form-select" onchange="app.handleTimezoneSelect(this.value)">
+                    <option value="Asia/Kolkata" ${tz === 'Asia/Kolkata' ? 'selected' : ''}>Asia/Kolkata (IST — UTC+05:30)</option>
+                    <option value="Asia/Dubai" ${tz === 'Asia/Dubai' ? 'selected' : ''}>Asia/Dubai (GST — UTC+04:00)</option>
+                    <option value="Asia/Singapore" ${tz === 'Asia/Singapore' ? 'selected' : ''}>Asia/Singapore (SGT — UTC+08:00)</option>
+                    <option value="Europe/London" ${tz === 'Europe/London' ? 'selected' : ''}>Europe/London (GMT/BST — UTC+00:00)</option>
+                    <option value="America/New_York" ${tz === 'America/New_York' ? 'selected' : ''}>America/New_York (EST/EDT — UTC-05:00)</option>
+                    <option value="Australia/Sydney" ${tz === 'Australia/Sydney' ? 'selected' : ''}>Australia/Sydney (AEST — UTC+10:00)</option>
+                    <option value="custom" ${!['Asia/Kolkata','Asia/Dubai','Asia/Singapore','Europe/London','America/New_York','Australia/Sydney'].includes(tz) ? 'selected' : ''}>Custom Timezone Identifier...</option>
+                  </select>
+                  <div id="custom-tz-input-wrap" style="margin-top: 8px; display: ${!['Asia/Kolkata','Asia/Dubai','Asia/Singapore','Europe/London','America/New_York','Australia/Sydney'].includes(tz) ? 'block' : 'none'};">
+                    <input type="text" id="setting-timezone" class="form-input" value="${tz}" placeholder="e.g. UTC, America/Chicago" oninput="app.updatePolicyLivePreview()">
+                  </div>
+                </div>
+
+                <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px; display: flex; align-items: center; gap: 14px;">
+                  <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--bg-card); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 16px; color: var(--primary);">
+                    <i class="fa-solid fa-clock"></i>
+                  </div>
+                  <div>
+                    <div style="font-size: 11px; text-transform: uppercase; font-weight: 600; color: var(--text-dim);">Live Time in Selected Zone</div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--text-heading); font-family: monospace;" id="live-tz-clock">
+                      --:--:--
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-muted);" id="live-tz-date">
+                      Loading...
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 5: ACADEMY BRAND IDENTITY & DEFAULT COLOR THEME -->
+          <div class="policy-section-card" style="margin-bottom: 24px;">
+            <div class="policy-section-header">
+              <div class="policy-section-title">
+                <div class="policy-section-icon" style="background: rgba(236, 72, 153, 0.12); color: #ec4899;"><i class="fa-solid fa-palette"></i></div>
+                <div>
+                  <div>Academy Brand Identity & Default Color Theme</div>
+                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
+                    Sets the default brand appearance across portal navigation, buttons, and accents for all academy staff and students.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="policy-section-body">
+              <label style="font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 8px;">
+                Select Academy Default Theme Accent
+              </label>
+              <div class="theme-swatch-grid">
+                ${this.colorThemes.map(t => {
+                  const isDefault = (p.default_color_theme || 'blue') === t.id;
+                  return `
+                    <div class="theme-swatch-card ${isDefault ? 'active' : ''}" id="policy-swatch-${t.id}" onclick="app.selectDefaultPolicyTheme('${t.id}')">
+                      <div class="theme-swatch-preview" style="background: ${t.hex};"></div>
+                      <div style="flex: 1; overflow: hidden;">
+                        <div style="font-weight: 700; font-size: 12px; color: var(--text-heading); white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">
+                          ${t.name}
+                        </div>
+                        <div style="font-size: 10px; color: var(--text-muted);" id="policy-swatch-sub-${t.id}">
+                          ${isDefault ? 'Selected Default' : t.id}
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+              <input type="hidden" id="setting-default-theme" value="${p.default_color_theme || 'blue'}">
+              <div style="font-size: 11px; color: var(--text-dim); margin-top: 10px;">
+                <i class="fa-solid fa-circle-info"></i> Individual users with the <code>customize_theme</code> permission can personalize their own theme from the header switcher.
+              </div>
+            </div>
+          </div>
+
+          <!-- FORM SUBMISSION FOOTER -->
+          <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-sm);">
+            <div style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-circle-check" style="color: #10b981;"></i>
+              <span>Changes take effect immediately across all sessions, coaching logs, and invoices.</span>
+            </div>
+            
+            <div style="display: flex; gap: 10px;">
+              <button type="button" class="btn btn-secondary" onclick="app.renderPolicySettings()">
+                Cancel / Reset
+              </button>
+              <button type="submit" id="btn-save-policy" class="btn btn-primary" style="padding: 10px 24px;">
+                <i class="fa-solid fa-floppy-disk"></i> Save & Enforce Policy
+              </button>
+            </div>
+          </div>
+
+        </form>
+      </div>
+    `;
+
+    // Start live clock and update live preview
+    this.updatePolicyLivePreview();
+    this.startPolicyClock();
+  },
+
+  selectDefaultPolicyTheme(themeId) {
+    document.getElementById('setting-default-theme').value = themeId;
+    document.querySelectorAll('[id^="policy-swatch-"]').forEach(el => {
+      const isTarget = el.id === `policy-swatch-${themeId}`;
+      el.classList.toggle('active', isTarget);
+      const sub = el.querySelector('[id^="policy-swatch-sub-"]');
+      if (sub) {
+        sub.innerText = isTarget ? 'Selected Default' : el.id.replace('policy-swatch-', '');
+      }
+    });
+    this.updatePolicyLivePreview();
+  },
+
+  syncCutoffFromSlider(val) {
+    document.getElementById('setting-cutoff').value = val;
+    this.updatePolicyLivePreview();
+  },
+
+  syncCutoffFromInput(val) {
+    const clamped = Math.max(0, Math.min(14, Number(val) || 0));
+    document.getElementById('setting-cutoff-slider').value = clamped;
+    this.updatePolicyLivePreview();
+  },
+
+  setPolicyCutoff(days) {
+    document.getElementById('setting-cutoff').value = days;
+    document.getElementById('setting-cutoff-slider').value = days;
+    this.updatePolicyLivePreview();
+  },
+
+  setPolicyOvertime(mins) {
+    document.getElementById('setting-ot-thresh').value = mins;
+    this.updatePolicyLivePreview();
+  },
+
+  selectOvertimeMode(mode) {
+    document.getElementById('setting-ot-mode').value = mode;
+    document.querySelectorAll('.policy-choice-card').forEach(card => {
+      const radio = card.querySelector('input[type="radio"]');
+      if (radio && radio.value === mode) {
+        card.classList.add('active');
+        radio.checked = true;
+      } else {
+        card.classList.remove('active');
+        if (radio) radio.checked = false;
+      }
+    });
+    this.updatePolicyLivePreview();
+  },
+
+  handleTimezoneSelect(val) {
+    const customWrap = document.getElementById('custom-tz-input-wrap');
+    const customInput = document.getElementById('setting-timezone');
+    if (val === 'custom') {
+      customWrap.style.display = 'block';
+      if (!customInput.value || ['Asia/Kolkata','Asia/Dubai','Asia/Singapore','Europe/London','America/New_York','Australia/Sydney'].includes(customInput.value)) {
+        customInput.value = 'UTC';
+      }
+      customInput.focus();
+    } else {
+      customWrap.style.display = 'none';
+      customInput.value = val;
+    }
+    this.updatePolicyLivePreview();
+  },
+
+  getEffectiveTimezone() {
+    const tzSelect = document.getElementById('setting-timezone-select');
+    const tzInput = document.getElementById('setting-timezone');
+    if (!tzSelect || !tzInput) return 'Asia/Kolkata';
+    return tzSelect.value === 'custom' ? (tzInput.value.trim() || 'UTC') : tzSelect.value;
+  },
+
+  updatePolicyLivePreview() {
+    const cutoffInput = document.getElementById('setting-cutoff');
+    const otInput = document.getElementById('setting-ot-thresh');
+    const visInput = document.getElementById('setting-vis-day');
+    const payInput = document.getElementById('setting-payday');
+    const futureToggle = document.getElementById('setting-future-attendance');
+
+    if (!cutoffInput) return;
+
+    const cutoffDays = Math.max(0, Math.min(14, Number(cutoffInput.value) || 0));
+    const otMins = Math.max(5, Math.min(240, Number(otInput?.value) || 30));
+    const visDay = Math.max(1, Math.min(31, Number(visInput?.value) || 25));
+    const payDay = Math.max(1, Math.min(31, Number(payInput?.value) || 1));
+    const allowFuture = futureToggle ? futureToggle.checked : false;
+
+    // 1. Cutoff UI Elements
+    const cutoffBadge = document.getElementById('cutoff-badge-display');
+    const cutoffExpl = document.getElementById('cutoff-explanation-days');
+    const previewCutoffText = document.getElementById('preview-cutoff-text');
+    const previewCutoffDates = document.getElementById('preview-cutoff-dates');
+
+    if (cutoffBadge) cutoffBadge.innerText = `${cutoffDays} Calendar Day(s)`;
+    if (cutoffExpl) cutoffExpl.innerText = cutoffDays;
+
+    if (previewCutoffText && previewCutoffDates) {
+      if (cutoffDays === 0) {
+        previewCutoffText.innerText = 'Same Day Only';
+        previewCutoffDates.innerText = 'Today only; no backdating';
+      } else {
+        const pastDate = new Date();
+        pastDate.setDate(pastDate.getDate() - cutoffDays);
+        const pastDateStr = pastDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        previewCutoffText.innerText = `Past ${cutoffDays} Days`;
+        previewCutoffDates.innerText = `Allows back to ${pastDateStr}`;
+      }
+    }
+
+    // Update preset pills active state
+    document.querySelectorAll('.policy-preset-pill').forEach(pill => {
+      const match = pill.getAttribute('onclick')?.match(/setPolicyCutoff\((\d+)\)/);
+      if (match) {
+        pill.classList.toggle('active', Number(match[1]) === cutoffDays);
+      }
+      const otMatch = pill.getAttribute('onclick')?.match(/setPolicyOvertime\((\d+)\)/);
+      if (otMatch) {
+        pill.classList.toggle('active', Number(otMatch[1]) === otMins);
+      }
+    });
+
+    // 2. Future Attendance Status Box
+    const futureBox = document.getElementById('future-attendance-status-box');
+    if (futureBox) {
+      if (allowFuture) {
+        futureBox.style.background = 'rgba(245, 158, 11, 0.12)';
+        futureBox.style.color = '#b45309';
+        futureBox.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> <strong>Forward-dating enabled</strong>: Coaches can mark future sessions.';
+      } else {
+        futureBox.style.background = 'rgba(16, 185, 129, 0.12)';
+        futureBox.style.color = '#047857';
+        futureBox.innerHTML = '<i class="fa-solid fa-shield-check"></i> <strong>Strict compliance enabled</strong>: Future sessions blocked automatically.';
+      }
+    }
+
+    // 3. Overtime UI Elements
+    const otBadge = document.getElementById('ot-badge-display');
+    const previewOtText = document.getElementById('preview-ot-text');
+    const previewOtSub = document.getElementById('preview-ot-sub');
+
+    if (otBadge) otBadge.innerText = `${otMins} Minutes`;
+    if (previewOtText) previewOtText.innerText = `> ${otMins} mins approval`;
+    if (previewOtSub) previewOtSub.innerText = `≤ ${otMins}m auto-recorded`;
+
+    // 4. Payroll & Statement Visibility
+    const previewVisText = document.getElementById('preview-vis-text');
+    const previewPayText = document.getElementById('preview-pay-text');
+
+    if (previewVisText) previewVisText.innerText = `${visDay}${this.getOrdinalSuffix(visDay)} of Month`;
+    if (previewPayText) previewPayText.innerText = `${payDay}${this.getOrdinalSuffix(payDay)} of Month`;
+  },
+
+  startPolicyClock() {
+    if (this.policyClockInterval) {
+      clearInterval(this.policyClockInterval);
+    }
+
+    const tick = () => {
+      const clockEl = document.getElementById('live-tz-clock');
+      const dateEl = document.getElementById('live-tz-date');
+      if (!clockEl || !dateEl) {
+        clearInterval(this.policyClockInterval);
+        return;
+      }
+
+      const tz = this.getEffectiveTimezone();
+      try {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('en-US', { timeZone: tz, hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const dateStr = now.toLocaleDateString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        clockEl.innerText = timeStr;
+        dateEl.innerText = `${dateStr} (${tz})`;
+      } catch (err) {
+        clockEl.innerText = '--:--:--';
+        dateEl.innerText = 'Invalid timezone format';
+      }
+    };
+
+    tick();
+    this.policyClockInterval = setInterval(tick, 1000);
+  },
+
+  resetPolicyDefaults() {
+    if (!confirm('Reset all policy rules to system recommended defaults? (Cutoff: 2 Days, Overtime: 30 Mins, Future Attendance: Prohibited)')) {
+      return;
+    }
+
+    this.setPolicyCutoff(2);
+    this.setPolicyOvertime(30);
+    this.selectOvertimeMode('standard_rate');
+
+    const vis = document.getElementById('setting-vis-day');
+    const pay = document.getElementById('setting-payday');
+    const futureToggle = document.getElementById('setting-future-attendance');
+    const tzSelect = document.getElementById('setting-timezone-select');
+
+    if (vis) vis.value = 25;
+    if (pay) pay.value = 1;
+    if (futureToggle) futureToggle.checked = false;
+    if (tzSelect) {
+      tzSelect.value = 'Asia/Kolkata';
+      this.handleTimezoneSelect('Asia/Kolkata');
+    }
+
+    this.selectDefaultPolicyTheme('blue');
+
+    this.updatePolicyLivePreview();
+    this.showToast('Reset to recommended best-practice defaults. Click "Save & Enforce Policy" to apply.', 'info');
+  },
+
+  getOrdinalSuffix(n) {
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return s[(v - 20) % 10] || s[v] || s[0];
+  },
+
+  async savePolicySettings() {
+    const submitBtn = document.getElementById('btn-save-policy');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving Policy...';
+    }
+
+    const attendance_cutoff_days = document.getElementById('setting-cutoff').value;
+    const overtime_threshold_minutes = document.getElementById('setting-ot-thresh').value;
+    const statement_visibility_day = document.getElementById('setting-vis-day').value;
+    const expected_payday = document.getElementById('setting-payday').value;
+    const overtime_compensation_mode = document.getElementById('setting-ot-mode').value;
+    const timezone = this.getEffectiveTimezone();
+    const futureToggle = document.getElementById('setting-future-attendance');
+    const allow_future_attendance = futureToggle ? (futureToggle.checked ? 1 : 0) : 0;
+    const default_color_theme = document.getElementById('setting-default-theme')?.value || 'blue';
+
+    const res = await this.apiRequest('/api/academy/settings/policy', {
+      method: 'PUT',
+      body: JSON.stringify({
+        attendance_cutoff_days,
+        overtime_threshold_minutes,
+        statement_visibility_day,
+        expected_payday,
+        overtime_compensation_mode,
+        timezone,
+        allow_future_attendance,
+        default_color_theme,
+      }),
+    });
+
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save & Enforce Policy';
+    }
+
+    if (res.success) {
+      this.showToast(res.message || 'Academy policy settings updated and enforced successfully', 'success');
+      this.renderPolicySettings();
+    } else {
+      this.showToast(res.error || 'Failed to update policy settings', 'danger');
+    }
+  },
+
+  // ==========================================
+  // EVENTS & STUDENT PARTICIPATION (ORGANIZER & STUDENT)
+  // ==========================================
+
+  async renderEvents() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const params = new URLSearchParams();
+    params.set('page', this.eventFilters.page || 1);
+    params.set('limit', this.eventFilters.limit || 15);
+    if (this.eventFilters.search) params.set('search', this.eventFilters.search);
+    if (this.eventFilters.status) params.set('status', this.eventFilters.status);
+    if (this.eventFilters.type) params.set('type', this.eventFilters.type);
+
+    const data = await this.apiRequest(`/api/academy/events?${params.toString()}`);
+    if (!data.success) {
+      content.innerHTML = `<div class="toast danger">${data.error || 'Failed to load events'}</div>`;
+      return;
+    }
+
+    const events = data.events || [];
+    const totalCount = data?.total !== undefined ? data.total : events.length;
+    const drafts = events.filter(e => e.status === 'draft').length;
+    const published = events.filter(e => e.status === 'published').length;
+    const totalParticipants = events.reduce((acc, e) => acc + (e.participant_count || 0), 0);
+
+    content.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
+        <div>
+          <h2 style="font-size: 22px; font-weight: 700; margin: 0 0 6px 0;">Events & Tournaments</h2>
+          <p style="color: var(--text-muted); margin: 0; font-size: 13px;">
+            Organize tournaments, camps, and workshops with versioned eligibility rosters and registration approvals.
+          </p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button class="btn btn-primary" onclick="app.openCreateEventModal()">
+            <i class="fa-solid fa-plus"></i> New Event
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Metrics -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div class="card" style="padding: 16px; border-left: 4px solid var(--primary);">
+          <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Total Events</div>
+          <div style="font-size: 26px; font-weight: 700; margin-top: 4px;">${totalCount}</div>
+        </div>
+        <div class="card" style="padding: 16px; border-left: 4px solid #f59e0b;">
+          <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Draft Events</div>
+          <div style="font-size: 26px; font-weight: 700; margin-top: 4px;">${drafts}</div>
+        </div>
+        <div class="card" style="padding: 16px; border-left: 4px solid #10b981;">
+          <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Published / Active</div>
+          <div style="font-size: 26px; font-weight: 700; margin-top: 4px;">${published}</div>
+        </div>
+        <div class="card" style="padding: 16px; border-left: 4px solid #6366f1;">
+          <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Total Invited Students</div>
+          <div style="font-size: 26px; font-weight: 700; margin-top: 4px;">${totalParticipants}</div>
+        </div>
+      </div>
+
+      <!-- Events List Card -->
+      <div class="card" style="overflow: hidden;">
+        <!-- Universal Filter Bar -->
+        <div class="page-filter-bar" style="margin: 16px 20px 0 20px;">
+          <div class="filter-group" style="min-width: 200px;">
+            <input type="text" id="event-search-input" class="filter-input"
+                   placeholder="Search event title, venue, location..."
+                   value="${this.escapeHtml(this.eventFilters.search || '')}"
+                   onkeyup="if(event.key==='Enter') app.applyEventFilters()">
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="event-status-filter" class="filter-select" onchange="app.applyEventFilters()">
+              <option value="" ${!this.eventFilters.status ? 'selected' : ''}>All Statuses</option>
+              <option value="draft" ${this.eventFilters.status === 'draft' ? 'selected' : ''}>Draft</option>
+              <option value="published" ${this.eventFilters.status === 'published' ? 'selected' : ''}>Published</option>
+              <option value="completed" ${this.eventFilters.status === 'completed' ? 'selected' : ''}>Completed</option>
+              <option value="cancelled" ${this.eventFilters.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="event-type-filter" class="filter-select" onchange="app.applyEventFilters()">
+              <option value="" ${!this.eventFilters.type ? 'selected' : ''}>All Event Types</option>
+              <option value="tournament" ${this.eventFilters.type === 'tournament' ? 'selected' : ''}>Tournament</option>
+              <option value="camp" ${this.eventFilters.type === 'camp' ? 'selected' : ''}>Camp</option>
+              <option value="workshop" ${this.eventFilters.type === 'workshop' ? 'selected' : ''}>Workshop</option>
+              <option value="belt_exam" ${this.eventFilters.type === 'belt_exam' ? 'selected' : ''}>Belt Exam</option>
+              <option value="friendly_match" ${this.eventFilters.type === 'friendly_match' ? 'selected' : ''}>Friendly Match</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.applyEventFilters()">
+              <i class="fa-solid fa-filter"></i> Filter
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetEventFilters()">
+              <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+          <h3 style="font-size: 16px; font-weight: 600; margin: 0;">Academy Event Roster</h3>
+          <span style="font-size: 12px; color: var(--text-muted);">${events.length} of ${totalCount} event(s) shown</span>
+        </div>
+
+        ${events.length === 0 ? `
+          <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+            <i class="fa-solid fa-trophy fa-3x" style="opacity: 0.2; margin-bottom: 12px;"></i>
+            <p>No events match the current filters. Click <strong>Reset</strong> or <strong>New Event</strong>.</p>
+          </div>
+        ` : `
+          <div class="table-responsive">
+            <table class="table" style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--border); background: var(--bg-hover); text-align: left; font-size: 12px; text-transform: uppercase; color: var(--text-muted);">
+                  <th style="padding: 12px 16px;">Event & Type</th>
+                  <th style="padding: 12px 16px;">Schedule & Deadline</th>
+                  <th style="padding: 12px 16px;">Venue / Location</th>
+                  <th style="padding: 12px 16px;">Status</th>
+                  <th style="padding: 12px 16px;">Invited & Confirmed</th>
+                  <th style="padding: 12px 16px; text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${events.map(e => {
+                  let statusBadge = '<span class="badge" style="background:#fef3c7; color:#92400e;">Draft</span>';
+                  if (e.status === 'published') statusBadge = '<span class="badge" style="background:#d1fae5; color:#065f46;">Published</span>';
+                  if (e.status === 'completed') statusBadge = '<span class="badge" style="background:#e5e7eb; color:#374151;">Completed</span>';
+                  if (e.status === 'cancelled') statusBadge = '<span class="badge" style="background:#fee2e2; color:#991b1b;">Cancelled</span>';
+
+                  const typeColor = e.event_type === 'tournament' ? '#8b5cf6' : (e.event_type === 'camp' ? '#3b82f6' : '#10b981');
+
+                  return `
+                    <tr style="border-bottom: 1px solid var(--border);">
+                      <td style="padding: 14px 16px;">
+                        <div style="font-weight: 600; font-size: 14px;">${this.escapeHtml(e.title)}</div>
+                        <div style="display: flex; gap: 6px; margin-top: 4px; align-items: center;">
+                          <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${typeColor}20; color: ${typeColor}; font-weight: 600; text-transform: uppercase;">
+                            ${this.escapeHtml(e.event_type || 'Event')}
+                          </span>
+                          ${e.registration_approval_required ? `
+                            <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;" title="Organizers must approve registrations">
+                              Approval Req.
+                            </span>
+                          ` : ''}
+                          <span style="font-size: 10px; color: var(--text-dim);">Snap: v${e.eligibility_snapshot_version || 1}</span>
+                        </div>
+                      </td>
+                      <td style="padding: 14px 16px; font-size: 13px;">
+                        <div><i class="fa-regular fa-calendar" style="color: var(--primary); margin-right: 4px;"></i> <strong>${this.escapeHtml(e.event_date || 'TBD')}</strong></div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                          Deadline: <strong>${this.escapeHtml(e.rsvp_deadline || 'None')}</strong>
+                        </div>
+                      </td>
+                      <td style="padding: 14px 16px; font-size: 13px;">
+                        ${e.location ? `<span><i class="fa-solid fa-location-dot" style="color: #ef4444; margin-right: 4px;"></i> ${this.escapeHtml(e.location)}</span>` : `
+                          <span style="color: #f59e0b; font-size: 11px; font-style: italic;">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Required prior to publication
+                          </span>
+                        `}
+                      </td>
+                      <td style="padding: 14px 16px;">
+                        ${statusBadge}
+                      </td>
+                      <td style="padding: 14px 16px; font-size: 13px;">
+                        <div><strong>${e.participant_count || 0}</strong> invited</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">
+                          ${e.confirmed_count || 0} confirmed ${e.max_participants ? `/ max ${e.max_participants}` : ''}
+                        </div>
+                      </td>
+                      <td style="padding: 14px 16px; text-align: right;">
+                        <div style="display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap;">
+                          ${e.status === 'draft' ? `
+                            <button class="btn btn-sm btn-success" title="Publish Event" onclick="app.publishEvent(${e.id})">
+                              <i class="fa-solid fa-paper-plane"></i> Publish
+                            </button>
+                            <button class="btn btn-sm btn-outline" title="Edit Event" onclick="app.openEditEventModal(${e.id})">
+                              <i class="fa-solid fa-pencil"></i>
+                            </button>
+                          ` : ''}
+                          <button class="btn btn-sm btn-primary" title="View Roster & Approvals" onclick="app.openEventRosterModal(${e.id})">
+                            <i class="fa-solid fa-users"></i> Roster
+                          </button>
+                          ${e.status === 'published' ? `
+                            <button class="btn btn-sm btn-outline-danger" title="Cancel Event" onclick="app.openCancelEventModal(${e.id})">
+                              <i class="fa-solid fa-ban"></i>
+                            </button>
+                          ` : ''}
+                          <a href="/api/academy/events/${e.id}/export" class="btn btn-sm btn-outline" title="Export CSV Roster" target="_blank">
+                            <i class="fa-solid fa-file-csv"></i>
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+
+        <!-- Pagination Controls -->
+        ${this.renderPaginationHtml(data, 'app.onEventPageChange', 'app.onEventLimitChange')}
+      </div>
+    `;
+  },
+
+  applyEventFilters() {
+    this.eventFilters.search = document.getElementById('event-search-input')?.value?.trim() || '';
+    this.eventFilters.status = document.getElementById('event-status-filter')?.value || '';
+    this.eventFilters.type = document.getElementById('event-type-filter')?.value || '';
+    this.eventFilters.page = 1;
+    this.renderEvents();
+  },
+
+  resetEventFilters() {
+    this.eventFilters = { page: 1, limit: this.eventFilters.limit || 15, search: '', status: '', type: '' };
+    this.renderEvents();
+  },
+
+  onEventPageChange(p) {
+    this.eventFilters.page = p;
+    this.renderEvents();
+  },
+
+  onEventLimitChange(l) {
+    this.eventFilters.limit = l;
+    this.eventFilters.page = 1;
+    this.renderEvents();
+  },
+
+  async openCreateEventModal(existingEventId = null) {
+    let existing = null;
+    let preselectedStudentIds = [];
+
+    if (existingEventId) {
+      const eRes = await this.apiRequest(`/api/academy/events/${existingEventId}`);
+      if (eRes.success) {
+        existing = eRes.event;
+        preselectedStudentIds = (existing.participants || []).map(p => p.student_id);
+      }
+    }
+
+    // Fetch candidate students for eligibility selection
+    const cRes = await this.apiRequest('/api/academy/events/candidates');
+    const candidates = (cRes && cRes.candidates) || [];
+
+    const bodyHtml = `
+      <form id="event-form" onsubmit="event.preventDefault(); app.submitEventForm(${existingEventId || 'null'});">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div class="form-group" style="grid-column: span 2;">
+            <label style="font-weight: 600; font-size: 13px;">Event Name / Title *</label>
+            <input type="text" id="ev-title" class="form-input" required value="${existing ? existing.title : 'Inter-Branch Karate Tournament'}" placeholder="e.g. Inter-Branch Karate Tournament">
+          </div>
+
+          <div class="form-group">
+            <label style="font-weight: 600; font-size: 13px;">Event Type *</label>
+            <select id="ev-type" class="form-select" required>
+              <option value="tournament" ${!existing || existing.event_type === 'tournament' ? 'selected' : ''}>Tournament</option>
+              <option value="camp" ${existing && existing.event_type === 'camp' ? 'selected' : ''}>Training Camp</option>
+              <option value="workshop" ${existing && existing.event_type === 'workshop' ? 'selected' : ''}>Workshop / Seminar</option>
+              <option value="competition" ${existing && existing.event_type === 'competition' ? 'selected' : ''}>Friendly Competition</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label style="font-weight: 600; font-size: 13px;">Max Participants (Capacity)</label>
+            <input type="number" id="ev-max-participants" class="form-input" min="1" value="${existing && existing.max_participants ? existing.max_participants : ''}" placeholder="Leave blank for unlimited">
+          </div>
+
+          <div class="form-group">
+            <label style="font-weight: 600; font-size: 13px;">Event Date *</label>
+            <input type="date" id="ev-date" class="form-input" required value="${existing ? existing.event_date : '2026-11-15'}">
+          </div>
+
+          <div class="form-group">
+            <label style="font-weight: 600; font-size: 13px;">Response Deadline *</label>
+            <input type="date" id="ev-deadline" class="form-input" required value="${existing ? existing.rsvp_deadline : '2026-11-05'}">
+            <span style="font-size: 11px; color: var(--text-muted);">Must be on or before event date.</span>
+          </div>
+
+          <div class="form-group" style="grid-column: span 2;">
+            <label style="font-weight: 600; font-size: 13px;">
+              Venue / Location
+              <span style="font-weight: normal; font-size: 11px; color: #f59e0b;">(Mandatory prior to publication)</span>
+            </label>
+            <input type="text" id="ev-location" class="form-input" value="${existing && existing.location ? existing.location : ''}" placeholder="e.g. Academy Main Dojo, North Campus Arena">
+          </div>
+
+          <div class="form-group" style="grid-column: span 2;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="ev-approval-req" ${!existing || existing.registration_approval_required ? 'checked' : ''}>
+              <span style="font-size: 13px; font-weight: 600;">Require Organizer Registration Approval</span>
+            </label>
+            <span style="font-size: 11px; color: var(--text-muted); display: block; margin-top: 2px;">
+              When checked, students expressing interest are marked Pending until staff confirms them. Expressing interest does not confirm registration.
+            </span>
+          </div>
+
+          <div class="form-group" style="grid-column: span 2;">
+            <label style="font-weight: 600; font-size: 13px;">Description & Notes</label>
+            <textarea id="ev-description" class="form-input" rows="2" placeholder="Rules, schedule, and guidelines for students and coaches...">${existing && existing.description ? existing.description : ''}</textarea>
+          </div>
+        </div>
+
+        <!-- Student Selection Section -->
+        <div style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div>
+              <label style="font-weight: 600; font-size: 13px;">Eligible Students Selection</label>
+              <span style="font-size: 11px; color: var(--text-muted); display: block;">Select individual students across academy branches & batches.</span>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="btn btn-sm btn-outline" onclick="app.toggleSelectAllCandidates(true)">Select All</button>
+              <button type="button" class="btn btn-sm btn-outline" onclick="app.toggleSelectAllCandidates(false)">Deselect All</button>
+            </div>
+          </div>
+
+          <input type="text" id="ev-cand-search" class="form-input" placeholder="Search students by name, branch, or batch..." onkeyup="app.filterCandidateList(this.value)" style="margin-bottom: 8px;">
+
+          <div id="ev-candidates-container" style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; background: var(--bg-hover);">
+            ${candidates.length === 0 ? `
+              <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 12px;">No active students found in this academy.</div>
+            ` : candidates.map(c => {
+              const isChecked = preselectedStudentIds.includes(c.id);
+              return `
+                <label class="cand-item" data-text="${(c.name + ' ' + (c.branch_name || '') + ' ' + (c.batch_name || '')).toLowerCase()}" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid var(--border); cursor: pointer;">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" class="ev-cand-checkbox" value="${c.id}" ${isChecked ? 'checked' : ''}>
+                    <div>
+                      <span style="font-weight: 600; font-size: 13px;">${c.name}</span>
+                      <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">${c.branch_name || 'Main'} &bull; ${c.batch_name || 'Standard'}</span>
+                    </div>
+                  </div>
+                  <span style="font-size: 10px; color: var(--text-dim);">${c.student_code || ''}</span>
+                </label>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      </form>
+    `;
+
+    const footerHtml = `
+      <button type="button" class="btn btn-outline" onclick="app.closeModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="app.submitEventForm(${existingEventId || 'null'})">
+        <i class="fa-solid fa-floppy-disk"></i> ${existingEventId ? 'Update Event' : 'Save as Draft'}
+      </button>
+    `;
+
+    this.openModal(existingEventId ? 'Edit Event Specification' : 'New Event Specification', bodyHtml, footerHtml);
+  },
+
+  openEditEventModal(eventId) {
+    this.openCreateEventModal(eventId);
+  },
+
+  toggleSelectAllCandidates(checked) {
+    const checkboxes = document.querySelectorAll('.ev-cand-checkbox');
+    checkboxes.forEach(cb => {
+      const parent = cb.closest('.cand-item');
+      if (parent && parent.style.display !== 'none') {
+        cb.checked = checked;
+      }
+    });
+  },
+
+  filterCandidateList(term) {
+    const q = (term || '').toLowerCase().trim();
+    const items = document.querySelectorAll('.cand-item');
+    items.forEach(item => {
+      const text = item.getAttribute('data-text') || '';
+      item.style.display = text.includes(q) ? 'flex' : 'none';
+    });
+  },
+
+  async submitEventForm(existingEventId) {
+    const title = document.getElementById('ev-title').value.trim();
+    const event_type = document.getElementById('ev-type').value;
+    const event_date = document.getElementById('ev-date').value;
+    const rsvp_deadline = document.getElementById('ev-deadline').value;
+    const location = document.getElementById('ev-location').value.trim();
+    const max_participants = document.getElementById('ev-max-participants').value;
+    const registration_approval_required = document.getElementById('ev-approval-req').checked ? 1 : 0;
+    const description = document.getElementById('ev-description').value.trim();
+
+    if (!title || !event_date || !rsvp_deadline) {
+      this.showToast('Event title, date, and deadline are required', 'danger');
+      return;
+    }
+
+    const selectedCheckboxes = document.querySelectorAll('.ev-cand-checkbox:checked');
+    const eligible_student_ids = Array.from(selectedCheckboxes).map(cb => Number(cb.value));
+
+    const payload = {
+      title,
+      event_type,
+      event_date,
+      rsvp_deadline,
+      location: location || null,
+      max_participants: max_participants ? Number(max_participants) : null,
+      registration_approval_required,
+      description,
+      eligible_student_ids,
+    };
+
+    const endpoint = existingEventId ? `/api/academy/events/${existingEventId}` : '/api/academy/events';
+    const method = existingEventId ? 'PUT' : 'POST';
+
+    const res = await this.apiRequest(endpoint, {
+      method,
+      body: JSON.stringify(payload),
+    });
+
+    if (res.success) {
+      this.showToast(existingEventId ? 'Event updated successfully' : 'Event saved as draft', 'success');
+      this.closeModal();
+      this.renderEvents();
+    } else {
+      this.showToast(res.error || 'Failed to save event', 'danger');
+    }
+  },
+
+  async publishEvent(eventId) {
+    if (!confirm('Are you ready to publish this event? Publishing takes an immutable eligibility snapshot (v1) and alerts eligible students.')) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/events/${eventId}/publish`, {
+      method: 'POST',
+    });
+
+    if (res.success) {
+      this.showToast('Event published successfully with versioned eligibility snapshot!', 'success');
+      this.renderEvents();
+    } else {
+      this.showToast(`Cannot publish event: ${res.error || 'Missing required fields'}`, 'danger');
+    }
+  },
+
+  async openEventRosterModal(eventId) {
+    const res = await this.apiRequest(`/api/academy/events/${eventId}/participants`);
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to load roster', 'danger');
+      return;
+    }
+
+    const event = res.event;
+    const participants = res.participants || [];
+
+    const bodyHtml = `
+      <div style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h4 style="margin: 0; font-size: 16px; font-weight: 700;">${event.title}</h4>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+              <span><i class="fa-regular fa-calendar"></i> ${event.event_date}</span> &bull;
+              <span><i class="fa-solid fa-location-dot"></i> ${event.location || 'Venue TBD'}</span> &bull;
+              <span>Snapshot Version: <strong>v${event.eligibility_snapshot_version || 1}</strong></span>
+            </div>
+          </div>
+          <a href="/api/academy/events/${eventId}/export" class="btn btn-sm btn-outline" target="_blank">
+            <i class="fa-solid fa-file-csv"></i> Export CSV
+          </a>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <input type="text" class="form-input" placeholder="Search roster by student name..." onkeyup="app.filterRosterTable(this.value)">
+      </div>
+
+      <div style="max-height: 380px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px;">
+        <table class="table" style="width: 100%; font-size: 13px;" id="event-roster-table">
+          <thead>
+            <tr style="background: var(--bg-hover); text-align: left; font-size: 11px; text-transform: uppercase; color: var(--text-muted);">
+              <th style="padding: 10px 12px;">Student</th>
+              <th style="padding: 10px 12px;">Branch & Batch</th>
+              <th style="padding: 10px 12px;">Response</th>
+              <th style="padding: 10px 12px;">Registration Status</th>
+              <th style="padding: 10px 12px; text-align: right;">Moderation</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${participants.length === 0 ? `
+              <tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">No eligible participants assigned yet.</td></tr>
+            ` : participants.map(p => {
+              let respBadge = '<span class="badge" style="background:#f3f4f6; color:#6b7280;">No Response</span>';
+              if (p.status === 'interested') respBadge = '<span class="badge" style="background:#d1fae5; color:#065f46;">Interested</span>';
+              if (p.status === 'not_interested') respBadge = '<span class="badge" style="background:#fee2e2; color:#991b1b;">Not Interested</span>';
+
+              let regBadge = '<span class="badge" style="background:#f3f4f6; color:#6b7280;">None</span>';
+              if (p.registration_status === 'pending') regBadge = '<span class="badge" style="background:#fef3c7; color:#92400e;">Pending Approval</span>';
+              if (p.registration_status === 'confirmed') regBadge = '<span class="badge" style="background:#d1fae5; color:#065f46;">Confirmed</span>';
+              if (p.registration_status === 'rejected') regBadge = '<span class="badge" style="background:#fee2e2; color:#991b1b;">Rejected</span>';
+              if (p.registration_status === 'waitlisted') regBadge = '<span class="badge" style="background:#e0e7ff; color:#3730a3;">Waitlisted</span>';
+
+              return `
+                <tr class="roster-row" data-name="${(p.student_name || '').toLowerCase()}" style="border-bottom: 1px solid var(--border);">
+                  <td style="padding: 10px 12px; font-weight: 600;">
+                    ${p.student_name || 'Student #' + p.student_id}
+                  </td>
+                  <td style="padding: 10px 12px; color: var(--text-muted); font-size: 12px;">
+                    ${p.branch_name || 'Main'} &bull; ${p.batch_name || 'Standard'}
+                  </td>
+                  <td style="padding: 10px 12px;">
+                    ${respBadge}
+                  </td>
+                  <td style="padding: 10px 12px;">
+                    ${regBadge}
+                  </td>
+                  <td style="padding: 10px 12px; text-align: right;">
+                    <div style="display: flex; gap: 4px; justify-content: flex-end;">
+                      <button class="btn btn-sm btn-success" title="Approve Registration" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'confirmed')">
+                        <i class="fa-solid fa-check"></i>
+                      </button>
+                      <button class="btn btn-sm btn-danger" title="Reject Registration" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'rejected')">
+                        <i class="fa-solid fa-xmark"></i>
+                      </button>
+                      <button class="btn btn-sm btn-outline" title="Waitlist" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'waitlisted')">
+                        <i class="fa-solid fa-hourglass-half"></i>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    const footerHtml = `
+      <button type="button" class="btn btn-primary" onclick="app.closeModal()">Done</button>
+    `;
+
+    this.openModal('Event Roster & Participation Approvals', bodyHtml, footerHtml);
+  },
+
+  filterRosterTable(term) {
+    const q = (term || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('.roster-row');
+    rows.forEach(r => {
+      const name = r.getAttribute('data-name') || '';
+      r.style.display = name.includes(q) ? 'table-row' : 'none';
+    });
+  },
+
+  async moderateParticipant(eventId, participantId, newStatus) {
+    const res = await this.apiRequest(`/api/academy/events/${eventId}/participants/${participantId}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ registration_status: newStatus }),
+    });
+
+    if (res.success) {
+      this.showToast(`Participant registration updated to ${newStatus}`, 'success');
+      this.openEventRosterModal(eventId);
+    } else {
+      this.showToast(res.error || 'Failed to update participant', 'danger');
+    }
+  },
+
+  async openCancelEventModal(eventId) {
+    const reason = prompt('Please enter the reason for cancelling this event (this will notify eligible students):');
+    if (reason === null) return;
+
+    const res = await this.apiRequest(`/api/academy/events/${eventId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ cancellation_reason: reason }),
+    });
+
+    if (res.success) {
+      this.showToast('Event marked as cancelled', 'info');
+      this.renderEvents();
+    } else {
+      this.showToast(res.error || 'Failed to cancel event', 'danger');
+    }
+  },
+
+  // ==========================================
+  // STUDENT PORTAL: EVENTS & INVITATIONS
+  // ==========================================
+
+  async renderStudentEvents() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const data = await this.apiRequest('/api/student/events');
+    if (!data.success) {
+      content.innerHTML = `<div class="toast danger">${data.error || 'Failed to load invitations'}</div>`;
+      return;
+    }
+
+    const events = data.events || [];
+
+    content.innerHTML = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="font-size: 22px; font-weight: 700; margin: 0 0 6px 0;">My Event Invitations & Tournaments</h2>
+        <p style="color: var(--text-muted); margin: 0; font-size: 13px;">
+          Review tournaments, friendly competitions, and workshops you are invited to and record your participation response.
+        </p>
+      </div>
+
+      ${events.length === 0 ? `
+        <div class="card" style="padding: 48px; text-align: center; color: var(--text-muted);">
+          <i class="fa-solid fa-trophy fa-3x" style="opacity: 0.2; margin-bottom: 16px;"></i>
+          <h3 style="font-size: 16px; font-weight: 600; color: var(--text-primary);">No Event Invitations</h3>
+          <p style="font-size: 13px; margin-top: 6px;">You currently have no active event invitations from your academy coaches or organizers.</p>
+        </div>
+      ` : `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+          ${events.map(ev => {
+            const isDeadlinePassed = ev.is_deadline_passed;
+            const currentResponse = ev.my_response || 'no_response';
+            const regStatus = ev.my_registration_status;
+
+            let responseCardHtml = '';
+            if (currentResponse === 'interested') {
+              let subText = 'Interest expressed. Awaiting organizer registration confirmation.';
+              let regClass = 'warning';
+              if (regStatus === 'confirmed') {
+                subText = 'Registration Confirmed! You are registered to compete/participate.';
+                regClass = 'success';
+              } else if (regStatus === 'rejected') {
+                subText = 'Registration not confirmed by academy organizers.';
+                regClass = 'danger';
+              } else if (regStatus === 'waitlisted') {
+                subText = 'Event capacity reached. You are currently on the waitlist.';
+                regClass = 'info';
+              }
+
+              responseCardHtml = `
+                <div style="padding: 12px; border-radius: 6px; background: ${regClass === 'success' ? '#d1fae5' : (regClass === 'warning' ? '#fef3c7' : '#fee2e2')}; margin-bottom: 14px;">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid ${regClass === 'success' ? 'fa-circle-check' : 'fa-clock'}" style="color: ${regClass === 'success' ? '#065f46' : '#92400e'}"></i>
+                    <strong style="color: ${regClass === 'success' ? '#065f46' : '#92400e'}; font-size: 13px;">
+                      Response: Interested &bull; Status: ${regStatus.toUpperCase()}
+                    </strong>
+                  </div>
+                  <div style="font-size: 12px; margin-top: 4px; color: ${regClass === 'success' ? '#065f46' : '#92400e'}">
+                    ${subText}
+                  </div>
+                </div>
+              `;
+            } else if (currentResponse === 'not_interested') {
+              responseCardHtml = `
+                <div style="padding: 12px; border-radius: 6px; background: #fee2e2; margin-bottom: 14px; color: #991b1b; font-size: 13px;">
+                  <i class="fa-solid fa-circle-xmark"></i> You indicated that you are <strong>Not Interested</strong> in attending.
+                </div>
+              `;
+            } else {
+              responseCardHtml = `
+                <div style="padding: 12px; border-radius: 6px; background: var(--bg-hover); margin-bottom: 14px; color: var(--text-muted); font-size: 13px;">
+                  <i class="fa-regular fa-bell"></i> No response recorded yet. Please respond prior to deadline.
+                </div>
+              `;
+            }
+
+            return `
+              <div class="card" style="display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; border-top: 4px solid var(--primary);">
+                <div style="padding: 20px;">
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                    <h3 style="margin: 0; font-size: 17px; font-weight: 700;">${ev.title}</h3>
+                    <span class="badge" style="background: var(--primary)20; color: var(--primary); text-transform: uppercase; font-size: 11px;">
+                      ${ev.event_type || 'Event'}
+                    </span>
+                  </div>
+
+                  <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+                    ${ev.description || 'Join your fellow academy students for this upcoming event.'}
+                  </p>
+
+                  <div style="font-size: 13px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+                    <div><i class="fa-regular fa-calendar" style="color: var(--primary); width: 20px;"></i> <strong>Event Date:</strong> ${ev.event_date}</div>
+                    <div><i class="fa-solid fa-location-dot" style="color: #ef4444; width: 20px;"></i> <strong>Venue:</strong> ${ev.location || 'Announced upon confirmation'}</div>
+                    <div>
+                      <i class="fa-regular fa-clock" style="color: #f59e0b; width: 20px;"></i>
+                      <strong>Response Deadline:</strong> ${ev.rsvp_deadline || 'Open'}
+                      ${isDeadlinePassed ? '<span style="color: #ef4444; font-weight: 600; margin-left: 6px;">(Expired)</span>' : ''}
+                    </div>
+                  </div>
+
+                  ${responseCardHtml}
+                </div>
+
+                <div style="padding: 14px 20px; background: var(--bg-hover); border-top: 1px solid var(--border);">
+                  ${isDeadlinePassed ? `
+                    <div style="text-align: center; font-size: 12px; color: #ef4444; font-weight: 600;">
+                      <i class="fa-solid fa-lock"></i> Response deadline has passed. Contact organizer for inquiries.
+                    </div>
+                  ` : `
+                    <div style="display: flex; gap: 10px;">
+                      <button class="btn btn-success" style="flex: 1;" onclick="app.submitStudentResponse(${ev.id}, 'interested')" ${currentResponse === 'interested' ? 'disabled' : ''}>
+                        <i class="fa-solid fa-thumbs-up"></i> ${currentResponse === 'interested' ? 'Interested (Selected)' : 'Interested'}
+                      </button>
+                      <button class="btn btn-outline-danger" style="flex: 1;" onclick="app.submitStudentResponse(${ev.id}, 'not_interested')" ${currentResponse === 'not_interested' ? 'disabled' : ''}>
+                        <i class="fa-solid fa-thumbs-down"></i> ${currentResponse === 'not_interested' ? 'Not Interested' : 'Not Interested'}
+                      </button>
+                    </div>
+                  `}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `}
+    `;
+  },
+
+  async submitStudentResponse(eventId, response) {
+    const res = await this.apiRequest(`/api/student/events/${eventId}/respond`, {
+      method: 'POST',
+      body: JSON.stringify({ response }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Your response has been saved', 'success');
+      this.renderStudentEvents();
+    } else {
+      this.showToast(res.error || 'Failed to record response', 'danger');
+    }
+  },
+
+  // ==========================================
+  // INQUIRIES & LEADS MANAGEMENT
+  // ==========================================
+
+  async renderInquiries() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const params = new URLSearchParams();
+    params.set('page', this.inquiryFilters.page || 1);
+    params.set('limit', this.inquiryFilters.limit || 15);
+    if (this.inquiryFilters.search) params.set('search', this.inquiryFilters.search);
+    if (this.inquiryFilters.status) params.set('status', this.inquiryFilters.status);
+    if (this.inquiryFilters.sport_id) params.set('sport_id', this.inquiryFilters.sport_id);
+    if (this.inquiryFilters.branch_id) params.set('branch_id', this.inquiryFilters.branch_id);
+
+    const [data, branches, sports] = await Promise.all([
+      this.apiRequest(`/api/academy/inquiries?${params.toString()}`),
+      this.getCachedBranches(),
+      this.getCachedSports(),
+    ]);
+
+    const inquiries = (data && data.inquiries) || [];
+    const totalCount = data?.total !== undefined ? data.total : inquiries.length;
+
+    const stages = [
+      { id: '', label: 'All Stages' },
+      { id: 'new', label: 'New Lead' },
+      { id: 'contacted', label: 'Contacted' },
+      { id: 'trial_scheduled', label: 'Trial Scheduled' },
+      { id: 'trial_completed', label: 'Trial Completed' },
+      { id: 'converted', label: 'Converted' },
+      { id: 'lost', label: 'Lost' },
+    ];
+
+    content.innerHTML = `
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2 class="card-title"><i class="fa-solid fa-address-book"></i> Inquiries & Trial Classes (${totalCount})</h2>
+            <p style="font-size: 13px; color: var(--text-muted); margin: 4px 0 0;">
+              Track student leads, schedule trial classes without fee liability, and convert seamlessly into active admissions.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-outline-primary btn-sm" onclick="app.openAdmissionWizard()">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Direct Admission Wizard
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="app.openNewInquiryModal()">
+              <i class="fa-solid fa-plus"></i> New Inquiry
+            </button>
+          </div>
+        </div>
+
+        <!-- Universal Filter Bar for Inquiries -->
+        <div class="page-filter-bar" style="margin: 16px 20px 0 20px;">
+          <div class="filter-group" style="min-width: 220px;">
+            <input type="text" id="inquiry-search-input" class="filter-input"
+                   placeholder="Search student, parent, phone, email..."
+                   value="${this.escapeHtml(this.inquiryFilters.search || '')}"
+                   onkeyup="if(event.key==='Enter') app.applyInquiryFilters()">
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="inquiry-stage-filter" class="filter-select" onchange="app.applyInquiryFilters()">
+              ${stages.map(s => `
+                <option value="${s.id}" ${this.inquiryFilters.status === s.id ? 'selected' : ''}>
+                  ${s.label}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="inquiry-sport-filter" class="filter-select" onchange="app.applyInquiryFilters()">
+              <option value="">All Sports</option>
+              ${sports.map(s => `
+                <option value="${s.id}" ${String(this.inquiryFilters.sport_id) === String(s.id) ? 'selected' : ''}>
+                  ${this.escapeHtml(s.name)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="filter-group" style="min-width: 140px;">
+            <select id="inquiry-branch-filter" class="filter-select" onchange="app.applyInquiryFilters()">
+              <option value="">All Branches</option>
+              ${branches.map(b => `
+                <option value="${b.id}" ${String(this.inquiryFilters.branch_id) === String(b.id) ? 'selected' : ''}>
+                  ${this.escapeHtml(b.name)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.applyInquiryFilters()">
+              <i class="fa-solid fa-filter"></i> Filter
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.resetInquiryFilters()">
+              <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="margin-top: 14px;">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Student & Guardian</th>
+                <th>Contact</th>
+                <th>Sport & Branch</th>
+                <th>Stage</th>
+                <th>Trial Status</th>
+                <th>Date Received</th>
+                <th style="text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${inquiries.length === 0 ? `
+                <tr>
+                  <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 36px;">
+                    <i class="fa-solid fa-inbox fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+                    No inquiries found. Click <strong>+ New Inquiry</strong> to record a lead.
+                  </td>
+                </tr>
+              ` : inquiries.map(inq => {
+                let badgeClass = 'badge-secondary';
+                if (inq.status === 'new') badgeClass = 'badge-primary';
+                if (inq.status === 'trial_scheduled') badgeClass = 'badge-warning';
+                if (inq.status === 'trial_completed') badgeClass = 'badge-purple';
+                if (inq.status === 'converted') badgeClass = 'badge-success';
+                if (inq.status === 'lost') badgeClass = 'badge-danger';
+
+                return `
+                  <tr>
+                    <td>
+                      <strong>${this.escapeHtml(inq.student_name)}</strong>
+                      ${inq.guardian_name ? `<div style="font-size: 11px; color: var(--text-muted);">Gdn: ${this.escapeHtml(inq.guardian_name)}</div>` : ''}
+                      ${inq.dob ? `<div style="font-size: 10px; color: var(--text-dim);">DOB: ${inq.dob}</div>` : ''}
+                    </td>
+                    <td>
+                      <div><i class="fa-solid fa-phone" style="font-size: 10px; color: var(--primary);"></i> <strong>${this.escapeHtml(inq.phone || '-')}</strong></div>
+                      ${inq.email ? `<div style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(inq.email)}</div>` : ''}
+                    </td>
+                    <td>
+                      <span class="badge badge-info">${this.escapeHtml(inq.sport_name || 'General')}</span>
+                      <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">${this.escapeHtml(inq.branch_name || 'Main Campus')}</div>
+                    </td>
+                    <td>
+                      <span class="badge ${badgeClass}">${inq.status.replace('_', ' ').toUpperCase()}</span>
+                    </td>
+                    <td>
+                      ${inq.trial_date ? `
+                        <div style="font-size: 12px; font-weight: 600;"><i class="fa-regular fa-calendar-check" style="color: #10b981;"></i> ${inq.trial_date}</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">
+                          ${inq.trial_status || 'Scheduled'} ${inq.coach_name ? '&bull; ' + this.escapeHtml(inq.coach_name) : ''}
+                        </div>
+                      ` : '<span style="color: var(--text-dim); font-size: 12px;">No trial</span>'}
+                    </td>
+                    <td style="font-size: 12px; color: var(--text-muted);">
+                      ${inq.created_at ? inq.created_at.split('T')[0] : '-'}
+                    </td>
+                    <td style="text-align: right;">
+                      <div style="display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap;">
+                        ${inq.status !== 'converted' ? `
+                          <button class="btn btn-outline-primary btn-sm" onclick="app.openScheduleTrialModal(${inq.id}, '${this.escapeJsString(inq.student_name)}', ${inq.sport_id || 'null'}, ${inq.branch_id || 'null'})" title="Schedule Free Trial Class">
+                            <i class="fa-solid fa-calendar-plus"></i> Trial
+                          </button>
+                          ${inq.trial_id ? `
+                            <button class="btn btn-secondary btn-sm" onclick="app.openTrialFeedbackModal(${inq.trial_id}, ${inq.id}, '${this.escapeJsString(inq.student_name)}')" title="Record Trial Feedback">
+                              <i class="fa-solid fa-star"></i> Feedback
+                            </button>
+                          ` : ''}
+                          <button class="btn btn-success btn-sm" onclick="app.convertInquiryToAdmission(${inq.id})" title="Convert to Enrolled Student">
+                            <i class="fa-solid fa-user-check"></i> Admit
+                          </button>
+                        ` : `
+                          <span class="badge badge-success" style="font-size: 11px;">Enrolled</span>
+                        `}
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        ${this.renderPaginationHtml(data, 'app.onInquiryPageChange', 'app.onInquiryLimitChange')}
+      </div>
+    `;
+  },
+
+  applyInquiryFilters() {
+    this.inquiryFilters.search = document.getElementById('inquiry-search-input')?.value?.trim() || '';
+    this.inquiryFilters.status = document.getElementById('inquiry-stage-filter')?.value || '';
+    this.inquiryFilters.sport_id = document.getElementById('inquiry-sport-filter')?.value || '';
+    this.inquiryFilters.branch_id = document.getElementById('inquiry-branch-filter')?.value || '';
+    this.inquiryFilters.page = 1;
+    this.renderInquiries();
+  },
+
+  resetInquiryFilters() {
+    this.inquiryFilters = { page: 1, limit: this.inquiryFilters.limit || 15, search: '', status: '', sport_id: '', branch_id: '' };
+    this.renderInquiries();
+  },
+
+  onInquiryPageChange(p) {
+    this.inquiryFilters.page = p;
+    this.renderInquiries();
+  },
+
+  onInquiryLimitChange(l) {
+    this.inquiryFilters.limit = l;
+    this.inquiryFilters.page = 1;
+    this.renderInquiries();
+  },
+
+  // Modal: New Inquiry with Real-time Duplicate Check
+  async openNewInquiryModal() {
+    const [branches, sports] = await Promise.all([
+      this.getCachedBranches(),
+      this.getCachedSports(),
+    ]);
+
+    const modalBody = `
+      <form id="new-inquiry-form" onsubmit="event.preventDefault(); app.submitNewInquiry();">
+        <div id="duplicate-warning-banner" style="display: none; background: rgba(245, 158, 11, 0.12); border: 1px solid #f59e0b; border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: #f59e0b;">
+          <i class="fa-solid fa-triangle-exclamation"></i> <span id="duplicate-warning-text"></span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div class="form-group">
+            <label>Student Full Name *</label>
+            <input type="text" id="inq-student-name" class="form-input" required placeholder="e.g., Aarav Sharma" oninput="app.checkDuplicateLead()">
+          </div>
+          <div class="form-group">
+            <label>Parent / Guardian Name</label>
+            <input type="text" id="inq-guardian-name" class="form-input" placeholder="e.g., Vikram Sharma">
+          </div>
+          <div class="form-group">
+            <label>Primary Phone *</label>
+            <input type="tel" id="inq-phone" class="form-input" required placeholder="10-digit mobile number" oninput="app.checkDuplicateLead()">
+          </div>
+          <div class="form-group">
+            <label>Email Address</label>
+            <input type="email" id="inq-email" class="form-input" placeholder="parent@example.com">
+          </div>
+          <div class="form-group">
+            <label>Sport / Discipline *</label>
+            <select id="inq-sport-id" class="form-select" required>
+              <option value="">-- Select Sport --</option>
+              ${sports.map(s => `<option value="${s.id}">${this.escapeHtml(s.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Branch / Campus</label>
+            <select id="inq-branch-id" class="form-select">
+              <option value="">-- Select Branch --</option>
+              ${branches.map(b => `<option value="${b.id}">${this.escapeHtml(b.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Date of Birth</label>
+            <input type="date" id="inq-dob" class="form-input">
+          </div>
+          <div class="form-group">
+            <label>Preferred Time Slot</label>
+            <input type="text" id="inq-preferred-timing" class="form-input" placeholder="e.g., Weekday Evenings / Weekend">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 6px;">
+          <label>Inquiry Source & Notes</label>
+          <textarea id="inq-notes" class="form-input" rows="2" placeholder="Referred by friend, walk-in, social media, prior experience..."></textarea>
+        </div>
+      </form>
+    `;
+
+    const modalFooter = `
+      <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="app.submitNewInquiry()">
+        <i class="fa-solid fa-plus"></i> Save Inquiry
+      </button>
+    `;
+
+    this.openModal('Record New Student Inquiry / Lead', modalBody, modalFooter);
+  },
+
+  async checkDuplicateLead() {
+    const phone = document.getElementById('inq-phone')?.value?.trim();
+    const name = document.getElementById('inq-student-name')?.value?.trim();
+    const banner = document.getElementById('duplicate-warning-banner');
+    const bannerText = document.getElementById('duplicate-warning-text');
+    if (!banner || !bannerText) return;
+
+    if (!phone || phone.length < 7) {
+      banner.style.display = 'none';
+      return;
+    }
+
+    try {
+      const res = await this.apiRequest(`/api/academy/inquiries/check-duplicates?phone=${encodeURIComponent(phone)}&student_name=${encodeURIComponent(name || '')}`);
+      if (res && res.hasDuplicate) {
+        banner.style.display = 'block';
+        bannerText.innerHTML = `<strong>Potential Duplicate Found:</strong> ${res.message}. Please verify to avoid double records.`;
+      } else {
+        banner.style.display = 'none';
+      }
+    } catch (e) {
+      // quiet fail for non-blocking duplicate checks
+    }
+  },
+
+  async submitNewInquiry() {
+    const student_name = document.getElementById('inq-student-name')?.value?.trim();
+    const phone = document.getElementById('inq-phone')?.value?.trim();
+    const sport_id = document.getElementById('inq-sport-id')?.value;
+    if (!student_name || !phone || !sport_id) {
+      this.showToast('Student name, phone, and sport are mandatory', 'danger');
+      return;
+    }
+
+    const payload = {
+      student_name,
+      guardian_name: document.getElementById('inq-guardian-name')?.value?.trim() || null,
+      phone,
+      email: document.getElementById('inq-email')?.value?.trim() || null,
+      sport_id: Number(sport_id),
+      branch_id: document.getElementById('inq-branch-id')?.value ? Number(document.getElementById('inq-branch-id').value) : null,
+      dob: document.getElementById('inq-dob')?.value || null,
+      preferred_timing: document.getElementById('inq-preferred-timing')?.value?.trim() || null,
+      notes: document.getElementById('inq-notes')?.value?.trim() || null,
+      source: 'walk-in',
+    };
+
+    const res = await this.apiRequest('/api/academy/inquiries', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast('Inquiry recorded successfully', 'success');
+      this.renderInquiries();
+    } else {
+      this.showToast(res.error || 'Failed to save inquiry', 'danger');
+    }
+  },
+
+  // Modal: Schedule Trial Class
+  async openScheduleTrialModal(inquiryId, studentName, defaultSportId = null, defaultBranchId = null) {
+    const today = new Date().toISOString().split('T')[0];
+    const [coaches, batches] = await Promise.all([
+      this.apiRequest('/api/academy/coaches'),
+      this.getCachedBatches(),
+    ]);
+
+    const coachList = (coaches && coaches.coaches) || [];
+
+    const modalBody = `
+      <form id="schedule-trial-form" onsubmit="event.preventDefault(); app.submitScheduleTrial(${inquiryId});">
+        <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: var(--primary);">
+          <i class="fa-solid fa-circle-info"></i> Trial class allows assessing student capability without creating paid membership or fee liability.
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div class="form-group">
+            <label>Trial Date *</label>
+            <input type="date" id="trial-date" class="form-input" required value="${today}">
+          </div>
+          <div class="form-group">
+            <label>Assigned Coach</label>
+            <select id="trial-coach-id" class="form-select">
+              <option value="">-- Select Coach --</option>
+              ${coachList.map(c => `<option value="${c.id}">${this.escapeHtml(c.name)} (${this.escapeHtml(c.sport_name || 'General')})</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Start Time</label>
+            <input type="time" id="trial-start-time" class="form-input" value="16:00">
+          </div>
+          <div class="form-group">
+            <label>End Time</label>
+            <input type="time" id="trial-end-time" class="form-input" value="17:00">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Target Trial Batch (Optional)</label>
+          <select id="trial-batch-id" class="form-select">
+            <option value="">-- Optional: Join regular batch session --</option>
+            ${batches.map(b => `<option value="${b.id}">${this.escapeHtml(b.name)} (${b.start_time} - ${b.end_time})</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Assessment Focus / Notes</label>
+          <textarea id="trial-notes" class="form-input" rows="2" placeholder="e.g., Assess hand-eye coordination, beginner drills, kit requirements..."></textarea>
+        </div>
+      </form>
+    `;
+
+    const modalFooter = `
+      <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="app.submitScheduleTrial(${inquiryId})">
+        <i class="fa-solid fa-calendar-check"></i> Confirm Trial Schedule
+      </button>
+    `;
+
+    this.openModal(`Schedule Trial Class — ${studentName}`, modalBody, modalFooter);
+  },
+
+  async submitScheduleTrial(inquiryId) {
+    const trial_date = document.getElementById('trial-date')?.value;
+    if (!trial_date) {
+      this.showToast('Trial date is required', 'danger');
+      return;
+    }
+
+    const payload = {
+      trial_date,
+      start_time: document.getElementById('trial-start-time')?.value || null,
+      end_time: document.getElementById('trial-end-time')?.value || null,
+      coach_id: document.getElementById('trial-coach-id')?.value ? Number(document.getElementById('trial-coach-id').value) : null,
+      batch_id: document.getElementById('trial-batch-id')?.value ? Number(document.getElementById('trial-batch-id').value) : null,
+      notes: document.getElementById('trial-notes')?.value?.trim() || null,
+    };
+
+    const res = await this.apiRequest(`/api/academy/inquiries/${inquiryId}/trials`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast('Trial class scheduled successfully', 'success');
+      this.renderInquiries();
+    } else {
+      this.showToast(res.error || 'Failed to schedule trial', 'danger');
+    }
+  },
+
+  // Modal: Trial Feedback & Assessment
+  openTrialFeedbackModal(trialId, inquiryId, studentName) {
+    const modalBody = `
+      <form id="trial-feedback-form" onsubmit="event.preventDefault(); app.submitTrialFeedback(${trialId}, ${inquiryId});">
+        <div class="form-group">
+          <label>Attendance Status *</label>
+          <select id="tf-status" class="form-select" required>
+            <option value="completed">Attended & Completed</option>
+            <option value="no_show">Student Did Not Show Up</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Skill / Capability Rating (1 to 5 Stars)</label>
+          <select id="tf-rating" class="form-select">
+            <option value="5">⭐⭐⭐⭐⭐ 5/5 — Outstanding Natural Talent</option>
+            <option value="4" selected>⭐⭐⭐⭐ 4/5 — Good Fundamental Skills</option>
+            <option value="3">⭐⭐⭐ 3/5 — Average / Beginner Baseline</option>
+            <option value="2">⭐⭐ 2/5 — Requires Conditioning First</option>
+            <option value="1">⭐ 1/5 — Needs Special Attention</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Coach Feedback & Assessment</label>
+          <textarea id="tf-feedback" class="form-input" rows="3" placeholder="Notes on stamina, grip, focus, attitude, recommended development pathway..."></textarea>
+        </div>
+      </form>
+    `;
+
+    const modalFooter = `
+      <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="app.submitTrialFeedback(${trialId}, ${inquiryId})">
+        <i class="fa-solid fa-check"></i> Save Feedback
+      </button>
+    `;
+
+    this.openModal(`Trial Assessment — ${studentName}`, modalBody, modalFooter);
+  },
+
+  async submitTrialFeedback(trialId, inquiryId) {
+    const status = document.getElementById('tf-status')?.value || 'completed';
+    const performance_rating = Number(document.getElementById('tf-rating')?.value || 3);
+    const feedback = document.getElementById('tf-feedback')?.value?.trim() || null;
+
+    const res = await this.apiRequest(`/api/academy/inquiries/${inquiryId}/trials/${trialId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, performance_rating, feedback }),
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast('Trial feedback recorded successfully', 'success');
+      this.renderInquiries();
+    } else {
+      this.showToast(res.error || 'Failed to update trial', 'danger');
+    }
+  },
+
+  // Bridge: Convert Inquiry into 7-Step Admission Wizard
+  async convertInquiryToAdmission(inquiryId) {
+    const inquiriesData = await this.apiRequest('/api/academy/inquiries');
+    const inq = (inquiriesData.inquiries || []).find(i => i.id === inquiryId);
+    this.openAdmissionWizard(inq || { id: inquiryId });
+  },
+
+  // ==========================================
+  // 7-STEP COMPREHENSIVE ADMISSION WIZARD
+  // ==========================================
+
+  async openAdmissionWizard(inquiryData = null) {
+    const [branches, sports, batches, admNumRes] = await Promise.all([
+      this.getCachedBranches(),
+      this.getCachedSports(),
+      this.getCachedBatches(),
+      this.apiRequest('/api/academy/students/next-admission-number'),
+    ]);
+
+    const nextAdmNum = admNumRes?.next_admission_number || '';
+    const today = new Date().toISOString().split('T')[0];
+
+    // Split name if prefilled
+    let firstName = '';
+    let lastName = '';
+    if (inquiryData && inquiryData.student_name) {
+      const parts = inquiryData.student_name.trim().split(' ');
+      firstName = parts[0] || '';
+      lastName = parts.slice(1).join(' ') || '';
+    }
+
+    this._wizardState = {
+      currentStep: 1,
+      totalSteps: 7,
+      inquiryId: inquiryData ? inquiryData.id : null,
+      branches,
+      sports,
+      batches,
+      selectedBatchId: null,
+      batchMonthlyFee: 0,
+      admissionFee: 500,
+      discountPct: 0,
+      prefill: {
+        firstName,
+        lastName,
+        guardianName: inquiryData?.guardian_name || '',
+        phone: inquiryData?.phone || '',
+        email: inquiryData?.email || '',
+        sportId: inquiryData?.sport_id || '',
+        branchId: inquiryData?.branch_id || '',
+        dob: inquiryData?.dob || '',
+        admissionNumber: nextAdmNum,
+      },
+    };
+
+    this.renderAdmissionWizardModal();
+  },
+
+  renderAdmissionWizardModal() {
+    const s = this._wizardState;
+    if (!s) return;
+
+    const stepTitles = [
+      { num: 1, title: 'Personal Info', icon: 'fa-user' },
+      { num: 2, title: 'Guardian & Contacts', icon: 'fa-people-roof' },
+      { num: 3, title: 'Address Details', icon: 'fa-location-dot' },
+      { num: 4, title: 'Education / School', icon: 'fa-school' },
+      { num: 5, title: 'Health & Consent', icon: 'fa-heart-pulse' },
+      { num: 6, title: 'Sport & Single Batch', icon: 'fa-baseball-bat-ball' },
+      { num: 7, title: 'Fees & Confirmation', icon: 'fa-file-invoice-dollar' },
+    ];
+
+    const modalBody = `
+      <div style="margin-bottom: 20px;">
+        <!-- Stepper Navigation Header -->
+        <div class="wizard-stepper-header">
+          ${stepTitles.map(st => `
+            <div class="wizard-step-tab ${s.currentStep === st.num ? 'active' : (s.currentStep > st.num ? 'completed' : '')}"
+                 onclick="app.jumpToWizardStep(${st.num})">
+              <div class="step-num">${s.currentStep > st.num ? '✓' : st.num}</div>
+              <div class="step-label"><i class="fa-solid ${st.icon}"></i> ${st.title}</div>
+            </div>
+          `).join('')}
+        </div>
+
+        <form id="admission-wizard-form" onsubmit="event.preventDefault();">
+          <!-- STEP 1: Personal Info -->
+          <div class="wizard-step-pane ${s.currentStep === 1 ? 'active' : ''}" id="wiz-step-1">
+            <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-user"></i> Step 1: Student Personal Information</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div class="form-group">
+                <label>First Name *</label>
+                <input type="text" id="wiz-first-name" class="form-input" required value="${this.escapeHtml(s.prefill.firstName)}" placeholder="e.g., Aarav">
+              </div>
+              <div class="form-group">
+                <label>Last Name *</label>
+                <input type="text" id="wiz-last-name" class="form-input" required value="${this.escapeHtml(s.prefill.lastName)}" placeholder="e.g., Sharma">
+              </div>
+              <div class="form-group">
+                <label>Admission Number (System Generated)</label>
+                <input type="text" id="wiz-admission-number" class="form-input" value="${this.escapeHtml(s.prefill.admissionNumber)}" placeholder="ADM-0001">
+              </div>
+              <div class="form-group">
+                <label>Date of Birth *</label>
+                <input type="date" id="wiz-dob" class="form-input" required value="${s.prefill.dob || ''}">
+              </div>
+              <div class="form-group">
+                <label>Gender</label>
+                <select id="wiz-gender" class="form-select">
+                  <option value="">-- Optional / Select --</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Blood Group</label>
+                <select id="wiz-blood-group" class="form-select">
+                  <option value="">-- Unknown / Not Tested --</option>
+                  ${['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => `<option value="${bg}">${bg}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Nationality</label>
+                <input type="text" id="wiz-nationality" class="form-input" value="Indian">
+              </div>
+              <div class="form-group">
+                <label>Preferred Language</label>
+                <input type="text" id="wiz-language" class="form-input" value="English, Hindi">
+              </div>
+            </div>
+          </div>
+
+          <!-- STEP 2: Parent / Guardian Info -->
+          <div class="wizard-step-pane ${s.currentStep === 2 ? 'active' : ''}" id="wiz-step-2">
+            <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-people-roof"></i> Step 2: Parent & Guardian Details</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div class="form-group">
+                <label>Father's Full Name</label>
+                <input type="text" id="wiz-father-name" class="form-input" value="${this.escapeHtml(s.prefill.guardianName)}" placeholder="e.g., Vikram Sharma">
+              </div>
+              <div class="form-group">
+                <label>Father's Phone Number</label>
+                <input type="tel" id="wiz-father-phone" class="form-input" value="${this.escapeHtml(s.prefill.phone)}" placeholder="10-digit mobile">
+              </div>
+              <div class="form-group">
+                <label>Mother's Full Name</label>
+                <input type="text" id="wiz-mother-name" class="form-input" placeholder="e.g., Sunita Sharma">
+              </div>
+              <div class="form-group">
+                <label>Mother's Phone Number</label>
+                <input type="tel" id="wiz-mother-phone" class="form-input" placeholder="10-digit mobile">
+              </div>
+              <div class="form-group">
+                <label>Primary Communication Guardian *</label>
+                <select id="wiz-primary-guardian" class="form-select">
+                  <option value="father">Father</option>
+                  <option value="mother">Mother</option>
+                  <option value="other">Other / Legal Guardian</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Primary Contact Email</label>
+                <input type="email" id="wiz-contact-email" class="form-input" value="${this.escapeHtml(s.prefill.email)}" placeholder="parent@example.com">
+              </div>
+            </div>
+            <div class="form-group" style="margin-top: 10px;">
+              <label>Authorized Pickup Persons (Safety Protocol)</label>
+              <input type="text" id="wiz-pickup-auth" class="form-input" placeholder="Names and relationships of persons authorized to pick up the child">
+            </div>
+          </div>
+
+          <!-- STEP 3: Address & Emergency -->
+          <div class="wizard-step-pane ${s.currentStep === 3 ? 'active' : ''}" id="wiz-step-3">
+            <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-location-dot"></i> Step 3: Address & Emergency Contacts</h4>
+            <div class="form-group">
+              <label>Current Residential Address</label>
+              <textarea id="wiz-current-address" class="form-input" rows="2" placeholder="House / Flat No, Street, Landmark..."></textarea>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+              <div class="form-group">
+                <label>City</label>
+                <input type="text" id="wiz-city" class="form-input" value="Mumbai">
+              </div>
+              <div class="form-group">
+                <label>State</label>
+                <input type="text" id="wiz-state" class="form-input" value="Maharashtra">
+              </div>
+              <div class="form-group">
+                <label>PIN Code</label>
+                <input type="text" id="wiz-pincode" class="form-input" placeholder="400001">
+              </div>
+            </div>
+            <div style="margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px;">
+              <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px; color: var(--text-heading);">Emergency Contact (Other than parents)</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+                <div class="form-group" style="margin: 0;">
+                  <label>Contact Name</label>
+                  <input type="text" id="wiz-emergency-name" class="form-input" placeholder="e.g., Uncle / Neighbour">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label>Relationship</label>
+                  <input type="text" id="wiz-emergency-rel" class="form-input" placeholder="e.g., Grandparent">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label>Emergency Phone *</label>
+                  <input type="tel" id="wiz-emergency-phone" class="form-input" placeholder="10-digit emergency contact">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STEP 4: Education & Schooling -->
+          <div class="wizard-step-pane ${s.currentStep === 4 ? 'active' : ''}" id="wiz-step-4">
+            <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-school"></i> Step 4: Educational Information</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div class="form-group">
+                <label>School / College Name</label>
+                <input type="text" id="wiz-school-name" class="form-input" placeholder="e.g., St. Xavier's High School">
+              </div>
+              <div class="form-group">
+                <label>Grade / Standard / Class</label>
+                <input type="text" id="wiz-grade" class="form-input" placeholder="e.g., Class 6 / Grade 8">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Prior Sports Experience & Achievements</label>
+              <textarea id="wiz-sports-history" class="form-input" rows="2" placeholder="e.g., 2 years school cricket team, district inter-school competitor..."></textarea>
+            </div>
+          </div>
+
+          <!-- STEP 5: Health & Consent -->
+          <div class="wizard-step-pane ${s.currentStep === 5 ? 'active' : ''}" id="wiz-step-5">
+            <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-heart-pulse"></i> Step 5: Medical Information & Sensitive Consents</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div class="form-group">
+                <label>Medical Conditions / Asthma / Heart Concerns</label>
+                <input type="text" id="wiz-medical-conditions" class="form-input" placeholder="None or specify (e.g. Mild exercise-induced asthma)">
+              </div>
+              <div class="form-group">
+                <label>Allergies (Food, Meds, Environmental)</label>
+                <input type="text" id="wiz-allergies" class="form-input" placeholder="e.g. Peanut allergy, penicillin">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Regular Medications Being Taken</label>
+              <input type="text" id="wiz-regular-meds" class="form-input" placeholder="Specify if any">
+            </div>
+
+            <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px; padding: 14px; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px;">
+              <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 13px; color: var(--text-heading);">
+                <input type="checkbox" id="wiz-consent-medical" checked style="margin-top: 3px;">
+                <span><strong>Emergency Medical Consent (Mandatory):</strong> In the event of injury or acute distress during training, academy staff and certified first aiders are authorized to administer medical attention or arrange hospital transport.</span>
+              </label>
+              <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 13px; color: var(--text-heading);">
+                <input type="checkbox" id="wiz-consent-photo" checked style="margin-top: 3px;">
+                <span><strong>Media & Photography Consent:</strong> I permit sports training photographs/videos of the student to be captured and utilized for internal technical review, match archives, and official academy publications.</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- STEP 6: Sports & Single Active Batch -->
+          <div class="wizard-step-pane ${s.currentStep === 6 ? 'active' : ''}" id="wiz-step-6">
+            <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-baseball-bat-ball"></i> Step 6: Sports & Single Active Batch Assignment</h4>
+            <div style="background: rgba(37, 99, 235, 0.06); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: var(--primary);">
+              <i class="fa-solid fa-lock"></i> <strong>Single Active Batch Invariant:</strong> A student can belong to exactly one active batch. Enrolling or transferring assigns this batch as the authoritative active schedule.
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div class="form-group">
+                <label>Branch / Campus *</label>
+                <select id="wiz-branch-id" class="form-select" required onchange="app.onWizardBranchOrSportChange()">
+                  <option value="">-- Select Branch --</option>
+                  ${s.branches.map(b => `<option value="${b.id}" ${String(s.prefill.branchId) === String(b.id) ? 'selected' : ''}>${this.escapeHtml(b.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Sport / Discipline *</label>
+                <select id="wiz-sport-id" class="form-select" required onchange="app.onWizardBranchOrSportChange()">
+                  <option value="">-- Select Sport --</option>
+                  ${s.sports.map(sp => `<option value="${sp.id}" ${String(s.prefill.sportId) === String(sp.id) ? 'selected' : ''}>${this.escapeHtml(sp.name)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 6px;">
+              <label>Select Training Batch *</label>
+              <select id="wiz-batch-id" class="form-select" required onchange="app.onWizardBatchChange(this.value)">
+                <option value="">-- Select Training Batch --</option>
+                ${s.batches.map(b => `
+                  <option value="${b.id}" data-fee="${b.monthly_fee || 0}" data-branch="${b.branch_id}" data-sport="${b.sport_id}">
+                    ${this.escapeHtml(b.name)} &bull; ${b.start_time} - ${b.end_time} &bull; ₹${(b.monthly_fee || 0).toLocaleString()}/mo
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Admission / Joining Date *</label>
+              <input type="date" id="wiz-start-date" class="form-input" required value="${new Date().toISOString().split('T')[0]}">
+              <span style="font-size: 11px; color: var(--text-muted);">Fee period will be computed from this actual joining date.</span>
+            </div>
+          </div>
+
+          <!-- STEP 7: Fees & Confirmation -->
+          <div class="wizard-step-pane ${s.currentStep === 7 ? 'active' : ''}" id="wiz-step-7">
+            <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-file-invoice-dollar"></i> Step 7: Fee Setup & Final Confirmation</h4>
+
+            <!-- Fee Calculation Card -->
+            <div class="fee-preview-summary-card">
+              <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px;">Financial Liability Breakdown</div>
+              <div class="fee-calc-row">
+                <span>Batch Monthly Training Fee</span>
+                <span id="fee-calc-base">₹${(s.batchMonthlyFee || 0).toLocaleString()}</span>
+              </div>
+              <div class="fee-calc-row">
+                <span>One-Time Admission / Kit Fee</span>
+                <span>₹<input type="number" id="wiz-admission-fee" value="500" min="0" style="width: 80px; text-align: right; font-size: 13px;" oninput="app.recomputeWizardFees()"></span>
+              </div>
+              <div class="fee-calc-row">
+                <span>
+                  Discount (<span id="discount-pct-label">0%</span>)
+                  <span style="font-size: 11px; color: #f59e0b;">(Max 20% cap)</span>
+                </span>
+                <span>
+                  <input type="number" id="wiz-discount-pct" value="0" min="0" max="20" style="width: 60px; text-align: right; font-size: 13px;" oninput="app.recomputeWizardFees()"> %
+                </span>
+              </div>
+              <div class="fee-calc-row" id="discount-reason-row" style="display: none;">
+                <span style="font-size: 12px; color: var(--text-muted);">Discount Reason *</span>
+                <input type="text" id="wiz-discount-reason" class="form-input" style="width: 220px; font-size: 12px;" placeholder="Sibling, scholarship, trial offer...">
+              </div>
+              <div class="fee-calc-total">
+                <span>Net Total Payable</span>
+                <span id="fee-calc-net" style="color: #10b981;">₹500</span>
+              </div>
+            </div>
+
+            <!-- Initial Payment Collection -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px;">
+              <div class="form-group">
+                <label>Initial Payment Collected Today</label>
+                <input type="number" id="wiz-paid-amount" class="form-input" value="0" min="0">
+              </div>
+              <div class="form-group">
+                <label>Payment Mode</label>
+                <select id="wiz-payment-mode" class="form-select">
+                  <option value="upi">UPI / QR Code</option>
+                  <option value="cash">Cash</option>
+                  <option value="card">Debit / Credit Card</option>
+                  <option value="bank_transfer">Bank Transfer / IMPS</option>
+                  <option value="cheque">Cheque</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Admission Checklist Options -->
+            <div style="margin-top: 16px;">
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text-heading);">Initialize Admission Checklist Items:</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; color: var(--text-muted);">
+                <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="chk-doc-id" checked> Identity & Age Proof</label>
+                <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="chk-doc-med" checked> Medical Fitness Certificate</label>
+                <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="chk-doc-waiver" checked> Signed Consent Waiver</label>
+                <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="chk-doc-kit"> Uniform & Kit Issued</label>
+                <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="chk-doc-rules" checked> Rules Handbook Handover</label>
+                <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="chk-doc-photo"> Passport Size Photographs</label>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    `;
+
+    const modalFooter = `
+      <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <div style="display: flex; gap: 8px;">
+          ${s.currentStep > 1 ? `
+            <button type="button" class="btn btn-secondary" onclick="app.prevWizardStep()">
+              <i class="fa-solid fa-arrow-left"></i> Back
+            </button>
+          ` : ''}
+          ${s.currentStep < s.totalSteps ? `
+            <button type="button" class="btn btn-primary" onclick="app.nextWizardStep()">
+              Next Step <i class="fa-solid fa-arrow-right"></i>
+            </button>
+          ` : `
+            <button type="button" class="btn btn-success" id="btn-submit-wizard" onclick="app.submitAdmissionWizard()">
+              <i class="fa-solid fa-check"></i> Complete Admission
+            </button>
+          `}
+        </div>
+      </div>
+    `;
+
+    this.openModal(`Student Admission Wizard — Step ${s.currentStep} of ${s.totalSteps}`, modalBody, modalFooter);
+  },
+
+  jumpToWizardStep(stepNum) {
+    if (!this._wizardState) return;
+    if (stepNum > this._wizardState.currentStep && !this.validateCurrentWizardStep()) {
+      return;
+    }
+    this._wizardState.currentStep = stepNum;
+    this.renderAdmissionWizardModal();
+  },
+
+  nextWizardStep() {
+    if (!this._wizardState) return;
+    if (!this.validateCurrentWizardStep()) return;
+    if (this._wizardState.currentStep < this._wizardState.totalSteps) {
+      this._wizardState.currentStep++;
+      this.renderAdmissionWizardModal();
+    }
+  },
+
+  prevWizardStep() {
+    if (!this._wizardState) return;
+    if (this._wizardState.currentStep > 1) {
+      this._wizardState.currentStep--;
+      this.renderAdmissionWizardModal();
+    }
+  },
+
+  validateCurrentWizardStep() {
+    const s = this._wizardState;
+    if (s.currentStep === 1) {
+      const first = document.getElementById('wiz-first-name')?.value?.trim();
+      const last = document.getElementById('wiz-last-name')?.value?.trim();
+      const dob = document.getElementById('wiz-dob')?.value;
+      if (!first || !last || !dob) {
+        this.showToast('Please enter student first name, last name, and date of birth', 'danger');
+        return false;
+      }
+    } else if (s.currentStep === 5) {
+      const medConsent = document.getElementById('wiz-consent-medical')?.checked;
+      if (!medConsent) {
+        this.showToast('Emergency Medical Consent is mandatory for student safety', 'danger');
+        return false;
+      }
+    } else if (s.currentStep === 6) {
+      const batchId = document.getElementById('wiz-batch-id')?.value;
+      const startDate = document.getElementById('wiz-start-date')?.value;
+      if (!batchId || !startDate) {
+        this.showToast('Please select an active batch and admission start date', 'danger');
+        return false;
+      }
+    } else if (s.currentStep === 7) {
+      const disc = Number(document.getElementById('wiz-discount-pct')?.value || 0);
+      const discReason = document.getElementById('wiz-discount-reason')?.value?.trim();
+      if (disc > 20) {
+        this.showToast('Discount cannot exceed 20% approval limit', 'danger');
+        return false;
+      }
+      if (disc > 0 && !discReason) {
+        this.showToast('Please provide a reason for the applied discount', 'danger');
+        return false;
+      }
+    }
+    return true;
+  },
+
+  onWizardBranchOrSportChange() {
+    const branchId = document.getElementById('wiz-branch-id')?.value;
+    const sportId = document.getElementById('wiz-sport-id')?.value;
+    const batchSelect = document.getElementById('wiz-batch-id');
+    if (!batchSelect) return;
+
+    let available = this._wizardState.batches || [];
+    if (branchId) available = available.filter(b => String(b.branch_id) === String(branchId));
+    if (sportId) available = available.filter(b => String(b.sport_id) === String(sportId));
+
+    batchSelect.innerHTML = `
+      <option value="">-- Select Training Batch --</option>
+      ${available.map(b => `
+        <option value="${b.id}" data-fee="${b.monthly_fee || 0}">
+          ${this.escapeHtml(b.name)} &bull; ${b.start_time} - ${b.end_time} &bull; ₹${(b.monthly_fee || 0).toLocaleString()}/mo
+        </option>
+      `).join('')}
+    `;
+  },
+
+  onWizardBatchChange(batchId) {
+    const batch = this._wizardState.batches.find(b => String(b.id) === String(batchId));
+    this._wizardState.selectedBatchId = batchId ? Number(batchId) : null;
+    this._wizardState.batchMonthlyFee = batch ? (batch.monthly_fee || 0) : 0;
+    this.recomputeWizardFees();
+  },
+
+  recomputeWizardFees() {
+    const baseMonthly = this._wizardState.batchMonthlyFee || 0;
+    const admFee = Number(document.getElementById('wiz-admission-fee')?.value || 0);
+    const discPct = Number(document.getElementById('wiz-discount-pct')?.value || 0);
+
+    const baseEl = document.getElementById('fee-calc-base');
+    const netEl = document.getElementById('fee-calc-net');
+    const discLabel = document.getElementById('discount-pct-label');
+    const discReasonRow = document.getElementById('discount-reason-row');
+
+    if (baseEl) baseEl.innerText = `₹${baseMonthly.toLocaleString()}`;
+    if (discLabel) discLabel.innerText = `${discPct}%`;
+
+    if (discReasonRow) {
+      discReasonRow.style.display = discPct > 0 ? 'flex' : 'none';
+    }
+
+    const discountAmount = Math.round((baseMonthly * Math.min(20, discPct)) / 100);
+    const netTotal = Math.max(0, (baseMonthly - discountAmount) + admFee);
+
+    if (netEl) netEl.innerText = `₹${netTotal.toLocaleString()}`;
+
+    // Auto update suggested paid amount
+    const paidInput = document.getElementById('wiz-paid-amount');
+    if (paidInput && Number(paidInput.value) === 0) {
+      paidInput.value = netTotal;
+    }
+  },
+
+  async submitAdmissionWizard() {
+    if (!this.validateCurrentWizardStep()) return;
+
+    const submitBtn = document.getElementById('btn-submit-wizard');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing Admission...';
+    }
+
+    const payload = {
+      inquiry_id: this._wizardState.inquiryId,
+      first_name: document.getElementById('wiz-first-name')?.value?.trim(),
+      last_name: document.getElementById('wiz-last-name')?.value?.trim(),
+      admission_number: document.getElementById('wiz-admission-number')?.value?.trim() || null,
+      dob: document.getElementById('wiz-dob')?.value,
+      gender: document.getElementById('wiz-gender')?.value || null,
+      blood_group: document.getElementById('wiz-blood-group')?.value || null,
+      nationality: document.getElementById('wiz-nationality')?.value || 'Indian',
+      preferred_language: document.getElementById('wiz-language')?.value || 'English',
+      // Guardian
+      father_name: document.getElementById('wiz-father-name')?.value?.trim() || null,
+      father_phone: document.getElementById('wiz-father-phone')?.value?.trim() || null,
+      mother_name: document.getElementById('wiz-mother-name')?.value?.trim() || null,
+      mother_phone: document.getElementById('wiz-mother-phone')?.value?.trim() || null,
+      primary_guardian: document.getElementById('wiz-primary-guardian')?.value || 'father',
+      contact_email: document.getElementById('wiz-contact-email')?.value?.trim() || null,
+      authorized_pickup: document.getElementById('wiz-pickup-auth')?.value?.trim() || null,
+      // Address
+      current_address: document.getElementById('wiz-current-address')?.value?.trim() || null,
+      city: document.getElementById('wiz-city')?.value?.trim() || null,
+      state: document.getElementById('wiz-state')?.value?.trim() || null,
+      pincode: document.getElementById('wiz-pincode')?.value?.trim() || null,
+      emergency_contact_name: document.getElementById('wiz-emergency-name')?.value?.trim() || null,
+      emergency_contact_relationship: document.getElementById('wiz-emergency-rel')?.value?.trim() || null,
+      emergency_contact_phone: document.getElementById('wiz-emergency-phone')?.value?.trim() || null,
+      // School & Health
+      school_name: document.getElementById('wiz-school-name')?.value?.trim() || null,
+      grade_level: document.getElementById('wiz-grade')?.value?.trim() || null,
+      sports_history: document.getElementById('wiz-sports-history')?.value?.trim() || null,
+      medical_conditions: document.getElementById('wiz-medical-conditions')?.value?.trim() || null,
+      allergies: document.getElementById('wiz-allergies')?.value?.trim() || null,
+      regular_medications: document.getElementById('wiz-regular-meds')?.value?.trim() || null,
+      emergency_medical_consent: document.getElementById('wiz-consent-medical')?.checked ? 1 : 0,
+      photo_media_consent: document.getElementById('wiz-consent-photo')?.checked ? 1 : 0,
+      // Sports & Single Active Batch
+      branch_id: document.getElementById('wiz-branch-id')?.value ? Number(document.getElementById('wiz-branch-id').value) : null,
+      sport_id: document.getElementById('wiz-sport-id')?.value ? Number(document.getElementById('wiz-sport-id').value) : null,
+      batch_id: Number(document.getElementById('wiz-batch-id')?.value),
+      start_date: document.getElementById('wiz-start-date')?.value,
+      // Fees
+      admission_fee: Number(document.getElementById('wiz-admission-fee')?.value || 0),
+      discount_percentage: Number(document.getElementById('wiz-discount-pct')?.value || 0),
+      discount_reason: document.getElementById('wiz-discount-reason')?.value?.trim() || null,
+      initial_payment_amount: Number(document.getElementById('wiz-paid-amount')?.value || 0),
+      payment_mode: document.getElementById('wiz-payment-mode')?.value || 'cash',
+      // Checklist
+      checklist_items: [
+        { item: 'Identity & Age Proof', status: document.getElementById('chk-doc-id')?.checked ? 'completed' : 'pending' },
+        { item: 'Medical Fitness Certificate', status: document.getElementById('chk-doc-med')?.checked ? 'completed' : 'pending' },
+        { item: 'Signed Consent Waiver', status: document.getElementById('chk-doc-waiver')?.checked ? 'completed' : 'pending' },
+        { item: 'Uniform & Kit Issued', status: document.getElementById('chk-doc-kit')?.checked ? 'completed' : 'pending' },
+        { item: 'Rules Handbook Handover', status: document.getElementById('chk-doc-rules')?.checked ? 'completed' : 'pending' },
+        { item: 'Passport Size Photographs', status: document.getElementById('chk-doc-photo')?.checked ? 'completed' : 'pending' },
+      ],
+    };
+
+    const res = await this.apiRequest('/api/academy/students/admission-wizard', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast(`Admission confirmed! Student Code: ${res.student_code || 'Enrolled'}`, 'success');
+      if (this.currentTab === 'inquiries') {
+        this.renderInquiries();
+      } else {
+        this.renderStudents();
+      }
+    } else {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-check"></i> Complete Admission';
+      }
+      this.showToast(res.error || 'Failed to complete admission', 'danger');
+    }
+  },
+
+  // Modal: Student Admission Checklist & Documents
+  async showStudentChecklistModal(studentId, studentName) {
+    const res = await this.apiRequest(`/api/academy/students/${studentId}/checklist`);
+    const checklist = (res && res.checklist) || [];
+
+    const modalBody = `
+      <div style="margin-bottom: 14px;">
+        <p style="font-size: 13px; color: var(--text-muted); margin-top: 0;">
+          Verify required admission compliance documents, waivers, and equipment handovers for <strong>${this.escapeHtml(studentName)}</strong>.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          ${checklist.length === 0 ? `
+            <div style="padding: 24px; text-align: center; color: var(--text-muted);">
+              No checklist initialized. Default items will be tracked automatically upon admission.
+            </div>
+          ` : checklist.map(item => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" ${item.status === 'completed' ? 'checked' : ''} onchange="app.toggleChecklistItem(${studentId}, ${item.id}, '${item.status}')">
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: ${item.status === 'completed' ? '#10b981' : 'var(--text-heading)'};">
+                    ${this.escapeHtml(item.item_name)}
+                  </div>
+                  ${item.verified_at ? `<div style="font-size: 11px; color: var(--text-muted);">Verified: ${item.verified_at}</div>` : ''}
+                </div>
+              </div>
+              <span class="badge ${item.status === 'completed' ? 'badge-success' : 'badge-warning'}">
+                ${item.status === 'completed' ? 'Verified' : 'Pending'}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    const modalFooter = `
+      <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+    `;
+
+    this.openModal(`Admission Compliance Checklist — ${studentName}`, modalBody, modalFooter);
+  },
+
+  async toggleChecklistItem(studentId, itemId, currentStatus) {
+    const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
+    const res = await this.apiRequest(`/api/academy/students/${studentId}/checklist/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status: newStatus }),
+    });
+
+    if (res.success) {
+      this.showToast('Checklist updated', 'success');
+      this.showStudentChecklistModal(studentId, 'Student');
+    } else {
+      this.showToast(res.error || 'Failed to update item', 'danger');
+    }
+  },
+
+  // Modal: Rejoin Returning Former Student
+  async openRejoinModal(studentId, studentName) {
+    const batches = await this.getCachedBatches();
+    const today = new Date().toISOString().split('T')[0];
+
+    const modalBody = `
+      <form id="rejoin-form" onsubmit="event.preventDefault(); app.submitRejoinStudent(${studentId});">
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: #10b981;">
+          <i class="fa-solid fa-arrows-rotate"></i> Rejoining reactivates former student records while maintaining prior achievement history, techniques, and syllabus progression.
+        </div>
+
+        <div class="form-group">
+          <label>Assign New Active Training Batch *</label>
+          <select id="rejoin-batch-id" class="form-select" required>
+            <option value="">-- Select Active Batch --</option>
+            ${batches.map(b => `<option value="${b.id}">${this.escapeHtml(b.name)} (${b.start_time} - ${b.end_time}) &bull; ₹${(b.monthly_fee || 0).toLocaleString()}/mo</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Rejoining Start Date *</label>
+          <input type="date" id="rejoin-start-date" class="form-input" required value="${today}">
+        </div>
+
+        <div class="form-group">
+          <label>Rejoining Notes & Terms</label>
+          <textarea id="rejoin-notes" class="form-input" rows="2" placeholder="e.g., Returning after summer break, renewed medical clearance..."></textarea>
+        </div>
+      </form>
+    `;
+
+    const modalFooter = `
+      <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button type="button" class="btn btn-success" onclick="app.submitRejoinStudent(${studentId})">
+        <i class="fa-solid fa-user-plus"></i> Reactivate & Enroll
+      </button>
+    `;
+
+    this.openModal(`Rejoin Former Student — ${studentName}`, modalBody, modalFooter);
+  },
+
+  async submitRejoinStudent(studentId) {
+    const batch_id = document.getElementById('rejoin-batch-id')?.value;
+    const start_date = document.getElementById('rejoin-start-date')?.value;
+    if (!batch_id || !start_date) {
+      this.showToast('Please select a batch and start date', 'danger');
+      return;
+    }
+
+    const payload = {
+      batch_id: Number(batch_id),
+      start_date,
+      notes: document.getElementById('rejoin-notes')?.value?.trim() || null,
+    };
+
+    const res = await this.apiRequest(`/api/academy/students/${studentId}/rejoin`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast('Student successfully reactivated and assigned to batch!', 'success');
+      this.renderStudents();
+    } else {
+      this.showToast(res.error || 'Failed to rejoin student', 'danger');
+    }
+  },
+
+  // ==========================================
   // MODAL UTILITIES
   // ==========================================
 
@@ -3754,4 +13736,5 @@ const app = {
   },
 };
 
+window.app = app;
 document.addEventListener('DOMContentLoaded', () => app.init());

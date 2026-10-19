@@ -38,6 +38,17 @@ describe('Sports Syllabus, Technique Progression & Learning Tracking', () => {
       name: 'Sardar Admin',
     });
 
+    // Ensure branch 1 and batch 1 exist for attendance and student tests
+    let b1 = academy1Db.prepare('SELECT id FROM branches WHERE id = 1').get();
+    if (!b1) {
+      academy1Db.prepare("INSERT INTO branches (id, name, city, is_active, academy_id) VALUES (1, 'Main Campus Dojo', 'Ahmedabad', 1, 1)").run();
+    }
+    let bt1 = academy1Db.prepare('SELECT id FROM batches WHERE id = 1').get();
+    if (!bt1) {
+      academy1Db.prepare("INSERT INTO batches (id, name, branch_id, start_time, end_time, days_of_week, max_capacity, monthly_fee, academy_id, is_active) VALUES (1, 'Main Karate Batch', 1, '06:00', '07:30', '[\"Mon\",\"Wed\",\"Fri\"]', 30, 2000, 1, 1)").run();
+    }
+    academy1Db.prepare('DELETE FROM student_batch_enrollments WHERE batch_id = 1').run();
+
     await new Promise((resolve) => {
       server = http.createServer(app);
       server.listen(0, '127.0.0.1', () => {
@@ -385,4 +396,153 @@ describe('Sports Syllabus, Technique Progression & Learning Tracking', () => {
     assert.ok(Array.isArray(repRes.data.extendedDurationStudents));
     assert.ok(Array.isArray(repRes.data.monthlyTechniqueAttendance));
   });
+
+  // --------------------------------------------------------------------------
+  // Attendance Saving with Null/Unset academy_id Self-Healing
+  // --------------------------------------------------------------------------
+  it('8. Attendance saving self-heals student with null academy_id and succeeds smoothly', async () => {
+    // 1. Insert student directly with null academy_id in tenant database
+    const rawStudent = academy1Db.prepare(`
+      INSERT INTO students (student_code, first_name, last_name, branch_id, academy_id, status)
+      VALUES ('STU-NULL-ACAD-' || hex(randomblob(3)), 'Rohan', 'Verma', 1, NULL, 'active')
+    `).run();
+    const testStuId = rawStudent.lastInsertRowid;
+
+    // Enroll in batch 1
+    academy1Db.prepare(`
+      INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status)
+      VALUES (?, 1, '2026-09-01', 'active')
+    `).run(testStuId);
+
+    // Get an available technique
+    const tech = academy1Db.prepare('SELECT id FROM syllabus_techniques WHERE academy_id = 1 AND deleted_at IS NULL LIMIT 1').get();
+    assert.ok(tech, 'Must have at least one technique');
+
+    // 2. Mark attendance for this student with technique tracking
+    const attRes = await api('/api/academy/attendance', {
+      method: 'POST',
+      body: {
+        batch_id: 1,
+        date: '2026-10-12',
+        entries: [
+          {
+            student_id: testStuId,
+            status: 'present',
+            technique_id: tech.id,
+            technique_status: 'keep',
+            technique_remarks: 'Self-healing test passed',
+          },
+        ],
+      },
+    });
+
+    assert.equal(attRes.status, 200, 'Attendance saving must not fail with 500 error');
+    assert.equal(attRes.data.success, true);
+
+    // 3. Verify student academy_id was self-healed to 1
+    const healed = academy1Db.prepare('SELECT academy_id FROM students WHERE id = ?').get(testStuId);
+    assert.equal(healed.academy_id, 1, 'Student academy_id must be self-healed to 1');
+  });
+
+  // --------------------------------------------------------------------------
+  // Idempotency: Submitting 4 Times on Same Date
+  // --------------------------------------------------------------------------
+  it('9. Submitting attendance 4 times on the same date is idempotent: 1 session increment and 1 snapshot only', async () => {
+    // 1. Create a student
+    const stuRes = await api('/api/academy/students', {
+      method: 'POST',
+      body: {
+        first_name: 'Idempotent',
+        last_name: 'AttendanceTest',
+        branch_id: 1,
+        batch_id: 1,
+      },
+    });
+    assert.equal(stuRes.status, 201);
+    const testStuId = stuRes.data.studentId;
+
+    const tech = academy1Db.prepare('SELECT id FROM syllabus_techniques WHERE academy_id = 1 AND deleted_at IS NULL LIMIT 1').get();
+    const testDate = '2026-10-14';
+
+    // 2. Submit attendance 4 times in a row for the exact same date
+    let lastRes;
+    for (let i = 1; i <= 4; i++) {
+      const res = await api('/api/academy/attendance', {
+        method: 'POST',
+        body: {
+          batch_id: 1,
+          date: testDate,
+          entries: [
+            {
+              student_id: testStuId,
+              status: 'present',
+              technique_id: tech.id,
+              technique_status: 'keep',
+              technique_remarks: `Submission round ${i}`,
+            },
+          ],
+        },
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.data.success, true);
+      if (i > 1) {
+        assert.equal(res.data.isUpdate, true, 'Subsequent submissions must be flagged as isUpdate');
+        assert.ok(res.data.message.includes('updated successfully'), 'Message should indicate updated');
+      }
+      lastRes = res;
+    }
+
+    // 3. Verify exactly 1 attended session counted on active assignment
+    const activeAss = academy1Db.prepare('SELECT sessions_attended FROM student_technique_assignments WHERE student_id = ? AND status = \'active\'').get(testStuId);
+    assert.equal(activeAss.sessions_attended, 1, '4 submissions on the SAME date must only count as 1 session attended');
+
+    // 4. Verify exactly 1 snapshot in attendance_technique_snapshots
+    const snapCount = academy1Db.prepare('SELECT COUNT(*) as c FROM attendance_technique_snapshots WHERE student_id = ?').get(testStuId).c;
+    assert.equal(snapCount, 1, 'Must have exactly 1 snapshot for the date, not 4 duplicate rows');
+  });
+
+  // --------------------------------------------------------------------------
+  // Auto-assign default technique when taking attendance without selection
+  // --------------------------------------------------------------------------
+  it('10. Taking attendance without selecting a technique auto-assigns baseline technique and captures history', async () => {
+    // 1. Create student without technique
+    const stuRes = await api('/api/academy/students', {
+      method: 'POST',
+      body: {
+        first_name: 'Baseline',
+        last_name: 'AutoTechnique',
+        branch_id: 1,
+        batch_id: 1,
+      },
+    });
+    assert.equal(stuRes.status, 201);
+    const testStuId = stuRes.data.studentId;
+
+    // 2. Submit attendance with technique_id = null
+    const attRes = await api('/api/academy/attendance', {
+      method: 'POST',
+      body: {
+        batch_id: 1,
+        date: '2026-10-15',
+        entries: [
+          {
+            student_id: testStuId,
+            status: 'present',
+            technique_id: null,
+            technique_status: 'keep',
+          },
+        ],
+      },
+    });
+    assert.equal(attRes.status, 200);
+    assert.equal(attRes.data.success, true);
+
+    // 3. Query student technique history
+    const histRes = await api(`/api/academy/students/${testStuId}/technique-history`);
+    assert.equal(histRes.status, 200);
+    assert.ok(histRes.data.currentTechnique, 'Must have active technique assigned');
+    assert.ok(histRes.data.currentTechnique.technique_name, 'Must have a technique name');
+    assert.ok(histRes.data.snapshots.length > 0 || histRes.data.attendanceLogs.length > 0, 'Must capture attendance snapshot/log');
+  });
 });
+

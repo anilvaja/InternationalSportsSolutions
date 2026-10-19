@@ -375,7 +375,15 @@ export class SyllabusService {
    * Returns full technique learning history and stats for a student
    */
   static getStudentTechniqueHistory(db, studentId) {
-    const current = this.getActiveAssignment(db, studentId);
+    let current = this.getActiveAssignment(db, studentId);
+
+    // Auto-assign default technique if student currently has none and techniques exist
+    if (!current) {
+      const student = db.prepare('SELECT academy_id FROM students WHERE id = ?').get(studentId);
+      if (student && student.academy_id) {
+        current = this.autoAssignDefaultTechniqueIfNone(db, student.academy_id, studentId);
+      }
+    }
 
     const history = db.prepare(`
       SELECT sta.*, st.name as technique_name, st.code as technique_code, st.level as technique_level,
@@ -401,7 +409,20 @@ export class SyllabusService {
       JOIN batches b ON b.id = a.batch_id
       JOIN syllabus_techniques st ON st.id = ats.technique_id
       WHERE ats.student_id = ?
-      ORDER BY ats.id DESC
+      ORDER BY a.date DESC, ats.id DESC
+      LIMIT 50
+    `).all(studentId);
+
+    // Also fetch general attendance sessions from student_attendance
+    const attendanceLogs = db.prepare(`
+      SELECT sa.id, sa.attendance_id, sa.status, sa.remarks, a.date as attendance_date, b.name as batch_name,
+             st.name as technique_name, sa.technique_level, sa.attended_sessions_snapshot
+      FROM student_attendance sa
+      JOIN attendance a ON a.id = sa.attendance_id
+      JOIN batches b ON b.id = a.batch_id
+      LEFT JOIN syllabus_techniques st ON st.id = sa.technique_id
+      WHERE sa.student_id = ?
+      ORDER BY a.date DESC, sa.id DESC
       LIMIT 50
     `).all(studentId);
 
@@ -410,6 +431,7 @@ export class SyllabusService {
       history,
       totalAttendedAcrossTechniques,
       snapshots,
+      attendanceLogs,
     };
   }
 
@@ -425,13 +447,25 @@ export class SyllabusService {
     action = 'initial',
   }) {
     const student = db.prepare('SELECT id, academy_id, first_name, last_name FROM students WHERE id = ?').get(studentId);
-    if (!student || student.academy_id !== academyId) {
-      throw new Error('Student does not belong to this academy');
+    if (!student) {
+      throw new Error('Student record not found');
     }
 
-    const newTechnique = db.prepare('SELECT * FROM syllabus_techniques WHERE id = ? AND academy_id = ? AND deleted_at IS NULL').get(Number(technique_id), academyId);
+    const targetAcademyId = Number(academyId);
+
+    // If student in this tenant database has null or mismatched academy_id, self-heal to match this tenant
+    if (student.academy_id == null || Number(student.academy_id) !== targetAcademyId) {
+      db.prepare('UPDATE students SET academy_id = ? WHERE id = ?').run(targetAcademyId, student.id);
+      student.academy_id = targetAcademyId;
+    }
+
+    const newTechnique = db.prepare('SELECT * FROM syllabus_techniques WHERE id = ? AND (academy_id = ? OR academy_id IS NULL) AND deleted_at IS NULL').get(Number(technique_id), targetAcademyId);
     if (!newTechnique) {
       throw new Error('Selected technique does not exist in this academy');
+    }
+
+    if (newTechnique.academy_id == null) {
+      db.prepare('UPDATE syllabus_techniques SET academy_id = ? WHERE id = ?').run(targetAcademyId, newTechnique.id);
     }
 
     const effectiveDate = start_date || new Date().toISOString().split('T')[0];
@@ -464,7 +498,7 @@ export class SyllabusService {
         INSERT INTO student_technique_assignments (
           academy_id, student_id, technique_id, assigned_by, start_date, status, sessions_attended, remarks
         ) VALUES (?, ?, ?, ?, ?, 'active', 0, ?)
-      `).run(academyId, studentId, newTechnique.id, assigned_by, effectiveDate, remarks || `${action.toUpperCase()} assignment`);
+      `).run(targetAcademyId, studentId, newTechnique.id, assigned_by, effectiveDate, remarks || `${action.toUpperCase()} assignment`);
 
       newAssignmentId = ins.lastInsertRowid;
     });
@@ -480,17 +514,18 @@ export class SyllabusService {
     const active = this.getActiveAssignment(db, studentId);
     if (active) return active;
 
+    const targetAcademyId = Number(academyId);
     const firstTechnique = db.prepare(`
       SELECT st.id FROM syllabus_techniques st
       JOIN syllabus_categories sc ON sc.id = st.category_id
-      WHERE st.academy_id = ? AND st.status = 'active' AND st.deleted_at IS NULL AND sc.status = 'active'
+      WHERE (st.academy_id = ? OR st.academy_id IS NULL) AND st.status = 'active' AND st.deleted_at IS NULL AND sc.status = 'active'
       ORDER BY st.level ASC, st.display_order ASC, st.id ASC
       LIMIT 1
-    `).get(academyId);
+    `).get(targetAcademyId);
 
     if (!firstTechnique) return null;
 
-    return this.assignStudentTechnique(db, academyId, studentId, {
+    return this.assignStudentTechnique(db, targetAcademyId, studentId, {
       technique_id: firstTechnique.id,
       assigned_by: assignedBy,
       action: 'initial',
@@ -503,19 +538,38 @@ export class SyllabusService {
    * Called within attendance recording transaction
    */
   static processAttendanceProgression(db, academyId, attendanceId, entries, assignedBy) {
+    const targetAcademyId = Number(academyId);
     for (const entry of entries) {
       const studentId = Number(entry.student_id);
-      const isAttended = ['present', 'late'].includes(entry.status);
+      const newStatus = entry.status || 'present';
+      const isAttended = ['present', 'late'].includes(newStatus);
+
+      // Check previous attendance state in this exact session for idempotency and technique shifts
+      const prevStudentAttendance = db.prepare(`
+        SELECT status, technique_id, attended_sessions_snapshot
+        FROM student_attendance
+        WHERE attendance_id = ? AND student_id = ?
+      `).get(attendanceId, studentId);
+
+      const prevTechId = prevStudentAttendance ? prevStudentAttendance.technique_id : null;
 
       let activeAssignment = this.getActiveAssignment(db, studentId);
 
-      // If student has no technique yet, attempt auto-assign
-      if (!activeAssignment && entry.technique_id) {
-        activeAssignment = this.assignStudentTechnique(db, academyId, studentId, {
-          technique_id: entry.technique_id,
-          assigned_by: assignedBy,
-          action: 'initial',
-        });
+      // If student has no technique yet, assign chosen technique or auto-assign baseline technique
+      if (!activeAssignment) {
+        try {
+          if (entry.technique_id) {
+            activeAssignment = this.assignStudentTechnique(db, targetAcademyId, studentId, {
+              technique_id: Number(entry.technique_id),
+              assigned_by: assignedBy,
+              action: 'initial',
+            });
+          } else {
+            activeAssignment = this.autoAssignDefaultTechniqueIfNone(db, targetAcademyId, studentId, assignedBy);
+          }
+        } catch (err) {
+          console.warn(`[Attendance Progression] Could not assign initial technique for student ${studentId}:`, err.message);
+        }
       }
 
       const progressionAction = entry.technique_status || 'keep';
@@ -523,67 +577,123 @@ export class SyllabusService {
 
       if (!requestedTechId) continue;
 
-      let currentSessionsCount = activeAssignment ? activeAssignment.sessions_attended : 0;
-
-      // Handle technique changes (upgrade, downgrade, direct_jump)
-      if (activeAssignment && requestedTechId !== activeAssignment.technique_id) {
-        activeAssignment = this.assignStudentTechnique(db, academyId, studentId, {
-          technique_id: requestedTechId,
-          assigned_by: assignedBy,
-          action: progressionAction,
-          remarks: entry.technique_remarks || `Transitioned during attendance (${progressionAction})`,
-        });
-        currentSessionsCount = 0;
-      }
-
-      // If student attended (present/late), increment attended sessions counter (persists across months!)
-      if (isAttended && activeAssignment) {
-        currentSessionsCount += 1;
-        db.prepare(`
-          UPDATE student_technique_assignments
-          SET sessions_attended = sessions_attended + 1, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(activeAssignment.id);
-      }
-
-      // Fetch technique details for snapshot
+      // Fetch technique details
       const tech = db.prepare('SELECT id, level FROM syllabus_techniques WHERE id = ?').get(requestedTechId);
       const techLevel = tech ? tech.level : (entry.technique_level || 1);
 
-      // Create immutable attendance snapshot record
+      // 1. First, UPSERT student_attendance with exact technique metadata
       db.prepare(`
-        INSERT INTO attendance_technique_snapshots (
-          attendance_id, student_id, technique_id, technique_level, progression_action,
-          sessions_count_at_time, remarks
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO student_attendance (
+          attendance_id, student_id, status, remarks,
+          technique_id, technique_level, technique_status, technique_remarks
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(attendance_id, student_id) DO UPDATE SET
+          status = excluded.status,
+          remarks = excluded.remarks,
+          technique_id = excluded.technique_id,
+          technique_level = excluded.technique_level,
+          technique_status = excluded.technique_status,
+          technique_remarks = excluded.technique_remarks
       `).run(
         attendanceId,
         studentId,
+        newStatus,
+        entry.remarks || null,
         requestedTechId,
         techLevel,
         progressionAction,
-        currentSessionsCount,
         entry.technique_remarks || null
       );
 
-      // Update student_attendance record with snapshot metadata
+      // 2. Transition technique assignment if requested technique is different from current active
+      if (activeAssignment && requestedTechId !== activeAssignment.technique_id) {
+        try {
+          activeAssignment = this.assignStudentTechnique(db, targetAcademyId, studentId, {
+            technique_id: requestedTechId,
+            assigned_by: assignedBy,
+            action: progressionAction,
+            remarks: entry.technique_remarks || `Transitioned during attendance (${progressionAction})`,
+          });
+        } catch (err) {
+          console.warn(`[Attendance Progression] Could not transition technique for student ${studentId}:`, err.message);
+        }
+      }
+
+      // 3. Compute accurate cumulative attended sessions count for this technique from attendance history
+      const techSessionsCount = db.prepare(`
+        SELECT COUNT(DISTINCT a.id) as cnt
+        FROM student_attendance sa
+        JOIN attendance a ON a.id = sa.attendance_id
+        WHERE sa.student_id = ? AND sa.technique_id = ? AND sa.status IN ('present', 'late')
+      `).get(studentId, requestedTechId).cnt;
+
+      if (activeAssignment) {
+        db.prepare(`
+          UPDATE student_technique_assignments
+          SET sessions_attended = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(techSessionsCount, activeAssignment.id);
+        activeAssignment.sessions_attended = techSessionsCount;
+      }
+
+      // If this attendance session was previously recorded with a different technique, update the previous technique's counter too
+      if (prevTechId && prevTechId !== requestedTechId) {
+        const prevTechCount = db.prepare(`
+          SELECT COUNT(DISTINCT a.id) as cnt
+          FROM student_attendance sa
+          JOIN attendance a ON a.id = sa.attendance_id
+          WHERE sa.student_id = ? AND sa.technique_id = ? AND sa.status IN ('present', 'late')
+        `).get(studentId, prevTechId).cnt;
+
+        db.prepare(`
+          UPDATE student_technique_assignments
+          SET sessions_attended = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE student_id = ? AND technique_id = ?
+        `).run(prevTechCount, studentId, prevTechId);
+      }
+
+      // 4. Update student_attendance.attended_sessions_snapshot
       db.prepare(`
         UPDATE student_attendance
-        SET technique_id = ?,
-            technique_level = ?,
-            technique_status = ?,
-            technique_remarks = ?,
-            attended_sessions_snapshot = ?
+        SET attended_sessions_snapshot = ?
         WHERE attendance_id = ? AND student_id = ?
-      `).run(
-        requestedTechId,
-        techLevel,
-        progressionAction,
-        entry.technique_remarks || null,
-        currentSessionsCount,
-        attendanceId,
-        studentId
-      );
+      `).run(techSessionsCount, attendanceId, studentId);
+
+      // 5. Upsert attendance_technique_snapshots
+      const existingSnapshot = db.prepare(`
+        SELECT id FROM attendance_technique_snapshots WHERE attendance_id = ? AND student_id = ?
+      `).get(attendanceId, studentId);
+
+      if (existingSnapshot) {
+        db.prepare(`
+          UPDATE attendance_technique_snapshots
+          SET technique_id = ?, technique_level = ?, progression_action = ?,
+              sessions_count_at_time = ?, remarks = ?
+          WHERE id = ?
+        `).run(
+          requestedTechId,
+          techLevel,
+          progressionAction,
+          techSessionsCount,
+          entry.technique_remarks || null,
+          existingSnapshot.id
+        );
+      } else {
+        db.prepare(`
+          INSERT INTO attendance_technique_snapshots (
+            attendance_id, student_id, technique_id, technique_level, progression_action,
+            sessions_count_at_time, remarks
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          attendanceId,
+          studentId,
+          requestedTechId,
+          techLevel,
+          progressionAction,
+          techSessionsCount,
+          entry.technique_remarks || null
+        );
+      }
     }
   }
 

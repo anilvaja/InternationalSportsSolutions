@@ -7,7 +7,7 @@
         "server:dev": "node --watch server.js",
         "seed": "node src/db/seed.js",
         "migrate": "node scripts/run_migrations.js",
-        "test": "node --test tests/unit/**/*.test.js",
+        "test": "node --test --test-concurrency=1 tests/unit/**/*.test.js",
         "mobile:start": "npm --prefix mobile run start",
         "push:ftp": "powershell -ExecutionPolicy Bypass -File scripts/local_ftp_push.ps1",
         "push:ftp:full": "powershell -ExecutionPolicy Bypass -File scripts/local_ftp_push.ps1 -FullUpload",
@@ -20,6 +20,7 @@
         "test:e2e:headed": "playwright test --headed",
         "test:e2e:visual": "playwright test --headed",
         "test:visual": "node scripts/run_visual_headed_test.js",
+        "test:visual:payroll": "node scripts/run_attendance_payroll_visual_test.js",
         "test:e2e:report": "playwright show-report"
     },
     "devDependencies": {

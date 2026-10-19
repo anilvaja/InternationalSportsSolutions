@@ -99,6 +99,7 @@ authRouter.post('/login', (req, res) => {
           academyId: academy.id,
           academySlug: academy.slug,
           academyName: academy.name,
+          academyLogo: academy.logo_url || null,
           isSuperAdmin: false,
         };
         const token = signToken(payload);
@@ -139,6 +140,7 @@ authRouter.post('/login', (req, res) => {
           academyId: academy.id,
           academySlug: academy.slug,
           academyName: academy.name,
+          academyLogo: academy.logo_url || null,
           isSuperAdmin: false,
         };
         const token = signToken(payload);
@@ -176,19 +178,121 @@ authRouter.get('/me', (req, res) => {
 
   const centralDb = getCentralDb();
   let academiesList = [];
+  let userTheme = null;
+  let roleTheme = null;
+  let academyDefaultTheme = 'blue';
+  let permissionsList = [];
 
   if (req.user.isSuperAdmin) {
-    academiesList = centralDb.prepare('SELECT id, name, slug, plan, status FROM academies ORDER BY name ASC').all();
+    academiesList = centralDb.prepare('SELECT id, name, slug, plan, status, logo_url FROM academies ORDER BY name ASC').all();
+    permissionsList = ['all'];
   } else if (req.user.academyId) {
     const ac = centralDb.prepare('SELECT id, name, slug, plan, status, logo_url FROM academies WHERE id = ?').get(req.user.academyId);
-    if (ac) academiesList = [ac];
+    if (ac) {
+      academiesList = [ac];
+      req.user.academyName = ac.name;
+      req.user.academyLogo = ac.logo_url || null;
+      req.user.academySlug = ac.slug;
+    }
+
+    try {
+      const tenantDb = getTenantDbById(req.user.academyId);
+      
+      // Fetch academy policy default theme
+      const policy = tenantDb.prepare('SELECT default_color_theme FROM academy_policy_settings WHERE academy_id = ?').get(req.user.academyId);
+      if (policy && policy.default_color_theme) {
+        academyDefaultTheme = policy.default_color_theme;
+      }
+
+      if (req.user.role === 'student') {
+        const student = tenantDb.prepare('SELECT theme_color FROM students WHERE id = ?').get(req.user.userId);
+        if (student) userTheme = student.theme_color;
+        roleTheme = 'indigo';
+      } else {
+        const staff = tenantDb.prepare('SELECT theme_color, custom_permissions FROM users WHERE id = ?').get(req.user.userId);
+        if (staff) {
+          userTheme = staff.theme_color;
+          try {
+            permissionsList = JSON.parse(staff.custom_permissions || '[]');
+          } catch (e) {
+            permissionsList = [];
+          }
+        }
+
+        const roleRec = tenantDb.prepare('SELECT theme_color, permissions FROM academy_roles WHERE name = ?').get(req.user.role);
+        if (roleRec) {
+          roleTheme = roleRec.theme_color;
+          try {
+            const rolePerms = JSON.parse(roleRec.permissions || '[]');
+            permissionsList = Array.from(new Set([...permissionsList, ...rolePerms]));
+          } catch (e) {}
+        }
+      }
+    } catch (err) {
+      console.warn('[auth/me] Error loading tenant theme settings:', err.message);
+    }
   }
+
+  const effectiveTheme = userTheme || roleTheme || academyDefaultTheme || 'blue';
+  const canCustomizeTheme = req.user.isSuperAdmin || req.user.role === 'academy_admin' || permissionsList.includes('customize_theme') || permissionsList.includes('all');
+  const canManageBranding = req.user.isSuperAdmin || req.user.role === 'academy_admin' || permissionsList.includes('manage_branding') || permissionsList.includes('all');
+
+  const enrichedUser = {
+    ...req.user,
+    themeColor: userTheme,
+    roleThemeColor: roleTheme,
+    academyDefaultTheme,
+    effectiveTheme,
+    canCustomizeTheme,
+    canManageBranding,
+    permissions: permissionsList,
+  };
 
   res.json({
     success: true,
     authenticated: true,
-    user: req.user,
+    user: enrichedUser,
     accessibleAcademies: academiesList,
+  });
+});
+
+/**
+ * PUT /api/auth/theme
+ * Updates authenticated user's color theme preference
+ */
+authRouter.put('/theme', (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
+  const { theme_color } = req.body;
+  const validThemes = ['blue', 'emerald', 'purple', 'amber', 'crimson', 'teal', 'indigo', 'slate', 'default'];
+
+  if (theme_color && !validThemes.includes(theme_color)) {
+    return res.status(400).json({ success: false, error: 'Invalid color theme' });
+  }
+
+  if (req.user.isSuperAdmin) {
+    return res.json({ success: true, theme_color, message: 'Super admin theme preference updated' });
+  }
+
+  if (!req.user.academyId) {
+    return res.status(400).json({ success: false, error: 'Academy context required' });
+  }
+
+  const tenantDb = getTenantDbById(req.user.academyId);
+  const saveColor = (!theme_color || theme_color === 'default') ? null : theme_color;
+
+  if (req.user.role === 'student') {
+    tenantDb.prepare('UPDATE students SET theme_color = ? WHERE id = ?').run(saveColor, req.user.userId);
+  } else {
+    tenantDb.prepare('UPDATE users SET theme_color = ? WHERE id = ?').run(saveColor, req.user.userId);
+  }
+
+  res.json({
+    success: true,
+    theme_color: saveColor,
+    message: saveColor ? `Personal theme set to ${saveColor}` : 'Reverted to academy/role default theme',
   });
 });
 
@@ -196,6 +300,41 @@ authRouter.get('/me', (req, res) => {
  * POST /api/auth/logout
  */
 authRouter.post('/logout', (req, res) => {
+  let sessionDiffText = null;
+  let sessionMinutes = 0;
+  if (req.user && req.user.academyId) {
+    try {
+      const tenantDb = getTenantDbById(req.user.academyId);
+      const lastLogin = tenantDb.prepare(`
+        SELECT created_at FROM audit_logs 
+        WHERE user_id = ? AND action = 'LOGIN' 
+        ORDER BY id DESC LIMIT 1
+      `).get(req.user.userId);
+
+      if (lastLogin && lastLogin.created_at) {
+        const loginStr = String(lastLogin.created_at).trim();
+        const loginTime = new Date(loginStr.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(loginStr) ? loginStr : loginStr.replace(' ', 'T') + 'Z').getTime();
+        const diffMs = Math.max(0, Date.now() - loginTime);
+        sessionMinutes = Math.max(1, Math.round(diffMs / 60000));
+        const hrs = Math.floor(sessionMinutes / 60);
+        const mins = sessionMinutes % 60;
+        sessionDiffText = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+
+        tenantDb.prepare(`
+          INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, details, ip_address)
+          VALUES (?, ?, ?, 'LOGOUT', 'users', ?, ?)
+        `).run(req.user.userId, req.user.name, req.user.role, `Logged out. Session duration: ${sessionDiffText}`, req.ip);
+      }
+    } catch (e) {
+      console.warn('Logout session duration tracking warning:', e.message);
+    }
+  }
+
   res.clearCookie('token');
-  res.json({ success: true, message: 'Logged out successfully' });
+  res.json({ 
+    success: true, 
+    message: sessionDiffText ? `Logged out successfully. Session duration: ${sessionDiffText}` : 'Logged out successfully',
+    sessionDuration: sessionDiffText,
+    sessionMinutes,
+  });
 });

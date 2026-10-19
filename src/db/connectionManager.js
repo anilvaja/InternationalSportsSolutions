@@ -68,6 +68,44 @@ export function getTenantDbById(academyId) {
   // Automatically execute tenant migrations on connect
   runMigrations(db, 'tenant');
 
+  // Ensure tenant-scoped rows are stamped with this academy_id if any were created without it
+  try {
+    db.prepare('UPDATE students SET academy_id = ? WHERE academy_id IS NULL').run(id);
+    db.prepare('UPDATE branches SET academy_id = ? WHERE academy_id IS NULL').run(id);
+    db.prepare('UPDATE batches SET academy_id = ? WHERE academy_id IS NULL').run(id);
+    db.prepare('UPDATE syllabus_categories SET academy_id = ? WHERE academy_id IS NULL').run(id);
+    db.prepare('UPDATE syllabus_techniques SET academy_id = ? WHERE academy_id IS NULL').run(id);
+    db.prepare(`
+      UPDATE student_attendance
+      SET technique_id = (
+        SELECT ats.technique_id
+        FROM attendance_technique_snapshots ats
+        WHERE ats.attendance_id = student_attendance.attendance_id
+          AND ats.student_id = student_attendance.student_id
+      ),
+      technique_level = (
+        SELECT ats.technique_level
+        FROM attendance_technique_snapshots ats
+        WHERE ats.attendance_id = student_attendance.attendance_id
+          AND ats.student_id = student_attendance.student_id
+      ),
+      attended_sessions_snapshot = (
+        SELECT ats.sessions_count_at_time
+        FROM attendance_technique_snapshots ats
+        WHERE ats.attendance_id = student_attendance.attendance_id
+          AND ats.student_id = student_attendance.student_id
+      )
+      WHERE technique_id IS NULL
+        AND EXISTS (
+          SELECT 1 FROM attendance_technique_snapshots ats
+          WHERE ats.attendance_id = student_attendance.attendance_id
+            AND ats.student_id = student_attendance.student_id
+        )
+    `).run();
+  } catch (e) {
+    // ignore if tables not yet created
+  }
+
   tenantDbMap.set(id, db);
   return db;
 }
