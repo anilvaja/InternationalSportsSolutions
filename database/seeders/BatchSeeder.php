@@ -35,13 +35,15 @@ class BatchSeeder extends Seeder
         if (!$coach) {
             $this->command->info('No academy users found. Creating sample academy users...');
             
-            // Create sample academy users to serve as coaches
+            // Create sample academy users to serve as admin & coaches
+            $adminRole = \App\Models\AcademyRole::where('academy_id', $academy->id)->where('name', 'admin')->first();
             $coaches = [
                 [
                     'name' => 'John Smith',
                     'email' => 'john.smith@' . strtolower(str_replace(' ', '', $academy->name)) . '.com',
                     'password' => bcrypt('password123'),
                     'academy_id' => $academy->id,
+                    'role' => 'academy_admin',
                     'is_super_admin' => false,
                     'email_verified_at' => now(),
                     'created_at' => now(),
@@ -52,6 +54,7 @@ class BatchSeeder extends Seeder
                     'email' => 'sarah.johnson@' . strtolower(str_replace(' ', '', $academy->name)) . '.com',
                     'password' => bcrypt('password123'),
                     'academy_id' => $academy->id,
+                    'role' => 'academy_staff',
                     'is_super_admin' => false,
                     'email_verified_at' => now(),
                     'created_at' => now(),
@@ -60,7 +63,17 @@ class BatchSeeder extends Seeder
             ];
             
             foreach ($coaches as $coachData) {
-                \App\Models\User::create($coachData);
+                $user = \App\Models\User::create($coachData);
+                if ($adminRole && $user->role === 'academy_admin') {
+                    \App\Models\UserAcademyRole::firstOrCreate([
+                        'user_id' => $user->id,
+                        'academy_id' => $academy->id,
+                    ], [
+                        'academy_role_id' => $adminRole->id,
+                        'is_active' => true,
+                        'assigned_at' => now(),
+                    ]);
+                }
             }
             
             // Get the first created coach

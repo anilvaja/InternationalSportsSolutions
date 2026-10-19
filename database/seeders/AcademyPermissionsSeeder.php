@@ -222,11 +222,54 @@ class AcademyPermissionsSeeder extends Seeder
                 'category' => 'settings',
                 'description' => 'View academy settings'
             ],
+            // Events Management
             [
-                'name' => 'edit_settings',
-                'display_name' => 'Edit Settings',
-                'category' => 'settings',
-                'description' => 'Modify academy settings and configuration'
+                'name' => 'view_events',
+                'display_name' => 'View Events',
+                'category' => 'events',
+                'description' => 'View academy events and details'
+            ],
+            [
+                'name' => 'create_events',
+                'display_name' => 'Create Events',
+                'category' => 'events',
+                'description' => 'Create new events'
+            ],
+            [
+                'name' => 'edit_events',
+                'display_name' => 'Edit Events',
+                'category' => 'events',
+                'description' => 'Edit event details and configuration'
+            ],
+            [
+                'name' => 'delete_events',
+                'display_name' => 'Delete Events',
+                'category' => 'events',
+                'description' => 'Delete or cancel events'
+            ],
+            [
+                'name' => 'manage_event_eligibility',
+                'display_name' => 'Manage Event Eligibility',
+                'category' => 'events',
+                'description' => 'Configure student eligibility and publish event invitations'
+            ],
+            [
+                'name' => 'view_event_responses',
+                'display_name' => 'View Event Responses',
+                'category' => 'events',
+                'description' => 'View student responses and participation status'
+            ],
+            [
+                'name' => 'approve_event_registration',
+                'display_name' => 'Approve Event Registration',
+                'category' => 'events',
+                'description' => 'Approve or reject participant registrations'
+            ],
+            [
+                'name' => 'export_events',
+                'display_name' => 'Export Event Rosters',
+                'category' => 'events',
+                'description' => 'Export participant lists and responses'
             ],
         ];
 

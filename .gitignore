@@ -36,4 +36,6 @@ scripts/local_ftp_push.ps1
 /storage/logs/*
 !data/.gitkeep
 !data/academies/.gitkeep
+scratch/
+scratch_inspect.mjs
 
