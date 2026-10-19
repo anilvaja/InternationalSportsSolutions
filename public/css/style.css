@@ -707,8 +707,9 @@ body {
 }
 
 /* Form Controls */
-.form-input, .form-select, .form-textarea {
-  background-color: var(--bg-input);
+/* Form Controls & Universal High-Contrast Dropdowns */
+.form-input, .form-select, select, .custom-select, .form-textarea {
+  background-color: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-main);
   border-radius: var(--radius-sm);
@@ -719,9 +720,51 @@ body {
   transition: var(--transition);
 }
 
-.form-input:focus, .form-select:focus, .form-textarea:focus {
+.form-input:focus, .form-select:focus, select:focus, .custom-select:focus, .form-textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px var(--primary-glow);
+}
+
+/* Explicit high-contrast option and optgroup styling across browser engines & dark/light themes */
+select option, .form-select option, .filter-select option, .custom-select option,
+select optgroup, .form-select optgroup, .filter-select optgroup, .custom-select optgroup {
+  background-color: var(--bg-card) !important;
+  color: var(--text-main) !important;
+  padding: 8px 12px;
+}
+
+[data-theme="dark"] select,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .filter-select,
+[data-theme="dark"] .custom-select {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] select option,
+[data-theme="dark"] .form-select option,
+[data-theme="dark"] .filter-select option,
+[data-theme="dark"] .custom-select option {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+:root:not([data-theme="dark"]) select,
+:root:not([data-theme="dark"]) .form-select,
+:root:not([data-theme="dark"]) .filter-select,
+:root:not([data-theme="dark"]) .custom-select {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+:root:not([data-theme="dark"]) select option,
+:root:not([data-theme="dark"]) .form-select option,
+:root:not([data-theme="dark"]) .filter-select option,
+:root:not([data-theme="dark"]) .custom-select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
 }
 
 .search-bar {
@@ -1996,17 +2039,18 @@ body {
 .filter-input, .filter-select {
   width: 100%;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border, #334155);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--text, #f8fafc);
+  color: var(--text-main);
   font-size: 13px;
   outline: none;
   transition: border-color 0.2s;
 }
 
 .filter-input:focus, .filter-select:focus {
-  border-color: var(--primary, #3b82f6);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-glow);
 }
 
 /* ==========================================
