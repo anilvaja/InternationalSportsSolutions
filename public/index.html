@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=2.2.0">
 </head>
 <body>
 
@@ -81,12 +81,12 @@
     
     <!-- SIDEBAR -->
     <aside class="sidebar">
-      <div class="sidebar-header">
-        <div class="brand-icon">
+      <div class="sidebar-header" id="sidebar-header">
+        <div class="brand-icon" id="sidebar-brand-icon">
           <i class="fa-solid fa-trophy"></i>
         </div>
-        <div class="brand-text">
-          <h1>Sports Solutions</h1>
+        <div class="brand-text" id="sidebar-brand-text">
+          <h1 id="sidebar-brand-name">Sports Solutions</h1>
           <span id="sidebar-role-badge">Multi-Tenant SaaS</span>
         </div>
       </div>
@@ -117,6 +117,12 @@
         </div>
 
         <div class="header-right">
+          <!-- Dynamic Color Theme Switcher -->
+          <button type="button" class="theme-picker-btn" id="header-theme-btn" onclick="app.showThemePickerModal()" title="Customize Color Theme">
+            <span class="theme-indicator-dot" id="header-theme-dot"></span>
+            <span id="header-theme-name" style="font-size: 12px; font-weight: 600;">Theme</span>
+          </button>
+
           <a href="/pay.html" class="btn btn-secondary btn-sm" target="_blank">
             <i class="fa-solid fa-credit-card" style="color: #10b981;"></i> Quick Pay Portal
           </a>
@@ -161,6 +167,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Application Logic -->
-  <script src="/js/app.js"></script>
+  <script src="/js/app.js?v=2.2.0"></script>
 </body>
 </html>
