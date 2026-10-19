@@ -74,6 +74,15 @@ class EventParticipants extends Page implements HasTable
                         'dark' => 'refunded',
                         'gray' => 'cancelled',
                     ]),
+                Tables\Columns\BadgeColumn::make('registration_status')
+                    ->label('Registration')
+                    ->colors([
+                        'warning' => 'pending',
+                        'success' => 'confirmed',
+                        'danger' => 'rejected',
+                        'info' => 'waitlisted',
+                        'gray' => 'not_applicable',
+                    ]),
                 Tables\Columns\TextColumn::make('responded_at')->label('Response Time')->dateTime('d M Y, H:i')->sortable(),
                 Tables\Columns\TextColumn::make('response_notes')->label('Notes')->limit(50),
             ])
@@ -86,6 +95,40 @@ class EventParticipants extends Page implements HasTable
                         'attended' => 'Attended',
                         'no_show' => 'No Show',
                     ]),
+                Tables\Filters\SelectFilter::make('registration_status')
+                    ->options([
+                        'pending' => 'Pending Approval',
+                        'confirmed' => 'Confirmed',
+                        'rejected' => 'Rejected',
+                        'waitlisted' => 'Waitlisted',
+                        'not_applicable' => 'Not Applicable',
+                    ]),
+            ])
+            ->actions([
+                Tables\Actions\Action::make('approve')
+                    ->label('Approve')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->visible(fn ($record) => $record->registration_status === 'pending' && \App\Support\AcademyPermissionHelper::can('approve_event_registration'))
+                    ->requiresConfirmation()
+                    ->action(function ($record) {
+                        $record->approveRegistration(auth()->id());
+                        Notification::make()->success()->title('Registration Approved')->send();
+                    }),
+                Tables\Actions\Action::make('reject')
+                    ->label('Reject')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->visible(fn ($record) => $record->registration_status === 'pending' && \App\Support\AcademyPermissionHelper::can('approve_event_registration'))
+                    ->form([
+                        \Filament\Forms\Components\TextInput::make('reason')
+                            ->label('Rejection Reason')
+                            ->placeholder('e.g. Ineligible category, capacity limit')
+                    ])
+                    ->action(function ($record, array $data) {
+                        $record->rejectRegistration(auth()->id(), $data['reason'] ?? null);
+                        Notification::make()->warning()->title('Registration Rejected')->send();
+                    }),
             ])
             ->headerActions([
                 Tables\Actions\Action::make('print')

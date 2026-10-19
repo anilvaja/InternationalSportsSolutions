@@ -118,6 +118,11 @@ class EventResource extends BaseAcademyResource
                                 Forms\Components\Toggle::make('requires_rsvp')
                                     ->label('Requires RSVP')
                                     ->default(true),
+
+                                Forms\Components\Toggle::make('registration_approval_required')
+                                    ->label('Require Organizer Approval')
+                                    ->helperText('When enabled, student interest places them in pending status rather than confirming participation.')
+                                    ->default(false),
                                 
                                 Forms\Components\TextInput::make('max_participants')
                                     ->label('Maximum Participants')
@@ -403,15 +408,23 @@ class EventResource extends BaseAcademyResource
                         ->label('Send Invitations')
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
-                        ->visible(fn ($record) => $record->status === 'published')
+                        ->visible(fn ($record) => $record->status === 'published' && \App\Support\AcademyPermissionHelper::can('manage_event_eligibility'))
                         ->action(function ($record) {
-                            $invitedCount = $record->sendInvitations();
-                            
-                            Notification::make()
-                                ->success()
-                                ->title('Invitations Sent')
-                                ->body("Invitations sent to {$invitedCount} eligible students.")
-                                ->send();
+                            try {
+                                $invitedCount = $record->sendInvitations();
+                                
+                                Notification::make()
+                                    ->success()
+                                    ->title('Invitations Sent')
+                                    ->body("Invitations sent to {$invitedCount} eligible students.")
+                                    ->send();
+                            } catch (\InvalidArgumentException $e) {
+                                Notification::make()
+                                    ->danger()
+                                    ->title('Cannot Publish Event')
+                                    ->body($e->getMessage())
+                                    ->send();
+                            }
                         })
                         ->requiresConfirmation()
                         ->modalHeading('Send Event Invitations')
@@ -421,6 +434,7 @@ class EventResource extends BaseAcademyResource
                         ->label('View Participants')
                         ->icon('heroicon-o-users')
                         ->color('info')
+                        ->visible(fn () => \App\Support\AcademyPermissionHelper::can('view_event_responses'))
                         ->url(fn ($record) => static::getUrl('participants', ['record' => $record])),
                     
                     Tables\Actions\Action::make('manage_fees')
@@ -452,7 +466,7 @@ class EventResource extends BaseAcademyResource
                         ->label('Export Interested')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->color('warning')
-                        ->visible(fn ($record) => $record->interestedParticipants()->exists())
+                        ->visible(fn ($record) => $record->interestedParticipants()->exists() && \App\Support\AcademyPermissionHelper::can('export_events'))
                         ->action(function ($record) {
                             return static::exportInterestedStudents($record);
                         }),

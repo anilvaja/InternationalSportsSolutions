@@ -107,6 +107,28 @@ class Events extends Page implements HasTable
                                     default => ucfirst($state)
                                 };
                             }),
+
+                        Tables\Columns\BadgeColumn::make('participants.registration_status')
+                            ->label('Registration Status')
+                            ->getStateUsing(function ($record) {
+                                if (!$record) return 'not_applicable';
+                                $participant = $record->participants->first();
+                                return $participant?->registration_status ?? 'not_applicable';
+                            })
+                            ->colors([
+                                'warning' => 'pending',
+                                'success' => 'confirmed',
+                                'danger' => 'rejected',
+                                'info' => 'waitlisted',
+                                'gray' => 'not_applicable',
+                            ])
+                            ->formatStateUsing(fn ($state) => match ($state) {
+                                'pending' => 'Pending Organizer Approval',
+                                'confirmed' => 'Registration Confirmed',
+                                'rejected' => 'Registration Rejected',
+                                'waitlisted' => 'On Waitlist',
+                                default => 'Not Registered'
+                            }),
                     ])
                         ->from('md'),
                 ])

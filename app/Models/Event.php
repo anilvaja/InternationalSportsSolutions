@@ -33,6 +33,10 @@ class Event extends Model implements \OwenIt\Auditing\Contracts\Auditable
         'manual_participants',
         'requires_rsvp',
         'rsvp_deadline',
+        'registration_approval_required',
+        'eligibility_snapshot_version',
+        'published_at',
+        'cancellation_reason',
         'email_notifications',
         'sms_notifications',
         'dashboard_notifications',
@@ -79,10 +83,13 @@ class Event extends Model implements \OwenIt\Auditing\Contracts\Auditable
         'event_date' => 'datetime',
         'event_end_date' => 'datetime',
         'rsvp_deadline' => 'datetime',
+        'published_at' => 'datetime',
         'eligibility_criteria' => 'array',
         'manual_participants' => 'array',
         'attachments' => 'array',
         'requires_rsvp' => 'boolean',
+        'registration_approval_required' => 'boolean',
+        'eligibility_snapshot_version' => 'integer',
         'email_notifications' => 'boolean',
         'sms_notifications' => 'boolean',
         'dashboard_notifications' => 'boolean',
@@ -277,59 +284,82 @@ class Event extends Model implements \OwenIt\Auditing\Contracts\Auditable
         return $query->get();
     }
 
+    public function validateForPublication(): void
+    {
+        if (empty($this->venue) && empty($this->location)) {
+            throw new \InvalidArgumentException('Venue or Location is required before publishing this event.');
+        }
+
+        if (!$this->event_date) {
+            throw new \InvalidArgumentException('Event date is required before publishing.');
+        }
+
+        if ($this->requires_rsvp) {
+            if (!$this->rsvp_deadline) {
+                throw new \InvalidArgumentException('Response deadline is required before publishing.');
+            }
+            if ($this->rsvp_deadline->isAfter($this->event_date)) {
+                throw new \InvalidArgumentException('Response deadline must be on or before the event date.');
+            }
+        }
+    }
+
     public function sendInvitations(): int
     {
+        $this->validateForPublication();
 
-        EventParticipant::where('event_id', $this->id)->delete();
-        
+        $this->increment('eligibility_snapshot_version');
+        $snapshotVersion = $this->eligibility_snapshot_version;
+
         $eligibleStudents = $this->getEligibleStudents();
-        $invitedCount = 0;
-        
-        // Get all students to invite (eligible + manual)
         $studentsToInvite = collect($eligibleStudents);
-        
-        // Add manually selected participants
+
         if ($this->manual_participants && is_array($this->manual_participants)) {
-            $manualStudents = Student::whereIn('id', $this->manual_participants)->get();
+            $manualStudents = Student::where('academy_id', $this->academy_id)
+                ->whereIn('id', $this->manual_participants)
+                ->get();
             $studentsToInvite = $studentsToInvite->merge($manualStudents)->unique('id');
         }
-        
+
+        if ($studentsToInvite->isEmpty()) {
+            throw new \InvalidArgumentException('Cannot publish event: No eligible or manually selected students found.');
+        }
+
+        $invitedCount = 0;
         foreach ($studentsToInvite as $student) {
-            // Create participant record if not exists
             $participant = EventParticipant::firstOrCreate([
                 'event_id' => $this->id,
                 'student_id' => $student->id,
             ], [
                 'status' => 'invited',
+                'registration_status' => 'not_applicable',
+                'snapshot_version' => $snapshotVersion,
                 'payment_required' => $this->fee > 0,
             ]);
-            
+
             if ($participant->wasRecentlyCreated) {
                 $invitedCount++;
-                
-                // Send notifications
-                if ($this->dashboard_notifications) {
-                    try {
-                        $student->notifications()->create([
-                            'type' => 'event_invitation',
-                            'data' => [
-                                'event_id' => $this->id,
-                                'event_title' => $this->title,
-                                'event_date' => $this->event_date->format('d M Y, H:i'),
-                                'message' => "You've been invited to {$this->title}",
-                            ],
-                        ]);
-                    } catch (\Exception $e) {
-                        // Log the error but continue with invitation process
-                        Log::warning('Failed to create notification for student ' . $student->id . ': ' . $e->getMessage());
-                    }
+            } else {
+                $participant->update(['snapshot_version' => $snapshotVersion]);
+            }
+
+            if ($this->dashboard_notifications) {
+                try {
+                    $student->notifications()->create([
+                        'type' => 'event_invitation',
+                        'data' => [
+                            'event_id' => $this->id,
+                            'event_title' => $this->title,
+                            'event_date' => $this->event_date->format('d M Y, H:i'),
+                            'message' => "You've been invited to {$this->title}",
+                        ],
+                    ]);
+                } catch (\Exception $e) {
+                    Log::warning('Failed to create notification for student ' . $student->id . ': ' . $e->getMessage());
                 }
-                
-                // TODO: Send email notification
-                // TODO: Send SMS notification
             }
         }
-        
+
         return $invitedCount;
     }
 
