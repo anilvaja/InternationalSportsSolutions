@@ -286,6 +286,39 @@ export class InquiryService {
   }
 
   /**
+   * Generates hierarchical unique student code: [Academy Code]-[Branch Code]-[Year]-[Sequence]
+   * Example: GSA-BHL-26-0042
+   */
+  static generateStudentCode(db, targetBranchId = null) {
+    let acadCode = 'ISS';
+    try {
+      const tenantSetting = db.prepare("SELECT value FROM tenant_settings WHERE key = 'academy_code'").get();
+      if (tenantSetting && tenantSetting.value) {
+        acadCode = tenantSetting.value.toUpperCase();
+      } else {
+        const row = db.prepare("SELECT value FROM tenant_settings WHERE key = 'academy_name'").get();
+        if (row && row.value) {
+          acadCode = row.value.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 4);
+        }
+      }
+    } catch (e) {}
+
+    let branchCode = 'MAIN';
+    if (targetBranchId) {
+      try {
+        const br = db.prepare('SELECT name, code FROM branches WHERE id = ?').get(targetBranchId);
+        if (br) {
+          branchCode = br.code || br.name.replace(/branch/i, '').trim().slice(0, 3).toUpperCase() || 'BR1';
+        }
+      } catch (e) {}
+    }
+
+    const count = db.prepare('SELECT COUNT(*) as c FROM students').get().c + 1;
+    const yr = String(new Date().getFullYear()).slice(-2);
+    return `${acadCode}-${branchCode}-${yr}-${String(count).padStart(4, '0')}`;
+  }
+
+  /**
    * Core Transactional Admission Method (Direct or via Inquiry)
    */
   static createAdmission(db, academyId, admissionData, currentUser) {
@@ -391,9 +424,7 @@ export class InquiryService {
       // 1. Generate unique Admission / Student Code
       let finalStudentCode = student_code;
       if (!finalStudentCode) {
-        const count = db.prepare('SELECT COUNT(*) as c FROM students').get().c + 1;
-        const year = new Date().getFullYear();
-        finalStudentCode = `STU-${year}-${String(count).padStart(4, '0')}`;
+        finalStudentCode = InquiryService.generateStudentCode(db, targetBranchId);
       }
 
       // Check if student with this code already exists
