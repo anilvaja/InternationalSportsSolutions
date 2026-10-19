@@ -2011,6 +2011,9 @@ const app = {
     let punchData = null;
     if (this.user.role !== 'student') {
       const punchRes = await this.apiRequest('/api/academy/punches/status');
+      const gpsRes = await this.apiRequest('/api/staff/punch/status');
+      const gpsBranch = gpsRes.success ? gpsRes.branch : null;
+
       if (punchRes.success) {
         punchData = punchRes;
         const isPunchedIn = punchData.isPunchedIn;
@@ -2026,7 +2029,7 @@ const app = {
         punchHtml = `
           <div class="punch-card" id="staff-punch-card">
             <div class="punch-card-header">
-              <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                 <span class="punch-status-badge ${isPunchedIn ? 'on-duty' : 'off-duty'}">
                   <span class="punch-status-dot"></span>
                   ${isPunchedIn ? 'On Duty — Active Shift' : 'Off Duty'}
@@ -2036,6 +2039,11 @@ const app = {
                     ? `<i class="fa-solid fa-clock"></i> Punched in at <strong>${inTimeFormatted}</strong>` 
                     : 'Not currently punched in · Ready for shift'}
                 </span>
+                ${gpsBranch ? `
+                  <span class="badge ${gpsBranch.is_geofence_enforced ? 'badge-primary' : 'badge-secondary'}" style="font-size: 11px; padding: 4px 8px;" title="Geofence boundary enforced">
+                    <i class="fa-solid fa-location-dot"></i> ${this.escapeHtml(gpsBranch.name)} (Radius: ${gpsBranch.radius_meters || 100}m)
+                  </span>
+                ` : ''}
               </div>
               <div style="display: flex; align-items: center; gap: 10px;">
                 <button class="btn btn-secondary btn-sm" onclick="app.openPunchHistoryModal()">
@@ -2055,18 +2063,17 @@ const app = {
                 </div>
               </div>
 
-              <div class="punch-btn-group">
-                ${isPunchedIn ? `
-                  <button class="btn-punch-out" onclick="app.confirmPunchOut()">
-                    <i class="fa-solid fa-arrow-right-from-bracket"></i> Punch Out
-                  </button>
-                ` : `
-                  <button class="btn-punch-in" onclick="app.confirmPunchIn()">
-                    <i class="fa-solid fa-fingerprint"></i> Punch In
-                  </button>
-                `}
+              <div class="punch-btn-group" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                <button class="btn-punch-in" id="btn-gps-punch-in" onclick="app.handleGpsPunch('punch_in')" ${isPunchedIn ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} title="Punch In via GPS Geofence">
+                  <i class="fa-solid fa-fingerprint"></i> Punch In
+                </button>
+                <button class="btn-punch-out" id="btn-gps-punch-out" onclick="app.handleGpsPunch('punch_out')" ${!isPunchedIn ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} title="Punch Out via GPS Geofence">
+                  <i class="fa-solid fa-arrow-right-from-bracket"></i> Punch Out
+                </button>
               </div>
             </div>
+
+            <div id="punch-gps-alert" style="display: none; margin-top: 12px; padding: 10px 14px; border-radius: 6px; font-size: 13px; font-weight: 500;"></div>
 
             <div class="punch-stats-row">
               <div class="punch-stat-box">
@@ -2470,6 +2477,76 @@ const app = {
     this.punchTimerInterval = setInterval(updateClock, 1000);
   },
 
+  async handleGpsPunch(punchType) {
+    const alertEl = document.getElementById('punch-gps-alert');
+    const inBtn = document.getElementById('btn-gps-punch-in');
+    const outBtn = document.getElementById('btn-gps-punch-out');
+
+    if (alertEl) {
+      alertEl.style.display = 'block';
+      alertEl.style.backgroundColor = 'rgba(59, 130, 246, 0.12)';
+      alertEl.style.border = '1px solid rgba(59, 130, 246, 0.3)';
+      alertEl.style.color = '#3b82f6';
+      alertEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Acquiring GPS location with high accuracy (enableHighAccuracy)...';
+    }
+
+    if (inBtn) inBtn.disabled = true;
+    if (outBtn) outBtn.disabled = true;
+
+    try {
+      const pos = await LocationService.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      });
+
+      if (alertEl) {
+        alertEl.innerHTML = `<i class="fa-solid fa-satellite-dish fa-spin"></i> GPS acquired: ${pos.latitude.toFixed(5)}, ${pos.longitude.toFixed(5)} (±${Math.round(pos.accuracy)}m). Verifying branch geofence...`;
+      }
+
+      const res = await this.apiRequest('/api/staff/punch', {
+        method: 'POST',
+        body: JSON.stringify({
+          punch_type: punchType,
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+          accuracy: pos.accuracy,
+        }),
+      });
+
+      if (res.success) {
+        if (alertEl) {
+          alertEl.style.backgroundColor = 'rgba(16, 185, 129, 0.12)';
+          alertEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+          alertEl.style.color = '#10b981';
+          alertEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${res.message} &bull; Distance: <strong>${res.distance_meters}m</strong> from ${this.escapeHtml(res.branch?.name || 'branch')} boundary`;
+        }
+        this.showToast(res.message, 'success');
+        setTimeout(() => this.renderAcademyOverview(), 1200);
+      } else {
+        if (alertEl) {
+          alertEl.style.backgroundColor = 'rgba(239, 68, 68, 0.12)';
+          alertEl.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+          alertEl.style.color = '#ef4444';
+          alertEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ${res.error}`;
+        }
+        this.showToast(res.error || 'Failed to record punch', 'danger');
+        if (inBtn) inBtn.disabled = false;
+        if (outBtn) outBtn.disabled = false;
+      }
+    } catch (gpsErr) {
+      if (alertEl) {
+        alertEl.style.backgroundColor = 'rgba(239, 68, 68, 0.12)';
+        alertEl.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        alertEl.style.color = '#ef4444';
+        alertEl.innerHTML = `<i class="fa-solid fa-location-crosshairs"></i> ${gpsErr.message}`;
+      }
+      this.showToast(gpsErr.message, 'danger');
+      if (inBtn) inBtn.disabled = false;
+      if (outBtn) outBtn.disabled = false;
+    }
+  },
+
   async confirmPunchIn() {
     const res = await this.apiRequest('/api/academy/punches/in', {
       method: 'POST',
@@ -2746,6 +2823,12 @@ const app = {
                   </td>
                   <td>
                     <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentDetailsModal(${s.id})" title="View Complete Profile & Financial Ledger">
+                        <i class="fa-solid fa-eye" style="color: #3b82f6;"></i> View
+                      </button>
+                      <button class="btn btn-secondary btn-sm" onclick="app.showEditStudentModal(${s.id})" title="Edit Student Profile">
+                        <i class="fa-solid fa-pencil" style="color: #f59e0b;"></i> Edit
+                      </button>
                       <button class="btn btn-secondary btn-sm" onclick="app.showStudentTechniqueModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Syllabus Technique Progression">
                         <i class="fa-solid fa-graduation-cap" style="color: #a855f7;"></i> Syllabus
                       </button>
@@ -2762,6 +2845,9 @@ const app = {
                       ` : ''}
                       <button class="btn btn-secondary btn-sm" onclick="app.showStudentBatchHistory(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="View Batch History">
                         <i class="fa-solid fa-clock-rotate-left"></i>
+                      </button>
+                      <button class="btn btn-danger btn-sm" onclick="app.deleteStudent(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Archive Student">
+                        <i class="fa-solid fa-trash"></i>
                       </button>
                     </div>
                   </td>
@@ -2809,6 +2895,224 @@ const app = {
     this.studentFilters.limit = l;
     this.studentFilters.page = 1;
     this.renderStudents();
+  },
+
+  async showStudentDetailsModal(studentId) {
+    const res = await this.apiRequest(`/api/academy/students/${studentId}`);
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to load student details', 'danger');
+      return;
+    }
+    const s = res.student;
+    const att = res.attendance || {};
+    const fin = res.financials || {};
+    const attPct = att.total_sessions ? Math.round((att.present_sessions / att.total_sessions) * 100) : 0;
+
+    this.openModal(
+      `Student Profile — ${s.first_name} ${s.last_name} (${s.student_code || 'No Code'})`,
+      `
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;">
+            <div class="stat-card" style="padding: 10px; text-align: center; background: rgba(59,130,246,0.06); border-radius: 6px;">
+              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Status</div>
+              <div style="font-size: 14px; font-weight: 700; color: ${s.status === 'active' ? '#10b981' : '#ef4444'}; text-transform: capitalize;">${s.status}</div>
+            </div>
+            <div class="stat-card" style="padding: 10px; text-align: center; background: rgba(16,185,129,0.06); border-radius: 6px;">
+              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Attendance</div>
+              <div style="font-size: 14px; font-weight: 700; color: #10b981;">${attPct}% (${att.present_sessions || 0}/${att.total_sessions || 0})</div>
+            </div>
+            <div class="stat-card" style="padding: 10px; text-align: center; background: rgba(245,158,11,0.06); border-radius: 6px;">
+              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Fee Outstanding</div>
+              <div style="font-size: 14px; font-weight: 700; color: ${fin.total_outstanding > 0 ? '#ef4444' : '#10b981'};">₹${Number(fin.total_outstanding || 0).toLocaleString()}</div>
+            </div>
+            <div class="stat-card" style="padding: 10px; text-align: center; background: rgba(168,85,247,0.06); border-radius: 6px;">
+              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Active Batch</div>
+              <div style="font-size: 13px; font-weight: 700;">${this.escapeHtml(s.active_batch_name || 'Unassigned')}</div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
+            <div>
+              <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Personal Information</div>
+              <div style="margin-top: 6px; font-size: 13px;"><strong>Name:</strong> ${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</div>
+              <div style="margin-top: 4px; font-size: 13px;"><strong>Date of Birth:</strong> ${s.date_of_birth || s.dob || '-'}</div>
+              <div style="margin-top: 4px; font-size: 13px;"><strong>Gender:</strong> ${this.escapeHtml(s.gender || '-')}</div>
+              <div style="margin-top: 4px; font-size: 13px;"><strong>Blood Group:</strong> ${this.escapeHtml(s.blood_group || '-')}</div>
+              <div style="margin-top: 4px; font-size: 13px;"><strong>Admission #:</strong> ${this.escapeHtml(s.admission_number || '-')}</div>
+            </div>
+            <div>
+              <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Guardian & Contact</div>
+              <div style="margin-top: 6px; font-size: 13px;"><strong>Guardian:</strong> ${this.escapeHtml(s.guardian_name || s.father_name || s.mother_name || '-')}</div>
+              <div style="margin-top: 4px; font-size: 13px;"><strong>Phone:</strong> ${this.escapeHtml(s.phone || s.guardian_phone || '-')}</div>
+              <div style="margin-top: 4px; font-size: 13px;"><strong>Email:</strong> ${this.escapeHtml(s.email || s.guardian_email || '-')}</div>
+              <div style="margin-top: 4px; font-size: 13px;"><strong>Branch:</strong> ${this.escapeHtml(s.branch_name || 'Main Campus')}</div>
+              <div style="margin-top: 4px; font-size: 13px;"><strong>Address:</strong> ${this.escapeHtml(s.address || '-')}</div>
+            </div>
+          </div>
+        </div>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+        <button class="btn btn-primary" onclick="app.closeModal(); app.showEditStudentModal(${studentId});">
+          <i class="fa-solid fa-pencil"></i> Edit Profile
+        </button>
+      `
+    );
+  },
+
+  async showEditStudentModal(studentId) {
+    const res = await this.apiRequest(`/api/academy/students/${studentId}`);
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to load student for editing', 'danger');
+      return;
+    }
+    const s = res.student;
+    const branchesData = await this.apiRequest('/api/academy/branches');
+    const branches = branchesData.branches || [];
+
+    this.openModal(
+      `Edit Student — ${s.first_name} ${s.last_name}`,
+      `
+        <form id="edit-student-form" onsubmit="event.preventDefault(); app.submitEditStudent(${studentId});">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>First Name *</label>
+              <input type="text" id="edit-stu-first-name" class="form-input" style="width: 100%;" value="${this.escapeHtml(s.first_name || '')}" required>
+            </div>
+            <div class="form-group">
+              <label>Last Name *</label>
+              <input type="text" id="edit-stu-last-name" class="form-input" style="width: 100%;" value="${this.escapeHtml(s.last_name || '')}" required>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Phone Number</label>
+              <input type="text" id="edit-stu-phone" class="form-input" style="width: 100%;" value="${this.escapeHtml(s.phone || '')}">
+            </div>
+            <div class="form-group">
+              <label>Email Address</label>
+              <input type="email" id="edit-stu-email" class="form-input" style="width: 100%;" value="${this.escapeHtml(s.email || '')}">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Date of Birth</label>
+              <input type="date" id="edit-stu-dob" class="form-input" style="width: 100%;" value="${s.date_of_birth || s.dob || ''}">
+            </div>
+            <div class="form-group">
+              <label>Gender</label>
+              <select id="edit-stu-gender" class="form-select" style="width: 100%;">
+                <option value="male" ${s.gender === 'male' ? 'selected' : ''}>Male</option>
+                <option value="female" ${s.gender === 'female' ? 'selected' : ''}>Female</option>
+                <option value="other" ${s.gender === 'other' ? 'selected' : ''}>Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Guardian Name</label>
+              <input type="text" id="edit-stu-guardian" class="form-input" style="width: 100%;" value="${this.escapeHtml(s.guardian_name || s.father_name || '')}">
+            </div>
+            <div class="form-group">
+              <label>Branch Campus</label>
+              <select id="edit-stu-branch" class="form-select" style="width: 100%;">
+                ${branches.map(b => `<option value="${b.id}" ${b.id === s.branch_id ? 'selected' : ''}>${this.escapeHtml(b.name)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Blood Group</label>
+              <input type="text" id="edit-stu-blood" class="form-input" style="width: 100%;" value="${this.escapeHtml(s.blood_group || '')}">
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="edit-stu-status" class="form-select" style="width: 100%;">
+                <option value="active" ${s.status === 'active' ? 'selected' : ''}>Active</option>
+                <option value="inactive" ${s.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+                <option value="suspended" ${s.status === 'suspended' ? 'selected' : ''}>Suspended</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Residential Address</label>
+            <input type="text" id="edit-stu-address" class="form-input" style="width: 100%;" value="${this.escapeHtml(s.address || '')}">
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitEditStudent(${studentId})">
+          <i class="fa-solid fa-check"></i> Save Changes
+        </button>
+      `
+    );
+  },
+
+  async submitEditStudent(studentId) {
+    const first_name = document.getElementById('edit-stu-first-name')?.value?.trim();
+    const last_name = document.getElementById('edit-stu-last-name')?.value?.trim();
+    const phone = document.getElementById('edit-stu-phone')?.value?.trim();
+    const email = document.getElementById('edit-stu-email')?.value?.trim();
+    const date_of_birth = document.getElementById('edit-stu-dob')?.value;
+    const gender = document.getElementById('edit-stu-gender')?.value;
+    const guardian_name = document.getElementById('edit-stu-guardian')?.value?.trim();
+    const branch_id = document.getElementById('edit-stu-branch')?.value;
+    const blood_group = document.getElementById('edit-stu-blood')?.value?.trim();
+    const status = document.getElementById('edit-stu-status')?.value;
+    const address = document.getElementById('edit-stu-address')?.value?.trim();
+
+    if (!first_name || !last_name) {
+      this.showToast('First and last name are required', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/students/${studentId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        first_name,
+        last_name,
+        phone,
+        email,
+        date_of_birth,
+        gender,
+        guardian_name,
+        branch_id: branch_id ? Number(branch_id) : undefined,
+        blood_group,
+        status,
+        address,
+      }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Student updated successfully', 'success');
+      this.closeModal();
+      this.renderStudents();
+    } else {
+      this.showToast(res.error || 'Failed to update student', 'danger');
+    }
+  },
+
+  async deleteStudent(studentId, studentName) {
+    if (!confirm(`Are you sure you want to archive student "${studentName}"? Active batch enrollment will be concluded and academic history safely preserved.`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/students/${studentId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Student archived successfully', 'success');
+      this.renderStudents();
+    } else {
+      this.showToast(res.error || 'Failed to archive student', 'danger');
+    }
   },
 
   async showTransferBatchModal(studentId, studentName, currentBatchName) {
@@ -6404,6 +6708,7 @@ const app = {
               <input type="text" id="branch-phone" class="form-input" style="width: 100%;" placeholder="e.g. +91 98765 43210">
             </div>
           </div>
+          </div>
           <div class="form-grid">
             <div class="form-group">
               <label>Contact Email</label>
@@ -6412,6 +6717,39 @@ const app = {
             <div class="form-group">
               <label>Street Address / Premises</label>
               <input type="text" id="branch-address" class="form-input" style="width: 100%;" placeholder="e.g. 101 Martial Arts Center, Ring Road">
+            </div>
+          </div>
+
+          <div style="background: rgba(59, 130, 246, 0.05); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 6px; padding: 12px; margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-weight: 600; font-size: 13px; color: var(--primary);">
+                <i class="fa-solid fa-crosshairs"></i> GPS Geofence Configuration
+              </span>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.detectBranchCoordinates()" style="font-size: 11px; padding: 3px 8px;">
+                <i class="fa-solid fa-location-arrow"></i> Use Current GPS
+              </button>
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label style="font-size: 12px;">Latitude</label>
+                <input type="number" step="any" id="branch-lat" class="form-input" style="width: 100%;" placeholder="e.g. 19.0760">
+              </div>
+              <div class="form-group">
+                <label style="font-size: 12px;">Longitude</label>
+                <input type="number" step="any" id="branch-lon" class="form-input" style="width: 100%;" placeholder="e.g. 72.8777">
+              </div>
+            </div>
+            <div class="form-grid" style="margin-top: 8px;">
+              <div class="form-group">
+                <label style="font-size: 12px;">Allowed Radius (Meters)</label>
+                <input type="number" id="branch-radius" class="form-input" style="width: 100%;" value="100">
+              </div>
+              <div class="form-group" style="display: flex; align-items: center; margin-top: 18px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                  <input type="checkbox" id="branch-enforced" checked>
+                  <span>Enforce Strict Punch Geofence</span>
+                </label>
+              </div>
             </div>
           </div>
         </form>
@@ -6431,6 +6769,10 @@ const app = {
     const phone = document.getElementById('branch-phone').value.trim();
     const email = document.getElementById('branch-email').value.trim();
     const address = document.getElementById('branch-address').value.trim();
+    const latitude = document.getElementById('branch-lat')?.value?.trim();
+    const longitude = document.getElementById('branch-lon')?.value?.trim();
+    const geofence_radius_meters = document.getElementById('branch-radius')?.value;
+    const is_geofence_enforced = document.getElementById('branch-enforced')?.checked ? 1 : 0;
 
     if (!name) {
       this.showToast('Branch name is required', 'danger');
@@ -6445,6 +6787,10 @@ const app = {
         phone: phone || null,
         email: email || null,
         address: address || null,
+        latitude: latitude ? Number(latitude) : null,
+        longitude: longitude ? Number(longitude) : null,
+        geofence_radius_meters: geofence_radius_meters ? Number(geofence_radius_meters) : 100,
+        is_geofence_enforced,
       }),
     });
 
@@ -6506,7 +6852,41 @@ const app = {
               <input type="text" id="edit-branch-address" class="form-input" style="width: 100%;" value="${branch.address || ''}">
             </div>
           </div>
-          <div class="form-group">
+
+          <div style="background: rgba(59, 130, 246, 0.05); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 6px; padding: 12px; margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-weight: 600; font-size: 13px; color: var(--primary);">
+                <i class="fa-solid fa-crosshairs"></i> GPS Geofence Configuration
+              </span>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.detectBranchCoordinates('edit')" style="font-size: 11px; padding: 3px 8px;">
+                <i class="fa-solid fa-location-arrow"></i> Use Current GPS
+              </button>
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label style="font-size: 12px;">Latitude</label>
+                <input type="number" step="any" id="edit-branch-lat" class="form-input" style="width: 100%;" value="${branch.latitude ?? ''}" placeholder="e.g. 19.0760">
+              </div>
+              <div class="form-group">
+                <label style="font-size: 12px;">Longitude</label>
+                <input type="number" step="any" id="edit-branch-lon" class="form-input" style="width: 100%;" value="${branch.longitude ?? ''}" placeholder="e.g. 72.8777">
+              </div>
+            </div>
+            <div class="form-grid" style="margin-top: 8px;">
+              <div class="form-group">
+                <label style="font-size: 12px;">Allowed Radius (Meters)</label>
+                <input type="number" id="edit-branch-radius" class="form-input" style="width: 100%;" value="${branch.geofence_radius_meters ?? 100}">
+              </div>
+              <div class="form-group" style="display: flex; align-items: center; margin-top: 18px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                  <input type="checkbox" id="edit-branch-enforced" ${branch.is_geofence_enforced !== 0 ? 'checked' : ''}>
+                  <span>Enforce Strict Punch Geofence</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px;">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
               <input type="checkbox" id="edit-branch-active" ${branch.is_active ? 'checked' : ''}>
               <span>Active Training Center</span>
@@ -6523,6 +6903,24 @@ const app = {
     );
   },
 
+  async detectBranchCoordinates(prefix = '') {
+    try {
+      this.showToast('Acquiring device GPS coordinates...', 'info');
+      const pos = await LocationService.getCurrentPosition();
+      const latId = prefix === 'edit' ? 'edit-branch-lat' : 'branch-lat';
+      const lonId = prefix === 'edit' ? 'edit-branch-lon' : 'branch-lon';
+      const latEl = document.getElementById(latId);
+      const lonEl = document.getElementById(lonId);
+      if (latEl && lonEl) {
+        latEl.value = pos.latitude.toFixed(6);
+        lonEl.value = pos.longitude.toFixed(6);
+        this.showToast(`Coordinates set: ${pos.latitude.toFixed(4)}, ${pos.longitude.toFixed(4)} (±${Math.round(pos.accuracy)}m)`, 'success');
+      }
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
   async submitEditBranch(branchId) {
     const name = document.getElementById('edit-branch-name').value.trim();
     const city = document.getElementById('edit-branch-city').value.trim();
@@ -6530,6 +6928,10 @@ const app = {
     const email = document.getElementById('edit-branch-email').value.trim();
     const address = document.getElementById('edit-branch-address').value.trim();
     const is_active = document.getElementById('edit-branch-active').checked ? 1 : 0;
+    const latitude = document.getElementById('edit-branch-lat')?.value?.trim();
+    const longitude = document.getElementById('edit-branch-lon')?.value?.trim();
+    const geofence_radius_meters = document.getElementById('edit-branch-radius')?.value;
+    const is_geofence_enforced = document.getElementById('edit-branch-enforced')?.checked ? 1 : 0;
 
     if (!name) {
       this.showToast('Branch name is required', 'danger');
@@ -6538,7 +6940,18 @@ const app = {
 
     const res = await this.apiRequest(`/api/academy/branches/${branchId}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, city, phone, email, address, is_active }),
+      body: JSON.stringify({
+        name,
+        city,
+        phone,
+        email,
+        address,
+        is_active,
+        latitude: latitude ? Number(latitude) : null,
+        longitude: longitude ? Number(longitude) : null,
+        geofence_radius_meters: geofence_radius_meters ? Number(geofence_radius_meters) : 100,
+        is_geofence_enforced,
+      }),
     });
 
     if (res.success) {
@@ -12664,6 +13077,12 @@ const app = {
                         ` : `
                           <span class="badge badge-success" style="font-size: 11px;">Enrolled</span>
                         `}
+                        <button class="btn btn-secondary btn-sm" onclick="app.showEditInquiryModal(${inq.id})" title="Edit Inquiry Lead">
+                          <i class="fa-solid fa-pencil" style="color: #f59e0b;"></i> Edit
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="app.deleteInquiry(${inq.id}, '${this.escapeJsString(inq.student_name)}')" title="Delete Inquiry">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -12677,6 +13096,8 @@ const app = {
         ${this.renderPaginationHtml(data, 'app.onInquiryPageChange', 'app.onInquiryLimitChange')}
       </div>
     `;
+
+    this.currentInquiriesData = inquiries;
   },
 
   applyInquiryFilters() {
@@ -12702,6 +13123,117 @@ const app = {
     this.inquiryFilters.limit = l;
     this.inquiryFilters.page = 1;
     this.renderInquiries();
+  },
+
+  async showEditInquiryModal(inquiryId) {
+    const inq = (this.currentInquiriesData || []).find(i => i.id === inquiryId);
+    if (!inq) {
+      this.showToast('Inquiry not found in current view', 'danger');
+      return;
+    }
+
+    this.openModal(
+      `Edit Inquiry — ${inq.student_name}`,
+      `
+        <form id="edit-inquiry-form" onsubmit="event.preventDefault(); app.submitEditInquiry(${inquiryId});">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+            <div class="form-group">
+              <label>Student Full Name *</label>
+              <input type="text" id="edit-inq-student-name" class="form-input" style="width: 100%;" value="${this.escapeHtml(inq.student_name || '')}" required>
+            </div>
+            <div class="form-group">
+              <label>Parent / Guardian Name</label>
+              <input type="text" id="edit-inq-guardian-name" class="form-input" style="width: 100%;" value="${this.escapeHtml(inq.guardian_name || '')}">
+            </div>
+            <div class="form-group">
+              <label>Primary Phone *</label>
+              <input type="tel" id="edit-inq-phone" class="form-input" style="width: 100%;" value="${this.escapeHtml(inq.phone || '')}" required>
+            </div>
+            <div class="form-group">
+              <label>Email Address</label>
+              <input type="email" id="edit-inq-email" class="form-input" style="width: 100%;" value="${this.escapeHtml(inq.email || '')}">
+            </div>
+            <div class="form-group">
+              <label>Status / Lifecycle Stage</label>
+              <select id="edit-inq-status" class="form-select" style="width: 100%;">
+                <option value="new" ${inq.status === 'new' ? 'selected' : ''}>New Inquiry</option>
+                <option value="trial_scheduled" ${inq.status === 'trial_scheduled' ? 'selected' : ''}>Trial Scheduled</option>
+                <option value="trial_completed" ${inq.status === 'trial_completed' ? 'selected' : ''}>Trial Completed</option>
+                <option value="converted" ${inq.status === 'converted' ? 'selected' : ''}>Converted (Admitted)</option>
+                <option value="lost" ${inq.status === 'lost' ? 'selected' : ''}>Lost</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Next Followup Date</label>
+              <input type="date" id="edit-inq-followup" class="form-input" style="width: 100%;" value="${inq.next_followup_date || ''}">
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label>Notes / Feedback</label>
+            <textarea id="edit-inq-notes" class="form-input" style="width: 100%; height: 70px;">${this.escapeHtml(inq.notes || '')}</textarea>
+          </div>
+        </form>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitEditInquiry(${inquiryId})">
+          <i class="fa-solid fa-check"></i> Save Changes
+        </button>
+      `
+    );
+  },
+
+  async submitEditInquiry(inquiryId) {
+    const student_name = document.getElementById('edit-inq-student-name')?.value?.trim();
+    const guardian_name = document.getElementById('edit-inq-guardian-name')?.value?.trim();
+    const phone = document.getElementById('edit-inq-phone')?.value?.trim();
+    const email = document.getElementById('edit-inq-email')?.value?.trim();
+    const status = document.getElementById('edit-inq-status')?.value;
+    const next_followup_date = document.getElementById('edit-inq-followup')?.value;
+    const notes = document.getElementById('edit-inq-notes')?.value?.trim();
+
+    if (!student_name || !phone) {
+      this.showToast('Student name and phone are required', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/inquiries/${inquiryId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        student_name,
+        guardian_name,
+        phone,
+        email,
+        status,
+        next_followup_date,
+        notes,
+      }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Inquiry updated successfully', 'success');
+      this.closeModal();
+      this.renderInquiries();
+    } else {
+      this.showToast(res.error || 'Failed to update inquiry', 'danger');
+    }
+  },
+
+  async deleteInquiry(inquiryId, studentName) {
+    if (!confirm(`Are you sure you want to delete inquiry for "${studentName}"?`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/inquiries/${inquiryId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Inquiry deleted successfully', 'success');
+      this.renderInquiries();
+    } else {
+      this.showToast(res.error || 'Failed to delete inquiry', 'danger');
+    }
   },
 
   // Modal: New Inquiry with Real-time Duplicate Check

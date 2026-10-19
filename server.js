@@ -12,6 +12,7 @@ import { centralRouter } from './src/routes/centralRoutes.js';
 import { academyRouter } from './src/routes/academyRoutes.js';
 import { studentRouter } from './src/routes/studentRoutes.js';
 import { publicRouter } from './src/routes/publicRoutes.js';
+import { staffRouter } from './src/routes/staffRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +50,7 @@ app.use('/api/central', centralRouter);
 app.use('/api/academy', academyRouter);
 app.use('/api/student', studentRouter);
 app.use('/api/public', publicRouter);
+app.use('/api/staff', staffRouter);
 
 // Health Check
 app.get('/api/health', (req, res) => {

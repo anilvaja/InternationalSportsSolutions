@@ -1017,6 +1017,81 @@ academyRouter.put('/students/:id', (req, res) => {
   }
 });
 
+/**
+ * GET /api/academy/students/:id
+ * Returns complete student profile with active batch, attendance summary, and fee financials
+ */
+academyRouter.get('/students/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const student = db.prepare(`
+      SELECT s.*, 
+             b.name as branch_name,
+             (SELECT bt.name FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as active_batch_name,
+             (SELECT bt.id FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as active_batch_id,
+             (SELECT sp.name FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id JOIN sports sp ON sp.id = bt.sport_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as sport_name
+      FROM students s
+      LEFT JOIN branches b ON b.id = s.branch_id
+      WHERE s.id = ?
+    `).get(id);
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found in this academy' });
+    }
+
+    const attStats = db.prepare(`
+      SELECT 
+        COUNT(*) as total_sessions,
+        SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_sessions,
+        SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) as absent_sessions,
+        SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) as late_sessions
+      FROM student_attendance
+      WHERE student_id = ?
+    `).get(id);
+
+    const feeStats = db.prepare(`
+      SELECT 
+        COALESCE(SUM(balance_amount), 0) as total_outstanding,
+        COALESCE(SUM(paid_amount), 0) as total_paid
+      FROM student_fees
+      WHERE student_id = ?
+    `).get(id);
+
+    res.json({
+      success: true,
+      student,
+      attendance: attStats || { total_sessions: 0, present_sessions: 0 },
+      financials: feeStats || { total_outstanding: 0, total_paid: 0 },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/students/:id
+ * Soft-deletes / archives student and terminates active batch enrollment
+ */
+academyRouter.delete('/students/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+
+    const student = db.prepare('SELECT id, first_name, last_name FROM students WHERE id = ?').get(id);
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' });
+    }
+
+    db.prepare("UPDATE students SET status = 'inactive', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+    db.prepare("UPDATE student_batch_enrollments SET status = 'completed', end_date = date('now') WHERE student_id = ? AND status = 'active'").run(id);
+
+    res.json({ success: true, message: `Student '${student.first_name} ${student.last_name}' archived successfully` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ==========================================
 // COACHES & STAFF
 // ==========================================
@@ -2752,7 +2827,7 @@ academyRouter.get('/branches', (req, res) => {
 academyRouter.post('/branches', (req, res) => {
   try {
     const db = req.tenantDb;
-    const { name, address, city, phone, email, academy_id } = req.body;
+    const { name, address, city, phone, email, academy_id, latitude, longitude, geofence_radius_meters, is_geofence_enforced } = req.body;
 
     // Rule B & Cross-academy check
     if (academy_id && Number(academy_id) !== req.academy.id) {
@@ -2767,8 +2842,8 @@ academyRouter.post('/branches', (req, res) => {
     QuotaService.assertCanCreate(req.academy.id, 'branches', 1);
 
     const insert = db.prepare(`
-      INSERT INTO branches (name, address, city, phone, email, academy_id, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, 1)
+      INSERT INTO branches (name, address, city, phone, email, academy_id, is_active, latitude, longitude, geofence_radius_meters, is_geofence_enforced)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
     `);
 
     const result = insert.run(
@@ -2777,7 +2852,11 @@ academyRouter.post('/branches', (req, res) => {
       city || null,
       phone || null,
       email || null,
-      req.academy.id
+      req.academy.id,
+      latitude !== undefined && latitude !== null && latitude !== '' ? Number(latitude) : null,
+      longitude !== undefined && longitude !== null && longitude !== '' ? Number(longitude) : null,
+      geofence_radius_meters !== undefined && geofence_radius_meters !== null && geofence_radius_meters !== '' ? Number(geofence_radius_meters) : 100,
+      is_geofence_enforced !== undefined ? (is_geofence_enforced ? 1 : 0) : 1
     );
 
     const newBranch = db.prepare('SELECT * FROM branches WHERE id = ?').get(result.lastInsertRowid);
@@ -2800,7 +2879,7 @@ academyRouter.put('/branches/:id', (req, res) => {
   try {
     const db = req.tenantDb;
     const branchId = Number(req.params.id);
-    const { name, address, city, phone, email, is_active, academy_id } = req.body;
+    const { name, address, city, phone, email, is_active, academy_id, latitude, longitude, geofence_radius_meters, is_geofence_enforced } = req.body;
 
     // Rule B: A branch's academy ownership cannot change
     if (academy_id && Number(academy_id) !== req.academy.id) {
@@ -2819,7 +2898,11 @@ academyRouter.put('/branches/:id', (req, res) => {
           city = COALESCE(?, city),
           phone = COALESCE(?, phone),
           email = COALESCE(?, email),
-          is_active = COALESCE(?, is_active)
+          is_active = COALESCE(?, is_active),
+          latitude = COALESCE(?, latitude),
+          longitude = COALESCE(?, longitude),
+          geofence_radius_meters = COALESCE(?, geofence_radius_meters),
+          is_geofence_enforced = COALESCE(?, is_geofence_enforced)
       WHERE id = ?
     `).run(
       name ? name.trim() : null,
@@ -2828,6 +2911,10 @@ academyRouter.put('/branches/:id', (req, res) => {
       phone || null,
       email || null,
       is_active !== undefined ? Number(is_active) : null,
+      latitude !== undefined && latitude !== null && latitude !== '' ? Number(latitude) : null,
+      longitude !== undefined && longitude !== null && longitude !== '' ? Number(longitude) : null,
+      geofence_radius_meters !== undefined && geofence_radius_meters !== null && geofence_radius_meters !== '' ? Number(geofence_radius_meters) : null,
+      is_geofence_enforced !== undefined ? (is_geofence_enforced ? 1 : 0) : null,
       branchId
     );
 
@@ -5295,11 +5382,15 @@ academyRouter.put('/inquiries/:id', (req, res) => {
   try {
     const db = req.tenantDb;
     const inquiryId = Number(req.params.id);
-    const { status, lost_reason, notes, next_followup_date, assigned_to_user_id, preferred_batch_id, branch_id, sport_id } = req.body;
+    const { student_name, guardian_name, phone, email, status, lost_reason, notes, next_followup_date, assigned_to_user_id, preferred_batch_id, branch_id, sport_id } = req.body;
 
     db.prepare(`
       UPDATE inquiries
-      SET status = COALESCE(?, status),
+      SET student_name = COALESCE(?, student_name),
+          guardian_name = COALESCE(?, guardian_name),
+          phone = COALESCE(?, phone),
+          email = COALESCE(?, email),
+          status = COALESCE(?, status),
           lost_reason = COALESCE(?, lost_reason),
           notes = COALESCE(?, notes),
           next_followup_date = COALESCE(?, next_followup_date),
@@ -5310,6 +5401,10 @@ academyRouter.put('/inquiries/:id', (req, res) => {
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND academy_id = ?
     `).run(
+      student_name || null,
+      guardian_name || null,
+      phone || null,
+      email || null,
       status || null,
       lost_reason || null,
       notes || null,
@@ -5326,6 +5421,21 @@ academyRouter.put('/inquiries/:id', (req, res) => {
     res.json({ success: true, inquiry: updated, message: 'Inquiry updated successfully' });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/inquiries/:id
+ */
+academyRouter.delete('/inquiries/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const inquiryId = Number(req.params.id);
+    db.prepare('DELETE FROM inquiry_trials WHERE inquiry_id = ?').run(inquiryId);
+    db.prepare('DELETE FROM inquiries WHERE id = ?').run(inquiryId);
+    res.json({ success: true, message: 'Inquiry deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
