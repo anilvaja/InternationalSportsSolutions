@@ -133,15 +133,35 @@ centralRouter.post('/academies', (req, res) => {
       admin_name,
       admin_email,
       admin_password,
+      is_gst_registered,
+      gst_number,
+      gst_rate,
+      legal_business_name,
+      hsn_sac_code,
+      gst_state_code,
     } = req.body;
 
-    if (!name || !slug) {
-      return res.status(400).json({ success: false, error: 'Academy name and slug are required' });
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Academy name is required' });
+    }
+
+    let resolvedSlug = (slug || '').toLowerCase().trim();
+    if (!resolvedSlug) {
+      resolvedSlug = name
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/[\s_-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    }
+
+    if (!resolvedSlug) {
+      return res.status(400).json({ success: false, error: 'Could not generate a valid URL slug for this academy name' });
     }
 
     const academy = provisionAcademyDb({
-      name,
-      slug,
+      name: name.trim(),
+      slug: resolvedSlug,
       contact_email,
       contact_phone,
       address,
@@ -153,6 +173,12 @@ centralRouter.post('/academies', (req, res) => {
       admin_name,
       admin_email,
       admin_password,
+      is_gst_registered: is_gst_registered ? 1 : 0,
+      gst_number: gst_number ? gst_number.trim().toUpperCase() : null,
+      gst_rate: gst_rate !== undefined && gst_rate !== '' ? Number(gst_rate) : 18.0,
+      legal_business_name: legal_business_name ? legal_business_name.trim() : null,
+      hsn_sac_code: hsn_sac_code ? hsn_sac_code.trim() : '999293',
+      gst_state_code: gst_state_code ? gst_state_code.trim() : null,
     });
 
     // If custom domain provided, register it

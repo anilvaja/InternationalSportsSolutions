@@ -180,6 +180,8 @@ export class InquiryService {
       throw new Error('Student name and contact phone number are required');
     }
 
+    const resolvedDob = date_of_birth || data.dob || null;
+
     const ins = db.prepare(`
       INSERT INTO inquiries (
         academy_id, student_name, guardian_name, guardian_relation, phone, email,
@@ -195,7 +197,7 @@ export class InquiryService {
       guardian_relation || null,
       phone.trim(),
       email ? email.trim() : null,
-      date_of_birth || null,
+      resolvedDob,
       gender || null,
       branch_id ? Number(branch_id) : null,
       sport_id ? Number(sport_id) : null,
@@ -325,11 +327,13 @@ export class InquiryService {
     const {
       inquiry_id = null,
       student_code = null,
+      admission_number = null,
       first_name,
       last_name,
       email = null,
       phone,
       date_of_birth = null,
+      dob = null,
       gender = null,
       blood_group = null,
       nationality = null,
@@ -339,54 +343,74 @@ export class InquiryService {
       guardian_phone = null,
       guardian_email = null,
       primary_guardian_relation = null,
+      primary_guardian = null,
       father_name = null,
       father_phone = null,
       mother_name = null,
       mother_phone = null,
       alternate_emergency_contact = null,
       authorized_pickup_persons = null,
+      authorized_pickup = null,
       parent_portal_enabled = 0,
       // Address info
       address = null,
+      current_address = null,
       permanent_address = null,
       city = null,
       state = null,
       postal_code = null,
+      pincode = null,
       country = 'India',
       same_as_current_address = 1,
+      // Emergency contact
+      emergency_contact_name = null,
+      emergency_contact_relationship = null,
+      emergency_contact_phone = null,
       // Educational
       school_college_name = null,
+      school_name = null,
       grade_standard = null,
+      grade_level = null,
       education_board = null,
       academic_year = null,
       occupation = null,
       // Health
       allergies = null,
       emergency_medical_instructions = null,
+      regular_medications = null,
+      medical_conditions = null,
       injury_history = null,
       doctor_clinic_contact = null,
       medical_consent = 0,
+      emergency_medical_consent = 0,
       // Sports & Admission
       branch_id,
       batch_id = null,
       joining_date = null,
+      start_date = null,
       previous_sports_experience = null,
+      sports_history = null,
       previous_academy = null,
       goals_notes = null,
       photo_video_permission = 1,
+      photo_media_consent = 1,
       competition_consent = 1,
       // Fees & Override
       fee_plan_id = null,
       fee_override_amount = null,
       discount_percent = 0,
+      discount_percentage = 0,
       discount_reason = null,
       joining_fee_amount = 0,
+      admission_fee = 0,
       initial_payment_amount = 0,
       payment_method = 'cash',
+      payment_mode = null,
       payment_notes = null,
     } = admissionData;
 
-    if (!first_name || !phone) {
+    const resolvedPhone = (phone || father_phone || mother_phone || guardian_phone || emergency_contact_phone || '').trim();
+    if (!first_name || !resolvedPhone) {
       throw new Error('Student first name and contact phone are required');
     }
 
@@ -403,11 +427,22 @@ export class InquiryService {
     // Check student quota limit
     QuotaService.assertCanCreate(academyId, 'students', 1);
 
-    const effectiveJoiningDate = joining_date || new Date().toISOString().split('T')[0];
+    const resolvedDob = date_of_birth || dob || null;
+    const resolvedAddress = address || current_address || null;
+    const resolvedPostalCode = postal_code || pincode || null;
+    const resolvedSchool = school_college_name || school_name || null;
+    const resolvedGrade = grade_standard || grade_level || null;
+    const resolvedSportsExp = previous_sports_experience || sports_history || null;
+    const resolvedMedInstructions = emergency_medical_instructions || regular_medications || medical_conditions || null;
+    const resolvedMedicalConsent = (medical_consent || emergency_medical_consent) ? 1 : 0;
+    const resolvedPhotoPermission = (photo_video_permission || photo_media_consent) ? 1 : 0;
+    const effectiveJoiningDate = joining_date || start_date || new Date().toISOString().split('T')[0];
+    const resolvedJoiningFee = Number(joining_fee_amount || admission_fee || 0);
+    const resolvedDiscount = Number(discount_percent || discount_percentage || 0);
+    const resolvedPaymentMethod = payment_method || payment_mode || 'cash';
 
     // Enforce discount ceiling policy (<= 20% max discount)
-    const numDiscount = Number(discount_percent) || 0;
-    if (numDiscount > 20) {
+    if (resolvedDiscount > 20) {
       const isAdmin = currentUser && (currentUser.isSuperAdmin || currentUser.role === 'academy_admin');
       if (!isAdmin) {
         throw new Error('Discount ceiling exceeded: discounts above 20% require Academy Admin authorization');
@@ -424,7 +459,7 @@ export class InquiryService {
       // 1. Generate unique Admission / Student Code
       let finalStudentCode = student_code;
       if (!finalStudentCode) {
-        finalStudentCode = InquiryService.generateStudentCode(db, targetBranchId);
+        finalStudentCode = InquiryService.generateStudentCode(db, Number(branch_id));
       }
 
       // Check if student with this code already exists
@@ -432,6 +467,8 @@ export class InquiryService {
       if (existing) {
         finalStudentCode = `${finalStudentCode}-${Math.floor(100 + Math.random() * 900)}`;
       }
+
+      const finalAdmissionNumber = admission_number ? String(admission_number).trim() : finalStudentCode;
 
       // 2. Insert Student Record
       const insStudent = db.prepare(`
@@ -466,55 +503,55 @@ export class InquiryService {
 
       const resStudent = insStudent.run(
         finalStudentCode,
-        finalStudentCode,
+        finalAdmissionNumber,
         first_name.trim(),
         (last_name || '').trim(),
         email ? email.trim() : null,
-        phone.trim(),
-        date_of_birth || null,
+        resolvedPhone,
+        resolvedDob,
         gender || null,
         blood_group || null,
         nationality || 'Indian',
         preferred_language || 'English',
         guardian_name || father_name || mother_name || null,
-        guardian_phone || father_phone || phone,
+        guardian_phone || father_phone || resolvedPhone,
         guardian_email || email || null,
-        primary_guardian_relation || (father_name ? 'Father' : (mother_name ? 'Mother' : 'Guardian')),
+        primary_guardian_relation || (primary_guardian === 'mother' ? 'Mother' : (father_name ? 'Father' : 'Guardian')),
         father_name || null,
         father_phone || null,
         mother_name || null,
         mother_phone || null,
-        alternate_emergency_contact || null,
-        authorized_pickup_persons || null,
+        alternate_emergency_contact || (emergency_contact_phone ? `${emergency_contact_name || 'Emergency'} (${emergency_contact_phone})` : null),
+        authorized_pickup_persons || authorized_pickup || null,
         parent_portal_enabled ? 1 : 0,
-        address || null,
-        same_as_current_address ? (address || null) : (permanent_address || null),
+        resolvedAddress,
+        same_as_current_address ? resolvedAddress : (permanent_address || resolvedAddress),
         city || null,
         state || null,
-        postal_code || null,
+        resolvedPostalCode,
         country || 'India',
         same_as_current_address ? 1 : 0,
-        school_college_name || null,
-        grade_standard || null,
+        resolvedSchool,
+        resolvedGrade,
         education_board || null,
         academic_year || null,
         occupation || null,
         allergies || null,
-        emergency_medical_instructions || null,
+        resolvedMedInstructions,
         injury_history || null,
         doctor_clinic_contact || null,
-        medical_consent ? 1 : 0,
+        resolvedMedicalConsent,
         Number(branch_id),
-        previous_sports_experience || null,
+        resolvedSportsExp,
         previous_academy || null,
         goals_notes || null,
-        photo_video_permission ? 1 : 0,
+        resolvedPhotoPermission,
         competition_consent ? 1 : 0,
-        Number(joining_fee_amount) || 0,
-        numDiscount,
+        resolvedJoiningFee,
+        resolvedDiscount,
         discount_reason || null,
-        numDiscount > 0 ? (currentUser ? currentUser.userId : null) : null,
-        numDiscount > 0 ? new Date().toISOString() : null,
+        resolvedDiscount > 0 ? (currentUser ? currentUser.userId : null) : null,
+        resolvedDiscount > 0 ? new Date().toISOString() : null,
         effectiveJoiningDate,
         Number(academyId)
       );
@@ -570,8 +607,8 @@ export class InquiryService {
         baseFee = (b && b.monthly_fee) ? Number(b.monthly_fee) : 0;
       }
 
-      const discountAmt = Math.round((baseFee * numDiscount) / 100);
-      const joiningFee = Number(joining_fee_amount) || 0;
+      const discountAmt = Math.round((baseFee * resolvedDiscount) / 100);
+      const joiningFee = resolvedJoiningFee;
       const netTuitionFee = Math.max(0, baseFee - discountAmt);
       const totalAmountDue = netTuitionFee + joiningFee;
 
@@ -610,8 +647,8 @@ export class InquiryService {
           effectiveJoiningDate,
           endDateStr,
           baseFee,
-          numDiscount,
-          numDiscount > 0 ? 'percentage' : 'none',
+          resolvedDiscount,
+          resolvedDiscount > 0 ? 'percentage' : 'none',
           discount_reason || null,
           payment_notes || 'Admission initial fee'
         );
@@ -633,7 +670,7 @@ export class InquiryService {
             receiptNumber,
             effectiveJoiningDate,
             initialPaid,
-            payment_method || 'cash',
+            resolvedPaymentMethod,
             payment_notes || 'Admission initial payment',
             currentUser ? currentUser.userId : null
           );
@@ -655,7 +692,7 @@ export class InquiryService {
         { key: 'guardian_consent', name: 'Parent / Guardian Consent Form', mandatory: 1, completed: admissionData.medical_consent ? 1 : 0 },
         { key: 'medical_clearance', name: 'Medical Clearance & Health Declaration', mandatory: 0, completed: admissionData.medical_consent ? 1 : 0 },
         { key: 'admission_fee_settled', name: 'Admission & Initial Fee Settlement', mandatory: 1, completed: (initial_payment_amount >= totalAmountDue && totalAmountDue > 0) ? 1 : 0 },
-        { key: 'batch_assignment', name: 'Batch & Schedule Assignment', mandatory: 1, completed: batch_id ? 1 : 0 },
+        { key: 'batch_assignment', name: 'Batch & Schedule Assignment', mandatory: 0, completed: batch_id ? 1 : 0 },
       ];
 
       for (const item of defaultChecklist) {

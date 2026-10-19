@@ -59,16 +59,29 @@ export class AttendanceScheduleService {
 
     // Configurable allowed past days (default 2)
     let allowedPastDays = 2;
+    let allowFuture = false;
+    try {
+      const policy = db.prepare('SELECT attendance_cutoff_days, allow_future_attendance FROM academy_policy_settings WHERE academy_id = ?').get(academyId);
+      if (policy) {
+        if (policy.attendance_cutoff_days !== null && !isNaN(Number(policy.attendance_cutoff_days))) {
+          allowedPastDays = Number(policy.attendance_cutoff_days);
+        }
+        if (policy.allow_future_attendance) {
+          allowFuture = true;
+        }
+      }
+    } catch (e) {}
+
     try {
       const setting = db.prepare("SELECT value FROM tenant_settings WHERE key = 'attendance_allowed_past_days'").get();
       if (setting && !isNaN(Number(setting.value))) {
-        allowedPastDays = Number(setting.value);
+        allowedPastDays = Math.max(allowedPastDays, Number(setting.value));
       }
     } catch (e) {}
 
     const diffDays = Math.round((todayObj.getTime() - targetObj.getTime()) / (1000 * 60 * 60 * 24));
 
-    if (diffDays < 0) {
+    if (diffDays < 0 && !allowFuture) {
       return {
         allowed: false,
         reason: `Future attendance is prohibited. Current date is ${today}.`,
@@ -108,11 +121,22 @@ export class AttendanceScheduleService {
     let daysOfWeek = ['Mon', 'Wed', 'Fri'];
     try {
       if (typeof batch.days_of_week === 'string') {
-        daysOfWeek = JSON.parse(batch.days_of_week);
+        const trimmed = batch.days_of_week.trim();
+        if (trimmed.startsWith('[')) {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            daysOfWeek = parsed.map(d => String(d).trim().slice(0, 3));
+          }
+        } else {
+          daysOfWeek = trimmed.split(',').map(d => d.trim().slice(0, 3));
+        }
       } else if (Array.isArray(batch.days_of_week)) {
-        daysOfWeek = batch.days_of_week;
+        daysOfWeek = batch.days_of_week.map(d => String(d).trim().slice(0, 3));
       }
     } catch (e) {}
+
+    // Capitalize first letter, lowercase rest (e.g. "Mon", "Tue")
+    daysOfWeek = daysOfWeek.map(d => d.charAt(0).toUpperCase() + d.slice(1).toLowerCase());
 
     const dayNameMap = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
     const insertSession = db.prepare(`
@@ -180,9 +204,12 @@ export class AttendanceScheduleService {
     const minDateObj = new Date(todayObj.getTime() - allowedPastDays * 24 * 60 * 60 * 1000);
     const minDateStr = minDateObj.toISOString().split('T')[0];
 
-    // Ensure sessions exist in this window
+    const futureEndObj = new Date(todayObj.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const futureEndStr = futureEndObj.toISOString().split('T')[0];
+
+    // Ensure sessions exist in this window (past window through next 14 days)
     if (batchId) {
-      this.generateSessionsForBatch(db, batchId, minDateStr, today);
+      this.generateSessionsForBatch(db, batchId, minDateStr, futureEndStr);
     }
 
     let query = `
@@ -229,15 +256,39 @@ export class AttendanceScheduleService {
       };
     }
 
-    // 2. All sessions in window completed -> return most recent completed session for view / correction
+    // 2. All sessions in window completed -> query next upcoming scheduled session (> today)
+    let nextUpcoming = null;
+    try {
+      let nextQuery = `
+        SELECT bs.*, b.name as batch_name, bs.branch_id
+        FROM batch_sessions bs
+        JOIN batches b ON bs.batch_id = b.id
+        WHERE bs.scheduled_date > ?
+      `;
+      const nextParams = [today];
+      if (batchId) {
+        nextQuery += ' AND bs.batch_id = ?';
+        nextParams.push(batchId);
+      }
+      if (coachId) {
+        nextQuery += ' AND (bs.coach_id = ? OR bs.substitute_coach_id = ?)';
+        nextParams.push(coachId, coachId);
+      }
+      nextQuery += ' ORDER BY bs.scheduled_date ASC, bs.start_time ASC LIMIT 1';
+      nextUpcoming = db.prepare(nextQuery).get(...nextParams);
+    } catch (e) {
+      console.warn('Could not query next upcoming session:', e.message);
+    }
+
     const lastCompleted = sessions[sessions.length - 1];
     return {
       hasSession: true,
       isCompleted: true,
       mode: 'view',
       session: lastCompleted,
+      nextUpcomingSession: nextUpcoming || null,
       allowedWindow: { minDate: minDateStr, maxDate: today },
-      message: `All sessions in the 3-day window are completed. Showing session for ${lastCompleted.scheduled_date} in review mode.`,
+      message: `All sessions in the eligible window are completed. Showing session for ${lastCompleted.scheduled_date} in review mode.`,
     };
   }
 

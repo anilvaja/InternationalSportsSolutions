@@ -83,19 +83,39 @@ const isDirectRun = process.argv[1] && (
 );
 
 let server;
+let serverPort80;
+
 if (isDirectRun && process.env.NODE_ENV !== 'test') {
   server = app.listen(config.port, () => {
     console.log(`\n======================================================`);
     console.log(` International Sports Solutions - Multi-Tenant Platform`);
     console.log(` Server running on http://localhost:${config.port}`);
+    console.log(` Base Domain URL: http://internationalsportssolutions.test:${config.port}`);
     console.log(` Database: Isolated SQLite per Tenant`);
     console.log(`======================================================\n`);
   });
+
+  // Also bind to default HTTP port 80 so http://internationalsportssolutions.test/ works directly
+  if (config.port !== 80) {
+    try {
+      serverPort80 = app.listen(80, () => {
+        console.log(`✔ Direct HTTP Port 80 Active: http://internationalsportssolutions.test/`);
+      });
+      serverPort80.on('error', (err) => {
+        if (err.code !== 'EADDRINUSE' && err.code !== 'EACCES') {
+          console.warn(`[Port 80 Notice] ${err.message}`);
+        }
+      });
+    } catch (e) {}
+  }
 }
 
 // Graceful Shutdown
 function handleShutdown(signal) {
   console.log(`\nReceived ${signal}. Gracefully closing databases and server...`);
+  if (serverPort80) {
+    try { serverPort80.close(); } catch (e) {}
+  }
   if (server) {
     server.close(() => {
       closeAllTenantDbs();

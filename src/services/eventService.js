@@ -65,13 +65,16 @@ export class EventService {
     }
 
     // Verify all manual participants belong to this academy
-    const manualIds = Array.isArray(finalManual) ? finalManual.map(Number) : [];
+    let manualIds = Array.isArray(finalManual) ? finalManual.map(Number) : [];
     if (manualIds.length > 0) {
       const placeholders = manualIds.map(() => '?').join(',');
-      const studentsInDb = db.prepare(`SELECT id FROM students WHERE id IN (${placeholders}) AND (academy_id IS NULL OR academy_id = ?)`).all(...manualIds, academyId);
+      const studentsInDb = db.prepare(`SELECT id FROM students WHERE id IN (${placeholders})`).all(...manualIds);
       if (studentsInDb.length !== manualIds.length) {
         throw new Error('One or more selected students do not belong to this academy');
       }
+    } else if (eligibility_type === 'all') {
+      const allActive = db.prepare("SELECT id FROM students WHERE status = 'active'").all();
+      manualIds = allActive.map(s => s.id);
     }
 
     const slug = this.generateSlug(db, title);
@@ -194,7 +197,7 @@ export class EventService {
       manualIds = Array.isArray(rawManual) ? rawManual.map(Number) : (typeof rawManual === 'string' ? JSON.parse(rawManual) : []);
       if (manualIds.length > 0) {
         const placeholders = manualIds.map(() => '?').join(',');
-        const studentsInDb = db.prepare(`SELECT id FROM students WHERE id IN (${placeholders}) AND (academy_id IS NULL OR academy_id = ?)`).all(...manualIds, academyId);
+        const studentsInDb = db.prepare(`SELECT id FROM students WHERE id IN (${placeholders})`).all(...manualIds);
         if (studentsInDb.length !== manualIds.length) {
           throw new Error('One or more selected students do not belong to this academy');
         }
@@ -359,12 +362,12 @@ export class EventService {
 
     let eligibleStudents = [];
     if (event.eligibility_type === 'all') {
-      eligibleStudents = db.prepare("SELECT id, branch_id FROM students WHERE status = 'active'").all();
+      eligibleStudents = db.prepare("SELECT id, branch_id FROM students WHERE status = 'active' AND (academy_id IS NULL OR academy_id = ?)").all(academyId);
     } else if (manualIds.length > 0) {
       const placeholders = manualIds.map(() => '?').join(',');
-      eligibleStudents = db.prepare(`SELECT id, branch_id FROM students WHERE id IN (${placeholders})`).all(...manualIds);
+      eligibleStudents = db.prepare(`SELECT id, branch_id FROM students WHERE id IN (${placeholders}) AND (academy_id IS NULL OR academy_id = ?)`).all(...manualIds, academyId);
     } else {
-      eligibleStudents = db.prepare("SELECT id, branch_id FROM students WHERE status = 'active'").all();
+      eligibleStudents = db.prepare("SELECT id, branch_id FROM students WHERE status = 'active' AND (academy_id IS NULL OR academy_id = ?)").all(academyId);
     }
 
     if (eligibleStudents.length === 0) {
@@ -565,8 +568,11 @@ export class EventService {
    * 6. Moderate Registration (Approve / Reject / Waitlist)
    */
   static moderateRegistration(db, academyId, eventId, participantId, newRegistrationStatus, actorId, reason = null) {
+    if (newRegistrationStatus === 'approved') {
+      newRegistrationStatus = 'confirmed';
+    }
     if (!['confirmed', 'rejected', 'waitlisted'].includes(newRegistrationStatus)) {
-      throw new Error('Invalid status. Allowed: confirmed, rejected, waitlisted');
+      throw new Error('Invalid status. Allowed: confirmed, approved, rejected, waitlisted');
     }
 
     const participant = db.prepare(`
@@ -672,7 +678,9 @@ export class EventService {
     if (!event) return null;
 
     const participants = db.prepare(`
-      SELECT ep.*, s.student_code, s.first_name, s.last_name, s.email, s.phone,
+      SELECT ep.*, s.student_code, s.admission_number, s.first_name, s.last_name,
+             TRIM(s.first_name || ' ' || COALESCE(s.last_name, '')) AS student_name,
+             s.email, s.phone, s.photo_url,
              b.name as branch_name, bt.name as batch_name,
              u.name as approver_name
       FROM event_participants ep

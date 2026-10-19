@@ -91,14 +91,160 @@ describe('Complete End-to-End Tenant Lifecycle & Feature Verification', () => {
       CREATE TABLE students (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_code TEXT UNIQUE,
+        admission_number TEXT,
         first_name TEXT,
         last_name TEXT,
-        phone TEXT,
         email TEXT,
+        phone TEXT,
+        date_of_birth TEXT,
+        gender TEXT,
+        blood_group TEXT,
+        nationality TEXT DEFAULT 'Indian',
+        preferred_language TEXT DEFAULT 'English',
+        guardian_name TEXT,
+        guardian_phone TEXT,
+        guardian_email TEXT,
+        primary_guardian_relation TEXT,
+        father_name TEXT,
+        father_phone TEXT,
+        mother_name TEXT,
+        mother_phone TEXT,
+        alternate_emergency_contact TEXT,
+        authorized_pickup_persons TEXT,
+        parent_portal_enabled INTEGER DEFAULT 0,
+        address TEXT,
+        permanent_address TEXT,
+        city TEXT,
+        state TEXT,
+        postal_code TEXT,
+        country TEXT DEFAULT 'India',
+        same_as_current_address INTEGER DEFAULT 1,
+        school_college_name TEXT,
+        grade_standard TEXT,
+        education_board TEXT,
+        academic_year TEXT,
+        occupation TEXT,
+        allergies TEXT,
+        emergency_medical_instructions TEXT,
+        injury_history TEXT,
+        doctor_clinic_contact TEXT,
+        medical_consent INTEGER DEFAULT 0,
         branch_id INTEGER,
+        previous_sports_experience TEXT,
+        previous_academy TEXT,
+        goals_notes TEXT,
+        photo_video_permission INTEGER DEFAULT 1,
+        competition_consent INTEGER DEFAULT 1,
+        joining_fee_amount REAL DEFAULT 0,
+        discount_percent REAL DEFAULT 0,
+        discount_reason TEXT,
+        discount_approved_by INTEGER,
+        discount_approved_at TEXT,
         status TEXT DEFAULT 'active',
+        enrolled_at TEXT,
+        academy_id INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE student_guardians (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        name TEXT,
+        relationship TEXT,
+        phone TEXT,
+        is_primary INTEGER DEFAULT 0
+      );
+      CREATE TABLE inquiries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        academy_id INTEGER,
+        student_name TEXT,
+        guardian_name TEXT,
+        guardian_relation TEXT,
+        phone TEXT,
+        email TEXT,
+        date_of_birth TEXT,
+        gender TEXT,
+        sport_id INTEGER,
+        branch_id INTEGER,
+        preferred_batch_id INTEGER,
+        assigned_to_user_id INTEGER,
+        status TEXT DEFAULT 'new',
+        source TEXT,
+        preferred_timing TEXT,
+        notes TEXT,
+        next_followup_date TEXT,
+        lost_reason TEXT,
+        converted_student_id INTEGER,
+        converted_at TEXT,
+        created_by_user_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE admission_checklists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        academy_id INTEGER,
+        student_id INTEGER,
+        item_key TEXT,
+        item_name TEXT,
+        item_title TEXT,
+        is_mandatory INTEGER DEFAULT 0,
+        is_completed INTEGER DEFAULT 0,
+        notes TEXT,
+        verified_by_user_id INTEGER,
+        verified_at TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE student_fees (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        invoice_number TEXT,
+        title TEXT,
+        due_date TEXT,
+        amount REAL,
+        discount_amount REAL DEFAULT 0,
+        net_amount REAL,
+        paid_amount REAL DEFAULT 0,
+        balance_amount REAL,
+        status TEXT DEFAULT 'pending',
+        period_start TEXT,
+        period_end TEXT,
+        months_count INTEGER DEFAULT 1,
+        base_fee REAL,
+        discount_percentage REAL DEFAULT 0,
+        discount_type TEXT,
+        discount_reason TEXT,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE fee_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_fee_id INTEGER,
+        student_id INTEGER,
+        receipt_number TEXT,
+        payment_date TEXT,
+        amount REAL,
+        payment_mode TEXT,
+        notes TEXT,
+        collected_by INTEGER,
+        status TEXT DEFAULT 'completed',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE student_fee_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        student_fee_id INTEGER,
+        fee_payment_id INTEGER,
+        entry_type TEXT,
+        charge_type TEXT,
+        period_start TEXT,
+        period_end TEXT,
+        months_count INTEGER,
+        debit REAL,
+        credit REAL,
+        running_balance REAL,
+        created_by INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE student_batch_enrollments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,7 +252,11 @@ describe('Complete End-to-End Tenant Lifecycle & Feature Verification', () => {
         batch_id INTEGER,
         start_date TEXT,
         end_date TEXT,
-        status TEXT DEFAULT 'active'
+        status TEXT DEFAULT 'active',
+        transfer_reason TEXT,
+        assigned_by INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE user_branch_assignments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -296,4 +446,72 @@ describe('Complete End-to-End Tenant Lifecycle & Feature Verification', () => {
     assert.strictEqual(tenantDb.prepare('SELECT is_active FROM sports WHERE id = ?').get(s1).is_active, 0);
     assert.strictEqual(tenantDb.prepare('SELECT id FROM sports WHERE id = ?').get(s3), undefined);
   });
+
+  it('9. Inquiry to Admission Without Batch: Enrolls student cleanly, leaves batch optional, allows assign & unassign', () => {
+    // Create an inquiry
+    const inq = InquiryService.createInquiry(tenantDb, 1, {
+      student_name: 'Devan Patel',
+      guardian_name: 'Manoj Patel',
+      phone: '9820198201',
+      email: 'devan@example.com',
+      date_of_birth: '2012-05-15',
+      gender: 'male',
+      branch_id: 1,
+    });
+    assert.ok(inq.id);
+    assert.strictEqual(inq.date_of_birth, '2012-05-15');
+
+    // Create admission from inquiry WITHOUT any batch (batch_id: null)
+    const admResult = InquiryService.createAdmission(tenantDb, 1, {
+      inquiry_id: inq.id,
+      first_name: 'Devan',
+      last_name: 'Patel',
+      admission_number: 'ADM-PATEL-01',
+      date_of_birth: '2012-05-15',
+      phone: '9820198201',
+      branch_id: 1,
+      batch_id: null, // OPTIONAL!
+      admission_fee: 500,
+      initial_payment_amount: 500,
+      payment_method: 'upi',
+    }, { userId: 1, isSuperAdmin: true });
+
+    assert.strictEqual(admResult.success, true);
+    assert.strictEqual(admResult.student.first_name, 'Devan');
+    assert.strictEqual(admResult.student.admission_number, 'ADM-PATEL-01');
+    assert.strictEqual(admResult.enrollment, null); // No batch enrollment created
+
+    // Verify inquiry is converted
+    const updatedInq = tenantDb.prepare('SELECT status, converted_student_id FROM inquiries WHERE id = ?').get(inq.id);
+    assert.strictEqual(updatedInq.status, 'converted');
+    assert.strictEqual(updatedInq.converted_student_id, admResult.student.id);
+
+    // Verify admission checklist: batch assignment is NOT mandatory
+    const batchChk = tenantDb.prepare("SELECT * FROM admission_checklists WHERE student_id = ? AND item_key = 'batch_assignment'").get(admResult.student.id);
+    assert.ok(batchChk);
+    assert.strictEqual(batchChk.is_mandatory, 0);
+    assert.strictEqual(batchChk.is_completed, 0);
+
+    // Now assign batch later (e.g. batch created earlier in test 8)
+    const batch = tenantDb.prepare('SELECT id, name FROM batches LIMIT 1').get();
+    tenantDb.prepare(`
+      INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status)
+      VALUES (?, ?, '2026-10-19', 'active')
+    `).run(admResult.student.id, batch.id);
+
+    const activeEnrollment = tenantDb.prepare("SELECT * FROM student_batch_enrollments WHERE student_id = ? AND status = 'active'").get(admResult.student.id);
+    assert.ok(activeEnrollment);
+    assert.strictEqual(activeEnrollment.batch_id, batch.id);
+
+    // Now unassign student from batch back to unassigned pool
+    tenantDb.prepare(`
+      UPDATE student_batch_enrollments
+      SET status = 'completed', end_date = '2026-10-20', transfer_reason = 'Unassigned by admin'
+      WHERE id = ?
+    `).run(activeEnrollment.id);
+
+    const postUnassign = tenantDb.prepare("SELECT * FROM student_batch_enrollments WHERE student_id = ? AND status = 'active'").get(admResult.student.id);
+    assert.strictEqual(postUnassign, undefined); // Successfully unassigned!
+  });
 });
+

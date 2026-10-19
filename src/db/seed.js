@@ -27,47 +27,65 @@ export function runSeed() {
   insertSetting.run('support_email', 'support@internationalsportssolutions.com');
   insertSetting.run('enable_registrations', 'true');
 
-  // 2.1. Seed Reusable Subscription Plans (Illustrative Standard plan per specification)
+  // 2.1. Seed Reusable Subscription Plans (4 official tiers)
   const existingStandard = centralDb.prepare("SELECT id FROM subscription_plans WHERE slug = 'standard'").get();
   if (!existingStandard) {
     const plansToSeed = [
       {
-        name: 'Basic',
-        slug: 'basic',
-        description: 'Starter tier for single-branch sports clubs',
+        name: 'Starter',
+        slug: 'starter',
+        description: 'Starter tier for single-branch sports clubs and individual dojos',
         price: 999,
         billing_interval: 'monthly',
         trial_days: 14,
         status: 'active',
-        limits: { users: 5, branches: 1, batches: 5, students: 50, students_per_batch: 20, coaches: 2 },
+        is_default: 1,
+        limits: { branches: 1, coaches: 3, batches: 5, students: 75, students_per_batch: 25, users: 5 },
+        features: { syllabus: 1, facilities: 1, events: 0, payroll: 0 },
       },
       {
         name: 'Standard',
         slug: 'standard',
-        description: 'Illustrative standard plan for growing sports academies (development specification)',
+        description: 'Best for growing sports academies with multiple batches, schedules, and staff',
         price: 2499,
         billing_interval: 'monthly',
         trial_days: 14,
-        status: 'draft', // Draft per prompt: Illustrative development specification only
-        limits: { users: 10, branches: 2, batches: 10, students: 200, students_per_batch: 30, coaches: 5 },
+        status: 'active',
+        is_default: 0,
+        limits: { branches: 3, coaches: 10, batches: 15, students: 250, students_per_batch: 30, users: 15 },
+        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1 },
       },
       {
-        name: 'Premium',
-        slug: 'premium',
-        description: 'Comprehensive tier for large multi-branch sports academies',
+        name: 'Professional',
+        slug: 'professional',
+        description: 'High-capacity multi-campus academies with extensive payroll and event operations',
         price: 4999,
         billing_interval: 'monthly',
         trial_days: 30,
         status: 'active',
-        limits: { users: 50, branches: 10, batches: 50, students: 1000, students_per_batch: 40, coaches: 25 },
+        is_default: 0,
+        limits: { branches: 8, coaches: 25, batches: 40, students: 800, students_per_batch: 40, users: 35 },
+        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1 },
+      },
+      {
+        name: 'Enterprise',
+        slug: 'enterprise',
+        description: 'Nationwide sports organizations and federations with priority SLA and scale',
+        price: 9999,
+        billing_interval: 'monthly',
+        trial_days: 30,
+        status: 'active',
+        is_default: 0,
+        limits: { branches: 25, coaches: 100, batches: 150, students: 3000, students_per_batch: 60, users: 100 },
+        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1 },
       },
     ];
 
     for (const p of plansToSeed) {
       const ins = centralDb.prepare(`
-        INSERT INTO subscription_plans (name, slug, description, price, billing_interval, trial_days, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(p.name, p.slug, p.description, p.price, p.billing_interval, p.trial_days, p.status);
+        INSERT INTO subscription_plans (name, slug, description, price, billing_interval, trial_days, status, is_default)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(p.name, p.slug, p.description, p.price, p.billing_interval, p.trial_days, p.status, p.is_default);
       const planId = Number(ins.lastInsertRowid);
 
       for (const [qKey, qVal] of Object.entries(p.limits)) {
@@ -77,15 +95,14 @@ export function runSeed() {
         `).run(planId, qKey, qVal);
       }
 
-      // Feature entitlements
-      for (const feat of ['events', 'payroll', 'syllabus', 'facilities']) {
+      for (const [feat, isEn] of Object.entries(p.features)) {
         centralDb.prepare(`
           INSERT INTO subscription_plan_features (plan_id, feature_key, is_enabled)
-          VALUES (?, ?, 1)
-        `).run(planId, feat);
+          VALUES (?, ?, ?)
+        `).run(planId, feat, isEn);
       }
     }
-    console.log('[Seed] Seeded subscription plans: Basic, Standard (Draft), Premium');
+    console.log('[Seed] Seeded subscription plans: Starter, Standard, Professional, Enterprise');
   }
 
   // 3. Academies to provision

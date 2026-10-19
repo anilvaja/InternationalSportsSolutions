@@ -9,8 +9,8 @@ const app = {
   selectedAcademyId: localStorage.getItem('selectedAcademyId') || null,
   currentTab: 'overview',
   theme: localStorage.getItem('theme') || 'light',
-  colorTheme: localStorage.getItem('colorTheme') || 'blue',
   tenantSubdomain: null,
+  tenantAcademy: null,
   studentFilters: { page: 1, limit: 15, search: '', branch_id: '', batch_id: '', status: '' },
   batchFilters: { page: 1, limit: 15, search: '', branch_id: '', sport_id: '', day: '', status: '' },
   coachFilters: { page: 1, limit: 15, search: '', branch_id: '', sport_id: '', status: '' },
@@ -38,10 +38,26 @@ const app = {
     this.applyTheme();
     this.bindGlobalEvents();
 
-    const host = window.location.hostname;
-    const parts = host.split('.');
-    if (parts.length > 1 && parts[0] !== 'localhost' && parts[0] !== 'www') {
-      this.tenantSubdomain = parts[0];
+    // 1. Detect Tenant Subdomain or Custom Domain via /api/public/tenant-info
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const querySlug = urlParams.get('academy_slug') || urlParams.get('slug');
+      const queryDomain = urlParams.get('domain');
+      const q = [];
+      if (querySlug) q.push(`slug=${encodeURIComponent(querySlug)}`);
+      if (queryDomain) q.push(`domain=${encodeURIComponent(queryDomain)}`);
+      const tenantInfoUrl = '/api/public/tenant-info' + (q.length > 0 ? `?${q.join('&')}` : '');
+
+      const tRes = await fetch(tenantInfoUrl).then(r => r.json()).catch(() => null);
+      if (tRes && tRes.success && tRes.isTenantSubdomain && tRes.academy) {
+        this.tenantAcademy = tRes.academy;
+        this.tenantSubdomain = tRes.academy.slug;
+        this.selectedAcademyId = tRes.academy.id;
+        localStorage.setItem('selectedAcademyId', tRes.academy.id);
+        document.title = `${tRes.academy.name} — Sports Solutions Portal`;
+      }
+    } catch (e) {
+      console.warn('Tenant detection error:', e);
     }
 
     if (this.token) {
@@ -358,13 +374,26 @@ const app = {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    if (this.selectedAcademyId) {
-      headers['X-Academy-Id'] = this.selectedAcademyId;
+    if (this.selectedAcademyId || (this.tenantAcademy && this.tenantAcademy.id)) {
+      headers['X-Academy-Id'] = this.selectedAcademyId || this.tenantAcademy.id;
+    }
+
+    if (this.tenantSubdomain || (this.tenantAcademy && this.tenantAcademy.slug)) {
+      headers['X-Academy-Slug'] = this.tenantSubdomain || this.tenantAcademy.slug;
+    }
+
+    let body = options.body;
+    if (body && typeof body === 'object' && !(body instanceof FormData)) {
+      body = JSON.stringify(body);
+    }
+    if (body instanceof FormData) {
+      delete headers['Content-Type'];
     }
 
     try {
       const res = await fetch(endpoint, {
         ...options,
+        body,
         headers,
       });
 
@@ -400,7 +429,10 @@ const app = {
         this.applyColorTheme(this.colorTheme);
       }
 
-      if (!this.selectedAcademyId && this.accessibleAcademies.length > 0) {
+      if (this.tenantAcademy && this.tenantAcademy.id) {
+        this.selectedAcademyId = this.tenantAcademy.id;
+        localStorage.setItem('selectedAcademyId', this.selectedAcademyId);
+      } else if (!this.selectedAcademyId && this.accessibleAcademies.length > 0) {
         this.selectedAcademyId = this.accessibleAcademies[0].id;
         localStorage.setItem('selectedAcademyId', this.selectedAcademyId);
       }
@@ -463,11 +495,40 @@ const app = {
     document.getElementById('app-view').style.display = 'none';
 
     // If on a tenant subdomain, customize branding
-    if (this.tenantSubdomain) {
+    if (this.tenantAcademy) {
       const headerTitle = loginView.querySelector('h2');
       const headerSub = loginView.querySelector('p');
-      if (headerTitle) headerTitle.innerText = this.tenantSubdomain.name;
-      if (headerSub) headerSub.innerText = `${this.tenantSubdomain.city || 'Sports Academy'} — Staff & Student Portal`;
+      if (headerTitle) headerTitle.innerText = this.tenantAcademy.name;
+      if (headerSub) headerSub.innerText = `${this.tenantAcademy.city ? this.tenantAcademy.city + ' — ' : ''}Staff & Student Portal`;
+
+      // Update logo if provided
+      if (this.tenantAcademy.logo_url) {
+        const iconDiv = loginView.querySelector('div[style*="width: 52px"]');
+        if (iconDiv) {
+          iconDiv.innerHTML = `<img src="${this.tenantAcademy.logo_url}" style="width: 100%; height: 100%; object-fit: contain; border-radius: 12px;" alt="${this.tenantAcademy.name}">`;
+          iconDiv.style.background = 'transparent';
+        }
+      }
+
+      // Add Subdomain Banner
+      let banner = loginView.querySelector('#tenant-login-banner');
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'tenant-login-banner';
+        banner.style.cssText = 'background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 20px; font-size: 12px; display: flex; align-items: center; justify-content: space-between;';
+        banner.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-building-circle-check" style="color: var(--primary); font-size: 16px;"></i>
+            <div>
+              <div style="font-weight: 700; color: var(--text-heading);">${this.tenantAcademy.name}</div>
+              <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${this.tenantAcademy.slug}.internationalsportssolutions.test</div>
+            </div>
+          </div>
+          <span class="badge badge-success" style="font-size: 10px;">Academy Subdomain</span>
+        `;
+        const form = loginView.querySelector('#login-form');
+        if (form) form.parentNode.insertBefore(banner, form);
+      }
     }
   },
 
@@ -499,7 +560,13 @@ const app = {
     let academyLogo = null;
     let subtitle = 'Multi-Tenant SaaS';
 
-    if (this.user.isSuperAdmin) {
+    if (this.tenantAcademy) {
+      academyName = this.tenantAcademy.name;
+      academyLogo = this.tenantAcademy.logo_url || null;
+      subtitle = this.user.isSuperAdmin 
+        ? `${this.tenantAcademy.name} • Super Admin`
+        : (this.user.role === 'student' ? 'Student Portal' : 'Academy Portal');
+    } else if (this.user.isSuperAdmin) {
       const selectedAc = this.accessibleAcademies && this.accessibleAcademies.find(a => a.id == this.selectedAcademyId);
       if (selectedAc && (!this.currentTab || !this.currentTab.startsWith('central-'))) {
         academyName = selectedAc.name;
@@ -823,12 +890,12 @@ const app = {
   getDefaultTab() {
     if (!this.user) return 'overview';
     if (this.user.role === 'student') return 'student-dashboard';
-    if (this.user.isSuperAdmin) return 'central-academies';
+    if (this.user.isSuperAdmin && !this.tenantAcademy) return 'central-academies';
     return 'overview';
   },
 
   updateDocumentTitle(tab) {
-    const academyName = (this.user && this.user.academyName) || (this.tenantSubdomain && this.tenantSubdomain.name) || 'International Sports Solutions';
+    const academyName = (this.tenantAcademy && this.tenantAcademy.name) || (this.user && this.user.academyName) || 'International Sports Solutions';
     const tabTitle = this.tabTitles[tab] || 'Portal';
     document.title = `${tabTitle} — ${academyName}`;
   },
@@ -1811,47 +1878,104 @@ const app = {
   },
 
   showProvisionAcademyModal() {
+    this._slugManuallyEdited = false;
+    this._emailManuallyEdited = false;
+
     this.openModal(
       'Provision New Academy Database',
       `
-        <form id="provision-academy-form">
+        <form id="provision-academy-form" onsubmit="event.preventDefault(); app.submitProvisionAcademy();">
           <div class="form-grid">
             <div class="form-group">
               <label>Academy Name *</label>
-              <input type="text" id="prov-name" class="form-input" style="width: 100%;" required placeholder="e.g. Spartan Sports Club">
+              <input type="text" id="prov-name" class="form-input" style="width: 100%;" required placeholder="e.g. Apex Martial Arts Academy" oninput="app.onAcademyNameInput(this.value)">
             </div>
             <div class="form-group">
-              <label>Slug / Subdomain *</label>
-              <input type="text" id="prov-slug" class="form-input" style="width: 100%;" required placeholder="spartan-sports">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="margin: 0;">Slug / Subdomain *</label>
+                <span id="slug-autofill-badge" style="font-size: 10px; background: rgba(37,99,235,0.1); color: var(--primary); padding: 2px 7px; border-radius: 4px; font-weight: 600;">
+                  <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-fill active
+                </span>
+              </div>
+              <input type="text" id="prov-slug" class="form-input" style="width: 100%; font-family: monospace; font-weight: 600;" required placeholder="apex-martial-arts" oninput="app.onAcademySlugInput(this.value)">
+              <div id="prov-slug-preview" style="font-size: 11px; color: var(--primary); margin-top: 5px; display: flex; align-items: center; gap: 5px;">
+                <i class="fa-solid fa-globe"></i> Subdomain URL: <strong><span id="prov-slug-display">apex-martial-arts</span>.internationalsportssolutions.test</strong>
+              </div>
             </div>
           </div>
+
           <div class="form-grid">
             <div class="form-group">
-              <label>City</label>
-              <input type="text" id="prov-city" class="form-input" style="width: 100%;" placeholder="Ahmedabad">
+              <label>City *</label>
+              <input type="text" id="prov-city" class="form-input" style="width: 100%;" required placeholder="e.g. Mumbai, Ahmedabad">
             </div>
             <div class="form-group">
-              <label>Subscription Plan</label>
+              <label>Subscription Plan *</label>
               <select id="prov-plan" class="form-select" style="width: 100%;">
-                <option value="starter">Starter (100 students)</option>
-                <option value="professional" selected>Professional (500 students)</option>
-                <option value="enterprise">Enterprise (2000 students)</option>
+                <option value="starter">Starter (1 Branch, 75 Students) — ₹999/mo</option>
+                <option value="standard">Standard (3 Branches, 250 Students) — ₹2,499/mo</option>
+                <option value="professional" selected>Professional (8 Branches, 800 Students) — ₹4,999/mo</option>
+                <option value="enterprise">Enterprise (25 Branches, 3,000 Students) — ₹9,999/mo</option>
               </select>
             </div>
           </div>
+
           <div class="form-group" style="margin-top: 10px;">
             <label>Branded Custom Domain (Optional)</label>
-            <input type="text" id="prov-custom-domain" class="form-input" style="width: 100%;" placeholder="e.g. spartansports.com">
+            <input type="text" id="prov-custom-domain" class="form-input" style="width: 100%;" placeholder="e.g. apexmartialarts.com">
             <span style="font-size: 11px; color: var(--text-dim); margin-top: 3px; display: block;">
-              Platform subdomain will automatically be registered as <code>&lt;slug&gt;.internationalsportssolutions.test</code>
+              Base domain route: <code>http://internationalsportssolutions.test/</code> &bull; Subdomain: <code>&lt;slug&gt;.internationalsportssolutions.test</code>
             </span>
           </div>
-          <div style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;">
-            <p style="font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Initial Academy Administrator Account</p>
+
+          <!-- GST & Tax Compliance Section -->
+          <div style="border: 1px solid rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.04); border-radius: 6px; padding: 12px; margin-top: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; font-weight: 600; color: var(--text-heading); font-size: 13px;">
+                <input type="checkbox" id="prov-is-gst" onchange="app.toggleGstFields(this.checked)" style="width: 16px; height: 16px; accent-color: var(--primary);">
+                <span><i class="fa-solid fa-receipt" style="color: #10b981;"></i> Enable GST Billing & Tax Compliance (India GSTIN)</span>
+              </label>
+              <span class="badge badge-success" style="font-size: 10px;">GST Ready</span>
+            </div>
+
+            <div id="prov-gst-container" style="display: none; margin-top: 10px;">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>GSTIN Number (15-Digit) *</label>
+                  <input type="text" id="prov-gst-number" class="form-input" maxlength="15" placeholder="e.g. 24AAAAA0000A1Z5" style="text-transform: uppercase; font-family: monospace;" oninput="this.value = this.value.toUpperCase(); app.autoExtractGstState(this.value)">
+                  <span style="font-size: 11px; color: var(--text-muted);">State code (first 2 digits) + PAN + Entity number</span>
+                </div>
+                <div class="form-group">
+                  <label>Applicable GST Rate (%)</label>
+                  <select id="prov-gst-rate" class="form-select" style="width: 100%;">
+                    <option value="18" selected>18% Standard (9% CGST + 9% SGST)</option>
+                    <option value="12">12% Concessional Sports Training</option>
+                    <option value="5">5% Basic Sports Activities</option>
+                    <option value="0">0% Non-Taxable / Exempted</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-grid" style="margin-top: 8px;">
+                <div class="form-group">
+                  <label>Legal Business Name (Registered on GST)</label>
+                  <input type="text" id="prov-legal-name" class="form-input" style="width: 100%;" placeholder="e.g. Apex Sports & Fitness Pvt Ltd">
+                </div>
+                <div class="form-group">
+                  <label>SAC / HSN Service Code</label>
+                  <input type="text" id="prov-sac-code" class="form-input" style="width: 100%;" value="999293" placeholder="999293 (Sports Training & Coaching)">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Initial Administrator Account -->
+          <div style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 14px;">
+            <p style="font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;"><i class="fa-solid fa-user-shield"></i> Initial Academy Administrator Account</p>
             <div class="form-grid">
               <div class="form-group">
                 <label>Admin Email *</label>
-                <input type="email" id="prov-admin-email" class="form-input" style="width: 100%;" required placeholder="admin@spartansports.com">
+                <input type="email" id="prov-admin-email" class="form-input" style="width: 100%;" required placeholder="admin@apexmartialarts.com" oninput="app._emailManuallyEdited = true">
               </div>
               <div class="form-group">
                 <label>Admin Password *</label>
@@ -1862,33 +1986,162 @@ const app = {
         </form>
       `,
       `
-        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="app.submitProvisionAcademy()"><i class="fa-solid fa-plus"></i> Create Database & Provision</button>
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="app.submitProvisionAcademy()"><i class="fa-solid fa-plus"></i> Create Database & Provision</button>
       `
     );
   },
 
-  async submitProvisionAcademy() {
-    const name = document.getElementById('prov-name').value.trim();
-    const slug = document.getElementById('prov-slug').value.trim();
-    const city = document.getElementById('prov-city').value.trim();
-    const plan = document.getElementById('prov-plan').value;
-    const custom_domain = document.getElementById('prov-custom-domain') ? document.getElementById('prov-custom-domain').value.trim() : '';
-    const admin_email = document.getElementById('prov-admin-email').value.trim();
-    const admin_password = document.getElementById('prov-admin-password').value.trim();
+  onAcademyNameInput(name) {
+    const slugInput = document.getElementById('prov-slug');
+    if (!slugInput) return;
+    if (this._slugManuallyEdited && slugInput.value.trim().length > 0) {
+      return;
+    }
+    const autoSlug = (name || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
 
-    if (!name || !slug || !admin_email || !admin_password) {
-      this.showToast('Please fill all required fields', 'danger');
+    slugInput.value = autoSlug;
+    this.updateAcademySlugPreview(autoSlug);
+  },
+
+  onAcademySlugInput(val) {
+    this._slugManuallyEdited = true;
+    const badge = document.getElementById('slug-autofill-badge');
+    if (badge) {
+      badge.innerHTML = `<a href="javascript:void(0)" onclick="app.resetSlugAutofill()" style="color: var(--primary); text-decoration: none;"><i class="fa-solid fa-rotate-left"></i> Re-sync with name</a>`;
+    }
+    const clean = (val || '')
+      .toLowerCase()
+      .replace(/[^\w-]/g, '');
+    const slugInput = document.getElementById('prov-slug');
+    if (slugInput && slugInput.value !== clean) {
+      slugInput.value = clean;
+    }
+    this.updateAcademySlugPreview(clean);
+  },
+
+  resetSlugAutofill() {
+    this._slugManuallyEdited = false;
+    const badge = document.getElementById('slug-autofill-badge');
+    if (badge) {
+      badge.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> Auto-fill active`;
+    }
+    const nameInput = document.getElementById('prov-name');
+    if (nameInput) {
+      this.onAcademyNameInput(nameInput.value);
+    }
+  },
+
+  updateAcademySlugPreview(slug) {
+    const display = document.getElementById('prov-slug-display');
+    if (display) {
+      display.innerText = slug || 'your-academy';
+    }
+    const emailInput = document.getElementById('prov-admin-email');
+    if (emailInput && !this._emailManuallyEdited) {
+      emailInput.placeholder = slug ? `admin@${slug}.com` : 'admin@apexmartialarts.com';
+    }
+    const legalNameInput = document.getElementById('prov-legal-name');
+    const nameInput = document.getElementById('prov-name');
+    if (legalNameInput && !legalNameInput.value && nameInput) {
+      legalNameInput.placeholder = nameInput.value.trim() ? `${nameInput.value.trim()} LLP / Pvt Ltd` : 'Legal entity name';
+    }
+  },
+
+  toggleGstFields(isChecked) {
+    const container = document.getElementById('prov-gst-container');
+    if (container) {
+      container.style.display = isChecked ? 'block' : 'none';
+      const numInput = document.getElementById('prov-gst-number');
+      if (numInput) {
+        numInput.required = isChecked;
+        if (isChecked) numInput.focus();
+      }
+    }
+  },
+
+  autoExtractGstState(gstin) {
+    if (!gstin || gstin.length < 2) return;
+    const statePrefix = gstin.substring(0, 2);
+    const stateMap = {
+      '01': 'Jammu & Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh',
+      '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan', '09': 'Uttar Pradesh',
+      '10': 'Bihar', '19': 'West Bengal', '23': 'Madhya Pradesh', '24': 'Gujarat',
+      '27': 'Maharashtra', '29': 'Karnataka', '32': 'Kerala', '33': 'Tamil Nadu', '36': 'Telangana',
+    };
+    if (stateMap[statePrefix]) {
+      const cityInput = document.getElementById('prov-city');
+      if (cityInput && !cityInput.value.trim()) {
+        cityInput.value = stateMap[statePrefix];
+      }
+    }
+  },
+
+  async submitProvisionAcademy() {
+    const name = document.getElementById('prov-name')?.value?.trim();
+    const slug = document.getElementById('prov-slug')?.value?.trim();
+    const city = document.getElementById('prov-city')?.value?.trim();
+    const plan = document.getElementById('prov-plan')?.value || 'professional';
+    const custom_domain = document.getElementById('prov-custom-domain')?.value?.trim() || '';
+    const admin_email = document.getElementById('prov-admin-email')?.value?.trim();
+    const admin_password = document.getElementById('prov-admin-password')?.value?.trim();
+
+    // GST fields
+    const is_gst_registered = document.getElementById('prov-is-gst')?.checked ? 1 : 0;
+    const gst_number = document.getElementById('prov-gst-number')?.value?.trim()?.toUpperCase() || null;
+    const gst_rate = Number(document.getElementById('prov-gst-rate')?.value || 18);
+    const legal_business_name = document.getElementById('prov-legal-name')?.value?.trim() || null;
+    const hsn_sac_code = document.getElementById('prov-sac-code')?.value?.trim() || '999293';
+
+    if (!name) {
+      this.showToast('Academy name is required', 'danger');
+      return;
+    }
+    if (!slug) {
+      this.showToast('Slug / subdomain is required', 'danger');
+      return;
+    }
+    if (!city) {
+      this.showToast('City is required', 'danger');
+      return;
+    }
+    if (!admin_email || !admin_password) {
+      this.showToast('Initial administrator email and password are required', 'danger');
       return;
     }
 
+    if (is_gst_registered && (!gst_number || gst_number.length < 15)) {
+      this.showToast('Please enter a valid 15-character GSTIN number', 'danger');
+      return;
+    }
+
+    const payload = {
+      name,
+      slug,
+      city,
+      plan,
+      custom_domain,
+      admin_email,
+      admin_password,
+      is_gst_registered,
+      gst_number,
+      gst_rate,
+      legal_business_name,
+      hsn_sac_code,
+    };
+
     const res = await this.apiRequest('/api/central/academies', {
       method: 'POST',
-      body: JSON.stringify({ name, slug, city, plan, custom_domain, admin_email, admin_password }),
+      body: JSON.stringify(payload),
     });
 
     if (res.success) {
-      this.showToast(res.message, 'success');
+      this.showToast(res.message || 'Academy provisioned successfully!', 'success');
       this.closeModal();
       await this.checkAuth();
       this.renderCentralAcademies();
@@ -2285,16 +2538,19 @@ const app = {
                 </div>
 
                 <div class="today-batch-footer">
-                  <div style="font-size: 11px; color: var(--text-dim);">
+                  <div style="font-size: 11px; color: var(--text-dim);" id="batch-att-status-${b.id}">
                     ${isDone ? `<span style="color: #10b981; font-weight: 600;"><i class="fa-solid fa-check"></i> ${b.present_count || b.marked_count} Present · ${b.absent_count || 0} Absent</span>` : 'Pending attendance submission'}
                   </div>
-                  <div>
+                  <div style="display: flex; gap: 6px; align-items: center;">
+                    <button class="btn btn-secondary btn-sm" onclick="app.navigateToAttendance(${b.id})" title="Open full dedicated attendance page for this batch">
+                      <i class="fa-solid fa-arrow-up-right-from-square"></i> Full Page
+                    </button>
                     ${isDone ? `
-                      <button class="btn btn-secondary btn-sm" onclick="app.openQuickAttendanceModal(${b.id}, '${b.name.replace(/'/g, "\\'")}', true)">
+                      <button class="btn btn-primary btn-sm" id="batch-att-btn-${b.id}" onclick="app.openQuickAttendanceModal(${b.id}, '${b.name.replace(/'/g, "\\'")}', true)">
                         <i class="fa-solid fa-pen-to-square"></i> View / Edit
                       </button>
                     ` : `
-                      <button class="btn btn-primary btn-sm" onclick="app.openQuickAttendanceModal(${b.id}, '${b.name.replace(/'/g, "\\'")}', false)">
+                      <button class="btn btn-primary btn-sm" id="batch-att-btn-${b.id}" onclick="app.openQuickAttendanceModal(${b.id}, '${b.name.replace(/'/g, "\\'")}', false)">
                         <i class="fa-solid fa-clipboard-user"></i> Take Attendance
                       </button>
                     `}
@@ -2988,6 +3244,9 @@ const app = {
             <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsExcel()">
               <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Excel
             </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsCsv()">
+              <i class="fa-solid fa-file-csv" style="color: #3b82f6;"></i> Export CSV
+            </button>
             <button class="btn btn-primary btn-sm" onclick="app.openAdmissionWizard()">
               <i class="fa-solid fa-wand-magic-sparkles"></i> Admission Wizard
             </button>
@@ -3144,12 +3403,20 @@ const app = {
                       <button class="btn btn-secondary btn-sm" onclick="app.showEditStudentModal(${s.id})" title="Edit Student Profile">
                         <i class="fa-solid fa-pencil" style="color: #f59e0b;"></i> Edit
                       </button>
+                      <button class="btn btn-secondary btn-sm" onclick="app.openSetStudentPasswordModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.email || '')}', '${this.escapeJsString(s.student_code || '')}')" title="Set Student Portal Password">
+                        <i class="fa-solid fa-key" style="color: #10b981;"></i> Password
+                      </button>
                       <button class="btn btn-secondary btn-sm" onclick="app.showStudentTechniqueModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Syllabus Technique Progression">
                         <i class="fa-solid fa-graduation-cap" style="color: #a855f7;"></i> Syllabus
                       </button>
-                      <button class="btn btn-primary btn-sm" onclick="app.showTransferBatchModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.active_batch_name || 'None')}')" title="Transfer to New Batch">
-                        <i class="fa-solid fa-right-left"></i> Transfer
+                      <button class="btn ${s.active_batch_name ? 'btn-primary' : 'btn-outline-primary'} btn-sm" onclick="app.showTransferBatchModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.active_batch_name || 'Unassigned')}')" title="${s.active_batch_name ? 'Transfer to New Batch' : 'Assign Training Batch'}">
+                        <i class="fa-solid ${s.active_batch_name ? 'fa-right-left' : 'fa-plus'}"></i> ${s.active_batch_name ? 'Transfer' : 'Assign'}
                       </button>
+                      ${s.active_batch_name ? `
+                        <button class="btn btn-secondary btn-sm" onclick="app.unassignStudentBatch(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.active_batch_name)}')" title="Remove from batch (keep student unassigned)">
+                          <i class="fa-solid fa-user-xmark" style="color: #ef4444;"></i> Unassign
+                        </button>
+                      ` : ''}
                       <button class="btn btn-secondary btn-sm" onclick="app.showStudentChecklistModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Admission Checklist & Documents">
                         <i class="fa-solid fa-list-check"></i> Checklist
                       </button>
@@ -3212,7 +3479,7 @@ const app = {
     this.renderStudents();
   },
 
-  async showStudentDetailsModal(studentId) {
+  async showStudentDetailsModal(studentId, initialTab = 'learning') {
     const res = await this.apiRequest(`/api/academy/students/${studentId}`);
     if (!res.success) {
       this.showToast(res.error || 'Failed to load student details', 'danger');
@@ -3221,58 +3488,923 @@ const app = {
     const s = res.student;
     const att = res.attendance || {};
     const fin = res.financials || {};
-    const attPct = att.total_sessions ? Math.round((att.present_sessions / att.total_sessions) * 100) : 0;
+    const learningHistory = res.learningHistory || [];
+    const notifications = res.notifications || [];
+    const enrollments = res.enrollments || [];
+    const invoices = fin.invoices || [];
+    const payments = fin.payments || [];
 
-    this.openModal(
-      `Student Profile — ${s.first_name} ${s.last_name} (${s.student_code || 'No Code'})`,
-      `
-        <div style="display: flex; flex-direction: column; gap: 16px;">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;">
-            <div class="stat-card" style="padding: 10px; text-align: center; background: rgba(59,130,246,0.06); border-radius: 6px;">
-              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Status</div>
-              <div style="font-size: 14px; font-weight: 700; color: ${s.status === 'active' ? '#10b981' : '#ef4444'}; text-transform: capitalize;">${s.status}</div>
+    const attPct = att.total_sessions ? Math.round((att.present_sessions / att.total_sessions) * 100) : 0;
+    this.currentStudentProfileData = res;
+
+    // Calculate age if DOB exists
+    let ageStr = '-';
+    if (s.date_of_birth || s.dob) {
+      const birth = new Date(s.date_of_birth || s.dob);
+      const diff = Date.now() - birth.getTime();
+      const ageDate = new Date(diff);
+      ageStr = Math.abs(ageDate.getUTCFullYear() - 1970) + ' yrs';
+    }
+
+    const modalBody = `
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- Top Profile Banner & Key Metrics -->
+        <div style="background: var(--bg-surface, #f8fafc); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between;">
+          <div style="display: flex; gap: 14px; align-items: center;">
+            <div style="width: 58px; height: 58px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #6366f1); color: #fff; font-size: 22px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.12);">
+              ${this.escapeHtml(s.first_name ? s.first_name[0] : 'S')}${this.escapeHtml(s.last_name ? s.last_name[0] : '')}
             </div>
-            <div class="stat-card" style="padding: 10px; text-align: center; background: rgba(16,185,129,0.06); border-radius: 6px;">
-              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Attendance</div>
-              <div style="font-size: 14px; font-weight: 700; color: #10b981;">${attPct}% (${att.present_sessions || 0}/${att.total_sessions || 0})</div>
-            </div>
-            <div class="stat-card" style="padding: 10px; text-align: center; background: rgba(245,158,11,0.06); border-radius: 6px;">
-              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Fee Outstanding</div>
-              <div style="font-size: 14px; font-weight: 700; color: ${fin.total_outstanding > 0 ? '#ef4444' : '#10b981'};">₹${Number(fin.total_outstanding || 0).toLocaleString()}</div>
-            </div>
-            <div class="stat-card" style="padding: 10px; text-align: center; background: rgba(168,85,247,0.06); border-radius: 6px;">
-              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Active Batch</div>
-              <div style="font-size: 13px; font-weight: 700;">${this.escapeHtml(s.active_batch_name || 'Unassigned')}</div>
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <h3 style="margin: 0; font-size: 18px; font-weight: 700; color: var(--text-heading);">${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</h3>
+                <span class="badge ${s.status === 'active' ? 'badge-success' : 'badge-danger'}" style="text-transform: uppercase; font-size: 11px;">
+                  <i class="fa-solid fa-circle" style="font-size: 8px;"></i> ${s.status || 'Active'}
+                </span>
+                ${s.sport_name ? `<span class="badge badge-purple" style="font-size: 11px;"><i class="fa-solid fa-medal"></i> ${this.escapeHtml(s.sport_name)}</span>` : ''}
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap;">
+                <span><strong>Code:</strong> ${this.escapeHtml(s.student_code || 'N/A')}</span>
+                <span><strong>Adm #:</strong> ${this.escapeHtml(s.admission_number || '-')}</span>
+                <span><strong>Branch:</strong> ${this.escapeHtml(s.branch_name || 'Main Campus')}</span>
+                ${s.current_technique_name ? `<span><strong>Curriculum:</strong> <span style="color: var(--primary); font-weight: 600;">${this.escapeHtml(s.current_technique_name)} (L${s.current_technique_level || 1})</span></span>` : ''}
+              </div>
             </div>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; background: var(--bg-surface); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
-            <div>
-              <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Personal Information</div>
-              <div style="margin-top: 6px; font-size: 13px;"><strong>Name:</strong> ${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</div>
-              <div style="margin-top: 4px; font-size: 13px;"><strong>Date of Birth:</strong> ${s.date_of_birth || s.dob || '-'}</div>
-              <div style="margin-top: 4px; font-size: 13px;"><strong>Gender:</strong> ${this.escapeHtml(s.gender || '-')}</div>
-              <div style="margin-top: 4px; font-size: 13px;"><strong>Blood Group:</strong> ${this.escapeHtml(s.blood_group || '-')}</div>
-              <div style="margin-top: 4px; font-size: 13px;"><strong>Admission #:</strong> ${this.escapeHtml(s.admission_number || '-')}</div>
+          <!-- Quick Stat Badges -->
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <div style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25); border-radius: 8px; padding: 8px 14px; text-align: center;">
+              <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Attendance</div>
+              <div style="font-size: 15px; font-weight: 700; color: #10b981;">${attPct}% <span style="font-size: 11px; font-weight: 500;">(${att.present_sessions || 0}/${att.total_sessions || 0})</span></div>
             </div>
-            <div>
-              <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Guardian & Contact</div>
-              <div style="margin-top: 6px; font-size: 13px;"><strong>Guardian:</strong> ${this.escapeHtml(s.guardian_name || s.father_name || s.mother_name || '-')}</div>
-              <div style="margin-top: 4px; font-size: 13px;"><strong>Phone:</strong> ${this.escapeHtml(s.phone || s.guardian_phone || '-')}</div>
-              <div style="margin-top: 4px; font-size: 13px;"><strong>Email:</strong> ${this.escapeHtml(s.email || s.guardian_email || '-')}</div>
-              <div style="margin-top: 4px; font-size: 13px;"><strong>Branch:</strong> ${this.escapeHtml(s.branch_name || 'Main Campus')}</div>
-              <div style="margin-top: 4px; font-size: 13px;"><strong>Address:</strong> ${this.escapeHtml(s.address || '-')}</div>
+            <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); border-radius: 8px; padding: 8px 14px; text-align: center;">
+              <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Active Batch</div>
+              <div style="font-size: 13px; font-weight: 700; color: var(--primary);">${this.escapeHtml(s.active_batch_name || 'Unassigned')}</div>
+            </div>
+            <div style="background: ${Number(fin.total_outstanding || 0) > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)'}; border: 1px solid ${Number(fin.total_outstanding || 0) > 0 ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)'}; border-radius: 8px; padding: 8px 14px; text-align: center;">
+              <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Outstanding</div>
+              <div style="font-size: 15px; font-weight: 700; color: ${Number(fin.total_outstanding || 0) > 0 ? '#ef4444' : '#10b981'};">₹${Number(fin.total_outstanding || 0).toLocaleString()}</div>
             </div>
           </div>
         </div>
-      `,
-      `
-        <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
-        <button class="btn btn-primary" onclick="app.closeModal(); app.showEditStudentModal(${studentId});">
-          <i class="fa-solid fa-pencil"></i> Edit Profile
-        </button>
-      `
+
+        <!-- Navigation Tabs -->
+        <div style="display: flex; gap: 8px; border-bottom: 2px solid var(--border-color); overflow-x: auto; padding-bottom: 4px;">
+          <button type="button" class="btn btn-sm ${initialTab === 'learning' ? 'btn-primary' : 'btn-secondary'} profile-tab-btn" id="ptab-btn-learning" onclick="app.switchStudentProfileTab('learning')">
+            <i class="fa-solid fa-graduation-cap"></i> Training & Syllabus (${learningHistory.length})
+          </button>
+          <button type="button" class="btn btn-sm ${initialTab === 'notifications' ? 'btn-primary' : 'btn-secondary'} profile-tab-btn" id="ptab-btn-notifications" onclick="app.switchStudentProfileTab('notifications')">
+            <i class="fa-solid fa-bell"></i> Notifications & Comms (${notifications.length})
+          </button>
+          <button type="button" class="btn btn-sm ${initialTab === 'personal' ? 'btn-primary' : 'btn-secondary'} profile-tab-btn" id="ptab-btn-personal" onclick="app.switchStudentProfileTab('personal')">
+            <i class="fa-solid fa-id-card"></i> Personal & Family
+          </button>
+          <button type="button" class="btn btn-sm ${initialTab === 'fees' ? 'btn-primary' : 'btn-secondary'} profile-tab-btn" id="ptab-btn-fees" onclick="app.switchStudentProfileTab('fees')">
+            <i class="fa-solid fa-receipt"></i> Fees & Ledger
+          </button>
+          <button type="button" class="btn btn-sm ${initialTab === 'batches' ? 'btn-primary' : 'btn-secondary'} profile-tab-btn" id="ptab-btn-batches" onclick="app.switchStudentProfileTab('batches')">
+            <i class="fa-solid fa-calendar-check"></i> Batches & Attendance
+          </button>
+        </div>
+
+        <!-- TAB 1: LEARNING & SYLLABUS -->
+        <div id="ptab-pane-learning" class="profile-tab-pane" style="display: ${initialTab === 'learning' ? 'block' : 'none'};">
+          <div style="background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.2); border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Current Syllabus Technique & Belt Rank</div>
+              <div style="font-size: 15px; font-weight: 700; color: var(--primary); margin-top: 2px;">
+                <i class="fa-solid fa-award"></i> ${this.escapeHtml(s.current_technique_name || 'General Foundation')} 
+                ${s.current_technique_level ? `<span class="badge badge-purple" style="font-size: 11px;">Level ${s.current_technique_level}</span>` : ''}
+                ${s.current_belt_level ? `<span class="badge badge-info" style="font-size: 11px;">${this.escapeHtml(s.current_belt_level)}</span>` : ''}
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                Total Attended Sessions under this curriculum: <strong>${s.current_technique_sessions_attended || 0} sessions</strong>
+              </div>
+            </div>
+            <button class="btn btn-outline-primary btn-sm" onclick="app.openAssignTechniqueModal(${s.id})">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> Update / Assign Technique
+            </button>
+          </div>
+
+          <h4 style="font-size: 14px; font-weight: 700; margin: 0 0 10px; color: var(--text-heading); display: flex; justify-content: space-between; align-items: center;">
+            <span><i class="fa-solid fa-timeline"></i> Session-by-Session Training & Learning History</span>
+            <span style="font-size: 12px; font-weight: 400; color: var(--text-muted);">${learningHistory.length} Recorded Session(s)</span>
+          </h4>
+
+          ${learningHistory.length === 0 ? `
+            <div style="text-align: center; padding: 30px; background: var(--bg-surface); border: 1px dashed var(--border-color); border-radius: 8px;">
+              <i class="fa-solid fa-graduation-cap fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+              <div style="font-weight: 600; color: var(--text-heading);">No training sessions logged yet</div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                When attendance is marked for this student, the exact date, curriculum technique, trainer, and scheduled batch timing will appear here automatically.
+              </div>
+            </div>
+          ` : `
+            <div class="modal-table-wrapper" style="max-height: 440px; overflow-y: auto;">
+              <table class="table" style="margin-bottom: 0;">
+                <thead style="position: sticky; top: 0; z-index: 2;">
+                  <tr>
+                    <th style="width: 14%; min-width: 125px;">Date & Session</th>
+                    <th style="width: 18%; min-width: 155px;">Batch & Timing</th>
+                    <th style="width: 17%; min-width: 145px;">Trainer / Coach</th>
+                    <th style="width: 23%; min-width: 180px;">What Was Learned</th>
+                    <th style="width: 12%; min-width: 110px; text-align: center;">Attendance</th>
+                    <th style="width: 16%; min-width: 145px;">Progress & Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${learningHistory.map(item => {
+                    let statusBadge = 'badge-success';
+                    if (item.attendance_status === 'absent') statusBadge = 'badge-danger';
+                    if (item.attendance_status === 'late') statusBadge = 'badge-warning';
+
+                    return `
+                      <tr>
+                        <td>
+                          <div style="font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 5px;">
+                            <i class="fa-regular fa-calendar" style="color: var(--primary);"></i> ${item.date}
+                          </div>
+                          <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                            ${new Date(item.date + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}
+                          </div>
+                        </td>
+                        <td>
+                          <div style="font-weight: 600; color: var(--text-heading);">${this.escapeHtml(item.batch_name || 'General Batch')}</div>
+                          <div style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; margin-top: 3px;">
+                            <i class="fa-regular fa-clock" style="color: #6366f1;"></i> 
+                            ${item.batch_start_time || '07:00'} - ${item.batch_end_time || '08:30'}
+                          </div>
+                        </td>
+                        <td>
+                          <div style="font-weight: 600; color: var(--text-heading); display: flex; align-items: center; gap: 6px;">
+                            <i class="fa-solid fa-user-tie" style="color: var(--primary); font-size: 11px;"></i>
+                            ${this.escapeHtml(item.trainer_name || 'Coach')}
+                          </div>
+                          <div style="font-size: 10px; color: var(--text-dim); text-transform: capitalize; margin-top: 2px;">
+                            ${this.escapeHtml(item.trainer_role ? item.trainer_role.replace('_', ' ') : 'Trainer')}
+                          </div>
+                        </td>
+                        <td>
+                          <div style="font-weight: 700; color: #4338ca; display: flex; align-items: center; gap: 5px;">
+                            <i class="fa-solid fa-bookmark" style="font-size: 10px;"></i> ${this.escapeHtml(item.technique_name || 'General Training')}
+                          </div>
+                          <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
+                            ${item.category_name ? `${this.escapeHtml(item.category_name)} &bull; ` : ''}
+                            Level ${item.technique_level || 1}
+                            ${item.technique_belt_level ? ` &bull; ${this.escapeHtml(item.technique_belt_level)}` : ''}
+                          </div>
+                        </td>
+                        <td style="text-align: center;">
+                          <span class="badge ${statusBadge}" style="letter-spacing: 0.5px; font-weight: 600; padding: 4px 8px;">${(item.attendance_status || 'present').toUpperCase()}</span>
+                        </td>
+                        <td>
+                          ${item.attended_sessions_snapshot !== null && item.attended_sessions_snapshot !== undefined ? `
+                            <div style="font-size: 11px; font-weight: 600; color: var(--text-muted);">
+                              Progress: <span style="color: var(--primary);">${this.escapeHtml(item.technique_status || 'Keep')}</span> (${item.attended_sessions_snapshot} sessions)
+                            </div>
+                          ` : ''}
+                          ${item.attendance_remarks || item.technique_remarks ? `
+                            <div style="font-size: 11px; color: var(--text-dim); font-style: italic; margin-top: 2px;">
+                              &ldquo;${this.escapeHtml(item.attendance_remarks || item.technique_remarks)}&rdquo;
+                            </div>
+                          ` : '<span style="color: var(--text-dim);">-</span>'}
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+
+        <!-- TAB 2: NOTIFICATIONS & COMMS -->
+        <div id="ptab-pane-notifications" class="profile-tab-pane" style="display: ${initialTab === 'notifications' ? 'block' : 'none'};">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <h4 style="font-size: 14px; font-weight: 700; margin: 0; color: var(--text-heading);">
+                <i class="fa-solid fa-paper-plane" style="color: var(--primary);"></i> Communications & Notifications Sent (${notifications.length})
+              </h4>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">
+                All WhatsApp, SMS, Email, and System notices dispatched to student & guardian.
+              </p>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="app.openSendStudentNotificationModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.phone || s.guardian_phone || '')}', '${this.escapeJsString(s.email || s.guardian_email || '')}')">
+              <i class="fa-solid fa-paper-plane"></i> + Send Quick Notice
+            </button>
+          </div>
+
+          ${notifications.length === 0 ? `
+            <div style="text-align: center; padding: 30px; background: var(--bg-surface); border: 1px dashed var(--border-color); border-radius: 8px;">
+              <i class="fa-regular fa-bell fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+              <div style="font-weight: 600; color: var(--text-heading);">No notifications logged yet</div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Attendance confirmations, fee receipts, syllabus alerts, and direct messages appear here. Click <strong>+ Send Quick Notice</strong> to dispatch a notification now.
+              </div>
+            </div>
+          ` : `
+            <div style="max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;">
+              ${notifications.map(notif => {
+                let channelIcon = 'fa-brands fa-whatsapp';
+                let channelColor = '#10b981';
+                let channelBadge = 'badge-success';
+
+                if (notif.channel === 'sms') {
+                  channelIcon = 'fa-solid fa-comment-sms';
+                  channelColor = '#0284c7';
+                  channelBadge = 'badge-info';
+                } else if (notif.channel === 'email') {
+                  channelIcon = 'fa-solid fa-envelope';
+                  channelColor = '#3b82f6';
+                  channelBadge = 'badge-primary';
+                } else if (notif.channel === 'in_app') {
+                  channelIcon = 'fa-solid fa-bell';
+                  channelColor = '#8b5cf6';
+                  channelBadge = 'badge-purple';
+                }
+
+                return `
+                  <div style="border: 1px solid var(--border, #cbd5e1); border-left: 4px solid ${channelColor}; border-radius: 8px; padding: 14px 18px; background: var(--bg-card, #ffffff); box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="badge ${channelBadge}">
+                          <i class="${channelIcon}"></i> ${(notif.channel || 'whatsapp').toUpperCase()}
+                        </span>
+                        <span style="font-weight: 700; font-size: 13px; color: var(--text-heading);">
+                          ${this.escapeHtml(notif.title)}
+                        </span>
+                        <span class="badge badge-secondary" style="font-size: 10px; text-transform: uppercase;">
+                          ${this.escapeHtml(notif.type || 'Notice')}
+                        </span>
+                      </div>
+                      <div style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                        <i class="fa-regular fa-clock"></i> ${notif.sent_at || notif.created_at || 'Just now'}
+                        <span class="badge badge-outline-success" style="font-size: 10px; padding: 1px 6px;">
+                          <i class="fa-solid fa-check-double"></i> ${this.escapeHtml(notif.status || 'delivered')}
+                        </span>
+                      </div>
+                    </div>
+                    <div style="font-size: 12.5px; color: var(--text-main); margin-top: 8px; line-height: 1.5; background: rgba(0,0,0,0.02); padding: 8px 12px; border-radius: 6px;">
+                      ${this.escapeHtml(notif.message)}
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-dim); margin-top: 6px; display: flex; justify-content: space-between;">
+                      <span><strong>Recipient:</strong> ${this.escapeHtml(notif.recipient || s.phone || s.email || 'Direct')}</span>
+                      ${notif.sent_by_user_id ? `<span>Sent by staff user #${notif.sent_by_user_id}</span>` : '<span>Automated System Notification</span>'}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- TAB 3: COMPLETE PERSONAL PROFILE -->
+        <div id="ptab-pane-personal" class="profile-tab-pane" style="display: ${initialTab === 'personal' ? 'block' : 'none'};">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px;">
+            <!-- 1. Demographics -->
+            <div style="border: 1px solid var(--border, #cbd5e1); border-radius: 8px; padding: 16px; background: var(--bg-card, #ffffff); box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <h5 style="margin: 0 0 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--primary);">
+                <i class="fa-solid fa-user"></i> 1. Personal Demographics
+              </h5>
+              <div style="display: grid; grid-template-columns: 140px 1fr; gap: 8px 12px; font-size: 12.5px; line-height: 1.4;">
+                <span style="color: var(--text-muted); font-weight: 500;">Full Name:</span>
+                <span style="font-weight: 600; color: var(--text-heading);">${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Student Code:</span>
+                <span><code>${this.escapeHtml(s.student_code || 'N/A')}</code></span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Admission Number:</span>
+                <span style="font-weight: 500;">${this.escapeHtml(s.admission_number || '-')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Date of Birth:</span>
+                <span>${s.date_of_birth || s.dob || '-'} <small style="color: var(--text-muted);">(${ageStr})</small></span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Gender:</span>
+                <span style="text-transform: capitalize;">${this.escapeHtml(s.gender || '-')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Blood Group:</span>
+                <span><span class="badge badge-info" style="font-size: 11px;">${this.escapeHtml(s.blood_group || 'Not recorded')}</span></span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Nationality:</span>
+                <span>${this.escapeHtml(s.nationality || 'Indian')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Preferred Language:</span>
+                <span>${this.escapeHtml(s.preferred_language || 'English')}</span>
+              </div>
+            </div>
+
+            <!-- 2. Guardian & Emergency Contact -->
+            <div style="border: 1px solid var(--border, #cbd5e1); border-radius: 8px; padding: 16px; background: var(--bg-card, #ffffff); box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <h5 style="margin: 0 0 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--primary);">
+                <i class="fa-solid fa-people-roof"></i> 2. Family & Guardians
+              </h5>
+              <div style="display: grid; grid-template-columns: 145px 1fr; gap: 8px 12px; font-size: 12.5px; line-height: 1.4;">
+                <span style="color: var(--text-muted); font-weight: 500;">Primary Guardian:</span>
+                <span style="font-weight: 600; color: var(--text-heading);">${this.escapeHtml(s.guardian_name || s.father_name || s.mother_name || '-')} ${s.primary_guardian_relation ? `<small style="color: var(--text-muted);">(${this.escapeHtml(s.primary_guardian_relation)})</small>` : ''}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Primary Phone:</span>
+                <span>${s.phone || s.guardian_phone ? `<a href="tel:${this.escapeHtml(s.phone || s.guardian_phone)}" style="color: var(--primary); font-weight: 600;"><i class="fa-solid fa-phone" style="font-size: 10px;"></i> ${this.escapeHtml(s.phone || s.guardian_phone)}</a>` : '-'}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Primary Email:</span>
+                <span>${s.email || s.guardian_email ? `<a href="mailto:${this.escapeHtml(s.email || s.guardian_email)}" style="color: var(--primary);"><i class="fa-solid fa-envelope" style="font-size: 10px;"></i> ${this.escapeHtml(s.email || s.guardian_email)}</a>` : '-'}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Father:</span>
+                <span>${this.escapeHtml(s.father_name || '-')} ${s.father_phone ? `<small style="color: var(--text-muted);">(${this.escapeHtml(s.father_phone)})</small>` : ''}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Mother:</span>
+                <span>${this.escapeHtml(s.mother_name || '-')} ${s.mother_phone ? `<small style="color: var(--text-muted);">(${this.escapeHtml(s.mother_phone)})</small>` : ''}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Emergency Contact:</span>
+                <span>${this.escapeHtml(s.alternate_emergency_contact || '-')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Authorized Pickup:</span>
+                <span>${this.escapeHtml(s.authorized_pickup_persons || '-')}</span>
+              </div>
+            </div>
+
+            <!-- 3. Residential & Permanent Address -->
+            <div style="border: 1px solid var(--border, #cbd5e1); border-radius: 8px; padding: 16px; background: var(--bg-card, #ffffff); box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <h5 style="margin: 0 0 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--primary);">
+                <i class="fa-solid fa-location-dot"></i> 3. Residential Address
+              </h5>
+              <div style="display: grid; grid-template-columns: 140px 1fr; gap: 8px 12px; font-size: 12.5px; line-height: 1.4;">
+                <span style="color: var(--text-muted); font-weight: 500;">Current Address:</span>
+                <span style="color: var(--text-heading);">${this.escapeHtml(s.address || '-')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">City / State:</span>
+                <span>${this.escapeHtml(s.city || 'Vadodara')} / ${this.escapeHtml(s.state || 'Gujarat')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Postal / Country:</span>
+                <span>${this.escapeHtml(s.postal_code || '-')} / ${this.escapeHtml(s.country || 'India')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Permanent Address:</span>
+                <span>${s.same_as_current_address ? '<span class="badge badge-secondary" style="font-size: 10px;">Same as Current Address</span>' : (this.escapeHtml(s.permanent_address || '-'))}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Enrolled Campus:</span>
+                <span><strong>${this.escapeHtml(s.branch_name || 'Main Campus')}</strong></span>
+              </div>
+            </div>
+
+            <!-- 4. Academic & School -->
+            <div style="border: 1px solid var(--border, #cbd5e1); border-radius: 8px; padding: 16px; background: var(--bg-card, #ffffff); box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <h5 style="margin: 0 0 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--primary);">
+                <i class="fa-solid fa-school"></i> 4. Academic & Education
+              </h5>
+              <div style="display: grid; grid-template-columns: 140px 1fr; gap: 8px 12px; font-size: 12.5px; line-height: 1.4;">
+                <span style="color: var(--text-muted); font-weight: 500;">School / College:</span>
+                <span style="font-weight: 600; color: var(--text-heading);">${this.escapeHtml(s.school_college_name || '-')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Grade / Standard:</span>
+                <span>${this.escapeHtml(s.grade_standard || '-')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Education Board:</span>
+                <span>${this.escapeHtml(s.education_board || '-')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Academic Year:</span>
+                <span>${this.escapeHtml(s.academic_year || '-')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Occupation:</span>
+                <span>${this.escapeHtml(s.occupation || 'Student')}</span>
+              </div>
+            </div>
+
+            <!-- 5. Medical & Emergency -->
+            <div style="border: 1px solid var(--border, #cbd5e1); border-radius: 8px; padding: 16px; background: var(--bg-card, #ffffff); box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <h5 style="margin: 0 0 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--primary);">
+                <i class="fa-solid fa-kit-medical"></i> 5. Health & Medical Notes
+              </h5>
+              <div style="display: grid; grid-template-columns: 145px 1fr; gap: 8px 12px; font-size: 12.5px; line-height: 1.4;">
+                <span style="color: var(--text-muted); font-weight: 500;">Known Allergies:</span>
+                <span style="color: ${s.allergies ? '#ef4444' : 'inherit'}; font-weight: ${s.allergies ? '600' : 'normal'};">${this.escapeHtml(s.allergies || 'None reported')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Medical Notes:</span>
+                <span>${this.escapeHtml(s.emergency_medical_instructions || 'None')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Injury History:</span>
+                <span>${this.escapeHtml(s.injury_history || 'No prior sports injuries')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Doctor / Clinic:</span>
+                <span>${this.escapeHtml(s.doctor_clinic_contact || '-')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Medical Consent:</span>
+                <span>${s.medical_consent ? '<span class="badge badge-success">Signed & Consented</span>' : '<span class="badge badge-warning">Pending</span>'}</span>
+              </div>
+            </div>
+
+            <!-- 6. Sports Background & Goals -->
+            <div style="border: 1px solid var(--border, #cbd5e1); border-radius: 8px; padding: 16px; background: var(--bg-card, #ffffff); box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <h5 style="margin: 0 0 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--primary);">
+                <i class="fa-solid fa-trophy"></i> 6. Sports Experience & Goals
+              </h5>
+              <div style="display: grid; grid-template-columns: 145px 1fr; gap: 8px 12px; font-size: 12.5px; line-height: 1.4;">
+                <span style="color: var(--text-muted); font-weight: 500;">Prior Experience:</span>
+                <span>${this.escapeHtml(s.previous_sports_experience || 'None reported')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Previous Academy:</span>
+                <span>${this.escapeHtml(s.previous_academy || 'None')}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Student Goals:</span>
+                <span style="font-style: italic;">&ldquo;${this.escapeHtml(s.goals_notes || 'Focus on self-defence and tournament progression')}&rdquo;</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Media Consent:</span>
+                <span>${s.photo_video_permission ? '<span class="badge badge-success">Granted</span>' : '<span class="badge badge-danger">Declined</span>'}</span>
+
+                <span style="color: var(--text-muted); font-weight: 500;">Competition Consent:</span>
+                <span>${s.competition_consent ? '<span class="badge badge-success">Approved</span>' : '<span class="badge badge-warning">Consent Needed</span>'}</span>
+              </div>
+            </div>
+
+            <!-- 7. Portal Credentials & Login Access -->
+            <div style="border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 16px; background: rgba(16, 185, 129, 0.05); grid-column: 1 / -1; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <div>
+                  <h5 style="margin: 0 0 6px; font-size: 13px; font-weight: 700; color: #10b981;">
+                    <i class="fa-solid fa-key"></i> Student Self-Service Portal Credentials
+                  </h5>
+                  <div style="font-size: 12.5px; color: var(--text-muted); display: flex; gap: 20px; flex-wrap: wrap;">
+                    <span>Login Email: <strong style="color: var(--text-heading);">${this.escapeHtml(s.email || 'No email assigned')}</strong></span>
+                    <span>Student Code: <code style="font-weight: 700;">${this.escapeHtml(s.student_code || '-')}</code></span>
+                    <span>Password Status: ${s.has_password ? '<span class="badge badge-success"><i class="fa-solid fa-lock"></i> Password Configured</span>' : '<span class="badge badge-warning"><i class="fa-solid fa-lock-open"></i> No Password Set</span>'}</span>
+                  </div>
+                </div>
+                <button class="btn btn-sm btn-outline-success" onclick="app.openSetStudentPasswordModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.email || '')}', '${this.escapeJsString(s.student_code || '')}')">
+                  <i class="fa-solid fa-key"></i> ${s.has_password ? 'Change Password' : 'Set Portal Password'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: FEES & LEDGER -->
+        <div id="ptab-pane-fees" class="profile-tab-pane" style="display: ${initialTab === 'fees' ? 'block' : 'none'};">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px;">
+            <div style="background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.2); border-radius: 8px; padding: 12px; text-align: center;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Total Billed</div>
+              <div style="font-size: 18px; font-weight: 700; color: var(--primary);">₹${Number(fin.total_billed || 0).toLocaleString()}</div>
+            </div>
+            <div style="background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.2); border-radius: 8px; padding: 12px; text-align: center;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Total Paid</div>
+              <div style="font-size: 18px; font-weight: 700; color: #10b981;">₹${Number(fin.total_paid || 0).toLocaleString()}</div>
+            </div>
+            <div style="background: ${Number(fin.total_outstanding || 0) > 0 ? 'rgba(239,68,68,0.06)' : 'rgba(16,185,129,0.06)'}; border: 1px solid ${Number(fin.total_outstanding || 0) > 0 ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)'}; border-radius: 8px; padding: 12px; text-align: center;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Outstanding Balance</div>
+              <div style="font-size: 18px; font-weight: 700; color: ${Number(fin.total_outstanding || 0) > 0 ? '#ef4444' : '#10b981'};">₹${Number(fin.total_outstanding || 0).toLocaleString()}</div>
+            </div>
+          </div>
+
+          <h5 style="font-size: 13px; font-weight: 700; margin: 0 0 8px;">Invoices & Billing History</h5>
+          ${invoices.length === 0 ? `
+            <div style="font-size: 12px; color: var(--text-muted); padding: 16px; text-align: center; background: var(--bg-surface); border-radius: 6px;">No invoices generated yet for this student.</div>
+          ` : `
+            <div class="modal-table-wrapper" style="max-height: 220px; overflow-y: auto; margin-bottom: 16px;">
+              <table class="table" style="margin-bottom: 0;">
+                <thead style="position: sticky; top: 0; z-index: 2;">
+                  <tr>
+                    <th style="width: 20%; min-width: 120px;">Invoice #</th>
+                    <th style="width: 24%; min-width: 150px;">Billing Period</th>
+                    <th style="width: 14%; min-width: 90px;">Amount</th>
+                    <th style="width: 14%; min-width: 90px;">Paid</th>
+                    <th style="width: 14%; min-width: 90px;">Balance</th>
+                    <th style="width: 14%; min-width: 95px; text-align: center;">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${invoices.map(inv => `
+                    <tr>
+                      <td><strong style="color: var(--text-heading);">${this.escapeHtml(inv.invoice_number || ('INV-' + inv.id))}</strong></td>
+                      <td style="color: var(--text-muted);">${inv.period_start_date || '-'} to ${inv.period_end_date || '-'}</td>
+                      <td>₹${Number(inv.final_amount || 0).toLocaleString()}</td>
+                      <td style="color: #10b981; font-weight: 600;">₹${Number(inv.paid_amount || 0).toLocaleString()}</td>
+                      <td><strong style="color: ${Number(inv.balance_amount || 0) > 0 ? '#ef4444' : '#10b981'};">₹${Number(inv.balance_amount || 0).toLocaleString()}</strong></td>
+                      <td style="text-align: center;"><span class="badge ${inv.status === 'paid' ? 'badge-success' : (inv.status === 'partial' ? 'badge-warning' : 'badge-danger')}" style="padding: 4px 8px;">${(inv.status || 'unpaid').toUpperCase()}</span></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+
+          <h5 style="font-size: 13px; font-weight: 700; margin: 0 0 8px;">Payment Transactions & Receipts</h5>
+          ${payments.length === 0 ? `
+            <div style="font-size: 12px; color: var(--text-muted); padding: 16px; text-align: center; background: var(--bg-surface); border-radius: 6px;">No payments recorded yet.</div>
+          ` : `
+            <div class="modal-table-wrapper" style="max-height: 220px; overflow-y: auto;">
+              <table class="table" style="margin-bottom: 0;">
+                <thead style="position: sticky; top: 0; z-index: 2;">
+                  <tr>
+                    <th style="width: 18%; min-width: 110px;">Receipt #</th>
+                    <th style="width: 18%; min-width: 110px;">Payment Date</th>
+                    <th style="width: 16%; min-width: 95px;">Amount</th>
+                    <th style="width: 16%; min-width: 95px;">Method</th>
+                    <th style="width: 20%; min-width: 130px;">Notes</th>
+                    <th style="width: 12%; min-width: 80px; text-align: center;">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${payments.map(p => `
+                    <tr>
+                      <td><strong style="color: var(--text-heading);">${this.escapeHtml(p.receipt_number || ('REC-' + p.id))}</strong></td>
+                      <td>${p.payment_date}</td>
+                      <td style="color: #10b981; font-weight: 700;">₹${Number(p.amount || 0).toLocaleString()}</td>
+                      <td><span class="badge badge-info">${this.escapeHtml(p.payment_method || 'Cash')}</span></td>
+                      <td style="color: var(--text-muted); font-size: 11.5px;">${this.escapeHtml(p.notes || '-')}</td>
+                      <td style="text-align: center;">
+                        <button class="btn btn-secondary btn-xs" onclick="app.printReceipt('${p.receipt_number}')">
+                          <i class="fa-solid fa-print"></i> Receipt
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+
+        <!-- TAB 5: BATCHES & ATTENDANCE -->
+        <div id="ptab-pane-batches" class="profile-tab-pane" style="display: ${initialTab === 'batches' ? 'block' : 'none'};">
+          <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; background: var(--bg-surface); margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Active Batch Enrollment</div>
+                <div style="font-size: 16px; font-weight: 700; color: var(--text-heading); margin-top: 2px;">
+                  <i class="fa-solid fa-users-rectangle" style="color: var(--primary);"></i> ${this.escapeHtml(s.active_batch_name || 'No Active Batch')}
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                  Schedule: <strong>${this.escapeHtml(s.active_batch_start_time || '06:30')} - ${this.escapeHtml(s.active_batch_end_time || '08:00')}</strong> 
+                  (${this.escapeHtml(s.active_batch_days || 'Mon, Wed, Fri')}) &bull; Coach: <strong>${this.escapeHtml(s.active_batch_coach_name || 'Pratik')}</strong>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-outline-primary btn-sm" onclick="app.closeModal(); app.showTransferBatchModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.active_batch_name || 'Unassigned')}');">
+                  <i class="fa-solid ${s.active_batch_name ? 'fa-right-left' : 'fa-plus'}"></i> ${s.active_batch_name ? 'Transfer Batch' : 'Assign Batch'}
+                </button>
+                ${s.active_batch_name ? `
+                  <button class="btn btn-outline-danger btn-sm" onclick="app.closeModal(); app.unassignStudentBatch(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.active_batch_name)}');">
+                    <i class="fa-solid fa-user-xmark"></i> Unassign
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+
+          <h5 style="font-size: 13px; font-weight: 700; margin: 0 0 8px;">Batch Transfer & Enrollment History</h5>
+          ${enrollments.length === 0 ? `
+            <div style="font-size: 12px; color: var(--text-muted); padding: 16px; text-align: center; background: var(--bg-surface); border-radius: 6px;">No enrollment history records found.</div>
+          ` : `
+            <div class="modal-table-wrapper" style="max-height: 240px; overflow-y: auto;">
+              <table class="table" style="margin-bottom: 0;">
+                <thead style="position: sticky; top: 0; z-index: 2;">
+                  <tr>
+                    <th style="width: 25%; min-width: 150px;">Batch Name</th>
+                    <th style="width: 25%; min-width: 160px;">Scheduled Timing</th>
+                    <th style="width: 18%; min-width: 110px;">Start Date</th>
+                    <th style="width: 18%; min-width: 110px;">End Date</th>
+                    <th style="width: 14%; min-width: 90px; text-align: center;">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${enrollments.map(e => `
+                    <tr>
+                      <td><strong style="color: var(--text-heading);">${this.escapeHtml(e.batch_name)}</strong></td>
+                      <td style="color: var(--text-muted);">${e.start_time || '07:00'} - ${e.end_time || '08:30'} (${e.days_of_week || 'Regular'})</td>
+                      <td>${e.start_date || '-'}</td>
+                      <td>${e.end_date || 'Active Present'}</td>
+                      <td style="text-align: center;"><span class="badge ${e.status === 'active' ? 'badge-success' : 'badge-secondary'}" style="padding: 4px 8px;">${(e.status || 'completed').toUpperCase()}</span></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+
+    const modalFooter = `
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <div style="font-size: 12px; color: var(--text-muted);">
+          Student ID: <strong>#${s.id}</strong> &bull; Enrolled: <strong>${s.enrolled_at || s.created_at || 'Active'}</strong>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+          <button class="btn btn-outline-success" onclick="app.openSetStudentPasswordModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.email || '')}', '${this.escapeJsString(s.student_code || '')}')">
+            <i class="fa-solid fa-key"></i> Set Password
+          </button>
+          <button class="btn btn-primary" onclick="app.closeModal(); app.showEditStudentModal(${studentId});">
+            <i class="fa-solid fa-pencil"></i> Edit Profile
+          </button>
+        </div>
+      </div>
+    `;
+
+    this.openModal(
+      `Student 360° Profile — ${s.first_name} ${s.last_name} (${s.student_code || 'No Code'})`,
+      modalBody,
+      modalFooter,
+      '1050px'
     );
+  },
+
+  switchStudentProfileTab(tabName) {
+    const tabs = ['learning', 'notifications', 'personal', 'fees', 'batches'];
+    tabs.forEach(t => {
+      const btn = document.getElementById(`ptab-btn-${t}`);
+      const pane = document.getElementById(`ptab-pane-${t}`);
+      if (btn) {
+        if (t === tabName) {
+          btn.classList.remove('btn-secondary');
+          btn.classList.add('btn-primary');
+        } else {
+          btn.classList.remove('btn-primary');
+          btn.classList.add('btn-secondary');
+        }
+      }
+      if (pane) {
+        pane.style.display = (t === tabName) ? 'block' : 'none';
+      }
+    });
+  },
+
+  openSendStudentNotificationModal(studentId, studentName, defaultPhone, defaultEmail) {
+    const content = `
+      <form id="send-student-notice-form" onsubmit="event.preventDefault(); app.submitSendStudentNotification(${studentId});">
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Recipient Student</label>
+          <input type="text" class="form-control" value="${this.escapeHtml(studentName)}" disabled style="background: rgba(0,0,0,0.04);">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Delivery Channel</label>
+            <select id="notice-channel" class="form-control" onchange="app.onNoticeChannelChange()">
+              <option value="whatsapp">WhatsApp Message</option>
+              <option value="sms">SMS Text</option>
+              <option value="email">Email Notification</option>
+              <option value="in_app">In-App Alert</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Category / Purpose</label>
+            <select id="notice-type" class="form-control">
+              <option value="general">General Notice</option>
+              <option value="attendance">Attendance & Discipline Alert</option>
+              <option value="syllabus">Syllabus & Technique Update</option>
+              <option value="fee_reminder">Fee Reminder & Balance</option>
+              <option value="event">Event & Championship Notice</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Destination Contact</label>
+          <input type="text" id="notice-recipient" class="form-control" value="${this.escapeHtml(defaultPhone || defaultEmail || '')}" placeholder="Phone with country code (e.g. +91 9510474740) or email">
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Notice Title</label>
+          <input type="text" id="notice-title" class="form-control" required placeholder="e.g. Training Session Schedule Update">
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Message Body</label>
+          <textarea id="notice-message" class="form-control" rows="4" required placeholder="Type the message to dispatch to the student/parent..."></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="app.showStudentDetailsModal(${studentId}, 'notifications')">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-notice">
+            <i class="fa-solid fa-paper-plane"></i> Dispatch Notice
+          </button>
+        </div>
+      </form>
+    `;
+
+    this.openModal(
+      `Send Direct Communication — ${studentName}`,
+      content,
+      '',
+      '600px'
+    );
+  },
+
+  onNoticeChannelChange() {
+    const channel = document.getElementById('notice-channel')?.value;
+    const recipientInput = document.getElementById('notice-recipient');
+    if (!recipientInput || !this.currentStudentProfileData) return;
+
+    const s = this.currentStudentProfileData.student;
+    if (channel === 'email') {
+      recipientInput.value = s.email || s.guardian_email || '';
+      recipientInput.placeholder = 'Email address (e.g. parent@example.com)';
+    } else {
+      recipientInput.value = s.phone || s.guardian_phone || '';
+      recipientInput.placeholder = 'Phone with country code (e.g. +91 9510474740)';
+    }
+  },
+
+  async submitSendStudentNotification(studentId) {
+    const btn = document.getElementById('btn-submit-notice');
+    const title = document.getElementById('notice-title')?.value.trim();
+    const message = document.getElementById('notice-message')?.value.trim();
+    const channel = document.getElementById('notice-channel')?.value || 'whatsapp';
+    const type = document.getElementById('notice-type')?.value || 'general';
+    const recipient = document.getElementById('notice-recipient')?.value.trim();
+
+    if (!title || !message) {
+      this.showToast('Title and message are required', 'warning');
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Dispatching...';
+    }
+
+    try {
+      const res = await this.apiRequest(`/api/academy/students/${studentId}/notifications`, {
+        method: 'POST',
+        body: { title, message, channel, type, recipient },
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'Notification dispatched successfully!', 'success');
+        await this.showStudentDetailsModal(studentId, 'notifications');
+      } else {
+        this.showToast(res.error || 'Failed to dispatch notification', 'danger');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Dispatch Notice';
+        }
+      }
+    } catch (err) {
+      this.showToast('Dispatch error: ' + err.message, 'danger');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Dispatch Notice';
+      }
+    }
+  },
+
+  openSetStudentPasswordModal(studentId, studentName, studentEmail = '', studentCode = '') {
+    const content = `
+      <form id="set-student-password-form" onsubmit="event.preventDefault(); app.submitSetStudentPassword(${studentId});">
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+          <div style="font-weight: 700; color: #059669; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-shield-halved"></i> Student Portal Authentication
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.45;">
+            Configure the login credentials used by <strong>${this.escapeHtml(studentName)}</strong> to access the Student Portal (<strong>/student</strong>) to view attendance, syllabus techniques, fee ledger, and notifications.
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Student Name</label>
+            <input type="text" class="form-control" value="${this.escapeHtml(studentName)}" disabled style="background: rgba(0,0,0,0.04);">
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Student Code</label>
+            <input type="text" class="form-control" value="${this.escapeHtml(studentCode || '-')}" disabled style="background: rgba(0,0,0,0.04);">
+          </div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
+            Portal Login Email <span style="color: #ef4444;">*</span>
+          </label>
+          <input type="email" id="set-student-email" class="form-control" value="${this.escapeHtml(studentEmail || '')}" placeholder="student@example.com" required style="font-weight: 500;">
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+            This email is used by the student/parent as their login username at the portal.
+          </div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 12px; font-weight: 600; margin: 0;">
+              New Password <span style="color: #ef4444;">*</span>
+            </label>
+            <button type="button" class="btn btn-xs btn-outline-secondary" onclick="app.generateRandomPassword('set-student-new-password')">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Password
+            </button>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <input type="password" id="set-student-new-password" class="form-control" placeholder="Minimum 4 characters" minlength="4" required style="font-family: monospace; font-size: 13px;">
+            <button type="button" class="btn btn-secondary" onclick="app.togglePasswordVisibility('set-student-new-password', this)" title="Show/Hide Password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
+            Confirm Password <span style="color: #ef4444;">*</span>
+          </label>
+          <input type="password" id="set-student-confirm-password" class="form-control" placeholder="Re-enter password to confirm" minlength="4" required style="font-family: monospace; font-size: 13px;">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-success" id="btn-submit-set-password">
+            <i class="fa-solid fa-key"></i> Save Credentials
+          </button>
+        </div>
+      </form>
+    `;
+
+    this.openModal(
+      `Set Portal Password — ${studentName}`,
+      content,
+      '',
+      '520px'
+    );
+  },
+
+  togglePasswordVisibility(inputId, btnEl) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === 'password') {
+      input.type = 'text';
+      if (btnEl) btnEl.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
+    } else {
+      input.type = 'password';
+      if (btnEl) btnEl.innerHTML = '<i class="fa-solid fa-eye"></i>';
+    }
+  },
+
+  generateRandomPassword(inputId) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+    let pwd = '';
+    for (let i = 0; i < 10; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const input = document.getElementById(inputId);
+    const confirmInput = document.getElementById('set-student-confirm-password');
+    if (input) {
+      input.type = 'text';
+      input.value = pwd;
+    }
+    if (confirmInput) {
+      confirmInput.type = 'text';
+      confirmInput.value = pwd;
+    }
+    this.showToast('Generated strong password: ' + pwd, 'info');
+  },
+
+  async submitSetStudentPassword(studentId) {
+    const btn = document.getElementById('btn-submit-set-password');
+    const email = document.getElementById('set-student-email')?.value.trim();
+    const newPwd = document.getElementById('set-student-new-password')?.value.trim();
+    const confirmPwd = document.getElementById('set-student-confirm-password')?.value.trim();
+
+    if (!newPwd || newPwd.length < 4) {
+      this.showToast('Password must be at least 4 characters long', 'warning');
+      return;
+    }
+
+    if (newPwd !== confirmPwd) {
+      this.showToast('Passwords do not match. Please re-enter identical passwords.', 'warning');
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+    }
+
+    try {
+      if (email) {
+        await this.apiRequest(`/api/academy/students/${studentId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ email, password: newPwd })
+        });
+      }
+
+      const res = await this.apiRequest(`/api/academy/students/${studentId}/set-password`, {
+        method: 'POST',
+        body: JSON.stringify({ password: newPwd, email })
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'Student portal password updated successfully!', 'success');
+        this.closeModal();
+        if (document.getElementById('students-view')?.style.display !== 'none') {
+          this.renderStudents();
+        }
+      } else {
+        this.showToast(res.error || 'Failed to update student password', 'danger');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-key"></i> Save Credentials';
+        }
+      }
+    } catch (err) {
+      this.showToast('Error saving password: ' + err.message, 'danger');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-key"></i> Save Credentials';
+      }
+    }
   },
 
   async showEditStudentModal(studentId) {
@@ -3358,6 +4490,19 @@ const app = {
             <label>Residential Address</label>
             <input type="text" id="edit-stu-address" class="form-input" style="width: 100%;" value="${this.escapeHtml(s.address || '')}">
           </div>
+
+          <div class="form-group" style="margin-top: 14px; border-top: 1px dashed var(--border, #cbd5e1); padding-top: 12px;">
+            <label style="font-size: 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
+              <span><i class="fa-solid fa-key" style="color: #10b981;"></i> Student Portal Password</span>
+              <span style="font-size: 11px; font-weight: normal; color: var(--text-muted);">(Leave blank to keep current password)</span>
+            </label>
+            <div style="display: flex; gap: 6px; margin-top: 4px;">
+              <input type="password" id="edit-stu-password" class="form-input" placeholder="Enter new password (optional)" style="width: 100%; font-family: monospace;">
+              <button type="button" class="btn btn-secondary" onclick="app.togglePasswordVisibility('edit-stu-password', this)" title="Show/Hide">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+          </div>
         </form>
       `,
       `
@@ -3381,27 +4526,33 @@ const app = {
     const blood_group = document.getElementById('edit-stu-blood')?.value?.trim();
     const status = document.getElementById('edit-stu-status')?.value;
     const address = document.getElementById('edit-stu-address')?.value?.trim();
+    const password = document.getElementById('edit-stu-password')?.value?.trim();
 
     if (!first_name || !last_name) {
       this.showToast('First and last name are required', 'danger');
       return;
     }
 
+    const payload = {
+      first_name,
+      last_name,
+      phone,
+      email,
+      date_of_birth,
+      gender,
+      guardian_name,
+      branch_id: branch_id ? Number(branch_id) : undefined,
+      blood_group,
+      status,
+      address,
+    };
+    if (password && password.length >= 4) {
+      payload.password = password;
+    }
+
     const res = await this.apiRequest(`/api/academy/students/${studentId}`, {
       method: 'PUT',
-      body: JSON.stringify({
-        first_name,
-        last_name,
-        phone,
-        email,
-        date_of_birth,
-        gender,
-        guardian_name,
-        branch_id: branch_id ? Number(branch_id) : undefined,
-        blood_group,
-        status,
-        address,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (res.success) {
@@ -3434,27 +4585,28 @@ const app = {
     const batchesData = await this.apiRequest('/api/academy/batches');
     const batches = batchesData.batches || [];
     const today = new Date().toISOString().split('T')[0];
+    const isUnassigned = !currentBatchName || currentBatchName === 'None' || currentBatchName === 'Unassigned';
 
     this.openModal(
-      `Batch Transfer — ${studentName}`,
+      `${isUnassigned ? 'Assign Training Batch' : 'Batch Transfer'} — ${studentName}`,
       `
         <div>
           <div style="background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 16px;">
-            <p style="font-size: 13px;">Current Active Batch: <strong>${currentBatchName}</strong></p>
+            <p style="font-size: 13px;">Current Active Batch: <strong>${this.escapeHtml(isUnassigned ? 'Unassigned (No Active Batch)' : currentBatchName)}</strong></p>
             <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-              Transferring will atomically close the current assignment and record a permanent audit entry.
+              ${isUnassigned ? 'Assigning a batch will schedule the student into training sessions and apply batch fees/schedule.' : 'Transferring will atomically close the current assignment and record a permanent audit entry.'}
             </p>
           </div>
           <div class="form-group">
-            <label>Select Target Batch *</label>
+            <label>Select ${isUnassigned ? 'Training Batch' : 'Target Batch'} *</label>
             <select id="transfer-batch-id" class="form-select" style="width: 100%;" required>
-              <option value="">-- Choose New Batch --</option>
-              ${batches.map(b => `<option value="${b.id}">${b.name} (${b.sport_name} | Branch: ${b.branch_name})</option>`).join('')}
+              <option value="">-- Choose Batch --</option>
+              ${batches.map(b => `<option value="${b.id}">${this.escapeHtml(b.name)} (${this.escapeHtml(b.sport_name || 'Sport')} | Branch: ${this.escapeHtml(b.branch_name || 'Campus')})</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
-            <label>Transfer Reason *</label>
-            <input type="text" id="transfer-reason" class="form-input" style="width: 100%;" placeholder="e.g. Schedule clash, Level upgrade, Branch change" required>
+            <label>${isUnassigned ? 'Assignment Note' : 'Transfer Reason'} *</label>
+            <input type="text" id="transfer-reason" class="form-input" style="width: 100%;" placeholder="${isUnassigned ? 'e.g. Regular enrollment, batch finalized' : 'e.g. Schedule clash, Level upgrade, Branch change'}" value="${isUnassigned ? 'Initial training batch assignment' : ''}" required>
           </div>
           <div class="form-group">
             <label>Effective Date</label>
@@ -3465,23 +4617,23 @@ const app = {
       `
         <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
         <button class="btn btn-primary" onclick="app.submitBatchTransfer(${studentId})">
-          <i class="fa-solid fa-check"></i> Confirm Transfer
+          <i class="fa-solid fa-check"></i> ${isUnassigned ? 'Confirm Assignment' : 'Confirm Transfer'}
         </button>
       `
     );
   },
 
   async submitBatchTransfer(studentId) {
-    const new_batch_id = document.getElementById('transfer-batch-id').value;
-    const transfer_reason = document.getElementById('transfer-reason').value.trim();
-    const effective_date = document.getElementById('transfer-date').value;
+    const new_batch_id = document.getElementById('transfer-batch-id')?.value;
+    const transfer_reason = document.getElementById('transfer-reason')?.value?.trim();
+    const effective_date = document.getElementById('transfer-date')?.value;
 
     if (!new_batch_id) {
-      this.showToast('Please select a target batch', 'danger');
+      this.showToast('Please select a training batch', 'danger');
       return;
     }
     if (!transfer_reason) {
-      this.showToast('Please provide a reason for the transfer', 'danger');
+      this.showToast('Please provide a reason or note', 'danger');
       return;
     }
 
@@ -3491,11 +4643,29 @@ const app = {
     });
 
     if (res.success) {
-      this.showToast(res.message, 'success');
+      this.showToast(res.message || 'Batch assignment updated successfully', 'success');
       this.closeModal();
       this.renderStudents();
     } else {
-      this.showToast(res.error || 'Transfer failed', 'danger');
+      this.showToast(res.error || 'Operation failed', 'danger');
+    }
+  },
+
+  async unassignStudentBatch(studentId, studentName, currentBatchName) {
+    if (!confirm(`Are you sure you want to remove ${studentName} from '${currentBatchName}'?\n\nThe student will remain active in the unassigned pool and can be assigned a batch later at any time.`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/students/${studentId}/unassign-batch`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Admin unassigned student from batch' })
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Student unassigned from batch successfully', 'success');
+      this.renderStudents();
+    } else {
+      this.showToast(res.error || 'Failed to unassign batch', 'danger');
     }
   },
 
@@ -3700,10 +4870,50 @@ const app = {
     this.showToast('Excel report generated via SheetJS', 'success');
   },
 
-  downloadStudentSampleCsv() {
+  exportStudentsCsv() {
+    if (!this.currentStudentsData || !this.currentStudentsData.length) {
+      this.showToast('No students to export', 'info');
+      return;
+    }
+    const headers = ['Student Code', 'First Name', 'Last Name', 'Email', 'Phone', 'Guardian Name', 'Guardian Phone', 'Branch', 'Enrolled Batches', 'Status'];
+    const rows = this.currentStudentsData.map(s => [
+      `"${(s.student_code || '').replace(/"/g, '""')}"`,
+      `"${(s.first_name || '').replace(/"/g, '""')}"`,
+      `"${(s.last_name || '').replace(/"/g, '""')}"`,
+      `"${(s.email || '').replace(/"/g, '""')}"`,
+      `"${(s.phone || '').replace(/"/g, '""')}"`,
+      `"${(s.guardian_name || '').replace(/"/g, '""')}"`,
+      `"${(s.guardian_phone || '').replace(/"/g, '""')}"`,
+      `"${(s.branch_name || 'Main Campus').replace(/"/g, '""')}"`,
+      `"${(s.enrolled_batches || '').replace(/"/g, '""')}"`,
+      `"${(s.status || 'active').replace(/"/g, '""')}"`,
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Students_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    this.showToast('Exported students CSV successfully', 'success');
+  },
+
+  async downloadStudentSampleCsv() {
+    let branchId = '';
+    let batchId = '';
+    try {
+      const brRes = await this.apiRequest('/api/academy/branches');
+      if (brRes.branches && brRes.branches.length > 0) branchId = brRes.branches[0].id;
+      const btRes = await this.apiRequest('/api/academy/batches');
+      if (btRes.batches && btRes.batches.length > 0) batchId = btRes.batches[0].id;
+    } catch (e) {}
+
     const csvContent = 'first_name,last_name,email,phone,date_of_birth,gender,emergency_contact,branch_id,batch_id\n' +
-      'Aarav,Patel,aarav.patel@example.com,9876543210,2010-05-15,male,9876543211,1,1\n' +
-      'Diya,Shah,diya.shah@example.com,9876543212,2012-08-20,female,9876543213,1,1\n';
+      `Aarav,Patel,aarav.patel@example.com,9876543210,2010-05-15,male,9876543211,${branchId},${batchId}\n` +
+      `Diya,Shah,diya.shah@example.com,9876543212,2012-08-20,female,9876543213,${branchId},${batchId}\n` +
+      `Kabir,Mehta,kabir.mehta@example.com,9876543214,2011-11-05,male,9876543215,,\n`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -3728,24 +4938,25 @@ const app = {
       console.warn('Failed to load branches/batches for import modal', e);
     }
 
-    const branchListHtml = branches.map(b => `<code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">ID ${b.id}: ${b.name}</code>`).join(' ') || '<em>No branches created yet</em>';
-    const batchListHtml = batches.map(b => `<code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">ID ${b.id}: ${b.name} (Branch ${b.branch_id})</code>`).join(' ') || '<em>No batches created yet</em>';
+    const branchListHtml = branches.map(b => `<code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">ID ${b.id}: ${b.name}</code>`).join(' ') || '<em>No branches created yet (Optional)</em>';
+    const batchListHtml = batches.map(b => `<code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">ID ${b.id}: ${b.name}</code>`).join(' ') || '<em>No batches created yet (Optional)</em>';
 
-    this.showModal('Import Students (CSV / Excel)', `
+    this.openModal('Import Students (CSV / Excel)', `
       <div>
         <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: var(--radius-md); padding: 12px; margin-bottom: 16px; font-size: 13px;">
-          <div style="font-weight: 600; margin-bottom: 6px;"><i class="fa-solid fa-circle-info"></i> CSV Format & Requirements:</div>
+          <div style="font-weight: 600; margin-bottom: 6px;"><i class="fa-solid fa-circle-info"></i> CSV / Excel Format & Guidelines:</div>
           <p style="margin: 0 0 8px 0; color: var(--text-muted);">
-            Column headers must include: <strong>first_name, last_name, email, phone, date_of_birth, gender, emergency_contact, branch_id, batch_id</strong>.
+            Column headers supported: <strong>first_name, last_name, email, phone, date_of_birth, gender, emergency_contact, branch_id, batch_id</strong>.
           </p>
-          <div style="font-size: 12px; line-height: 1.6;">
+          <div style="font-size: 12px; line-height: 1.6; color: var(--text-muted);">
             <div><strong>Active Branches:</strong> ${branchListHtml}</div>
             <div style="margin-top: 4px;"><strong>Active Batches:</strong> ${batchListHtml}</div>
+            <div style="margin-top: 6px; font-size: 11px; color: var(--text-dim);">* Note: <code>branch_id</code> and <code>batch_id</code> are optional. You can enter numeric IDs or Branch/Batch names. Students can be enrolled in batches anytime.</div>
           </div>
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <label style="font-weight: 600; margin: 0; font-size: 13px;">Upload CSV or Excel File</label>
+          <label style="font-weight: 600; margin: 0; font-size: 13px;">Upload CSV or Excel File (.csv, .xlsx, .xls)</label>
           <button type="button" class="btn btn-secondary btn-sm" onclick="app.downloadStudentSampleCsv()">
             <i class="fa-solid fa-download"></i> Sample CSV
           </button>
@@ -3757,7 +4968,7 @@ const app = {
 
         <div class="form-group">
           <label style="font-size: 12px; color: var(--text-muted);">Or Paste Raw CSV Data Directly</label>
-          <textarea id="import-student-raw" class="form-textarea" rows="3" style="font-family: monospace; font-size: 12px;" placeholder="first_name,last_name,email,phone,date_of_birth,gender,emergency_contact,branch_id,batch_id&#10;Aarav,Patel,aarav@example.com,9876543210,2010-05-15,male,9876543211,1,1" oninput="app.handleStudentImportRaw(this.value)"></textarea>
+          <textarea id="import-student-raw" class="form-textarea" rows="4" style="font-family: monospace; font-size: 12px;" placeholder="first_name,last_name,email,phone,date_of_birth,gender,emergency_contact,branch_id,batch_id&#10;Aarav,Patel,aarav@example.com,9876543210,2010-05-15,male,9876543211,,&#10;Diya,Shah,diya@example.com,9876543212,2012-08-20,female,9876543213,," oninput="app.handleStudentImportRaw(this.value)"></textarea>
         </div>
 
         <div id="import-preview-container" style="display: none; margin-top: 14px;">
@@ -3766,15 +4977,16 @@ const app = {
               <i class="fa-solid fa-list-check" style="color: #10b981;"></i> Parsed Preview (<span id="import-preview-count">0</span> records)
             </h4>
           </div>
-          <div class="table-responsive" style="max-height: 160px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+          <div class="table-responsive" style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm);">
             <table class="custom-table" style="font-size: 11px; margin: 0;" id="import-preview-table">
               <thead>
                 <tr>
                   <th>#</th>
                   <th>Student Name</th>
+                  <th>Gender / DOB</th>
                   <th>Phone / Email</th>
-                  <th>Branch ID</th>
-                  <th>Batch ID</th>
+                  <th>Branch</th>
+                  <th>Batch</th>
                 </tr>
               </thead>
               <tbody id="import-preview-tbody"></tbody>
@@ -3797,29 +5009,34 @@ const app = {
     if (!file) return;
 
     const reader = new FileReader();
+    const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv';
+
     reader.onload = (evt) => {
       try {
-        const data = evt.target.result;
         let jsonRows = [];
-        if (file.name.endsWith('.csv') || file.type === 'text/csv') {
-          jsonRows = this.parseCsvToJson(data);
+        if (isCsv) {
+          const text = evt.target.result;
+          jsonRows = this.parseCsvToJson(text);
         } else if (typeof XLSX !== 'undefined') {
-          const workbook = XLSX.read(data, { type: 'binary' });
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
           const firstSheet = workbook.SheetNames[0];
-          jsonRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
+          jsonRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { raw: false });
         } else {
-          jsonRows = this.parseCsvToJson(data);
+          const text = evt.target.result;
+          jsonRows = this.parseCsvToJson(text);
         }
         this.processImportRows(jsonRows);
       } catch (err) {
+        console.error('Import parse error:', err);
         this.showToast('Failed to parse file: ' + err.message, 'danger');
       }
     };
 
-    if (file.name.endsWith('.csv') || file.type === 'text/csv') {
+    if (isCsv) {
       reader.readAsText(file);
     } else {
-      reader.readAsBinaryString(file);
+      reader.readAsArrayBuffer(file);
     }
   },
 
@@ -3833,14 +5050,31 @@ const app = {
   },
 
   parseCsvToJson(csvText) {
+    if (typeof XLSX !== 'undefined') {
+      try {
+        const workbook = XLSX.read(csvText, { type: 'string' });
+        const firstSheet = workbook.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { raw: false });
+        if (rows && rows.length > 0) return rows;
+      } catch (e) {}
+    }
+
+    // Fallback line-by-line RFC 4180 parser
     const lines = csvText.trim().split(/\r\n|\n/).filter(l => l.trim().length > 0);
     if (lines.length < 2) return [];
 
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase());
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase().replace(/[\s_]+/g, ''));
     const rows = [];
 
     for (let i = 1; i < lines.length; i++) {
-      const currentline = lines[i].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
+      // Split with quotes regex
+      const re = /(?:^|,)(?:"([^"]*)"|([^,]*))/g;
+      const currentline = [];
+      let m;
+      while ((m = re.exec(lines[i])) !== null) {
+        let val = m[1] !== undefined ? m[1] : m[2];
+        currentline.push((val || '').trim());
+      }
       if (currentline.length === 0 || (currentline.length === 1 && !currentline[0])) continue;
       const obj = {};
       for (let j = 0; j < headers.length; j++) {
@@ -3852,6 +5086,30 @@ const app = {
   },
 
   processImportRows(rows) {
+    const normalizeDateStr = (val) => {
+      if (!val) return '2010-01-01';
+      const s = String(val).trim();
+      // DD/MM/YYYY or DD-MM-YYYY
+      const ddmmyyyy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+      if (ddmmyyyy) {
+        return `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`;
+      }
+      // YYYY-MM-DD
+      const yyyymmdd = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+      if (yyyymmdd) {
+        return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
+      }
+      return s;
+    };
+
+    const normalizeGender = (val) => {
+      if (!val) return 'other';
+      const s = String(val).trim().toLowerCase();
+      if (s === 'm' || s === 'male' || s === 'boy') return 'male';
+      if (s === 'f' || s === 'female' || s === 'girl') return 'female';
+      return 'other';
+    };
+
     const normalized = rows.map(r => {
       const getVal = (keys) => {
         for (const k of keys) {
@@ -3868,18 +5126,29 @@ const app = {
         return '';
       };
 
+      const firstName = getVal(['first_name', 'firstName', 'First Name', 'firstname', 'name']);
+      let lastName = getVal(['last_name', 'lastName', 'Last Name', 'lastname', 'surname']);
+      if (!lastName && firstName && firstName.includes(' ')) {
+        const parts = firstName.split(/\s+/);
+        // If single name provided in first_name, split last name
+        if (parts.length > 1) {
+          lastName = parts.slice(1).join(' ');
+        }
+      }
+
       return {
-        first_name: getVal(['first_name', 'firstName', 'First Name']),
-        last_name: getVal(['last_name', 'lastName', 'Last Name']),
-        email: getVal(['email', 'Email']) || null,
-        phone: getVal(['phone', 'Phone', 'Mobile']) || null,
-        date_of_birth: getVal(['date_of_birth', 'dob', 'Date of Birth']) || '2010-01-01',
-        gender: getVal(['gender', 'Gender']) || 'other',
-        emergency_contact: getVal(['emergency_contact', 'emergencyContact', 'guardian_phone']) || null,
-        branch_id: parseInt(getVal(['branch_id', 'branchId', 'Branch ID', 'Branch'])) || null,
-        batch_id: parseInt(getVal(['batch_id', 'batchId', 'Batch ID', 'Batch'])) || null,
+        first_name: firstName,
+        last_name: lastName || '-',
+        email: getVal(['email', 'Email', 'mail']) || null,
+        phone: getVal(['phone', 'Phone', 'Mobile', 'contact', 'mobile_no']) || null,
+        date_of_birth: normalizeDateStr(getVal(['date_of_birth', 'dob', 'Date of Birth', 'birth_date'])),
+        gender: normalizeGender(getVal(['gender', 'Gender', 'sex'])),
+        emergency_contact: getVal(['emergency_contact', 'emergencyContact', 'guardian_phone', 'parent_phone', 'emergency']) || null,
+        guardian_name: getVal(['guardian_name', 'guardianName', 'parent_name', 'parentName', 'father_name']) || null,
+        branch_id: getVal(['branch_id', 'branchId', 'Branch ID', 'branch', 'Branch']) || null,
+        batch_id: getVal(['batch_id', 'batchId', 'Batch ID', 'batch', 'Batch']) || null,
       };
-    }).filter(s => s.first_name && s.last_name);
+    }).filter(s => s.first_name && s.first_name.trim().length > 0);
 
     this._pendingImportStudents = normalized;
 
@@ -3896,12 +5165,13 @@ const app = {
       previewTbody.innerHTML = normalized.slice(0, 5).map((s, idx) => `
         <tr>
           <td>${idx + 1}</td>
-          <td><strong>${s.first_name} ${s.last_name}</strong> (${s.gender})</td>
-          <td>${s.phone || s.email || '-'}</td>
-          <td>${s.branch_id || '<span style="color:var(--text-muted)">None</span>'}</td>
-          <td>${s.batch_id || '<span style="color:var(--text-muted)">None</span>'}</td>
+          <td><strong>${s.first_name} ${s.last_name}</strong></td>
+          <td><span class="badge badge-purple" style="font-size: 10px;">${s.gender}</span> <span style="font-size: 11px; color: var(--text-muted);">${s.date_of_birth}</span></td>
+          <td>${s.phone || s.email || '<span style="color:var(--text-dim)">-</span>'}</td>
+          <td>${s.branch_id || '<span style="color:var(--text-muted)">Default</span>'}</td>
+          <td>${s.batch_id || '<span style="color:var(--text-muted)">Unassigned</span>'}</td>
         </tr>
-      `).join('') + (normalized.length > 5 ? `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); font-style: italic;">...and ${normalized.length - 5} more records</td></tr>` : '');
+      `).join('') + (normalized.length > 5 ? `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); font-style: italic;">...and ${normalized.length - 5} more records ready for import</td></tr>` : '');
 
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -3934,12 +5204,369 @@ const app = {
         body: { students: this._pendingImportStudents },
       });
 
-      if (res.success) {
-        this.showToast(res.message || `Successfully imported ${res.importedCount} students!`, 'success');
+      if (res.success && res.importedCount > 0) {
+        let msg = `Successfully imported ${res.importedCount} student(s)!`;
+        if (res.errors && res.errors.length > 0) {
+          msg += ` (${res.errors.length} skipped)`;
+        }
+        this.showToast(msg, 'success');
         this.closeModal();
         this.renderStudents();
       } else {
-        this.showToast('Import failed: ' + (res.error || 'Unknown error'), 'danger');
+        const errorDetail = res.errors && res.errors.length > 0
+          ? res.errors.map(e => `Row ${e.row}: ${e.error}`).join('\n')
+          : (res.error || 'Unknown error');
+        this.showToast('Import failed: ' + errorDetail, 'danger');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Try Again`;
+        }
+      }
+    } catch (err) {
+      this.showToast('Import error: ' + err.message, 'danger');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Try Again`;
+      }
+    }
+  },
+
+  // ==========================================
+  // COACHES CSV IMPORT
+  // ==========================================
+  showImportCoachesModal() {
+    this.openModal('Import Coaches & Staff (CSV / Excel)', `
+      <div style="padding: 10px 0;">
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+          Upload a <code>.csv</code>, <code>.xlsx</code>, or <code>.xls</code> file containing coaches and staff.
+          Supported columns: <strong>Name, Email, Phone, Role, Branch, Sport, Specialization, Hourly Rate, Monthly Salary</strong>.
+        </p>
+
+        <div style="margin-bottom: 16px;">
+          <label style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;">Choose File</label>
+          <input type="file" id="coach-import-file-input" class="form-input" accept=".csv, .xlsx, .xls" onchange="app.handleCoachImportFile(event)">
+        </div>
+
+        <div id="coach-import-preview-container" style="display: none; margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <h4 style="font-size: 13px; font-weight: 600; margin: 0;">
+              <i class="fa-solid fa-list-check" style="color: #10b981;"></i> Parsed Preview (<span id="coach-import-preview-count">0</span> coaches)
+            </h4>
+          </div>
+          <div class="table-responsive" style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+            <table class="custom-table" style="font-size: 11px; margin: 0;">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Coach Name</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Branch / Sport</th>
+                  <th>Role</th>
+                </tr>
+              </thead>
+              <tbody id="coach-import-preview-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btn-submit-coach-import" onclick="app.submitCoachImport()" disabled>
+            <i class="fa-solid fa-upload"></i> Import Coaches
+          </button>
+        </div>
+      </div>
+    `);
+  },
+
+  handleCoachImportFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv';
+
+    reader.onload = (evt) => {
+      try {
+        let jsonRows = [];
+        if (isCsv) {
+          jsonRows = this.parseCsvToJson(evt.target.result);
+        } else if (typeof XLSX !== 'undefined') {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.SheetNames[0];
+          jsonRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { raw: false });
+        } else {
+          jsonRows = this.parseCsvToJson(evt.target.result);
+        }
+
+        const normalized = jsonRows.map(r => {
+          const getVal = (keys) => {
+            for (const k of keys) {
+              if (r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') return String(r[k]).trim();
+              const lk = k.toLowerCase().replace(/[\s_]+/g, '');
+              for (const rk of Object.keys(r)) {
+                if (rk.toLowerCase().replace(/[\s_]+/g, '') === lk && String(r[rk]).trim() !== '') return String(r[rk]).trim();
+              }
+            }
+            return '';
+          };
+          return {
+            name: getVal(['name', 'Coach Name', 'Full Name']),
+            email: getVal(['email', 'Email', 'Mail']),
+            phone: getVal(['phone', 'Phone', 'Mobile']),
+            role: getVal(['role', 'Role', 'Designation']) || 'coach',
+            branch_id: getVal(['branch_id', 'branch', 'Branch', 'Branch Name']),
+            sport_id: getVal(['sport_id', 'sport', 'Sport', 'Sport Name']),
+            specialization: getVal(['specialization', 'Specialization']),
+            hourly_rate: Number(getVal(['hourly_rate', 'Hourly Rate', 'Rate'])) || 0,
+            monthly_salary: Number(getVal(['monthly_salary', 'Salary', 'Monthly Salary'])) || 0,
+          };
+        }).filter(c => c.name && c.name.trim().length > 0);
+
+        this._pendingImportCoaches = normalized;
+
+        const previewContainer = document.getElementById('coach-import-preview-container');
+        const previewCount = document.getElementById('coach-import-preview-count');
+        const previewTbody = document.getElementById('coach-import-preview-tbody');
+        const submitBtn = document.getElementById('btn-submit-coach-import');
+
+        if (previewContainer && normalized.length > 0) {
+          previewContainer.style.display = 'block';
+          previewCount.innerText = normalized.length;
+          previewTbody.innerHTML = normalized.slice(0, 5).map((c, idx) => `
+            <tr>
+              <td>${idx + 1}</td>
+              <td><strong>${c.name}</strong></td>
+              <td>${c.email || '-'}</td>
+              <td>${c.phone || '-'}</td>
+              <td>${c.branch_id || 'Default'} / ${c.sport_id || 'All'}</td>
+              <td><span class="badge badge-primary">${c.role}</span></td>
+            </tr>
+          `).join('');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Import ${normalized.length} Coaches`;
+          }
+        }
+      } catch (err) {
+        this.showToast('Failed to parse file: ' + err.message, 'danger');
+      }
+    };
+
+    if (isCsv) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
+  },
+
+  async submitCoachImport() {
+    if (!this._pendingImportCoaches || !this._pendingImportCoaches.length) {
+      this.showToast('No valid coach rows to import', 'warning');
+      return;
+    }
+
+    const submitBtn = document.getElementById('btn-submit-coach-import');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Importing...';
+    }
+
+    try {
+      const res = await this.apiRequest('/api/academy/coaches/import', {
+        method: 'POST',
+        body: { coaches: this._pendingImportCoaches },
+      });
+
+      if (res.success && res.importedCount > 0) {
+        let msg = `Successfully imported ${res.importedCount} coach(es)!`;
+        if (res.errors && res.errors.length > 0) msg += ` (${res.errors.length} skipped)`;
+        this.showToast(msg, 'success');
+        this.closeModal();
+        this.renderCoaches();
+      } else {
+        const errorDetail = res.errors && res.errors.length > 0
+          ? res.errors.map(e => `Row ${e.row}: ${e.error}`).join('\n')
+          : (res.error || 'Unknown error');
+        this.showToast('Import failed: ' + errorDetail, 'danger');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Try Again`;
+        }
+      }
+    } catch (err) {
+      this.showToast('Import error: ' + err.message, 'danger');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Try Again`;
+      }
+    }
+  },
+
+  // ==========================================
+  // BATCHES CSV IMPORT
+  // ==========================================
+  showImportBatchesModal() {
+    this.openModal('Import Training Batches (CSV / Excel)', `
+      <div style="padding: 10px 0;">
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+          Upload a <code>.csv</code>, <code>.xlsx</code>, or <code>.xls</code> file containing training batches.
+          Supported columns: <strong>Batch Name, Branch, Sport, Coach, Days (e.g. Mon,Wed,Fri), Start Time (HH:MM), End Time (HH:MM), Capacity, Fee</strong>.
+        </p>
+
+        <div style="margin-bottom: 16px;">
+          <label style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;">Choose File</label>
+          <input type="file" id="batch-import-file-input" class="form-input" accept=".csv, .xlsx, .xls" onchange="app.handleBatchImportFile(event)">
+        </div>
+
+        <div id="batch-import-preview-container" style="display: none; margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <h4 style="font-size: 13px; font-weight: 600; margin: 0;">
+              <i class="fa-solid fa-list-check" style="color: #10b981;"></i> Parsed Preview (<span id="batch-import-preview-count">0</span> batches)
+            </h4>
+          </div>
+          <div class="table-responsive" style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+            <table class="custom-table" style="font-size: 11px; margin: 0;">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Batch Name</th>
+                  <th>Branch / Sport</th>
+                  <th>Timing</th>
+                  <th>Days</th>
+                  <th>Capacity</th>
+                </tr>
+              </thead>
+              <tbody id="batch-import-preview-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btn-submit-batch-import" onclick="app.submitBatchImport()" disabled>
+            <i class="fa-solid fa-upload"></i> Import Batches
+          </button>
+        </div>
+      </div>
+    `);
+  },
+
+  handleBatchImportFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv';
+
+    reader.onload = (evt) => {
+      try {
+        let jsonRows = [];
+        if (isCsv) {
+          jsonRows = this.parseCsvToJson(evt.target.result);
+        } else if (typeof XLSX !== 'undefined') {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.SheetNames[0];
+          jsonRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { raw: false });
+        } else {
+          jsonRows = this.parseCsvToJson(evt.target.result);
+        }
+
+        const normalized = jsonRows.map(r => {
+          const getVal = (keys) => {
+            for (const k of keys) {
+              if (r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') return String(r[k]).trim();
+              const lk = k.toLowerCase().replace(/[\s_]+/g, '');
+              for (const rk of Object.keys(r)) {
+                if (rk.toLowerCase().replace(/[\s_]+/g, '') === lk && String(r[rk]).trim() !== '') return String(r[rk]).trim();
+              }
+            }
+            return '';
+          };
+
+          return {
+            name: getVal(['name', 'Batch Name', 'batch_name']),
+            branch_id: getVal(['branch_id', 'branch', 'Branch', 'Branch Name']),
+            sport_id: getVal(['sport_id', 'sport', 'Sport', 'Sport Name']),
+            coach_id: getVal(['coach_id', 'coach', 'Coach', 'Coach Name']) || null,
+            start_time: getVal(['start_time', 'Start Time', 'from', 'time_from']) || '06:00',
+            end_time: getVal(['end_time', 'End Time', 'to', 'time_to']) || '07:30',
+            days_of_week: getVal(['days_of_week', 'days', 'Days', 'Days of Week']) || 'Mon,Wed,Fri',
+            max_capacity: Number(getVal(['max_capacity', 'capacity', 'Capacity', 'Limit'])) || 20,
+            fee_per_student: Number(getVal(['fee_per_student', 'fee', 'Fee', 'Price', 'Monthly Fee'])) || 1500,
+            billing_period: getVal(['billing_period', 'period', 'Billing Period']) || 'monthly',
+          };
+        }).filter(b => b.name && b.name.trim().length > 0);
+
+        this._pendingImportBatches = normalized;
+
+        const previewContainer = document.getElementById('batch-import-preview-container');
+        const previewCount = document.getElementById('batch-import-preview-count');
+        const previewTbody = document.getElementById('batch-import-preview-tbody');
+        const submitBtn = document.getElementById('btn-submit-batch-import');
+
+        if (previewContainer && normalized.length > 0) {
+          previewContainer.style.display = 'block';
+          previewCount.innerText = normalized.length;
+          previewTbody.innerHTML = normalized.slice(0, 5).map((b, idx) => `
+            <tr>
+              <td>${idx + 1}</td>
+              <td><strong>${b.name}</strong></td>
+              <td>${b.branch_id || 'Default'} / ${b.sport_id || 'All'}</td>
+              <td>${b.start_time} - ${b.end_time}</td>
+              <td><span class="badge badge-purple">${b.days_of_week}</span></td>
+              <td>${b.max_capacity} students</td>
+            </tr>
+          `).join('');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Import ${normalized.length} Batches`;
+          }
+        }
+      } catch (err) {
+        this.showToast('Failed to parse file: ' + err.message, 'danger');
+      }
+    };
+
+    if (isCsv) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
+  },
+
+  async submitBatchImport() {
+    if (!this._pendingImportBatches || !this._pendingImportBatches.length) {
+      this.showToast('No valid batch rows to import', 'warning');
+      return;
+    }
+
+    const submitBtn = document.getElementById('btn-submit-batch-import');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Importing...';
+    }
+
+    try {
+      const res = await this.apiRequest('/api/academy/batches/import', {
+        method: 'POST',
+        body: { batches: this._pendingImportBatches },
+      });
+
+      if (res.success && res.importedCount > 0) {
+        let msg = `Successfully imported ${res.importedCount} batch(es)!`;
+        if (res.errors && res.errors.length > 0) msg += ` (${res.errors.length} skipped)`;
+        this.showToast(msg, 'success');
+        this.closeModal();
+        this.renderBatches();
+      } else {
+        const errorDetail = res.errors && res.errors.length > 0
+          ? res.errors.map(e => `Row ${e.row}: ${e.error}`).join('\n')
+          : (res.error || 'Unknown error');
+        this.showToast('Import failed: ' + errorDetail, 'danger');
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.innerHTML = `<i class="fa-solid fa-upload"></i> Try Again`;
@@ -5549,12 +7176,25 @@ const app = {
     this.showToast('Exported fees report via SheetJS', 'success');
   },
 
-  // ATTENDANCE
+  // ATTENDANCE NAVIGATION HELPER
+  async navigateToAttendance(batchId, date = null) {
+    this.closeModal();
+    this._pendingAttendanceBatchId = batchId;
+    this._pendingAttendanceDate = date;
+    this.navigate('attendance');
+  },
+
   async renderAttendance() {
     const batchesData = await this.apiRequest('/api/academy/batches');
     const batches = batchesData.batches || [];
     const today = new Date().toISOString().split('T')[0];
     const content = document.getElementById('page-content');
+
+    const targetBatchId = this._pendingAttendanceBatchId ? String(this._pendingAttendanceBatchId) : (batches[0] ? String(batches[0].id) : '');
+    const targetDate = this._pendingAttendanceDate || today;
+    const hasExplicitPendingDate = !!this._pendingAttendanceDate;
+    this._pendingAttendanceBatchId = null;
+    this._pendingAttendanceDate = null;
 
     content.innerHTML = `
       <div class="content-card">
@@ -5578,12 +7218,12 @@ const app = {
             <div class="form-group" style="margin: 0; min-width: 240px;">
               <label>Select Training Batch</label>
               <select id="att-batch-select" class="form-select" style="width: 100%;" onchange="app.onAttendanceBatchChange()">
-                ${batches.map(b => `<option value="${b.id}">${b.name} (${b.sport_name})</option>`).join('')}
+                ${batches.map(b => `<option value="${b.id}" ${String(b.id) === targetBatchId ? 'selected' : ''}>${b.name} (${b.sport_name})</option>`).join('')}
               </select>
             </div>
             <div class="form-group" style="margin: 0;">
               <label>Date (Allowed: Today + past 2 days)</label>
-              <input type="date" id="att-date-input" class="form-input" value="${today}" onchange="app.onAttendanceDateChange()">
+              <input type="date" id="att-date-input" class="form-input" value="${targetDate}" onchange="app.onAttendanceDateChange()">
             </div>
             <button class="btn btn-primary" onclick="app.loadAttendanceRoster()">
               <i class="fa-solid fa-magnifying-glass"></i> Load Roster
@@ -5601,11 +7241,11 @@ const app = {
     `;
 
     if (batches.length > 0) {
-      await this.onAttendanceBatchChange();
+      await this.onAttendanceBatchChange(hasExplicitPendingDate);
     }
   },
 
-  async onAttendanceBatchChange() {
+  async onAttendanceBatchChange(preserveDate = false) {
     const batchSelect = document.getElementById('att-batch-select');
     if (!batchSelect) return;
     const batchId = batchSelect.value;
@@ -5617,20 +7257,32 @@ const app = {
       if (res && res.success && res.hasSession) {
         const s = res.session;
         const dateInput = document.getElementById('att-date-input');
-        if (dateInput && s.scheduled_date) {
+        if (dateInput && s.scheduled_date && !preserveDate) {
           dateInput.value = s.scheduled_date;
         }
 
-        const statusBadge = s.attendance_status === 'completed'
+        const isCompleted = res.isCompleted || s.attendance_status === 'completed';
+        const statusBadge = isCompleted
           ? '<span class="badge badge-success"><i class="fa-solid fa-check"></i> Attendance Completed</span>'
           : '<span class="badge badge-warning"><i class="fa-solid fa-clock"></i> Pending Entry</span>';
 
+        const titleBadge = isCompleted
+          ? '<span class="badge badge-success" style="font-size: 12px;"><i class="fa-solid fa-circle-check"></i> Session Recorded</span>'
+          : '<span class="badge badge-primary" style="font-size: 12px;"><i class="fa-solid fa-calendar-check"></i> Next Eligible Scheduled Session</span>';
+
+        const nextUpcomingHtml = isCompleted && res.nextUpcomingSession
+          ? `<div style="font-size: 12px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 6px; margin-left: 8px;">
+               <i class="fa-solid fa-calendar-plus" style="color: var(--primary);"></i> Next Upcoming: <strong style="color: var(--text-heading);">${res.nextUpcomingSession.scheduled_date} (${res.nextUpcomingSession.start_time} - ${res.nextUpcomingSession.end_time})</strong>
+             </div>`
+          : '';
+
         noticeContainer.innerHTML = `
-          <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: var(--radius-md); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <span class="badge badge-primary" style="font-size: 12px;"><i class="fa-solid fa-calendar-check"></i> Next Eligible Scheduled Session</span>
+          <div style="background: ${isCompleted ? 'rgba(16, 185, 129, 0.08)' : 'rgba(37, 99, 235, 0.08)'}; border: 1px solid ${isCompleted ? 'rgba(16, 185, 129, 0.25)' : 'rgba(37, 99, 235, 0.25)'}; border-radius: var(--radius-md); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              ${titleBadge}
               <strong style="color: var(--text-heading); font-size: 13px;">${s.scheduled_date} (${s.start_time} - ${s.end_time})</strong>
               <span style="font-size: 12px; color: var(--text-muted);">&bull; Batch: ${s.batch_name}</span>
+              ${nextUpcomingHtml}
             </div>
             <div>${statusBadge}</div>
           </div>
@@ -5728,11 +7380,11 @@ const app = {
     let recordedBannerHtml = '';
     if (isAlreadyRecorded) {
       recordedBannerHtml = `
-        <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 16px; color: #10b981; font-size: 13px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+        <div style="background: rgba(16, 185, 129, 0.08); border-left: 3px solid #10b981; border-radius: 4px; padding: 7px 12px; margin-bottom: 14px; color: #047857; font-size: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
           <div>
-            <i class="fa-solid fa-circle-check"></i> <strong>Attendance already recorded for ${date}:</strong> Showing current saved records. Saving will update the existing session.
+            <i class="fa-solid fa-clock-rotate-left"></i> <strong>Saved Records (${date}):</strong> Showing current recorded roster. Saving will update this session.
           </div>
-          <span class="badge badge-success"><i class="fa-solid fa-check"></i> Recorded</span>
+          <span class="badge badge-success" style="font-size: 11px;"><i class="fa-solid fa-check"></i> Recorded</span>
         </div>
       `;
     }
@@ -6098,30 +7750,91 @@ const app = {
     }
   },
 
-  // QUICK ATTENDANCE (Role-Scoped Overview 1-Click Drawer)
+  // QUICK ATTENDANCE (Role-Scoped Dashboard Attendance Module with Full Syllabus Progression Parity)
   async openQuickAttendanceModal(batchId, batchName, isEdit = false) {
-    const today = new Date().toISOString().split('T')[0];
-    const res = await this.apiRequest(`/api/academy/attendance?batch_id=${batchId}&date=${today}`);
+    let targetDate = new Date().toISOString().split('T')[0];
+    let eligibleSession = null;
+
+    try {
+      const elRes = await this.apiRequest(`/api/academy/attendance/eligible-session?batch_id=${batchId}`);
+      if (elRes && elRes.success && elRes.hasSession && elRes.session.scheduled_date) {
+        eligibleSession = elRes.session;
+        targetDate = elRes.session.scheduled_date;
+      }
+    } catch (e) {
+      console.warn('Eligible session lookup failed:', e);
+    }
+
+    const res = await this.apiRequest(`/api/academy/attendance?batch_id=${batchId}&date=${targetDate}`);
     const roster = (res && res.roster) || [];
+    const availableTechniques = (res && res.availableTechniques) || [];
 
     if (roster.length === 0) {
-      this.showToast('No active students enrolled in this batch.', 'info');
+      this.showToast('No active students currently enrolled in this batch.', 'info');
       return;
     }
 
     this._quickAttendanceState = {
       batchId,
       batchName,
-      date: today,
-      students: roster.map(s => ({
+      date: targetDate,
+      eligibleSession,
+      availableTechniques,
+      isAlreadyRecorded: !!(res && res.attendanceRecord),
+      students: roster.map(s => {
+        const defaultTechId = availableTechniques[0] ? availableTechniques[0].id : '';
+        return {
+          student_id: s.student_id,
+          first_name: s.first_name,
+          last_name: s.last_name,
+          student_code: s.student_code,
+          status: s.status || 'present',
+          remarks: s.remarks || '',
+          active_technique_name: s.active_technique_name,
+          active_technique_level: s.active_technique_level,
+          active_technique_belt_level: s.active_technique_belt_level,
+          total_attended_sessions: s.batch_attended_sessions !== undefined ? s.batch_attended_sessions : (s.total_attended_sessions || 0),
+          active_sessions_attended: s.active_sessions_attended || 0,
+          technique_id: s.marked_technique_id || s.active_technique_id || defaultTechId || null,
+          technique_remarks: s.marked_technique_remarks || '',
+          technique_status: 'keep',
+        };
+      }),
+    };
+
+    this.renderQuickAttendanceModal();
+  },
+
+  async onQuickAttDateChange(newDate) {
+    if (!this._quickAttendanceState || !newDate) return;
+    const batchId = this._quickAttendanceState.batchId;
+
+    const res = await this.apiRequest(`/api/academy/attendance?batch_id=${batchId}&date=${newDate}`);
+    const roster = (res && res.roster) || [];
+    const availableTechniques = (res && res.availableTechniques) || this._quickAttendanceState.availableTechniques || [];
+
+    this._quickAttendanceState.date = newDate;
+    this._quickAttendanceState.isAlreadyRecorded = !!(res && res.attendanceRecord);
+    this._quickAttendanceState.availableTechniques = availableTechniques;
+    this._quickAttendanceState.students = roster.map(s => {
+      const defaultTechId = availableTechniques[0] ? availableTechniques[0].id : '';
+      return {
         student_id: s.student_id,
         first_name: s.first_name,
         last_name: s.last_name,
         student_code: s.student_code,
         status: s.status || 'present',
         remarks: s.remarks || '',
-      })),
-    };
+        active_technique_name: s.active_technique_name,
+        active_technique_level: s.active_technique_level,
+        active_technique_belt_level: s.active_technique_belt_level,
+        total_attended_sessions: s.batch_attended_sessions !== undefined ? s.batch_attended_sessions : (s.total_attended_sessions || 0),
+        active_sessions_attended: s.active_sessions_attended || 0,
+        technique_id: s.marked_technique_id || s.active_technique_id || defaultTechId || null,
+        technique_remarks: s.marked_technique_remarks || '',
+        technique_status: 'keep',
+      };
+    });
 
     this.renderQuickAttendanceModal();
   },
@@ -6130,94 +7843,247 @@ const app = {
     const state = this._quickAttendanceState;
     if (!state) return;
 
+    // Check calendar window
+    const today = new Date().toISOString().split('T')[0];
+    const todayObj = new Date(today + 'T00:00:00Z');
+    const targetObj = new Date(state.date + 'T00:00:00Z');
+    const diffDays = Math.round((todayObj.getTime() - targetObj.getTime()) / (1000 * 60 * 60 * 24));
+
+    let bannerHtml = '';
+    let disableSaving = false;
+
+    if (diffDays < 0) {
+      disableSaving = true;
+      bannerHtml = `
+        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 8px 12px; margin-bottom: 12px; color: #ef4444; font-size: 12px; display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-ban"></i>
+          <div><strong>Future Attendance Prohibited:</strong> Attendance cannot be marked prior to scheduled date.</div>
+        </div>
+      `;
+    } else if (diffDays > 2) {
+      bannerHtml = `
+        <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--radius-md); padding: 8px 12px; margin-bottom: 12px; color: #f59e0b; font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div><i class="fa-solid fa-clock-rotate-left"></i> <strong>Outside 2-Day Cutoff:</strong> Selected date (${state.date}) is ${diffDays} calendar days in the past. Requires administrative correction.</div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.showAttendanceCorrectionModal(${state.batchId}, '${state.date}')">Request Approval</button>
+        </div>
+      `;
+    } else if (state.isAlreadyRecorded) {
+      bannerHtml = `
+        <div style="background: rgba(16, 185, 129, 0.08); border-left: 3px solid #10b981; border-radius: 4px; padding: 7px 12px; margin-bottom: 12px; color: #047857; font-size: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <div><i class="fa-solid fa-clock-rotate-left"></i> <strong>Saved Records (${state.date}):</strong> Showing current recorded roster. Saving will update this session.</div>
+          <span class="badge badge-success" style="font-size: 11px;"><i class="fa-solid fa-check"></i> Recorded</span>
+        </div>
+      `;
+    }
+
     const presentCount = state.students.filter(s => s.status === 'present').length;
     const absentCount = state.students.filter(s => s.status === 'absent').length;
     const lateCount = state.students.filter(s => s.status === 'late').length;
     const leaveCount = state.students.filter(s => s.status === 'leave' || s.status === 'excused').length;
 
     const modalBody = `
-      <div style="margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+      <div style="margin-bottom: 12px;">
+        ${bannerHtml}
+
+        <!-- Top Header & Session Selector -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; background: rgba(255,255,255,0.02); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);">
           <div>
-            <div style="font-size: 14px; font-weight: 700; color: var(--text-heading);">${this.escapeHtml(state.batchName)}</div>
-            <div style="font-size: 12px; color: var(--text-muted);"><i class="fa-regular fa-calendar"></i> Today: <strong>${state.date}</strong> &bull; Total Students: <strong>${state.students.length}</strong></div>
-          </div>
-          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button type="button" class="btn btn-sm btn-outline-success" onclick="app.markAllQuickAtt('present')">
-              <i class="fa-solid fa-check-double"></i> All Present
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-danger" onclick="app.markAllQuickAtt('absent')">
-              <i class="fa-solid fa-xmark"></i> All Absent
-            </button>
-          </div>
-        </div>
-
-        <div style="display: flex; gap: 12px; margin-bottom: 16px; font-size: 12px;">
-          <span style="color: #10b981; font-weight: 600;">Present: ${presentCount}</span>
-          <span style="color: #ef4444; font-weight: 600;">Absent: ${absentCount}</span>
-          <span style="color: #f59e0b; font-weight: 600;">Late: ${lateCount}</span>
-          <span style="color: #6366f1; font-weight: 600;">Leave: ${leaveCount}</span>
-        </div>
-
-        <div style="max-height: 420px; overflow-y: auto; padding-right: 4px;" class="custom-scrollbar">
-          ${state.students.map((s, idx) => `
-            <div class="quick-att-student-card" id="quick-att-row-${s.student_id}">
-              <div class="student-info">
-                <div class="student-name">${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</div>
-                <div class="student-sub"><code>${this.escapeHtml(s.student_code)}</code></div>
-              </div>
-              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <div class="att-status-chips">
-                  <span class="att-chip ${s.status === 'present' ? 'active-present' : ''}" onclick="app.setQuickAttStatus(${s.student_id}, 'present')">Present</span>
-                  <span class="att-chip ${s.status === 'absent' ? 'active-absent' : ''}" onclick="app.setQuickAttStatus(${s.student_id}, 'absent')">Absent</span>
-                  <span class="att-chip ${s.status === 'late' ? 'active-late' : ''}" onclick="app.setQuickAttStatus(${s.student_id}, 'late')">Late</span>
-                  <span class="att-chip ${(s.status === 'leave' || s.status === 'excused') ? 'active-leave' : ''}" onclick="app.setQuickAttStatus(${s.student_id}, 'leave')">Leave</span>
-                </div>
-                <input type="text" class="form-input" style="width: 140px; font-size: 11px; padding: 4px 8px;"
-                       placeholder="Remark..."
-                       value="${this.escapeHtml(s.remarks || '')}"
-                       onchange="app.setQuickAttRemark(${s.student_id}, this.value)">
-              </div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <strong style="font-size: 15px; color: var(--text-heading);">${this.escapeHtml(state.batchName)}</strong>
+              ${state.isAlreadyRecorded ? '<span class="badge badge-success"><i class="fa-solid fa-check"></i> Recorded</span>' : '<span class="badge badge-warning"><i class="fa-solid fa-clock"></i> Pending Entry</span>'}
             </div>
-          `).join('')}
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+              Direct dashboard module with syllabus technique tracking &bull; Enrolled: <strong>${state.students.length}</strong>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <label style="font-size: 12px; font-weight: 600; margin: 0; color: var(--text-muted);">Date:</label>
+              <input type="date" class="form-input" style="padding: 4px 8px; font-size: 12px; width: 140px;" value="${state.date}" onchange="app.onQuickAttDateChange(this.value)">
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.navigateToAttendance(${state.batchId}, '${state.date}')" title="Open full dedicated attendance page for this batch">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> Full Page
+            </button>
+          </div>
+        </div>
+
+        <!-- Bulk Operations & Metric Badges -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+          <div id="quick-att-counters" style="display: flex; gap: 12px; font-size: 12px; font-weight: 600;">
+            <span style="color: #10b981;"><i class="fa-solid fa-circle-check"></i> Present: ${presentCount}</span>
+            <span style="color: #ef4444;"><i class="fa-solid fa-circle-xmark"></i> Absent: ${absentCount}</span>
+            <span style="color: #f59e0b;"><i class="fa-solid fa-clock"></i> Late: ${lateCount}</span>
+            <span style="color: #6366f1;"><i class="fa-solid fa-user-clock"></i> Excused: ${leaveCount}</span>
+          </div>
+
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <select class="form-select" id="quick-bulk-tech-select" style="padding: 4px 8px; font-size: 12px; max-width: 220px;" onchange="app.setQuickAttAllTechnique(this.value)">
+              <option value="">-- Apply Technique to All --</option>
+              ${state.availableTechniques.map(t => `<option value="${t.id}">${this.escapeHtml(t.name)} (Lvl ${t.level})</option>`).join('')}
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.markAllQuickAtt('present')">All Present</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.markAllQuickAtt('absent')">All Absent</button>
+          </div>
+        </div>
+
+        <!-- Full Roster Table (Identical to Real Page) -->
+        <div class="table-responsive" style="max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+          <table class="custom-table" style="margin: 0; width: 100%;">
+            <thead>
+              <tr>
+                <th style="min-width: 160px;">Student</th>
+                <th style="min-width: 110px;">Status</th>
+                <th style="min-width: 150px;">Current Level</th>
+                <th style="min-width: 200px;">Session Technique</th>
+                <th style="min-width: 140px;">Technique Remark</th>
+                <th style="min-width: 140px;">General Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.students.map(s => `
+                <tr id="quick-att-row-${s.student_id}" data-student-id="${s.student_id}">
+                  <td>
+                    <strong>${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</strong>
+                    <div style="font-size: 11px; color: var(--text-muted);"><code>${this.escapeHtml(s.student_code)}</code></div>
+                  </td>
+                  <td>
+                    <select class="form-select quick-att-status-select" style="padding: 4px 8px; font-size: 12px;" onchange="app.setQuickAttStatus(${s.student_id}, this.value)">
+                      <option value="present" ${s.status === 'present' ? 'selected' : ''}>Present</option>
+                      <option value="absent" ${s.status === 'absent' ? 'selected' : ''}>Absent</option>
+                      <option value="late" ${s.status === 'late' ? 'selected' : ''}>Late</option>
+                      <option value="excused" ${s.status === 'excused' || s.status === 'leave' ? 'selected' : ''}>Excused</option>
+                    </select>
+                  </td>
+                  <td>
+                    ${s.active_technique_name ? `
+                      <span class="badge badge-purple">
+                        Lvl ${s.active_technique_level || 1} ${s.active_technique_belt_level ? '• ' + this.escapeHtml(s.active_technique_belt_level) : ''}
+                      </span>
+                      <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                        <strong>${s.total_attended_sessions || 0}</strong> session(s)
+                      </div>
+                    ` : `
+                      <span style="color: var(--text-dim); font-size: 11px;">Unassigned</span>
+                      <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                        <strong>${s.total_attended_sessions || 0}</strong> session(s)
+                      </div>
+                    `}
+                  </td>
+                  <td>
+                    <select class="form-select quick-att-tech-select" style="padding: 4px 8px; font-size: 12px; width: 100%;" onchange="app.setQuickAttStudentTechnique(${s.student_id}, this.value)">
+                      <option value="">-- Select Technique --</option>
+                      ${state.availableTechniques.map(t => `
+                        <option value="${t.id}" ${String(t.id) === String(s.technique_id) ? 'selected' : ''}>
+                          ${this.escapeHtml(t.name)} (Lvl ${t.level}${t.belt_level ? ', ' + this.escapeHtml(t.belt_level) : ''})
+                        </option>
+                      `).join('')}
+                    </select>
+                  </td>
+                  <td>
+                    <input type="text" class="form-input quick-att-tech-remarks-input" style="padding: 4px 8px; font-size: 12px; width: 100%;"
+                           placeholder="Technique remark..."
+                           value="${this.escapeHtml(s.technique_remarks || '')}"
+                           onchange="app.setQuickAttStudentTechRemark(${s.student_id}, this.value)">
+                  </td>
+                  <td>
+                    <input type="text" class="form-input quick-att-remark-input" style="padding: 4px 8px; font-size: 12px; width: 100%;"
+                           placeholder="General note..."
+                           value="${this.escapeHtml(s.remarks || '')}"
+                           onchange="app.setQuickAttStudentRemark(${s.student_id}, this.value)">
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
         </div>
       </div>
     `;
 
     const modalFooter = `
-      <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-        <span style="font-size: 12px; color: var(--text-muted);"><i class="fa-solid fa-lock"></i> Scoped to assigned batch</span>
+      <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <button type="button" class="btn btn-secondary" onclick="app.navigateToAttendance(${state.batchId}, '${state.date}')">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Full Attendance Page
+          </button>
+        </div>
         <div style="display: flex; gap: 8px;">
           <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-          <button type="button" class="btn btn-primary" id="btn-submit-quick-att" onclick="app.submitQuickAttendance(${state.batchId})">
-            <i class="fa-solid fa-floppy-disk"></i> Submit Attendance
+          <button type="button" class="btn ${state.isAlreadyRecorded ? 'btn-primary' : 'btn-success'}" id="btn-submit-quick-att" ${disableSaving ? 'disabled' : ''} onclick="app.submitQuickAttendance(${state.batchId})">
+            <i class="fa-solid ${state.isAlreadyRecorded ? 'fa-pen-to-square' : 'fa-floppy-disk'}"></i> ${state.isAlreadyRecorded ? 'Update Attendance & Track Technique' : 'Save Attendance & Track Technique'}
           </button>
         </div>
       </div>
     `;
 
-    this.openModal(`Quick Attendance — ${state.batchName}`, modalBody, modalFooter);
+    this.openModal(`Attendance Marking — ${state.batchName}`, modalBody, modalFooter, '1050px');
   },
 
   setQuickAttStatus(studentId, status) {
     if (!this._quickAttendanceState) return;
     const st = this._quickAttendanceState.students.find(s => s.student_id === studentId);
-    if (st) {
-      st.status = status;
-      this.renderQuickAttendanceModal();
-    }
+    if (st) st.status = status;
+    this.updateQuickAttCounters();
   },
 
-  setQuickAttRemark(studentId, remark) {
+  setQuickAttStudentTechnique(studentId, techniqueId) {
+    if (!this._quickAttendanceState) return;
+    const st = this._quickAttendanceState.students.find(s => s.student_id === studentId);
+    if (st) st.technique_id = techniqueId ? Number(techniqueId) : null;
+  },
+
+  setQuickAttStudentTechRemark(studentId, remark) {
+    if (!this._quickAttendanceState) return;
+    const st = this._quickAttendanceState.students.find(s => s.student_id === studentId);
+    if (st) st.technique_remarks = remark;
+  },
+
+  setQuickAttStudentRemark(studentId, remark) {
     if (!this._quickAttendanceState) return;
     const st = this._quickAttendanceState.students.find(s => s.student_id === studentId);
     if (st) st.remarks = remark;
   },
 
+  setQuickAttAllTechnique(techniqueId) {
+    if (!this._quickAttendanceState) return;
+    const selects = document.querySelectorAll('.quick-att-tech-select');
+    selects.forEach(sel => {
+      sel.value = techniqueId;
+    });
+    this._quickAttendanceState.students.forEach(s => {
+      s.technique_id = techniqueId ? Number(techniqueId) : null;
+    });
+  },
+
   markAllQuickAtt(status) {
     if (!this._quickAttendanceState) return;
-    this._quickAttendanceState.students.forEach(s => s.status = status);
-    this.renderQuickAttendanceModal();
+    const selects = document.querySelectorAll('.quick-att-status-select');
+    selects.forEach(sel => {
+      sel.value = status;
+    });
+    this._quickAttendanceState.students.forEach(s => {
+      s.status = status;
+    });
+    this.updateQuickAttCounters();
+  },
+
+  updateQuickAttCounters() {
+    if (!this._quickAttendanceState) return;
+    const selects = Array.from(document.querySelectorAll('.quick-att-status-select'));
+    const present = selects.filter(s => s.value === 'present').length;
+    const absent = selects.filter(s => s.value === 'absent').length;
+    const late = selects.filter(s => s.value === 'late').length;
+    const leave = selects.filter(s => s.value === 'excused' || s.value === 'leave').length;
+
+    const el = document.getElementById('quick-att-counters');
+    if (el) {
+      el.innerHTML = `
+        <span style="color: #10b981;"><i class="fa-solid fa-circle-check"></i> Present: ${present}</span>
+        <span style="color: #ef4444;"><i class="fa-solid fa-circle-xmark"></i> Absent: ${absent}</span>
+        <span style="color: #f59e0b;"><i class="fa-solid fa-clock"></i> Late: ${late}</span>
+        <span style="color: #6366f1;"><i class="fa-solid fa-user-clock"></i> Excused: ${leave}</span>
+      `;
+    }
   },
 
   async submitQuickAttendance(batchId) {
@@ -6226,47 +8092,78 @@ const app = {
     const submitBtn = document.getElementById('btn-submit-quick-att');
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting...';
+      submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
     }
 
-    const entries = state.students.map(s => ({
-      student_id: s.student_id,
-      status: s.status,
-      remarks: s.remarks,
-      technique_status: 'keep',
-    }));
+    const rows = document.querySelectorAll('#modal-container tbody tr');
+    const entries = [];
 
-    const res = await this.apiRequest('/api/academy/attendance', {
-      method: 'POST',
-      body: JSON.stringify({
-        batch_id: state.batchId,
-        date: state.date,
-        entries,
-      }),
-    });
+    if (rows && rows.length > 0) {
+      rows.forEach(row => {
+        const student_id = row.getAttribute('data-student-id');
+        const status = row.querySelector('.quick-att-status-select')?.value || 'present';
+        const remarks = row.querySelector('.quick-att-remark-input')?.value.trim() || '';
+        const techSelect = row.querySelector('.quick-att-tech-select');
+        const techRemarkInput = row.querySelector('.quick-att-tech-remarks-input');
 
-    if (res.success) {
-      this.showToast('Attendance recorded successfully!', 'success');
-      this.closeModal();
-
-      // Immediately update DOM badge and button for this batch on Overview page if present
-      const badge = document.getElementById(`batch-att-badge-${batchId}`);
-      if (badge) {
-        badge.className = 'status-completed';
-        badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> Completed';
-      }
-      const btn = document.getElementById(`batch-att-btn-${batchId}`);
-      if (btn) {
-        btn.className = 'btn btn-secondary btn-sm';
-        btn.innerHTML = '<i class="fa-solid fa-eye"></i> View Attendance';
-        btn.setAttribute('onclick', `app.openQuickAttendanceModal(${batchId}, '${this.escapeJsString(state.batchName)}', true)`);
-      }
+        entries.push({
+          student_id: Number(student_id),
+          status,
+          remarks,
+          technique_id: techSelect && techSelect.value ? Number(techSelect.value) : null,
+          technique_status: 'keep',
+          technique_remarks: techRemarkInput ? techRemarkInput.value.trim() : '',
+        });
+      });
     } else {
+      state.students.forEach(s => {
+        entries.push({
+          student_id: s.student_id,
+          status: s.status,
+          remarks: s.remarks || '',
+          technique_id: s.technique_id ? Number(s.technique_id) : null,
+          technique_status: 'keep',
+          technique_remarks: s.technique_remarks || '',
+        });
+      });
+    }
+
+    try {
+      const res = await this.apiRequest('/api/academy/attendance', {
+        method: 'POST',
+        body: JSON.stringify({
+          batch_id: state.batchId,
+          date: state.date,
+          entries,
+        }),
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'Attendance & syllabus progression recorded successfully!', 'success');
+        this.closeModal();
+
+        // Refresh overview dashboard immediately
+        if (typeof this.renderAcademyOverview === 'function') {
+          await this.renderAcademyOverview();
+        }
+      } else {
+        if (res.requiresCorrection) {
+          this.showToast(res.error, 'danger');
+          this.showAttendanceCorrectionModal(state.batchId, state.date);
+        } else {
+          this.showToast(res.error || 'Failed to submit attendance', 'danger');
+        }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `<i class="fa-solid ${state.isAlreadyRecorded ? 'fa-pen-to-square' : 'fa-floppy-disk'}"></i> ${state.isAlreadyRecorded ? 'Update Attendance & Track Technique' : 'Save Attendance & Track Technique'}`;
+        }
+      }
+    } catch (err) {
+      this.showToast('Attendance submission error: ' + err.message, 'danger');
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Submit Attendance';
+        submitBtn.innerHTML = `<i class="fa-solid ${state.isAlreadyRecorded ? 'fa-pen-to-square' : 'fa-floppy-disk'}"></i> ${state.isAlreadyRecorded ? 'Update Attendance & Track Technique' : 'Save Attendance & Track Technique'}`;
       }
-      this.showToast(res.error || 'Failed to submit attendance', 'danger');
     }
   },
 
@@ -6297,6 +8194,9 @@ const app = {
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
           <h2 class="card-title"><i class="fa-solid fa-user-ninja"></i> Coaching & Staff Team (${totalCount})</h2>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="app.showImportCoachesModal()">
+              <i class="fa-solid fa-file-import"></i> Import CSV
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="app.exportCoachesExcel()">
               <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Coaches
             </button>
@@ -7342,6 +9242,9 @@ const app = {
             </p>
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="app.showImportBatchesModal()">
+              <i class="fa-solid fa-file-import"></i> Import CSV
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="app.exportBatchesExcel()">
               <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Batches
             </button>
@@ -10788,10 +12691,13 @@ const app = {
               Review late attendance corrections and coach overtime requests exceeding the 30-minute threshold.
             </p>
           </div>
-          <div>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <span class="badge ${totalPending > 0 ? 'badge-warning' : 'badge-success'}" style="font-size: 13px; padding: 6px 12px;">
               <i class="fa-solid ${totalPending > 0 ? 'fa-bell' : 'fa-circle-check'}"></i> ${totalPending} Pending Approvals
             </span>
+            <button class="btn btn-primary btn-sm" id="btn-auto-approve-all" onclick="app.approveAllPending()">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Approve All
+            </button>
           </div>
         </div>
 
@@ -10944,6 +12850,37 @@ const app = {
       this.renderApprovals();
     } else {
       this.showToast(res.error || 'Failed to review overtime', 'danger');
+    }
+  },
+
+  async approveAllPending() {
+    const btn = document.getElementById('btn-auto-approve-all');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Approving...';
+    }
+
+    try {
+      const res = await this.apiRequest('/api/academy/approvals/approve-all', {
+        method: 'POST',
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'All pending requests approved automatically!', 'success');
+        this.renderApprovals();
+      } else {
+        this.showToast(res.error || 'Auto-approval failed', 'danger');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Approve All';
+        }
+      }
+    } catch (err) {
+      this.showToast('Approval error: ' + err.message, 'danger');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Approve All';
+      }
     }
   },
 
@@ -12574,7 +14511,7 @@ const app = {
     const totalCount = data?.total !== undefined ? data.total : events.length;
     const drafts = events.filter(e => e.status === 'draft').length;
     const published = events.filter(e => e.status === 'published').length;
-    const totalParticipants = events.reduce((acc, e) => acc + (e.participant_count || 0), 0);
+    const totalParticipants = events.reduce((acc, e) => acc + (e.participant_count ?? e.total_invited ?? e.invited_count ?? 0), 0);
 
     content.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
@@ -12715,7 +14652,7 @@ const app = {
                         ${statusBadge}
                       </td>
                       <td style="padding: 14px 16px; font-size: 13px;">
-                        <div><strong>${e.participant_count || 0}</strong> invited</div>
+                        <div><strong>${e.participant_count ?? e.total_invited ?? e.invited_count ?? 0}</strong> invited</div>
                         <div style="font-size: 11px; color: var(--text-muted);">
                           ${e.confirmed_count || 0} confirmed ${e.max_participants ? `/ max ${e.max_participants}` : ''}
                         </div>
@@ -12789,7 +14726,14 @@ const app = {
       const eRes = await this.apiRequest(`/api/academy/events/${existingEventId}`);
       if (eRes.success) {
         existing = eRes.event;
-        preselectedStudentIds = (existing.participants || []).map(p => p.student_id);
+        const participantIds = (eRes.participants || existing.participants || []).map(p => p.student_id);
+        let manualIds = [];
+        if (existing && existing.manual_participants) {
+          try {
+            manualIds = typeof existing.manual_participants === 'string' ? JSON.parse(existing.manual_participants) : existing.manual_participants;
+          } catch(e) {}
+        }
+        preselectedStudentIds = Array.from(new Set([...participantIds, ...(Array.isArray(manualIds) ? manualIds.map(Number) : [])]));
       }
     }
 
@@ -12802,7 +14746,7 @@ const app = {
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
           <div class="form-group" style="grid-column: span 2;">
             <label style="font-weight: 600; font-size: 13px;">Event Name / Title *</label>
-            <input type="text" id="ev-title" class="form-input" required value="${existing ? existing.title : 'Inter-Branch Karate Tournament'}" placeholder="e.g. Inter-Branch Karate Tournament">
+            <input type="text" id="ev-title" class="form-input" required value="${existing ? this.escapeHtml(existing.title) : ''}" placeholder="e.g. Inter-Branch Karate Tournament">
           </div>
 
           <div class="form-group">
@@ -12870,21 +14814,23 @@ const app = {
 
           <input type="text" id="ev-cand-search" class="form-input" placeholder="Search students by name, branch, or batch..." onkeyup="app.filterCandidateList(this.value)" style="margin-bottom: 8px;">
 
-          <div id="ev-candidates-container" style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; background: var(--bg-hover);">
+          <div id="ev-candidates-container" style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; background: var(--bg-hover);">
             ${candidates.length === 0 ? `
               <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 12px;">No active students found in this academy.</div>
             ` : candidates.map(c => {
               const isChecked = preselectedStudentIds.includes(c.id);
+              const studentName = c.name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.student_code || 'Student';
+              const searchText = `${studentName} ${c.student_code || ''} ${c.branch_name || ''} ${c.batch_name || ''}`.toLowerCase();
               return `
-                <label class="cand-item" data-text="${(c.name + ' ' + (c.branch_name || '') + ' ' + (c.batch_name || '')).toLowerCase()}" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid var(--border); cursor: pointer;">
+                <label class="cand-item" data-text="${this.escapeHtml(searchText)}" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid var(--border); cursor: pointer;">
                   <div style="display: flex; align-items: center; gap: 8px;">
                     <input type="checkbox" class="ev-cand-checkbox" value="${c.id}" ${isChecked ? 'checked' : ''}>
                     <div>
-                      <span style="font-weight: 600; font-size: 13px;">${c.name}</span>
-                      <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">${c.branch_name || 'Main'} &bull; ${c.batch_name || 'Standard'}</span>
+                      <span style="font-weight: 600; font-size: 13px; color: var(--text-heading);">${this.escapeHtml(studentName)}</span>
+                      <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">${this.escapeHtml(c.branch_name || 'Main')} &bull; ${this.escapeHtml(c.batch_name || 'Standard')}</span>
                     </div>
                   </div>
-                  <span style="font-size: 10px; color: var(--text-dim);">${c.student_code || ''}</span>
+                  <span style="font-size: 10px; color: var(--text-dim); font-family: monospace;">${this.escapeHtml(c.student_code || '')}</span>
                 </label>
               `;
             }).join('')}
@@ -12900,7 +14846,7 @@ const app = {
       </button>
     `;
 
-    this.openModal(existingEventId ? 'Edit Event Specification' : 'New Event Specification', bodyHtml, footerHtml);
+    this.openModal(existingEventId ? 'Edit Event Specification' : 'New Event Specification', bodyHtml, footerHtml, '950px');
   },
 
   openEditEventModal(eventId) {
@@ -13036,6 +14982,9 @@ const app = {
             ${participants.length === 0 ? `
               <tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">No eligible participants assigned yet.</td></tr>
             ` : participants.map(p => {
+              const studentName = p.student_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || `Student #${p.student_id}`;
+              const studentCode = p.admission_number || p.student_code || '';
+
               let respBadge = '<span class="badge" style="background:#f3f4f6; color:#6b7280;">No Response</span>';
               if (p.status === 'interested') respBadge = '<span class="badge" style="background:#d1fae5; color:#065f46;">Interested</span>';
               if (p.status === 'not_interested') respBadge = '<span class="badge" style="background:#fee2e2; color:#991b1b;">Not Interested</span>';
@@ -13046,10 +14995,67 @@ const app = {
               if (p.registration_status === 'rejected') regBadge = '<span class="badge" style="background:#fee2e2; color:#991b1b;">Rejected</span>';
               if (p.registration_status === 'waitlisted') regBadge = '<span class="badge" style="background:#e0e7ff; color:#3730a3;">Waitlisted</span>';
 
+              let modActions = '';
+              if (p.registration_status === 'confirmed') {
+                modActions = `
+                  <div style="display: flex; gap: 5px; justify-content: flex-end; align-items: center;">
+                    <span class="badge" style="background:#d1fae5; color:#065f46; font-size: 11px; padding: 4px 8px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                      <i class="fa-solid fa-circle-check"></i> Confirmed
+                    </span>
+                    <button class="btn btn-sm btn-outline-danger" title="Revoke / Reject" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'rejected')" style="padding: 3px 7px; font-size: 11px;">
+                      <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline" title="Move to Waitlist" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'waitlisted')" style="padding: 3px 7px; font-size: 11px;">
+                      <i class="fa-solid fa-hourglass-half"></i>
+                    </button>
+                  </div>
+                `;
+              } else if (p.registration_status === 'rejected') {
+                modActions = `
+                  <div style="display: flex; gap: 5px; justify-content: flex-end; align-items: center;">
+                    <span class="badge" style="background:#fee2e2; color:#991b1b; font-size: 11px; padding: 4px 8px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                      <i class="fa-solid fa-circle-xmark"></i> Rejected
+                    </span>
+                    <button class="btn btn-sm btn-success" title="Approve Registration" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'confirmed')" style="padding: 3px 8px; font-size: 11px;">
+                      <i class="fa-solid fa-check"></i> Approve
+                    </button>
+                  </div>
+                `;
+              } else if (p.registration_status === 'waitlisted') {
+                modActions = `
+                  <div style="display: flex; gap: 5px; justify-content: flex-end; align-items: center;">
+                    <span class="badge" style="background:#e0e7ff; color:#3730a3; font-size: 11px; padding: 4px 8px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                      <i class="fa-solid fa-hourglass-half"></i> Waitlisted
+                    </span>
+                    <button class="btn btn-sm btn-success" title="Approve Registration" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'confirmed')" style="padding: 3px 8px; font-size: 11px;">
+                      <i class="fa-solid fa-check"></i>
+                    </button>
+                    <button class="btn btn-sm btn-danger" title="Reject Registration" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'rejected')" style="padding: 3px 8px; font-size: 11px;">
+                      <i class="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
+                `;
+              } else {
+                modActions = `
+                  <div style="display: flex; gap: 4px; justify-content: flex-end; align-items: center;">
+                    <button class="btn btn-sm btn-success" title="Approve Registration" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'confirmed')" style="padding: 4px 8px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">
+                      <i class="fa-solid fa-check"></i> Approve
+                    </button>
+                    <button class="btn btn-sm btn-danger" title="Reject Registration" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'rejected')" style="padding: 4px 8px; font-size: 11px;">
+                      <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline" title="Waitlist" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'waitlisted')" style="padding: 4px 8px; font-size: 11px;">
+                      <i class="fa-solid fa-hourglass-half"></i>
+                    </button>
+                  </div>
+                `;
+              }
+
               return `
-                <tr class="roster-row" data-name="${(p.student_name || '').toLowerCase()}" style="border-bottom: 1px solid var(--border);">
-                  <td style="padding: 10px 12px; font-weight: 600;">
-                    ${p.student_name || 'Student #' + p.student_id}
+                <tr class="roster-row" data-name="${(studentName + ' ' + studentCode).toLowerCase()}" style="border-bottom: 1px solid var(--border);">
+                  <td style="padding: 10px 12px;">
+                    <div style="font-weight: 600; color: var(--text-heading); font-size: 13px;">${studentName}</div>
+                    ${studentCode ? `<div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${studentCode}</div>` : ''}
                   </td>
                   <td style="padding: 10px 12px; color: var(--text-muted); font-size: 12px;">
                     ${p.branch_name || 'Main'} &bull; ${p.batch_name || 'Standard'}
@@ -13061,17 +15067,7 @@ const app = {
                     ${regBadge}
                   </td>
                   <td style="padding: 10px 12px; text-align: right;">
-                    <div style="display: flex; gap: 4px; justify-content: flex-end;">
-                      <button class="btn btn-sm btn-success" title="Approve Registration" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'confirmed')">
-                        <i class="fa-solid fa-check"></i>
-                      </button>
-                      <button class="btn btn-sm btn-danger" title="Reject Registration" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'rejected')">
-                        <i class="fa-solid fa-xmark"></i>
-                      </button>
-                      <button class="btn btn-sm btn-outline" title="Waitlist" onclick="app.moderateParticipant(${eventId}, ${p.id}, 'waitlisted')">
-                        <i class="fa-solid fa-hourglass-half"></i>
-                      </button>
-                    </div>
+                    ${modActions}
                   </td>
                 </tr>
               `;
@@ -13085,7 +15081,7 @@ const app = {
       <button type="button" class="btn btn-primary" onclick="app.closeModal()">Done</button>
     `;
 
-    this.openModal('Event Roster & Participation Approvals', bodyHtml, footerHtml);
+    this.openModal('Event Roster & Participation Approvals', bodyHtml, footerHtml, '950px');
   },
 
   filterRosterTable(term) {
@@ -13317,6 +15313,12 @@ const app = {
             </p>
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="app.showImportInquiriesModal()">
+              <i class="fa-solid fa-file-import"></i> Import CSV
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.exportInquiriesCsv()">
+              <i class="fa-solid fa-file-csv" style="color: #0284c7;"></i> Export CSV
+            </button>
             <button class="btn btn-outline-primary btn-sm" onclick="app.openAdmissionWizard()">
               <i class="fa-solid fa-wand-magic-sparkles"></i> Direct Admission Wizard
             </button>
@@ -13525,6 +15527,10 @@ const app = {
               <input type="email" id="edit-inq-email" class="form-input" style="width: 100%;" value="${this.escapeHtml(inq.email || '')}">
             </div>
             <div class="form-group">
+              <label>Date of Birth</label>
+              <input type="date" id="edit-inq-dob" class="form-input" style="width: 100%;" value="${inq.date_of_birth || inq.dob || ''}">
+            </div>
+            <div class="form-group">
               <label>Status / Lifecycle Stage</label>
               <select id="edit-inq-status" class="form-select" style="width: 100%;">
                 <option value="new" ${inq.status === 'new' ? 'selected' : ''}>New Inquiry</option>
@@ -13559,6 +15565,7 @@ const app = {
     const guardian_name = document.getElementById('edit-inq-guardian-name')?.value?.trim();
     const phone = document.getElementById('edit-inq-phone')?.value?.trim();
     const email = document.getElementById('edit-inq-email')?.value?.trim();
+    const date_of_birth = document.getElementById('edit-inq-dob')?.value || null;
     const status = document.getElementById('edit-inq-status')?.value;
     const next_followup_date = document.getElementById('edit-inq-followup')?.value;
     const notes = document.getElementById('edit-inq-notes')?.value?.trim();
@@ -13575,6 +15582,8 @@ const app = {
         guardian_name,
         phone,
         email,
+        date_of_birth,
+        dob: date_of_birth,
         status,
         next_followup_date,
         notes,
@@ -13719,6 +15728,7 @@ const app = {
       email: document.getElementById('inq-email')?.value?.trim() || null,
       sport_id: Number(sport_id),
       branch_id: document.getElementById('inq-branch-id')?.value ? Number(document.getElementById('inq-branch-id').value) : null,
+      date_of_birth: document.getElementById('inq-dob')?.value || null,
       dob: document.getElementById('inq-dob')?.value || null,
       preferred_timing: document.getElementById('inq-preferred-timing')?.value?.trim() || null,
       notes: document.getElementById('inq-notes')?.value?.trim() || null,
@@ -13892,9 +15902,207 @@ const app = {
 
   // Bridge: Convert Inquiry into 7-Step Admission Wizard
   async convertInquiryToAdmission(inquiryId) {
-    const inquiriesData = await this.apiRequest('/api/academy/inquiries');
-    const inq = (inquiriesData.inquiries || []).find(i => i.id === inquiryId);
-    this.openAdmissionWizard(inq || { id: inquiryId });
+    let inq = null;
+    try {
+      const res = await this.apiRequest(`/api/academy/inquiries/${inquiryId}`);
+      if (res && res.success && res.inquiry) {
+        inq = res.inquiry;
+      }
+    } catch (e) {
+      console.warn('Could not fetch single inquiry by ID, falling back to cached list:', e);
+    }
+    if (!inq && this.currentInquiriesData) {
+      inq = this.currentInquiriesData.find(i => Number(i.id) === Number(inquiryId));
+    }
+    if (!inq) {
+      const inquiriesData = await this.apiRequest('/api/academy/inquiries');
+      inq = (inquiriesData.inquiries || []).find(i => Number(i.id) === Number(inquiryId));
+    }
+    await this.openAdmissionWizard(inq || { id: inquiryId });
+  },
+
+  showImportInquiriesModal() {
+    this.inquiriesToImport = [];
+    const content = `
+      <div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          Upload a <strong>CSV</strong> or <strong>Excel (.xlsx)</strong> file containing inquiries and leads.
+        </p>
+        <div style="background: var(--bg-hover, #f8fafc); border: 2px dashed var(--border-color); border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 16px;">
+          <input type="file" id="inquiries-import-file" accept=".csv, .xlsx, .xls" style="display: none;" onchange="app.handleInquiryImportFile(event)">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('inquiries-import-file').click()">
+            <i class="fa-solid fa-file-arrow-up"></i> Choose CSV or Excel File
+          </button>
+          <div id="inquiries-file-name" style="margin-top: 8px; font-size: 12px; color: var(--text-muted);">No file chosen yet</div>
+        </div>
+
+        <div id="inquiries-preview-area" style="display: none;">
+          <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Preview Leads (<span id="inquiries-preview-count">0</span>):</h4>
+          <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px;">
+            <table class="table" style="font-size: 12px; margin-bottom: 0;">
+              <thead>
+                <tr>
+                  <th>Student Name</th>
+                  <th>Phone</th>
+                  <th>Parent / Guardian</th>
+                  <th>Branch / Sport</th>
+                </tr>
+              </thead>
+              <tbody id="inquiries-preview-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="margin-top: 14px; font-size: 11px; color: var(--text-muted);">
+          <strong>Supported Columns:</strong> student_name (or name), phone (or mobile), guardian_name, email, branch, sport, notes
+        </div>
+      </div>
+    `;
+
+    const footer = `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="btn-submit-inquiry-import" disabled onclick="app.submitInquiryImport()">
+        <i class="fa-solid fa-cloud-arrow-up"></i> Import Leads
+      </button>
+    `;
+
+    this.openModal('Import Inquiries & Leads', content, footer);
+  },
+
+  handleInquiryImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    document.getElementById('inquiries-file-name').textContent = file.name;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        let rows = [];
+        if (typeof XLSX !== 'undefined') {
+          const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+          const firstSheet = workbook.SheetNames[0];
+          rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: '' });
+        } else {
+          const text = new TextDecoder('utf-8').decode(new Uint8Array(evt.target.result));
+          rows = this.parseCsvToJson(text);
+        }
+
+        const valid = rows.filter(r => (r.student_name || r.name || r['Student Name']) && (r.phone || r.mobile || r.Phone));
+        this.inquiriesToImport = valid.map(r => ({
+          student_name: r.student_name || r.name || r['Student Name'] || '',
+          phone: r.phone || r.mobile || r.Phone || '',
+          guardian_name: r.guardian_name || r.parent_name || r['Guardian Name'] || '',
+          email: r.email || r.Email || '',
+          branch: r.branch || r.branch_id || r.Branch || '',
+          sport: r.sport || r.sport_id || r.Sport || '',
+          notes: r.notes || r.remarks || r.Notes || '',
+        }));
+
+        const countEl = document.getElementById('inquiries-preview-count');
+        const previewArea = document.getElementById('inquiries-preview-area');
+        const tbody = document.getElementById('inquiries-preview-tbody');
+        const submitBtn = document.getElementById('btn-submit-inquiry-import');
+
+        if (countEl) countEl.textContent = this.inquiriesToImport.length;
+        if (tbody) {
+          tbody.innerHTML = this.inquiriesToImport.slice(0, 10).map(i => `
+            <tr>
+              <td><strong>${this.escapeHtml(i.student_name)}</strong></td>
+              <td>${this.escapeHtml(i.phone)}</td>
+              <td>${this.escapeHtml(i.guardian_name || '-')}</td>
+              <td>${this.escapeHtml(i.branch || '')} ${i.sport ? '(' + this.escapeHtml(i.sport) + ')' : ''}</td>
+            </tr>
+          `).join('');
+        }
+
+        if (previewArea) previewArea.style.display = 'block';
+        if (submitBtn) submitBtn.disabled = this.inquiriesToImport.length === 0;
+
+        if (this.inquiriesToImport.length === 0) {
+          this.showToast('No valid inquiries found in file. Ensure headers: student_name, phone', 'warning');
+        }
+      } catch (err) {
+        this.showToast('File read error: ' + err.message, 'danger');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  },
+
+  async submitInquiryImport() {
+    if (!this.inquiriesToImport || this.inquiriesToImport.length === 0) return;
+
+    const btn = document.getElementById('btn-submit-inquiry-import');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Importing...';
+    }
+
+    try {
+      const res = await this.apiRequest('/api/academy/inquiries/import', {
+        method: 'POST',
+        body: { inquiries: this.inquiriesToImport },
+      });
+
+      if (res.success) {
+        this.showToast(res.message || `Imported ${res.importedCount} inquiries!`, 'success');
+        this.closeModal();
+        this.renderInquiries();
+      } else {
+        this.showToast(res.error || 'Import failed', 'danger');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Import Leads';
+        }
+      }
+    } catch (err) {
+      this.showToast('Import error: ' + err.message, 'danger');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Import Leads';
+      }
+    }
+  },
+
+  async exportInquiriesCsv() {
+    const res = await this.apiRequest('/api/academy/inquiries?limit=5000');
+    const inquiries = (res && res.inquiries) || [];
+    if (inquiries.length === 0) {
+      this.showToast('No inquiries available to export', 'info');
+      return;
+    }
+
+    const headers = ['ID', 'Student Name', 'Parent Name', 'Phone', 'Email', 'Sport', 'Branch', 'Status', 'Trial Date', 'Trial Status', 'Notes', 'Created At'];
+    const rows = inquiries.map(i => [
+      i.id,
+      i.student_name,
+      i.guardian_name || '',
+      i.phone || '',
+      i.email || '',
+      i.sport_name || '',
+      i.branch_name || '',
+      i.status || '',
+      i.trial_date || '',
+      i.trial_status || '',
+      (i.notes || '').replace(/[\r\n]+/g, ' '),
+      i.created_at || '',
+    ]);
+
+    const csvContent = [
+      headers.map(h => `"${h}"`).join(','),
+      ...rows.map(r => r.map(c => `"${String(c || '').replace(/"/g, '""')}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `inquiries_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    this.showToast(`Exported ${inquiries.length} inquiries to CSV!`, 'success');
   },
 
   // ==========================================
@@ -13909,17 +16117,31 @@ const app = {
       this.apiRequest('/api/academy/students/next-admission-number'),
     ]);
 
-    const nextAdmNum = admNumRes?.next_admission_number || '';
+    const nextAdmNum = (admNumRes && (admNumRes.next_admission_number || admNumRes.admissionNumber))
+      ? (admNumRes.next_admission_number || admNumRes.admissionNumber)
+      : `STU-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
     const today = new Date().toISOString().split('T')[0];
 
-    // Split name if prefilled
-    let firstName = '';
-    let lastName = '';
-    if (inquiryData && inquiryData.student_name) {
-      const parts = inquiryData.student_name.trim().split(' ');
+    // Split student name if prefilled
+    let firstName = inquiryData?.first_name || '';
+    let lastName = inquiryData?.last_name || '';
+    if (!firstName && inquiryData?.student_name) {
+      const parts = inquiryData.student_name.trim().split(/\s+/);
       firstName = parts[0] || '';
       lastName = parts.slice(1).join(' ') || '';
     }
+    if (!lastName && inquiryData?.guardian_name) {
+      const gParts = inquiryData.guardian_name.trim().split(/\s+/);
+      if (gParts.length > 1) {
+        lastName = gParts.slice(1).join(' ');
+      }
+    }
+
+    const initialBranchId = inquiryData?.branch_id || (branches.length === 1 ? branches[0].id : '');
+    const initialSportId = inquiryData?.sport_id || '';
+    const initialBatchId = inquiryData?.preferred_batch_id || '';
+    const initialDob = inquiryData?.date_of_birth || inquiryData?.dob || '';
+    const initialPhone = inquiryData?.phone || '';
 
     this._wizardState = {
       currentStep: 1,
@@ -13928,22 +16150,65 @@ const app = {
       branches,
       sports,
       batches,
-      selectedBatchId: null,
+      selectedBatchId: initialBatchId ? Number(initialBatchId) : null,
       batchMonthlyFee: 0,
       admissionFee: 500,
       discountPct: 0,
-      prefill: {
-        firstName,
-        lastName,
-        guardianName: inquiryData?.guardian_name || '',
-        phone: inquiryData?.phone || '',
-        email: inquiryData?.email || '',
-        sportId: inquiryData?.sport_id || '',
-        branchId: inquiryData?.branch_id || '',
-        dob: inquiryData?.dob || '',
-        admissionNumber: nextAdmNum,
+      formData: {
+        first_name: firstName,
+        last_name: lastName,
+        admission_number: nextAdmNum,
+        date_of_birth: initialDob,
+        gender: inquiryData?.gender || '',
+        blood_group: '',
+        nationality: 'Indian',
+        preferred_language: 'English, Hindi',
+        // Step 2: Guardian
+        father_name: inquiryData?.guardian_name || '',
+        father_phone: initialPhone,
+        mother_name: '',
+        mother_phone: '',
+        primary_guardian: 'father',
+        contact_email: inquiryData?.email || '',
+        authorized_pickup: '',
+        // Step 3: Address
+        current_address: '',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        pincode: '',
+        emergency_contact_name: '',
+        emergency_contact_relationship: '',
+        emergency_contact_phone: initialPhone,
+        // Step 4: Education
+        school_name: '',
+        grade_level: '',
+        sports_history: '',
+        // Step 5: Health & Consent
+        medical_conditions: '',
+        allergies: '',
+        regular_medications: '',
+        emergency_medical_consent: 1,
+        photo_media_consent: 1,
+        // Step 6: Sports & Batch (Optional)
+        branch_id: initialBranchId ? Number(initialBranchId) : null,
+        sport_id: initialSportId ? Number(initialSportId) : null,
+        batch_id: initialBatchId ? Number(initialBatchId) : null,
+        start_date: today,
+        // Step 7: Fees
+        admission_fee: 500,
+        discount_percentage: 0,
+        discount_reason: '',
+        initial_payment_amount: 500,
+        payment_mode: 'upi',
       },
     };
+
+    if (this._wizardState.formData.batch_id) {
+      const matchBatch = batches.find(b => String(b.id) === String(this._wizardState.formData.batch_id));
+      if (matchBatch) {
+        this._wizardState.batchMonthlyFee = matchBatch.monthly_fee || 0;
+      }
+    }
 
     this.renderAdmissionWizardModal();
   },
@@ -13951,6 +16216,7 @@ const app = {
   renderAdmissionWizardModal() {
     const s = this._wizardState;
     if (!s) return;
+    const d = s.formData || {};
 
     const stepTitles = [
       { num: 1, title: 'Personal Info', icon: 'fa-user' },
@@ -13958,7 +16224,7 @@ const app = {
       { num: 3, title: 'Address Details', icon: 'fa-location-dot' },
       { num: 4, title: 'Education / School', icon: 'fa-school' },
       { num: 5, title: 'Health & Consent', icon: 'fa-heart-pulse' },
-      { num: 6, title: 'Sport & Single Batch', icon: 'fa-baseball-bat-ball' },
+      { num: 6, title: 'Sport & Batch (Optional)', icon: 'fa-baseball-bat-ball' },
       { num: 7, title: 'Fees & Confirmation', icon: 'fa-file-invoice-dollar' },
     ];
 
@@ -13982,43 +16248,44 @@ const app = {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
               <div class="form-group">
                 <label>First Name *</label>
-                <input type="text" id="wiz-first-name" class="form-input" required value="${this.escapeHtml(s.prefill.firstName)}" placeholder="e.g., Aarav">
+                <input type="text" id="wiz-first-name" class="form-input" required value="${this.escapeHtml(d.first_name || '')}" placeholder="e.g., Aarav" oninput="app.clearWizardFieldError('wiz-first-name')">
               </div>
               <div class="form-group">
                 <label>Last Name *</label>
-                <input type="text" id="wiz-last-name" class="form-input" required value="${this.escapeHtml(s.prefill.lastName)}" placeholder="e.g., Sharma">
+                <input type="text" id="wiz-last-name" class="form-input" required value="${this.escapeHtml(d.last_name || '')}" placeholder="e.g., Sharma" oninput="app.clearWizardFieldError('wiz-last-name')">
               </div>
               <div class="form-group">
-                <label>Admission Number (System Generated)</label>
-                <input type="text" id="wiz-admission-number" class="form-input" value="${this.escapeHtml(s.prefill.admissionNumber)}" placeholder="ADM-0001">
+                <label>Admission Number (System Generated) &bull; Readonly</label>
+                <input type="text" id="wiz-admission-number" class="form-input" readonly value="${this.escapeHtml(d.admission_number || '')}" style="background-color: var(--bg-hover, #f1f5f9); cursor: not-allowed; font-weight: 600; color: var(--primary);">
+                <span style="font-size: 11px; color: var(--text-muted);"><i class="fa-solid fa-lock"></i> Auto-assigned permanent student registration number</span>
               </div>
               <div class="form-group">
                 <label>Date of Birth *</label>
-                <input type="date" id="wiz-dob" class="form-input" required value="${s.prefill.dob || ''}">
+                <input type="date" id="wiz-dob" class="form-input" required value="${d.date_of_birth || ''}" oninput="app.clearWizardFieldError('wiz-dob')">
               </div>
               <div class="form-group">
                 <label>Gender</label>
                 <select id="wiz-gender" class="form-select">
                   <option value="">-- Optional / Select --</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
+                  <option value="male" ${d.gender === 'male' ? 'selected' : ''}>Male</option>
+                  <option value="female" ${d.gender === 'female' ? 'selected' : ''}>Female</option>
+                  <option value="other" ${d.gender === 'other' ? 'selected' : ''}>Other</option>
                 </select>
               </div>
               <div class="form-group">
                 <label>Blood Group</label>
                 <select id="wiz-blood-group" class="form-select">
                   <option value="">-- Unknown / Not Tested --</option>
-                  ${['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => `<option value="${bg}">${bg}</option>`).join('')}
+                  ${['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => `<option value="${bg}" ${d.blood_group === bg ? 'selected' : ''}>${bg}</option>`).join('')}
                 </select>
               </div>
               <div class="form-group">
                 <label>Nationality</label>
-                <input type="text" id="wiz-nationality" class="form-input" value="Indian">
+                <input type="text" id="wiz-nationality" class="form-input" value="${this.escapeHtml(d.nationality || 'Indian')}">
               </div>
               <div class="form-group">
                 <label>Preferred Language</label>
-                <input type="text" id="wiz-language" class="form-input" value="English, Hindi">
+                <input type="text" id="wiz-language" class="form-input" value="${this.escapeHtml(d.preferred_language || 'English, Hindi')}">
               </div>
             </div>
           </div>
@@ -14029,36 +16296,36 @@ const app = {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
               <div class="form-group">
                 <label>Father's Full Name</label>
-                <input type="text" id="wiz-father-name" class="form-input" value="${this.escapeHtml(s.prefill.guardianName)}" placeholder="e.g., Vikram Sharma">
+                <input type="text" id="wiz-father-name" class="form-input" value="${this.escapeHtml(d.father_name || '')}" placeholder="e.g., Vikram Sharma">
               </div>
               <div class="form-group">
-                <label>Father's Phone Number</label>
-                <input type="tel" id="wiz-father-phone" class="form-input" value="${this.escapeHtml(s.prefill.phone)}" placeholder="10-digit mobile">
+                <label>Primary Contact Phone *</label>
+                <input type="tel" id="wiz-father-phone" class="form-input" required value="${this.escapeHtml(d.father_phone || '')}" placeholder="10-digit mobile" oninput="app.clearWizardFieldError('wiz-father-phone')">
               </div>
               <div class="form-group">
                 <label>Mother's Full Name</label>
-                <input type="text" id="wiz-mother-name" class="form-input" placeholder="e.g., Sunita Sharma">
+                <input type="text" id="wiz-mother-name" class="form-input" value="${this.escapeHtml(d.mother_name || '')}" placeholder="e.g., Sunita Sharma">
               </div>
               <div class="form-group">
                 <label>Mother's Phone Number</label>
-                <input type="tel" id="wiz-mother-phone" class="form-input" placeholder="10-digit mobile">
+                <input type="tel" id="wiz-mother-phone" class="form-input" value="${this.escapeHtml(d.mother_phone || '')}" placeholder="10-digit mobile">
               </div>
               <div class="form-group">
                 <label>Primary Communication Guardian *</label>
                 <select id="wiz-primary-guardian" class="form-select">
-                  <option value="father">Father</option>
-                  <option value="mother">Mother</option>
-                  <option value="other">Other / Legal Guardian</option>
+                  <option value="father" ${d.primary_guardian === 'father' ? 'selected' : ''}>Father</option>
+                  <option value="mother" ${d.primary_guardian === 'mother' ? 'selected' : ''}>Mother</option>
+                  <option value="other" ${d.primary_guardian === 'other' ? 'selected' : ''}>Other / Legal Guardian</option>
                 </select>
               </div>
               <div class="form-group">
                 <label>Primary Contact Email</label>
-                <input type="email" id="wiz-contact-email" class="form-input" value="${this.escapeHtml(s.prefill.email)}" placeholder="parent@example.com">
+                <input type="email" id="wiz-contact-email" class="form-input" value="${this.escapeHtml(d.contact_email || '')}" placeholder="parent@example.com">
               </div>
             </div>
             <div class="form-group" style="margin-top: 10px;">
               <label>Authorized Pickup Persons (Safety Protocol)</label>
-              <input type="text" id="wiz-pickup-auth" class="form-input" placeholder="Names and relationships of persons authorized to pick up the child">
+              <input type="text" id="wiz-pickup-auth" class="form-input" value="${this.escapeHtml(d.authorized_pickup || '')}" placeholder="Names and relationships of persons authorized to pick up the child">
             </div>
           </div>
 
@@ -14067,20 +16334,20 @@ const app = {
             <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-location-dot"></i> Step 3: Address & Emergency Contacts</h4>
             <div class="form-group">
               <label>Current Residential Address</label>
-              <textarea id="wiz-current-address" class="form-input" rows="2" placeholder="House / Flat No, Street, Landmark..."></textarea>
+              <textarea id="wiz-current-address" class="form-input" rows="2" placeholder="House / Flat No, Street, Landmark...">${this.escapeHtml(d.current_address || '')}</textarea>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
               <div class="form-group">
                 <label>City</label>
-                <input type="text" id="wiz-city" class="form-input" value="Mumbai">
+                <input type="text" id="wiz-city" class="form-input" value="${this.escapeHtml(d.city || 'Mumbai')}">
               </div>
               <div class="form-group">
                 <label>State</label>
-                <input type="text" id="wiz-state" class="form-input" value="Maharashtra">
+                <input type="text" id="wiz-state" class="form-input" value="${this.escapeHtml(d.state || 'Maharashtra')}">
               </div>
               <div class="form-group">
                 <label>PIN Code</label>
-                <input type="text" id="wiz-pincode" class="form-input" placeholder="400001">
+                <input type="text" id="wiz-pincode" class="form-input" value="${this.escapeHtml(d.pincode || '')}" placeholder="400001">
               </div>
             </div>
             <div style="margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px;">
@@ -14088,15 +16355,15 @@ const app = {
               <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
                 <div class="form-group" style="margin: 0;">
                   <label>Contact Name</label>
-                  <input type="text" id="wiz-emergency-name" class="form-input" placeholder="e.g., Uncle / Neighbour">
+                  <input type="text" id="wiz-emergency-name" class="form-input" value="${this.escapeHtml(d.emergency_contact_name || '')}" placeholder="e.g., Uncle / Relative">
                 </div>
                 <div class="form-group" style="margin: 0;">
                   <label>Relationship</label>
-                  <input type="text" id="wiz-emergency-rel" class="form-input" placeholder="e.g., Grandparent">
+                  <input type="text" id="wiz-emergency-rel" class="form-input" value="${this.escapeHtml(d.emergency_contact_relationship || '')}" placeholder="e.g., Grandparent">
                 </div>
                 <div class="form-group" style="margin: 0;">
-                  <label>Emergency Phone *</label>
-                  <input type="tel" id="wiz-emergency-phone" class="form-input" placeholder="10-digit emergency contact">
+                  <label>Emergency Phone</label>
+                  <input type="tel" id="wiz-emergency-phone" class="form-input" value="${this.escapeHtml(d.emergency_contact_phone || '')}" placeholder="10-digit emergency contact">
                 </div>
               </div>
             </div>
@@ -14108,16 +16375,16 @@ const app = {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
               <div class="form-group">
                 <label>School / College Name</label>
-                <input type="text" id="wiz-school-name" class="form-input" placeholder="e.g., St. Xavier's High School">
+                <input type="text" id="wiz-school-name" class="form-input" value="${this.escapeHtml(d.school_name || '')}" placeholder="e.g., St. Xavier's High School">
               </div>
               <div class="form-group">
                 <label>Grade / Standard / Class</label>
-                <input type="text" id="wiz-grade" class="form-input" placeholder="e.g., Class 6 / Grade 8">
+                <input type="text" id="wiz-grade" class="form-input" value="${this.escapeHtml(d.grade_level || '')}" placeholder="e.g., Class 6 / Grade 8">
               </div>
             </div>
             <div class="form-group">
               <label>Prior Sports Experience & Achievements</label>
-              <textarea id="wiz-sports-history" class="form-input" rows="2" placeholder="e.g., 2 years school cricket team, district inter-school competitor..."></textarea>
+              <textarea id="wiz-sports-history" class="form-input" rows="2" placeholder="e.g., 2 years school cricket team, district inter-school competitor...">${this.escapeHtml(d.sports_history || '')}</textarea>
             </div>
           </div>
 
@@ -14127,60 +16394,60 @@ const app = {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
               <div class="form-group">
                 <label>Medical Conditions / Asthma / Heart Concerns</label>
-                <input type="text" id="wiz-medical-conditions" class="form-input" placeholder="None or specify (e.g. Mild exercise-induced asthma)">
+                <input type="text" id="wiz-medical-conditions" class="form-input" value="${this.escapeHtml(d.medical_conditions || '')}" placeholder="None or specify (e.g. Mild exercise-induced asthma)">
               </div>
               <div class="form-group">
                 <label>Allergies (Food, Meds, Environmental)</label>
-                <input type="text" id="wiz-allergies" class="form-input" placeholder="e.g. Peanut allergy, penicillin">
+                <input type="text" id="wiz-allergies" class="form-input" value="${this.escapeHtml(d.allergies || '')}" placeholder="e.g. Peanut allergy, penicillin">
               </div>
             </div>
             <div class="form-group">
               <label>Regular Medications Being Taken</label>
-              <input type="text" id="wiz-regular-meds" class="form-input" placeholder="Specify if any">
+              <input type="text" id="wiz-regular-meds" class="form-input" value="${this.escapeHtml(d.regular_medications || '')}" placeholder="Specify if any">
             </div>
 
             <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px; padding: 14px; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px;">
               <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 13px; color: var(--text-heading);">
-                <input type="checkbox" id="wiz-consent-medical" checked style="margin-top: 3px;">
+                <input type="checkbox" id="wiz-consent-medical" ${d.emergency_medical_consent !== 0 ? 'checked' : ''} style="margin-top: 3px;" onchange="app.clearWizardFieldError('wiz-consent-medical')">
                 <span><strong>Emergency Medical Consent (Mandatory):</strong> In the event of injury or acute distress during training, academy staff and certified first aiders are authorized to administer medical attention or arrange hospital transport.</span>
               </label>
               <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 13px; color: var(--text-heading);">
-                <input type="checkbox" id="wiz-consent-photo" checked style="margin-top: 3px;">
+                <input type="checkbox" id="wiz-consent-photo" ${d.photo_media_consent !== 0 ? 'checked' : ''} style="margin-top: 3px;">
                 <span><strong>Media & Photography Consent:</strong> I permit sports training photographs/videos of the student to be captured and utilized for internal technical review, match archives, and official academy publications.</span>
               </label>
             </div>
           </div>
 
-          <!-- STEP 6: Sports & Single Active Batch -->
+          <!-- STEP 6: Sports & Single Active Batch (Optional) -->
           <div class="wizard-step-pane ${s.currentStep === 6 ? 'active' : ''}" id="wiz-step-6">
-            <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-baseball-bat-ball"></i> Step 6: Sports & Single Active Batch Assignment</h4>
+            <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-baseball-bat-ball"></i> Step 6: Sports & Batch Assignment (Optional)</h4>
             <div style="background: rgba(37, 99, 235, 0.06); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: var(--primary);">
-              <i class="fa-solid fa-lock"></i> <strong>Single Active Batch Invariant:</strong> A student can belong to exactly one active batch. Enrolling or transferring assigns this batch as the authoritative active schedule.
+              <i class="fa-solid fa-circle-info"></i> <strong>Flexible Batch Management:</strong> Batch assignment is optional. You can enroll the student now and assign or transfer their training batch at any time later.
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
               <div class="form-group">
                 <label>Branch / Campus *</label>
-                <select id="wiz-branch-id" class="form-select" required onchange="app.onWizardBranchOrSportChange()">
+                <select id="wiz-branch-id" class="form-select" required onchange="app.onWizardBranchOrSportChange(); app.clearWizardFieldError('wiz-branch-id');">
                   <option value="">-- Select Branch --</option>
-                  ${s.branches.map(b => `<option value="${b.id}" ${String(s.prefill.branchId) === String(b.id) ? 'selected' : ''}>${this.escapeHtml(b.name)}</option>`).join('')}
+                  ${s.branches.map(b => `<option value="${b.id}" ${String(d.branch_id) === String(b.id) ? 'selected' : ''}>${this.escapeHtml(b.name)}</option>`).join('')}
                 </select>
               </div>
               <div class="form-group">
-                <label>Sport / Discipline *</label>
-                <select id="wiz-sport-id" class="form-select" required onchange="app.onWizardBranchOrSportChange()">
-                  <option value="">-- Select Sport --</option>
-                  ${s.sports.map(sp => `<option value="${sp.id}" ${String(s.prefill.sportId) === String(sp.id) ? 'selected' : ''}>${this.escapeHtml(sp.name)}</option>`).join('')}
+                <label>Sport / Discipline (Optional)</label>
+                <select id="wiz-sport-id" class="form-select" onchange="app.onWizardBranchOrSportChange()">
+                  <option value="">-- Select Sport (Optional) --</option>
+                  ${s.sports.map(sp => `<option value="${sp.id}" ${String(d.sport_id) === String(sp.id) ? 'selected' : ''}>${this.escapeHtml(sp.name)}</option>`).join('')}
                 </select>
               </div>
             </div>
 
             <div class="form-group" style="margin-top: 6px;">
-              <label>Select Training Batch *</label>
-              <select id="wiz-batch-id" class="form-select" required onchange="app.onWizardBatchChange(this.value)">
-                <option value="">-- Select Training Batch --</option>
+              <label>Select Training Batch (Optional &mdash; Can assign later)</label>
+              <select id="wiz-batch-id" class="form-select" onchange="app.onWizardBatchChange(this.value)">
+                <option value="">-- No Batch / Assign Later --</option>
                 ${s.batches.map(b => `
-                  <option value="${b.id}" data-fee="${b.monthly_fee || 0}" data-branch="${b.branch_id}" data-sport="${b.sport_id}">
+                  <option value="${b.id}" ${String(d.batch_id) === String(b.id) ? 'selected' : ''} data-fee="${b.monthly_fee || 0}" data-branch="${b.branch_id}" data-sport="${b.sport_id}">
                     ${this.escapeHtml(b.name)} &bull; ${b.start_time} - ${b.end_time} &bull; ₹${(b.monthly_fee || 0).toLocaleString()}/mo
                   </option>
                 `).join('')}
@@ -14189,7 +16456,7 @@ const app = {
 
             <div class="form-group">
               <label>Admission / Joining Date *</label>
-              <input type="date" id="wiz-start-date" class="form-input" required value="${new Date().toISOString().split('T')[0]}">
+              <input type="date" id="wiz-start-date" class="form-input" required value="${d.start_date || new Date().toISOString().split('T')[0]}" oninput="app.clearWizardFieldError('wiz-start-date')">
               <span style="font-size: 11px; color: var(--text-muted);">Fee period will be computed from this actual joining date.</span>
             </div>
           </div>
@@ -14207,20 +16474,20 @@ const app = {
               </div>
               <div class="fee-calc-row">
                 <span>One-Time Admission / Kit Fee</span>
-                <span>₹<input type="number" id="wiz-admission-fee" value="500" min="0" style="width: 80px; text-align: right; font-size: 13px;" oninput="app.recomputeWizardFees()"></span>
+                <span>₹<input type="number" id="wiz-admission-fee" value="${d.admission_fee !== undefined ? d.admission_fee : 500}" min="0" style="width: 80px; text-align: right; font-size: 13px;" oninput="app.recomputeWizardFees()"></span>
               </div>
               <div class="fee-calc-row">
                 <span>
-                  Discount (<span id="discount-pct-label">0%</span>)
+                  Discount (<span id="discount-pct-label">${d.discount_percentage || 0}%</span>)
                   <span style="font-size: 11px; color: #f59e0b;">(Max 20% cap)</span>
                 </span>
                 <span>
-                  <input type="number" id="wiz-discount-pct" value="0" min="0" max="20" style="width: 60px; text-align: right; font-size: 13px;" oninput="app.recomputeWizardFees()"> %
+                  <input type="number" id="wiz-discount-pct" value="${d.discount_percentage || 0}" min="0" max="20" style="width: 60px; text-align: right; font-size: 13px;" oninput="app.recomputeWizardFees()"> %
                 </span>
               </div>
-              <div class="fee-calc-row" id="discount-reason-row" style="display: none;">
+              <div class="fee-calc-row" id="discount-reason-row" style="display: ${(d.discount_percentage || 0) > 0 ? 'flex' : 'none'};">
                 <span style="font-size: 12px; color: var(--text-muted);">Discount Reason *</span>
-                <input type="text" id="wiz-discount-reason" class="form-input" style="width: 220px; font-size: 12px;" placeholder="Sibling, scholarship, trial offer...">
+                <input type="text" id="wiz-discount-reason" class="form-input" style="width: 220px; font-size: 12px;" placeholder="Sibling, scholarship, trial offer..." value="${this.escapeHtml(d.discount_reason || '')}">
               </div>
               <div class="fee-calc-total">
                 <span>Net Total Payable</span>
@@ -14232,16 +16499,16 @@ const app = {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px;">
               <div class="form-group">
                 <label>Initial Payment Collected Today</label>
-                <input type="number" id="wiz-paid-amount" class="form-input" value="0" min="0">
+                <input type="number" id="wiz-paid-amount" class="form-input" value="${d.initial_payment_amount !== undefined ? d.initial_payment_amount : 500}" min="0">
               </div>
               <div class="form-group">
                 <label>Payment Mode</label>
                 <select id="wiz-payment-mode" class="form-select">
-                  <option value="upi">UPI / QR Code</option>
-                  <option value="cash">Cash</option>
-                  <option value="card">Debit / Credit Card</option>
-                  <option value="bank_transfer">Bank Transfer / IMPS</option>
-                  <option value="cheque">Cheque</option>
+                  <option value="upi" ${d.payment_mode === 'upi' ? 'selected' : ''}>UPI / QR Code</option>
+                  <option value="cash" ${d.payment_mode === 'cash' ? 'selected' : ''}>Cash</option>
+                  <option value="card" ${d.payment_mode === 'card' ? 'selected' : ''}>Debit / Credit Card</option>
+                  <option value="bank_transfer" ${d.payment_mode === 'bank_transfer' ? 'selected' : ''}>Bank Transfer / IMPS</option>
+                  <option value="cheque" ${d.payment_mode === 'cheque' ? 'selected' : ''}>Cheque</option>
                 </select>
               </div>
             </div>
@@ -14267,20 +16534,15 @@ const app = {
       <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
         <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
         <div style="display: flex; gap: 8px;">
-          ${s.currentStep > 1 ? `
-            <button type="button" class="btn btn-secondary" onclick="app.prevWizardStep()">
-              <i class="fa-solid fa-arrow-left"></i> Back
-            </button>
-          ` : ''}
-          ${s.currentStep < s.totalSteps ? `
-            <button type="button" class="btn btn-primary" onclick="app.nextWizardStep()">
-              Next Step <i class="fa-solid fa-arrow-right"></i>
-            </button>
-          ` : `
-            <button type="button" class="btn btn-success" id="btn-submit-wizard" onclick="app.submitAdmissionWizard()">
-              <i class="fa-solid fa-check"></i> Complete Admission
-            </button>
-          `}
+          <button type="button" class="btn btn-secondary" id="wiz-btn-back" style="display: ${s.currentStep > 1 ? 'inline-flex' : 'none'};" onclick="app.prevWizardStep()">
+            <i class="fa-solid fa-arrow-left"></i> Back
+          </button>
+          <button type="button" class="btn btn-primary" id="wiz-btn-next" style="display: ${s.currentStep < s.totalSteps ? 'inline-flex' : 'none'};" onclick="app.nextWizardStep()">
+            Next Step <i class="fa-solid fa-arrow-right"></i>
+          </button>
+          <button type="button" class="btn btn-success" id="btn-submit-wizard" style="display: ${s.currentStep === s.totalSteps ? 'inline-flex' : 'none'};" onclick="app.submitAdmissionWizard()">
+            <i class="fa-solid fa-check"></i> Complete Admission
+          </button>
         </div>
       </div>
     `;
@@ -14288,68 +16550,261 @@ const app = {
     this.openModal(`Student Admission Wizard — Step ${s.currentStep} of ${s.totalSteps}`, modalBody, modalFooter);
   },
 
+  collectWizardFormData() {
+    if (!this._wizardState) return;
+    const s = this._wizardState;
+    if (!s.formData) s.formData = {};
+
+    const getVal = (id) => document.getElementById(id)?.value?.trim() || '';
+    const getNum = (id, def = 0) => {
+      const v = document.getElementById(id)?.value;
+      return (v !== '' && v !== null && v !== undefined && !isNaN(Number(v))) ? Number(v) : def;
+    };
+    const getChk = (id) => document.getElementById(id)?.checked ? 1 : 0;
+
+    // Step 1
+    if (document.getElementById('wiz-first-name')) s.formData.first_name = getVal('wiz-first-name');
+    if (document.getElementById('wiz-last-name')) s.formData.last_name = getVal('wiz-last-name');
+    if (document.getElementById('wiz-admission-number')) s.formData.admission_number = getVal('wiz-admission-number');
+    if (document.getElementById('wiz-dob')) s.formData.date_of_birth = document.getElementById('wiz-dob').value;
+    if (document.getElementById('wiz-gender')) s.formData.gender = getVal('wiz-gender');
+    if (document.getElementById('wiz-blood-group')) s.formData.blood_group = getVal('wiz-blood-group');
+    if (document.getElementById('wiz-nationality')) s.formData.nationality = getVal('wiz-nationality') || 'Indian';
+    if (document.getElementById('wiz-language')) s.formData.preferred_language = getVal('wiz-language') || 'English, Hindi';
+
+    // Step 2
+    if (document.getElementById('wiz-father-name')) s.formData.father_name = getVal('wiz-father-name');
+    if (document.getElementById('wiz-father-phone')) s.formData.father_phone = getVal('wiz-father-phone');
+    if (document.getElementById('wiz-mother-name')) s.formData.mother_name = getVal('wiz-mother-name');
+    if (document.getElementById('wiz-mother-phone')) s.formData.mother_phone = getVal('wiz-mother-phone');
+    if (document.getElementById('wiz-primary-guardian')) s.formData.primary_guardian = getVal('wiz-primary-guardian');
+    if (document.getElementById('wiz-contact-email')) s.formData.contact_email = getVal('wiz-contact-email');
+    if (document.getElementById('wiz-pickup-auth')) s.formData.authorized_pickup = getVal('wiz-pickup-auth');
+
+    // Step 3
+    if (document.getElementById('wiz-current-address')) s.formData.current_address = getVal('wiz-current-address');
+    if (document.getElementById('wiz-city')) s.formData.city = getVal('wiz-city');
+    if (document.getElementById('wiz-state')) s.formData.state = getVal('wiz-state');
+    if (document.getElementById('wiz-pincode')) s.formData.pincode = getVal('wiz-pincode');
+    if (document.getElementById('wiz-emergency-name')) s.formData.emergency_contact_name = getVal('wiz-emergency-name');
+    if (document.getElementById('wiz-emergency-rel')) s.formData.emergency_contact_relationship = getVal('wiz-emergency-rel');
+    if (document.getElementById('wiz-emergency-phone')) s.formData.emergency_contact_phone = getVal('wiz-emergency-phone');
+
+    // Step 4
+    if (document.getElementById('wiz-school-name')) s.formData.school_name = getVal('wiz-school-name');
+    if (document.getElementById('wiz-grade')) s.formData.grade_level = getVal('wiz-grade');
+    if (document.getElementById('wiz-sports-history')) s.formData.sports_history = getVal('wiz-sports-history');
+
+    // Step 5
+    if (document.getElementById('wiz-medical-conditions')) s.formData.medical_conditions = getVal('wiz-medical-conditions');
+    if (document.getElementById('wiz-allergies')) s.formData.allergies = getVal('wiz-allergies');
+    if (document.getElementById('wiz-regular-meds')) s.formData.regular_medications = getVal('wiz-regular-meds');
+    if (document.getElementById('wiz-consent-medical')) s.formData.emergency_medical_consent = getChk('wiz-consent-medical');
+    if (document.getElementById('wiz-consent-photo')) s.formData.photo_media_consent = getChk('wiz-consent-photo');
+
+    // Step 6
+    if (document.getElementById('wiz-branch-id')) {
+      const bVal = getVal('wiz-branch-id');
+      s.formData.branch_id = bVal ? Number(bVal) : null;
+    }
+    if (document.getElementById('wiz-sport-id')) {
+      const spVal = getVal('wiz-sport-id');
+      s.formData.sport_id = spVal ? Number(spVal) : null;
+    }
+    if (document.getElementById('wiz-batch-id')) {
+      const btVal = getVal('wiz-batch-id');
+      s.formData.batch_id = btVal ? Number(btVal) : null;
+    }
+    if (document.getElementById('wiz-start-date')) s.formData.start_date = document.getElementById('wiz-start-date').value;
+
+    // Step 7
+    if (document.getElementById('wiz-admission-fee')) s.formData.admission_fee = getNum('wiz-admission-fee', 0);
+    if (document.getElementById('wiz-discount-pct')) s.formData.discount_percentage = getNum('wiz-discount-pct', 0);
+    if (document.getElementById('wiz-discount-reason')) s.formData.discount_reason = getVal('wiz-discount-reason');
+    if (document.getElementById('wiz-paid-amount')) s.formData.initial_payment_amount = getNum('wiz-paid-amount', 0);
+    if (document.getElementById('wiz-payment-mode')) s.formData.payment_mode = getVal('wiz-payment-mode') || 'cash';
+  },
+
+  clearWizardStepErrors(stepNum) {
+    const pane = document.getElementById(`wiz-step-${stepNum}`);
+    if (!pane) return;
+    pane.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    pane.querySelectorAll('.wizard-field-error').forEach(el => el.remove());
+  },
+
+  clearWizardFieldError(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.classList.remove('is-invalid');
+    const existing = el.parentNode?.querySelector('.wizard-field-error');
+    if (existing) existing.remove();
+  },
+
+  setWizardFieldError(elementId, errorMsg) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.classList.add('is-invalid');
+    const parent = el.parentNode;
+    if (!parent.querySelector('.wizard-field-error')) {
+      const err = document.createElement('span');
+      err.className = 'wizard-field-error';
+      err.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> ${this.escapeHtml(errorMsg)}`;
+      parent.appendChild(err);
+    }
+  },
+
+  validateWizardStep(stepNum) {
+    this.clearWizardStepErrors(stepNum);
+    let isValid = true;
+    let firstInvalidEl = null;
+
+    if (stepNum === 1) {
+      const first = document.getElementById('wiz-first-name');
+      const last = document.getElementById('wiz-last-name');
+      const dob = document.getElementById('wiz-dob');
+
+      if (!first || !first.value.trim()) {
+        this.setWizardFieldError('wiz-first-name', 'Student first name is required');
+        isValid = false;
+        if (!firstInvalidEl) firstInvalidEl = first;
+      }
+      if (!dob || !dob.value) {
+        this.setWizardFieldError('wiz-dob', 'Date of birth is required for enrollment age category');
+        isValid = false;
+        if (!firstInvalidEl) firstInvalidEl = dob;
+      }
+      if (last && !last.value.trim()) {
+        const firstVal = first?.value?.trim() || '';
+        const parts = firstVal.split(/\s+/);
+        if (parts.length > 1) {
+          first.value = parts[0];
+          last.value = parts.slice(1).join(' ');
+        } else {
+          last.value = '.';
+        }
+      }
+    } else if (stepNum === 2) {
+      const fPhone = document.getElementById('wiz-father-phone');
+      const mPhone = document.getElementById('wiz-mother-phone');
+      const fVal = fPhone?.value?.trim() || '';
+      const mVal = mPhone?.value?.trim() || '';
+      if (!fVal && !mVal) {
+        this.setWizardFieldError('wiz-father-phone', 'At least one contact phone number is required');
+        isValid = false;
+        if (!firstInvalidEl) firstInvalidEl = fPhone;
+      }
+    } else if (stepNum === 5) {
+      const medConsent = document.getElementById('wiz-consent-medical');
+      if (medConsent && !medConsent.checked) {
+        this.setWizardFieldError('wiz-consent-medical', 'Emergency Medical Consent is required for student safety');
+        isValid = false;
+        if (!firstInvalidEl) firstInvalidEl = medConsent;
+      }
+    } else if (stepNum === 6) {
+      const branch = document.getElementById('wiz-branch-id');
+      const startDate = document.getElementById('wiz-start-date');
+      if (!branch || !branch.value) {
+        this.setWizardFieldError('wiz-branch-id', 'Please select an academy branch/campus');
+        isValid = false;
+        if (!firstInvalidEl) firstInvalidEl = branch;
+      }
+      if (!startDate || !startDate.value) {
+        this.setWizardFieldError('wiz-start-date', 'Admission / joining date is required');
+        isValid = false;
+        if (!firstInvalidEl) firstInvalidEl = startDate;
+      }
+      // Note: Batch is explicitly optional!
+    } else if (stepNum === 7) {
+      const disc = Number(document.getElementById('wiz-discount-pct')?.value || 0);
+      const discReason = document.getElementById('wiz-discount-reason');
+      if (disc > 20) {
+        this.setWizardFieldError('wiz-discount-pct', 'Discount cannot exceed 20% approval limit');
+        isValid = false;
+        if (!firstInvalidEl) firstInvalidEl = document.getElementById('wiz-discount-pct');
+      }
+      if (disc > 0 && (!discReason || !discReason.value.trim())) {
+        this.setWizardFieldError('wiz-discount-reason', 'Please provide a reason for the discount');
+        isValid = false;
+        if (!firstInvalidEl) firstInvalidEl = discReason;
+      }
+    }
+
+    if (!isValid) {
+      if (firstInvalidEl) firstInvalidEl.focus();
+      this.showToast('Please fix the highlighted required fields on this step', 'danger');
+    }
+    return isValid;
+  },
+
+  switchWizardStep(targetStep) {
+    if (!this._wizardState) return;
+    const s = this._wizardState;
+    if (targetStep < 1 || targetStep > s.totalSteps) return;
+
+    if (targetStep > s.currentStep) {
+      this.collectWizardFormData();
+      if (!this.validateWizardStep(s.currentStep)) {
+        return;
+      }
+    } else {
+      this.collectWizardFormData();
+      this.clearWizardStepErrors(s.currentStep);
+    }
+
+    s.currentStep = targetStep;
+
+    // Toggle step panes smoothly in place
+    for (let i = 1; i <= s.totalSteps; i++) {
+      const pane = document.getElementById(`wiz-step-${i}`);
+      if (pane) {
+        pane.classList.toggle('active', i === s.currentStep);
+      }
+    }
+
+    // Toggle header tabs
+    document.querySelectorAll('.wizard-step-tab').forEach((tab, idx) => {
+      const stepNum = idx + 1;
+      tab.classList.toggle('active', stepNum === s.currentStep);
+      tab.classList.toggle('completed', stepNum < s.currentStep);
+      const numEl = tab.querySelector('.step-num');
+      if (numEl) {
+        numEl.innerText = stepNum < s.currentStep ? '✓' : stepNum;
+      }
+    });
+
+    // Update modal header title
+    const modalHeaderTitle = document.querySelector('.modal-header h3');
+    if (modalHeaderTitle) {
+      modalHeaderTitle.innerHTML = `<i class="fa-solid fa-user-graduate"></i> Student Admission Wizard — Step ${s.currentStep} of ${s.totalSteps}`;
+    }
+
+    // Update footer buttons
+    const backBtn = document.getElementById('wiz-btn-back');
+    const nextBtn = document.getElementById('wiz-btn-next');
+    const submitBtn = document.getElementById('btn-submit-wizard');
+
+    if (backBtn) backBtn.style.display = s.currentStep > 1 ? 'inline-flex' : 'none';
+    if (nextBtn) nextBtn.style.display = s.currentStep < s.totalSteps ? 'inline-flex' : 'none';
+    if (submitBtn) submitBtn.style.display = s.currentStep === s.totalSteps ? 'inline-flex' : 'none';
+
+    if (s.currentStep === 7) {
+      this.recomputeWizardFees();
+    }
+  },
+
   jumpToWizardStep(stepNum) {
     if (!this._wizardState) return;
-    if (stepNum > this._wizardState.currentStep && !this.validateCurrentWizardStep()) {
-      return;
-    }
-    this._wizardState.currentStep = stepNum;
-    this.renderAdmissionWizardModal();
+    this.switchWizardStep(stepNum);
   },
 
   nextWizardStep() {
     if (!this._wizardState) return;
-    if (!this.validateCurrentWizardStep()) return;
-    if (this._wizardState.currentStep < this._wizardState.totalSteps) {
-      this._wizardState.currentStep++;
-      this.renderAdmissionWizardModal();
-    }
+    this.switchWizardStep(this._wizardState.currentStep + 1);
   },
 
   prevWizardStep() {
     if (!this._wizardState) return;
-    if (this._wizardState.currentStep > 1) {
-      this._wizardState.currentStep--;
-      this.renderAdmissionWizardModal();
-    }
-  },
-
-  validateCurrentWizardStep() {
-    const s = this._wizardState;
-    if (s.currentStep === 1) {
-      const first = document.getElementById('wiz-first-name')?.value?.trim();
-      const last = document.getElementById('wiz-last-name')?.value?.trim();
-      const dob = document.getElementById('wiz-dob')?.value;
-      if (!first || !last || !dob) {
-        this.showToast('Please enter student first name, last name, and date of birth', 'danger');
-        return false;
-      }
-    } else if (s.currentStep === 5) {
-      const medConsent = document.getElementById('wiz-consent-medical')?.checked;
-      if (!medConsent) {
-        this.showToast('Emergency Medical Consent is mandatory for student safety', 'danger');
-        return false;
-      }
-    } else if (s.currentStep === 6) {
-      const batchId = document.getElementById('wiz-batch-id')?.value;
-      const startDate = document.getElementById('wiz-start-date')?.value;
-      if (!batchId || !startDate) {
-        this.showToast('Please select an active batch and admission start date', 'danger');
-        return false;
-      }
-    } else if (s.currentStep === 7) {
-      const disc = Number(document.getElementById('wiz-discount-pct')?.value || 0);
-      const discReason = document.getElementById('wiz-discount-reason')?.value?.trim();
-      if (disc > 20) {
-        this.showToast('Discount cannot exceed 20% approval limit', 'danger');
-        return false;
-      }
-      if (disc > 0 && !discReason) {
-        this.showToast('Please provide a reason for the applied discount', 'danger');
-        return false;
-      }
-    }
-    return true;
+    this.switchWizardStep(this._wizardState.currentStep - 1);
   },
 
   onWizardBranchOrSportChange() {
@@ -14362,10 +16817,12 @@ const app = {
     if (branchId) available = available.filter(b => String(b.branch_id) === String(branchId));
     if (sportId) available = available.filter(b => String(b.sport_id) === String(sportId));
 
+    const curBatch = this._wizardState?.formData?.batch_id || '';
+
     batchSelect.innerHTML = `
-      <option value="">-- Select Training Batch --</option>
+      <option value="">-- No Batch / Assign Later --</option>
       ${available.map(b => `
-        <option value="${b.id}" data-fee="${b.monthly_fee || 0}">
+        <option value="${b.id}" ${String(curBatch) === String(b.id) ? 'selected' : ''} data-fee="${b.monthly_fee || 0}">
           ${this.escapeHtml(b.name)} &bull; ${b.start_time} - ${b.end_time} &bull; ₹${(b.monthly_fee || 0).toLocaleString()}/mo
         </option>
       `).join('')}
@@ -14373,9 +16830,12 @@ const app = {
   },
 
   onWizardBatchChange(batchId) {
-    const batch = this._wizardState.batches.find(b => String(b.id) === String(batchId));
+    const batch = (this._wizardState.batches || []).find(b => String(b.id) === String(batchId));
     this._wizardState.selectedBatchId = batchId ? Number(batchId) : null;
     this._wizardState.batchMonthlyFee = batch ? (batch.monthly_fee || 0) : 0;
+    if (this._wizardState.formData) {
+      this._wizardState.formData.batch_id = batchId ? Number(batchId) : null;
+    }
     this.recomputeWizardFees();
   },
 
@@ -14401,7 +16861,6 @@ const app = {
 
     if (netEl) netEl.innerText = `₹${netTotal.toLocaleString()}`;
 
-    // Auto update suggested paid amount
     const paidInput = document.getElementById('wiz-paid-amount');
     if (paidInput && Number(paidInput.value) === 0) {
       paidInput.value = netTotal;
@@ -14409,7 +16868,8 @@ const app = {
   },
 
   async submitAdmissionWizard() {
-    if (!this.validateCurrentWizardStep()) return;
+    this.collectWizardFormData();
+    if (!this.validateWizardStep(7)) return;
 
     const submitBtn = document.getElementById('btn-submit-wizard');
     if (submitBtn) {
@@ -14417,52 +16877,67 @@ const app = {
       submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing Admission...';
     }
 
+    const s = this._wizardState;
+    const d = s.formData;
+
     const payload = {
-      inquiry_id: this._wizardState.inquiryId,
-      first_name: document.getElementById('wiz-first-name')?.value?.trim(),
-      last_name: document.getElementById('wiz-last-name')?.value?.trim(),
-      admission_number: document.getElementById('wiz-admission-number')?.value?.trim() || null,
-      dob: document.getElementById('wiz-dob')?.value,
-      gender: document.getElementById('wiz-gender')?.value || null,
-      blood_group: document.getElementById('wiz-blood-group')?.value || null,
-      nationality: document.getElementById('wiz-nationality')?.value || 'Indian',
-      preferred_language: document.getElementById('wiz-language')?.value || 'English',
+      inquiry_id: s.inquiryId,
+      first_name: d.first_name,
+      last_name: d.last_name,
+      admission_number: d.admission_number,
+      dob: d.date_of_birth,
+      date_of_birth: d.date_of_birth,
+      gender: d.gender || null,
+      blood_group: d.blood_group || null,
+      nationality: d.nationality || 'Indian',
+      preferred_language: d.preferred_language || 'English',
       // Guardian
-      father_name: document.getElementById('wiz-father-name')?.value?.trim() || null,
-      father_phone: document.getElementById('wiz-father-phone')?.value?.trim() || null,
-      mother_name: document.getElementById('wiz-mother-name')?.value?.trim() || null,
-      mother_phone: document.getElementById('wiz-mother-phone')?.value?.trim() || null,
-      primary_guardian: document.getElementById('wiz-primary-guardian')?.value || 'father',
-      contact_email: document.getElementById('wiz-contact-email')?.value?.trim() || null,
-      authorized_pickup: document.getElementById('wiz-pickup-auth')?.value?.trim() || null,
+      father_name: d.father_name || null,
+      father_phone: d.father_phone || null,
+      mother_name: d.mother_name || null,
+      mother_phone: d.mother_phone || null,
+      primary_guardian: d.primary_guardian || 'father',
+      contact_email: d.contact_email || null,
+      authorized_pickup: d.authorized_pickup || null,
       // Address
-      current_address: document.getElementById('wiz-current-address')?.value?.trim() || null,
-      city: document.getElementById('wiz-city')?.value?.trim() || null,
-      state: document.getElementById('wiz-state')?.value?.trim() || null,
-      pincode: document.getElementById('wiz-pincode')?.value?.trim() || null,
-      emergency_contact_name: document.getElementById('wiz-emergency-name')?.value?.trim() || null,
-      emergency_contact_relationship: document.getElementById('wiz-emergency-rel')?.value?.trim() || null,
-      emergency_contact_phone: document.getElementById('wiz-emergency-phone')?.value?.trim() || null,
+      current_address: d.current_address || null,
+      address: d.current_address || null,
+      city: d.city || null,
+      state: d.state || null,
+      pincode: d.pincode || null,
+      postal_code: d.pincode || null,
+      emergency_contact_name: d.emergency_contact_name || null,
+      emergency_contact_relationship: d.emergency_contact_relationship || null,
+      emergency_contact_phone: d.emergency_contact_phone || null,
       // School & Health
-      school_name: document.getElementById('wiz-school-name')?.value?.trim() || null,
-      grade_level: document.getElementById('wiz-grade')?.value?.trim() || null,
-      sports_history: document.getElementById('wiz-sports-history')?.value?.trim() || null,
-      medical_conditions: document.getElementById('wiz-medical-conditions')?.value?.trim() || null,
-      allergies: document.getElementById('wiz-allergies')?.value?.trim() || null,
-      regular_medications: document.getElementById('wiz-regular-meds')?.value?.trim() || null,
-      emergency_medical_consent: document.getElementById('wiz-consent-medical')?.checked ? 1 : 0,
-      photo_media_consent: document.getElementById('wiz-consent-photo')?.checked ? 1 : 0,
-      // Sports & Single Active Batch
-      branch_id: document.getElementById('wiz-branch-id')?.value ? Number(document.getElementById('wiz-branch-id').value) : null,
-      sport_id: document.getElementById('wiz-sport-id')?.value ? Number(document.getElementById('wiz-sport-id').value) : null,
-      batch_id: Number(document.getElementById('wiz-batch-id')?.value),
-      start_date: document.getElementById('wiz-start-date')?.value,
+      school_name: d.school_name || null,
+      school_college_name: d.school_name || null,
+      grade_level: d.grade_level || null,
+      grade_standard: d.grade_level || null,
+      sports_history: d.sports_history || null,
+      previous_sports_experience: d.sports_history || null,
+      medical_conditions: d.medical_conditions || null,
+      allergies: d.allergies || null,
+      regular_medications: d.regular_medications || null,
+      emergency_medical_consent: d.emergency_medical_consent ? 1 : 0,
+      medical_consent: d.emergency_medical_consent ? 1 : 0,
+      photo_media_consent: d.photo_media_consent ? 1 : 0,
+      photo_video_permission: d.photo_media_consent ? 1 : 0,
+      // Sports & Single Active Batch (Optional)
+      branch_id: d.branch_id || null,
+      sport_id: d.sport_id || null,
+      batch_id: d.batch_id || null,
+      start_date: d.start_date || new Date().toISOString().split('T')[0],
+      joining_date: d.start_date || new Date().toISOString().split('T')[0],
       // Fees
-      admission_fee: Number(document.getElementById('wiz-admission-fee')?.value || 0),
-      discount_percentage: Number(document.getElementById('wiz-discount-pct')?.value || 0),
-      discount_reason: document.getElementById('wiz-discount-reason')?.value?.trim() || null,
-      initial_payment_amount: Number(document.getElementById('wiz-paid-amount')?.value || 0),
-      payment_mode: document.getElementById('wiz-payment-mode')?.value || 'cash',
+      admission_fee: d.admission_fee || 0,
+      joining_fee_amount: d.admission_fee || 0,
+      discount_percentage: d.discount_percentage || 0,
+      discount_percent: d.discount_percentage || 0,
+      discount_reason: d.discount_reason || null,
+      initial_payment_amount: d.initial_payment_amount || 0,
+      payment_mode: d.payment_mode || 'cash',
+      payment_method: d.payment_mode || 'cash',
       // Checklist
       checklist_items: [
         { item: 'Identity & Age Proof', status: document.getElementById('chk-doc-id')?.checked ? 'completed' : 'pending' },
@@ -14481,7 +16956,7 @@ const app = {
 
     if (res.success) {
       this.closeModal();
-      this.showToast(`Admission confirmed! Student Code: ${res.student_code || 'Enrolled'}`, 'success');
+      this.showToast(`Admission confirmed! Student Code: ${res.student?.student_code || res.student_code || 'Enrolled'}`, 'success');
       if (this.currentTab === 'inquiries') {
         this.renderInquiries();
       } else {
@@ -14627,17 +17102,80 @@ const app = {
   // MODAL UTILITIES
   // ==========================================
 
-  openModal(title, bodyHtml, footerHtml = '') {
-    document.getElementById('modal-title').innerText = title;
-    document.getElementById('modal-body').innerHTML = bodyHtml;
-    document.getElementById('modal-footer').innerHTML = footerHtml;
-    document.getElementById('modal-container').classList.add('active');
+  openModal(title, bodyHtml, footerHtml = '', maxWidth = null) {
+    const titleEl = document.getElementById('modal-title');
+    if (titleEl) titleEl.innerText = title;
+    const bodyEl = document.getElementById('modal-body');
+    if (bodyEl) bodyEl.innerHTML = bodyHtml;
+    const footerEl = document.getElementById('modal-footer');
+    if (footerEl) footerEl.innerHTML = footerHtml;
+
+    const overlay = document.getElementById('modal-container');
+    const wrapper = document.querySelector('.modal-wrapper');
+    const dialog = document.getElementById('modal-dialog') || document.querySelector('.modal-container');
+
+    const effectiveMaxWidth = maxWidth || '880px';
+
+    if (wrapper) {
+      wrapper.style.maxWidth = effectiveMaxWidth;
+      wrapper.style.width = '94%';
+    }
+    if (dialog) {
+      dialog.style.maxWidth = effectiveMaxWidth;
+    }
+
+    if (overlay) {
+      overlay.classList.add('active');
+    }
+  },
+
+  showModal(title, bodyHtml, footerHtml = '', maxWidth = null) {
+    return this.openModal(title, bodyHtml, footerHtml, maxWidth);
   },
 
   closeModal() {
-    document.getElementById('modal-container').classList.remove('active');
+    const overlay = document.getElementById('modal-container');
+    const wrapper = document.querySelector('.modal-wrapper');
+    const dialog = document.getElementById('modal-dialog') || document.querySelector('.modal-container');
+
+    if (overlay) {
+      overlay.classList.remove('active');
+    }
+    if (wrapper) {
+      wrapper.style.maxWidth = '';
+      wrapper.style.width = '';
+    }
+    if (dialog) {
+      dialog.style.maxWidth = '';
+    }
   },
 };
+
+// Global Escape Key Listener to automatically close modals
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' || e.key === 'Esc' || e.keyCode === 27) {
+    const overlay = document.getElementById('modal-container');
+    if (overlay && overlay.classList.contains('active')) {
+      if (window.app && typeof window.app.closeModal === 'function') {
+        window.app.closeModal();
+      }
+    }
+  }
+});
+
+// Global Backdrop Click Listener to close modal when clicking outside dialog
+document.addEventListener('DOMContentLoaded', () => {
+  const overlay = document.getElementById('modal-container');
+  if (overlay) {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        if (window.app && typeof window.app.closeModal === 'function') {
+          window.app.closeModal();
+        }
+      }
+    });
+  }
+});
 
 window.app = app;
 document.addEventListener('DOMContentLoaded', () => app.init());

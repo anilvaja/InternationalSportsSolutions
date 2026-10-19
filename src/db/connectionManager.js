@@ -149,6 +149,12 @@ export function provisionAcademyDb({
   admin_name,
   admin_email,
   admin_password,
+  is_gst_registered = 0,
+  gst_number = null,
+  gst_rate = 18.0,
+  legal_business_name = null,
+  hsn_sac_code = '999293',
+  gst_state_code = null,
 }) {
   const centralDb = getCentralDb();
 
@@ -162,8 +168,9 @@ export function provisionAcademyDb({
   const insertAcademy = centralDb.prepare(`
     INSERT INTO academies (
       name, slug, contact_email, contact_phone, address, city,
-      plan, max_branches, max_students, max_coaches, db_path
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      plan, max_branches, max_students, max_coaches, db_path,
+      is_gst_registered, gst_number, gst_rate, legal_business_name, hsn_sac_code, gst_state_code
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   let newAcademyId;
@@ -181,7 +188,13 @@ export function provisionAcademyDb({
       max_branches,
       max_students,
       max_coaches,
-      dbPathPlaceholder
+      dbPathPlaceholder,
+      is_gst_registered ? 1 : 0,
+      gst_number ? gst_number.trim().toUpperCase() : null,
+      gst_rate !== undefined ? Number(gst_rate) : 18.0,
+      legal_business_name ? legal_business_name.trim() : null,
+      hsn_sac_code ? hsn_sac_code.trim() : '999293',
+      gst_state_code ? gst_state_code.trim() : null
     );
     newAcademyId = Number(res.lastInsertRowid);
     const finalDbPath = getAcademyDbPath(newAcademyId);
@@ -207,6 +220,17 @@ export function provisionAcademyDb({
 
   // Initialize and migrate tenant database
   const tenantDb = getTenantDbById(newAcademyId);
+
+  // Store GST compliance settings inside tenant_settings
+  try {
+    const setTenantSetting = tenantDb.prepare('INSERT OR REPLACE INTO tenant_settings (key, value) VALUES (?, ?)');
+    setTenantSetting.run('is_gst_registered', is_gst_registered ? '1' : '0');
+    if (gst_number) setTenantSetting.run('gst_number', gst_number.trim().toUpperCase());
+    if (gst_rate !== undefined) setTenantSetting.run('gst_rate', String(gst_rate));
+    if (legal_business_name) setTenantSetting.run('legal_business_name', legal_business_name.trim());
+    if (hsn_sac_code) setTenantSetting.run('hsn_sac_code', hsn_sac_code.trim());
+    if (gst_state_code) setTenantSetting.run('gst_state_code', gst_state_code.trim());
+  } catch (e) {}
 
   // Seed default roles
   const seedRoles = tenantDb.transaction(() => {

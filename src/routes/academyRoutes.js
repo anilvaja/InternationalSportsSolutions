@@ -13,6 +13,7 @@ import { FeeService } from '../services/feeService.js';
 import { ScheduleService } from '../services/scheduleService.js';
 import { UserService } from '../services/userService.js';
 import { InquiryService } from '../services/inquiryService.js';
+import { AutoApprovalService } from '../services/autoApprovalService.js';
 import bcrypt from 'bcryptjs';
 
 export const academyRouter = express.Router();
@@ -29,6 +30,75 @@ function getCoachContext(db, user) {
     return db.prepare('SELECT * FROM coaches WHERE user_id = ? OR email = ? COLLATE NOCASE').get(user.userId, user.email) || null;
   }
   return null;
+}
+
+/**
+ * Helper to fetch upcoming events with full student participation roster and approval status
+ */
+function fetchUpcomingEvents(db) {
+  try {
+    const eventsList = db.prepare(`
+      SELECT e.id, e.title, e.type, e.status, e.event_date, e.event_end_date,
+             COALESCE(e.venue, e.location, 'Main Campus') as venue,
+             e.fee, e.max_participants, e.registration_approval_required
+      FROM events e
+      WHERE e.status != 'cancelled'
+      ORDER BY e.event_date ASC
+      LIMIT 10
+    `).all();
+
+    return eventsList.map(ev => {
+      const participants = db.prepare(`
+        SELECT 
+          ep.id as participant_id,
+          ep.id,
+          ep.event_id,
+          ep.student_id,
+          ep.status as student_response,
+          ep.registration_status,
+          ep.responded_at,
+          ep.approved_at,
+          s.first_name,
+          s.last_name,
+          (s.first_name || ' ' || s.last_name) as student_name,
+          s.student_code,
+          s.email,
+          s.phone,
+          COALESCE(br.name, 'Main Campus') as branch_name,
+          COALESCE(b.name, 'Standard') as batch_name
+        FROM event_participants ep
+        JOIN students s ON s.id = ep.student_id
+        LEFT JOIN branches br ON br.id = ep.branch_id OR br.id = s.branch_id
+        LEFT JOIN batches b ON b.id = ep.batch_id
+        WHERE ep.event_id = ?
+        ORDER BY 
+          CASE ep.registration_status
+            WHEN 'pending' THEN 1
+            WHEN 'confirmed' THEN 2
+            WHEN 'rejected' THEN 3
+            ELSE 4
+          END,
+          s.first_name ASC
+      `).all(ev.id);
+
+      const approvedCount = participants.filter(p => p.registration_status === 'confirmed').length;
+      const rejectedCount = participants.filter(p => p.registration_status === 'rejected').length;
+      const pendingCount = participants.filter(p => p.registration_status === 'pending').length;
+      const waitlistedCount = participants.filter(p => p.registration_status === 'waitlisted').length;
+
+      return {
+        ...ev,
+        approved_count: approvedCount,
+        rejected_count: rejectedCount,
+        pending_count: pendingCount,
+        waitlisted_count: waitlistedCount,
+        total_participants: participants.length,
+        participants
+      };
+    });
+  } catch (err) {
+    return [];
+  }
 }
 
 /**
@@ -121,6 +191,7 @@ academyRouter.get('/dashboard', (req, res) => {
             completionRate: todayBatches.length > 0 ? Math.round((markedBatchesCount / todayBatches.length) * 100) : 100,
           },
         },
+        upcomingEvents: fetchUpcomingEvents(db),
       });
     }
 
@@ -198,8 +269,23 @@ academyRouter.get('/dashboard', (req, res) => {
         fees: feeStats,
         pendingLeaves,
       },
+      upcomingEvents: fetchUpcomingEvents(db),
       recentActivity,
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/dashboard/upcoming-events
+ * Dedicated endpoint returning upcoming events with student participant roster & moderation status
+ */
+academyRouter.get('/dashboard/upcoming-events', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const upcomingEvents = fetchUpcomingEvents(db);
+    res.json({ success: true, upcomingEvents });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -490,12 +576,17 @@ academyRouter.post('/students', (req, res) => {
     // Generate unique student code: STU-XXXX
     const studentCode = req.body.student_code || `STU-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
 
+    let passwordHash = null;
+    if (req.body.password && String(req.body.password).trim().length >= 4) {
+      passwordHash = bcrypt.hashSync(String(req.body.password).trim(), 10);
+    }
+
     const insert = db.prepare(`
       INSERT INTO students (
-        student_code, first_name, last_name, email, phone, date_of_birth,
+        student_code, first_name, last_name, email, password_hash, phone, date_of_birth,
         gender, guardian_name, guardian_phone, guardian_email, address,
         branch_id, academy_id, blood_group, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
     `);
 
     const result = insert.run(
@@ -503,6 +594,7 @@ academyRouter.post('/students', (req, res) => {
       first_name.trim(),
       last_name.trim(),
       email ? email.trim() : null,
+      passwordHash,
       phone || null,
       date_of_birth || null,
       gender || null,
@@ -516,6 +608,17 @@ academyRouter.post('/students', (req, res) => {
     );
 
     const newStudentId = result.lastInsertRowid;
+
+    if (email && email.trim()) {
+      try {
+        const centralDb = getCentralDb();
+        centralDb.prepare(`
+          INSERT INTO academy_users_lookup (email, academy_id, role)
+          VALUES (?, ?, 'student')
+          ON CONFLICT(email, academy_id) DO UPDATE SET role = 'student'
+        `).run(email.trim().toLowerCase(), req.academy.id);
+      } catch (e) {}
+    }
 
     // Optional initial batch enrollment (enforcing single active batch rule)
     if (batch_id) {
@@ -673,13 +776,54 @@ academyRouter.post('/students/:id/transfer-batch', (req, res) => {
 
     res.json({
       success: true,
-      message: `Successfully transferred student to '${targetBatch.name}'`,
+      message: `Successfully ${currentActive ? 'transferred student to' : 'assigned student to'} '${targetBatch.name}'`,
       previousBatch: currentActive ? currentActive.batch_name : null,
       newBatch: targetBatch.name,
       effectiveDate: effDate,
     });
   } catch (err) {
     console.error('[Batch Transfer Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/students/:id/unassign-batch
+ * Removes a student from their active batch, keeping them active but unassigned
+ */
+academyRouter.post('/students/:id/unassign-batch', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const studentId = Number(req.params.id);
+    const { reason, effective_date } = req.body;
+
+    const currentActive = db.prepare(`
+      SELECT sbe.*, b.name as batch_name 
+      FROM student_batch_enrollments sbe 
+      JOIN batches b ON b.id = sbe.batch_id 
+      WHERE sbe.student_id = ? AND sbe.status = 'active'
+    `).get(studentId);
+
+    if (!currentActive) {
+      return res.json({ success: true, message: 'Student is already not enrolled in any batch' });
+    }
+
+    const effDate = effective_date || new Date().toISOString().split('T')[0];
+    db.prepare(`
+      UPDATE student_batch_enrollments
+      SET status = 'completed',
+          end_date = ?,
+          transfer_reason = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(effDate, reason || 'Unassigned from batch by admin', currentActive.id);
+
+    res.json({
+      success: true,
+      message: `Successfully removed student from batch '${currentActive.batch_name}'`,
+      previousBatch: currentActive.batch_name,
+    });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -798,13 +942,33 @@ academyRouter.post('/students/import', (req, res) => {
     // Enforce student quota for bulk import
     QuotaService.assertCanCreate(req.academy.id, 'students', students.length);
 
+    // Helper date normalizer
+    const normalizeDate = (val) => {
+      if (!val) return '2010-01-01';
+      const str = String(val).trim();
+      // Handle DD/MM/YYYY or DD-MM-YYYY
+      const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+      if (ddmmyyyy) {
+        const day = ddmmyyyy[1].padStart(2, '0');
+        const month = ddmmyyyy[2].padStart(2, '0');
+        const year = ddmmyyyy[3];
+        return `${year}-${month}-${day}`;
+      }
+      // Handle YYYY-MM-DD
+      const yyyymmdd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+      if (yyyymmdd) {
+        return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
+      }
+      return str;
+    };
+
     const imported = [];
     const errors = [];
 
     const tx = db.transaction(() => {
       for (let i = 0; i < students.length; i++) {
         const item = students[i];
-        if (!item.first_name || !item.last_name) {
+        if (!item.first_name || !item.last_name || !String(item.first_name).trim() || !String(item.last_name).trim()) {
           errors.push({ row: i + 1, error: 'First name and last name required' });
           continue;
         }
@@ -815,32 +979,48 @@ academyRouter.post('/students/import', (req, res) => {
           continue;
         }
 
-        let branchId = item.branch_id ? Number(item.branch_id) : null;
-        if (branchId) {
-          const br = db.prepare('SELECT id FROM branches WHERE id = ?').get(branchId);
-          if (!br) {
-            errors.push({ row: i + 1, error: `Branch ID ${branchId} does not exist in this academy` });
-            continue;
+        let branchId = null;
+        if (item.branch_id) {
+          const bNum = Number(item.branch_id);
+          if (!isNaN(bNum)) {
+            const br = db.prepare('SELECT id FROM branches WHERE id = ?').get(bNum);
+            if (br) branchId = br.id;
           }
         }
+        if (!branchId && (item.branch_name || item.branch)) {
+          const bName = String(item.branch_name || item.branch).trim();
+          const br = db.prepare('SELECT id FROM branches WHERE name = ? COLLATE NOCASE').get(bName);
+          if (br) branchId = br.id;
+        }
 
-        let batchId = item.batch_id ? Number(item.batch_id) : null;
-        if (batchId) {
-          const bt = db.prepare('SELECT id, branch_id FROM batches WHERE id = ?').get(batchId);
-          if (!bt) {
-            errors.push({ row: i + 1, error: `Batch ID ${batchId} does not exist in this academy` });
-            continue;
+        let batchId = null;
+        if (item.batch_id) {
+          const btNum = Number(item.batch_id);
+          if (!isNaN(btNum)) {
+            const bt = db.prepare('SELECT id, branch_id FROM batches WHERE id = ?').get(btNum);
+            if (bt) {
+              batchId = bt.id;
+              if (!branchId && bt.branch_id) branchId = bt.branch_id;
+            }
           }
-          if (branchId && bt.branch_id && bt.branch_id !== branchId) {
-            errors.push({ row: i + 1, error: `Batch ID ${batchId} does not belong to branch ID ${branchId}` });
-            continue;
-          }
-          if (!branchId && bt.branch_id) {
-            branchId = bt.branch_id;
+        }
+        if (!batchId && (item.batch_name || item.batch)) {
+          const btName = String(item.batch_name || item.batch).trim();
+          const bt = db.prepare('SELECT id, branch_id FROM batches WHERE name = ? COLLATE NOCASE').get(btName);
+          if (bt) {
+            batchId = bt.id;
+            if (!branchId && bt.branch_id) branchId = bt.branch_id;
           }
         }
 
         const studentCode = item.student_code || `STU-IMP-${Date.now()}-${i}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const dob = normalizeDate(item.date_of_birth || item.dob);
+        const gender = (item.gender && ['male', 'female', 'other'].includes(String(item.gender).toLowerCase().trim()))
+          ? String(item.gender).toLowerCase().trim()
+          : (String(item.gender || '').toLowerCase().startsWith('m') ? 'male' : (String(item.gender || '').toLowerCase().startsWith('f') ? 'female' : 'other'));
+
+        const guardianPhone = item.guardian_phone || item.emergency_contact || null;
+        const guardianName = item.guardian_name || item.parent_name || null;
 
         const ins = db.prepare(`
           INSERT INTO students (
@@ -854,12 +1034,12 @@ academyRouter.post('/students/import', (req, res) => {
           studentCode,
           item.first_name.trim(),
           item.last_name.trim(),
-          item.email ? item.email.trim() : null,
-          item.phone || null,
-          item.date_of_birth || null,
-          item.gender || null,
-          item.guardian_name || null,
-          item.guardian_phone || null,
+          item.email ? String(item.email).trim() : null,
+          item.phone ? String(item.phone).trim() : null,
+          dob,
+          gender,
+          guardianName,
+          guardianPhone,
           item.guardian_email || null,
           item.address || null,
           branchId,
@@ -870,10 +1050,12 @@ academyRouter.post('/students/import', (req, res) => {
         const newId = res.lastInsertRowid;
 
         if (batchId) {
-          db.prepare(`
-            INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
-            VALUES (?, ?, DATE('now'), 'active', ?)
-          `).run(newId, batchId, req.user.userId);
+          try {
+            db.prepare(`
+              INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
+              VALUES (?, ?, DATE('now'), 'active', ?)
+            `).run(newId, batchId, req.user.userId);
+          } catch (e) {}
         }
 
         imported.push({ id: newId, student_code: studentCode, name: `${item.first_name} ${item.last_name}` });
@@ -882,9 +1064,174 @@ academyRouter.post('/students/import', (req, res) => {
 
     tx();
 
+    if (imported.length === 0 && errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: errors.map(e => `Row ${e.row}: ${e.error}`).join('; '),
+        errors,
+      });
+    }
+
     res.status(201).json({
       success: true,
-      message: `Imported ${imported.length} students. ${errors.length} failed.`,
+      message: `Imported ${imported.length} student(s). ${errors.length > 0 ? `${errors.length} skipped.` : ''}`,
+      importedCount: imported.length,
+      imported,
+      errors,
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/coaches/import
+ * CSV / Batch coach and staff import
+ */
+academyRouter.post('/coaches/import', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const centralDb = getCentralDb();
+    const { coaches } = req.body;
+
+    if (!Array.isArray(coaches) || coaches.length === 0) {
+      return res.status(400).json({ success: false, error: 'coaches array is required' });
+    }
+
+    QuotaService.assertCanCreate(req.academy.id, 'coaches', coaches.length);
+
+    const imported = [];
+    const errors = [];
+
+    for (let i = 0; i < coaches.length; i++) {
+      const item = coaches[i];
+      if (!item.name || !item.name.trim()) {
+        errors.push({ row: i + 1, error: 'Coach name is required' });
+        continue;
+      }
+
+      let branchId = item.branch_id ? Number(item.branch_id) : null;
+      if (!branchId && (item.branch_name || item.branch)) {
+        const br = db.prepare('SELECT id FROM branches WHERE name = ? COLLATE NOCASE').get(String(item.branch_name || item.branch).trim());
+        if (br) branchId = br.id;
+      }
+
+      let sportId = item.sport_id ? Number(item.sport_id) : null;
+      if (!sportId && (item.sport_name || item.sport)) {
+        const sp = db.prepare('SELECT id FROM sports WHERE name = ? COLLATE NOCASE').get(String(item.sport_name || item.sport).trim());
+        if (sp) sportId = sp.id;
+      }
+
+      const email = item.email && item.email.trim()
+        ? item.email.trim()
+        : `${item.name.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}_${i}@academy.internal`;
+
+      try {
+        const result = UserService.createStaffUser(db, centralDb, req.academy.id, {
+          name: item.name.trim(),
+          email,
+          phone: item.phone || null,
+          password: item.password || 'password123',
+          role: item.role || 'coach',
+          branch_id: branchId,
+          sport_id: sportId,
+          designation: item.designation || 'Coach',
+          employment_type: item.employment_type || 'full_time',
+          experience_years: item.experience_years ? Number(item.experience_years) : 0,
+          compensation_mode: item.salary_type || 'monthly',
+          salary_amount: Number(item.salary_amount) || 0,
+        }, req.user?.userId || null);
+
+        imported.push({ id: result.coachId, name: item.name, role: result.role });
+      } catch (e) {
+        errors.push({ row: i + 1, error: e.message });
+      }
+    }
+
+    if (imported.length === 0 && errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: errors.map(e => `Row ${e.row}: ${e.error}`).join('; '),
+        errors,
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `Imported ${imported.length} coach/staff member(s). ${errors.length > 0 ? `${errors.length} skipped.` : ''}`,
+      importedCount: imported.length,
+      imported,
+      errors,
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/batches/import
+ * CSV Batch schedule import
+ */
+academyRouter.post('/batches/import', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { batches } = req.body;
+
+    if (!Array.isArray(batches) || batches.length === 0) {
+      return res.status(400).json({ success: false, error: 'batches array is required' });
+    }
+
+    QuotaService.assertCanCreate(req.academy.id, 'batches', batches.length);
+
+    const imported = [];
+    const errors = [];
+
+    const tx = db.transaction(() => {
+      for (let i = 0; i < batches.length; i++) {
+        const item = batches[i];
+        if (!item.name || !item.name.trim()) {
+          errors.push({ row: i + 1, error: 'Batch name is required' });
+          continue;
+        }
+
+        let branchId = item.branch_id ? Number(item.branch_id) : null;
+        if (!branchId && (item.branch_name || item.branch)) {
+          const br = db.prepare('SELECT id FROM branches WHERE name = ? COLLATE NOCASE').get(String(item.branch_name || item.branch).trim());
+          if (br) branchId = br.id;
+        }
+
+        let sportId = item.sport_id ? Number(item.sport_id) : null;
+        if (!sportId && (item.sport_name || item.sport)) {
+          const sp = db.prepare('SELECT id FROM sports WHERE name = ? COLLATE NOCASE').get(String(item.sport_name || item.sport).trim());
+          if (sp) sportId = sp.id;
+        }
+
+        const maxCap = item.max_capacity ? Number(item.max_capacity) : (item.capacity ? Number(item.capacity) : 30);
+        const startTime = item.start_time || '07:00';
+        const endTime = item.end_time || '08:00';
+        const days = item.days || 'Mon,Wed,Fri';
+
+        const ins = db.prepare(`
+          INSERT INTO batches (name, branch_id, sport_id, max_capacity, start_time, end_time, days, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+        `);
+        const r = ins.run(item.name.trim(), branchId, sportId, maxCap, startTime, endTime, days);
+        imported.push({ id: r.lastInsertRowid, name: item.name.trim() });
+      }
+    });
+    tx();
+
+    if (imported.length === 0 && errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: errors.map(e => `Row ${e.row}: ${e.error}`).join('; '),
+        errors,
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `Imported ${imported.length} batch(es). ${errors.length > 0 ? `${errors.length} skipped.` : ''}`,
       importedCount: imported.length,
       imported,
       errors,
@@ -950,6 +1297,7 @@ academyRouter.put('/students/:id', (req, res) => {
       status,
       academy_id,
       batch_id,
+      password,
     } = req.body;
 
     // Rule A & Cross-academy check
@@ -1011,7 +1359,79 @@ academyRouter.put('/students/:id', (req, res) => {
       id
     );
 
+    // Update password if provided
+    if (password && String(password).trim().length > 0) {
+      const hash = bcrypt.hashSync(String(password).trim(), 10);
+      db.prepare('UPDATE students SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hash, id);
+    }
+
+    // Sync student email to central lookup
+    const updatedStudent = db.prepare('SELECT email FROM students WHERE id = ?').get(id);
+    if (updatedStudent && updatedStudent.email) {
+      try {
+        const centralDb = getCentralDb();
+        centralDb.prepare(`
+          INSERT INTO academy_users_lookup (email, academy_id, role)
+          VALUES (?, ?, 'student')
+          ON CONFLICT(email, academy_id) DO UPDATE SET role = 'student'
+        `).run(updatedStudent.email.trim().toLowerCase(), req.academy.id);
+      } catch (e) {}
+    }
+
     res.json({ success: true, message: 'Student updated successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/students/:id/set-password
+ * Dedicated endpoint to set or reset student portal password
+ */
+academyRouter.post('/students/:id/set-password', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const { password } = req.body;
+
+    if (!password || String(password).trim().length < 4) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 4 characters long' });
+    }
+
+    const student = db.prepare('SELECT id, student_code, first_name, last_name, email, academy_id FROM students WHERE id = ?').get(id);
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found in this academy' });
+    }
+
+    const hash = bcrypt.hashSync(String(password).trim(), 10);
+    db.prepare('UPDATE students SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hash, id);
+
+    // Sync student email to central lookup
+    if (student.email) {
+      try {
+        const centralDb = getCentralDb();
+        centralDb.prepare(`
+          INSERT INTO academy_users_lookup (email, academy_id, role)
+          VALUES (?, ?, 'student')
+          ON CONFLICT(email, academy_id) DO UPDATE SET role = 'student'
+        `).run(student.email.trim().toLowerCase(), req.academy.id);
+      } catch (e) {
+        console.warn('Central lookup sync failed:', e.message);
+      }
+    }
+
+    // Audit log
+    try {
+      db.prepare(`
+        INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, details, ip_address)
+        VALUES (?, ?, ?, 'SET_PASSWORD', 'students', ?, ?)
+      `).run(req.user.userId, req.user.name, req.user.role, `Set portal password for student #${id} (${student.first_name} ${student.last_name})`, req.ip);
+    } catch (e) {}
+
+    res.json({
+      success: true,
+      message: `Password updated successfully for student ${student.first_name} ${student.last_name}`,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1030,7 +1450,15 @@ academyRouter.get('/students/:id', (req, res) => {
              b.name as branch_name,
              (SELECT bt.name FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as active_batch_name,
              (SELECT bt.id FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as active_batch_id,
-             (SELECT sp.name FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id JOIN sports sp ON sp.id = bt.sport_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as sport_name
+             (SELECT bt.start_time FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as active_batch_start_time,
+             (SELECT bt.end_time FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as active_batch_end_time,
+             (SELECT bt.days_of_week FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as active_batch_days,
+             (SELECT COALESCE(c.name, 'Unassigned') FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id LEFT JOIN coaches c ON c.id = bt.coach_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as active_batch_coach_name,
+             (SELECT sp.name FROM student_batch_enrollments sbe JOIN batches bt ON bt.id = sbe.batch_id JOIN sports sp ON sp.id = bt.sport_id WHERE sbe.student_id = s.id AND sbe.status = 'active' LIMIT 1) as sport_name,
+             (SELECT st.name FROM student_technique_assignments sta JOIN syllabus_techniques st ON st.id = sta.technique_id WHERE sta.student_id = s.id AND sta.status = 'active' LIMIT 1) as current_technique_name,
+             (SELECT st.level FROM student_technique_assignments sta JOIN syllabus_techniques st ON st.id = sta.technique_id WHERE sta.student_id = s.id AND sta.status = 'active' LIMIT 1) as current_technique_level,
+             (SELECT st.belt_level FROM student_technique_assignments sta JOIN syllabus_techniques st ON st.id = sta.technique_id WHERE sta.student_id = s.id AND sta.status = 'active' LIMIT 1) as current_belt_level,
+             (SELECT sta.sessions_attended FROM student_technique_assignments sta WHERE sta.student_id = s.id AND sta.status = 'active' LIMIT 1) as current_technique_sessions_attended
       FROM students s
       LEFT JOIN branches b ON b.id = s.branch_id
       WHERE s.id = ?
@@ -1040,6 +1468,10 @@ academyRouter.get('/students/:id', (req, res) => {
       return res.status(404).json({ success: false, error: 'Student not found in this academy' });
     }
 
+    student.has_password = Boolean(student.password_hash);
+    delete student.password_hash;
+
+    // 1. Attendance Summary Stats
     const attStats = db.prepare(`
       SELECT 
         COUNT(*) as total_sessions,
@@ -1050,20 +1482,175 @@ academyRouter.get('/students/:id', (req, res) => {
       WHERE student_id = ?
     `).get(id);
 
-    const feeStats = db.prepare(`
-      SELECT 
-        COALESCE(SUM(balance_amount), 0) as total_outstanding,
-        COALESCE(SUM(paid_amount), 0) as total_paid
-      FROM student_fees
-      WHERE student_id = ?
-    `).get(id);
+    // 2. Financials Summary & Invoices
+    let feeStats = { total_outstanding: 0, total_paid: 0, total_billed: 0 };
+    try {
+      feeStats = db.prepare(`
+        SELECT 
+          COALESCE(SUM(balance_amount), 0) as total_outstanding,
+          COALESCE(SUM(paid_amount), 0) as total_paid,
+          COALESCE(SUM(COALESCE(net_amount, amount)), 0) as total_billed
+        FROM student_fees
+        WHERE student_id = ?
+      `).get(id) || feeStats;
+    } catch (e) {
+      console.warn('Could not query feeStats:', e.message);
+    }
+
+    let invoices = [];
+    try {
+      invoices = db.prepare(`
+        SELECT sf.*
+        FROM student_fees sf
+        WHERE sf.student_id = ?
+        ORDER BY sf.id DESC LIMIT 20
+      `).all(id);
+    } catch (e) {}
+
+    let payments = [];
+    try {
+      payments = db.prepare(`
+        SELECT p.*, sf.invoice_number, sf.period_start, sf.period_end
+        FROM fee_payments p
+        JOIN student_fees sf ON sf.id = p.student_fee_id
+        WHERE sf.student_id = ?
+        ORDER BY p.id DESC LIMIT 20
+      `).all(id);
+    } catch (e) {}
+
+    // 3. Learning History (Which date, what learned, who trained, batch schedule timing & remarks)
+    let learningHistory = [];
+    try {
+      learningHistory = db.prepare(`
+        SELECT 
+          sa.id as student_attendance_id,
+          sa.status as attendance_status,
+          sa.remarks as attendance_remarks,
+          sa.technique_id,
+          sa.technique_level,
+          sa.technique_status,
+          sa.technique_remarks,
+          sa.attended_sessions_snapshot,
+          a.id as attendance_id,
+          a.date,
+          a.batch_id,
+          a.taken_by_user_id,
+          COALESCE(u.name, c.name, 'Academy Staff') as trainer_name,
+          u.role as trainer_role,
+          b.name as batch_name,
+          b.start_time as batch_start_time,
+          b.end_time as batch_end_time,
+          b.days_of_week as batch_days,
+          st.name as technique_name,
+          st.belt_level as technique_belt_level,
+          sc.name as category_name
+        FROM student_attendance sa
+        JOIN attendance a ON a.id = sa.attendance_id
+        JOIN batches b ON b.id = a.batch_id
+        LEFT JOIN users u ON u.id = a.taken_by_user_id
+        LEFT JOIN coaches c ON c.id = b.coach_id
+        LEFT JOIN syllabus_techniques st ON st.id = sa.technique_id
+        LEFT JOIN syllabus_categories sc ON sc.id = st.category_id
+        WHERE sa.student_id = ?
+        ORDER BY a.date DESC, a.id DESC
+      `).all(id);
+    } catch (e) {
+      console.warn('Could not query learning history:', e.message);
+    }
+
+    // 4. Notifications & Communication Log
+    let notifications = [];
+    try {
+      notifications = db.prepare(`
+        SELECT * FROM student_notifications
+        WHERE student_id = ?
+        ORDER BY sent_at DESC, id DESC
+        LIMIT 50
+      `).all(id);
+    } catch (e) {}
+
+    // 5. Batch Enrollment & Transfer History
+    let enrollments = [];
+    try {
+      enrollments = db.prepare(`
+        SELECT sbe.*, b.name as batch_name, b.start_time, b.end_time, b.days_of_week, br.name as branch_name
+        FROM student_batch_enrollments sbe
+        JOIN batches b ON b.id = sbe.batch_id
+        LEFT JOIN branches br ON br.id = b.branch_id
+        WHERE sbe.student_id = ?
+        ORDER BY sbe.id DESC
+      `).all(id);
+    } catch (e) {}
+
+    // 6. Events & Tournament Participation
+    let events = [];
+    try {
+      events = db.prepare(`
+        SELECT ep.*, e.title as event_title, e.event_date, e.start_time, e.end_time, e.location, e.status as event_status
+        FROM event_participants ep
+        JOIN events e ON e.id = ep.event_id
+        WHERE ep.student_id = ?
+        ORDER BY e.event_date DESC LIMIT 20
+      `).all(id);
+    } catch (e) {}
 
     res.json({
       success: true,
       student,
-      attendance: attStats || { total_sessions: 0, present_sessions: 0 },
-      financials: feeStats || { total_outstanding: 0, total_paid: 0 },
+      attendance: attStats || { total_sessions: 0, present_sessions: 0, absent_sessions: 0, late_sessions: 0 },
+      financials: {
+        ...(feeStats || { total_outstanding: 0, total_paid: 0, total_billed: 0 }),
+        invoices,
+        payments,
+      },
+      learningHistory,
+      notifications,
+      enrollments,
+      events,
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/students/:id/notifications
+ * Dispatch a manual communication/notification to a student/parent
+ */
+academyRouter.post('/students/:id/notifications', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const studentId = Number(req.params.id);
+    const { title, message, channel = 'whatsapp', type = 'general', recipient } = req.body;
+
+    if (!title || !message) {
+      return res.status(400).json({ success: false, error: 'Title and message are required' });
+    }
+
+    const student = db.prepare('SELECT id, phone, guardian_phone, email, guardian_email FROM students WHERE id = ?').get(studentId);
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' });
+    }
+
+    const finalRecipient = recipient || (channel === 'email' ? (student.email || student.guardian_email) : (student.phone || student.guardian_phone));
+
+    const ins = db.prepare(`
+      INSERT INTO student_notifications (
+        academy_id, student_id, type, title, message, channel, recipient, status, sent_by_user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'delivered', ?)
+    `).run(
+      req.academy.id,
+      studentId,
+      type,
+      title,
+      message,
+      channel,
+      finalRecipient || 'Direct Message',
+      req.user?.userId || null
+    );
+
+    const created = db.prepare('SELECT * FROM student_notifications WHERE id = ?').get(ins.lastInsertRowid);
+    res.status(201).json({ success: true, notification: created, message: 'Notification dispatched successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -4497,6 +5084,26 @@ academyRouter.get('/approvals', (req, res) => {
   }
 });
 
+/**
+ * POST /api/academy/approvals/approve-all
+ * Automatically approves all pending attendance corrections, overtime requests, fee pauses, leaves, etc.
+ */
+academyRouter.post('/approvals/approve-all', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const userId = req.user.userId || 1;
+    const results = AutoApprovalService.autoApproveAcademy(db, req.academy.id, userId);
+
+    res.json({
+      success: true,
+      message: `Auto-approved ${results.totalApproved} pending items successfully!`,
+      results,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ==========================================
 // ACADEMY POLICY SETTINGS
 // ==========================================
@@ -4604,12 +5211,37 @@ academyRouter.get('/events', (req, res) => {
 
     let selectQuery = `
       SELECT e.*,
-             (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id) as total_invited,
+             MAX(
+               (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id),
+               CASE 
+                 WHEN e.manual_participants IS NOT NULL AND e.manual_participants != '' AND json_valid(e.manual_participants) 
+                   THEN json_array_length(e.manual_participants)
+                 ELSE 0
+               END
+             ) as total_invited,
+             MAX(
+               (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id),
+               CASE 
+                 WHEN e.manual_participants IS NOT NULL AND e.manual_participants != '' AND json_valid(e.manual_participants) 
+                   THEN json_array_length(e.manual_participants)
+                 ELSE 0
+               END
+             ) as participant_count,
+             MAX(
+               (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id),
+               CASE 
+                 WHEN e.manual_participants IS NOT NULL AND e.manual_participants != '' AND json_valid(e.manual_participants) 
+                   THEN json_array_length(e.manual_participants)
+                 ELSE 0
+               END
+             ) as invited_count,
              (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id AND ep.status = 'interested') as interested_count,
              (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id AND ep.status = 'not_interested') as not_interested_count,
              (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id AND ep.status = 'invited') as no_response_count,
              (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id AND ep.registration_status = 'confirmed') as confirmed_count,
-             (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id AND ep.registration_status = 'pending') as pending_count
+             (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id AND ep.registration_status = 'pending') as pending_count,
+             (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id AND ep.registration_status = 'rejected') as rejected_count,
+             (SELECT COUNT(*) FROM event_participants ep WHERE ep.event_id = e.id AND ep.registration_status = 'waitlisted') as waitlisted_count
       ${baseQuery}
       ORDER BY e.event_date DESC, e.id DESC
     `;
@@ -4644,16 +5276,19 @@ academyRouter.get('/events', (req, res) => {
 academyRouter.get('/events/candidates', (req, res) => {
   try {
     const db = req.tenantDb;
+    const academyId = req.academy ? req.academy.id : null;
     const candidates = db.prepare(`
-      SELECT s.id, s.student_code, s.first_name, s.last_name, s.email, s.phone,
+      SELECT s.id, s.student_code, s.first_name, s.last_name,
+             TRIM(s.first_name || ' ' || COALESCE(s.last_name, '')) as name,
+             s.email, s.phone,
              b.name as branch_name, bt.name as batch_name
       FROM students s
       LEFT JOIN branches b ON b.id = s.branch_id
       LEFT JOIN student_batch_enrollments sbe ON sbe.student_id = s.id AND sbe.status = 'active'
       LEFT JOIN batches bt ON bt.id = sbe.batch_id
-      WHERE s.status = 'active'
+      WHERE s.status = 'active' AND (s.academy_id IS NULL OR s.academy_id = ?)
       ORDER BY s.first_name ASC
-    `).all();
+    `).all(academyId);
 
     res.json({ success: true, candidates });
   } catch (err) {
@@ -4757,10 +5392,11 @@ academyRouter.get('/events/:id/participants', (req, res) => {
 });
 
 /**
- * POST /api/academy/events/:id/participants/:participantId/status
- * Moderates student registration: confirmed, rejected, waitlisted
+/**
+ * POST or PUT /api/academy/events/:id/participants/:participantId/status
+ * Moderates student registration: confirmed (approved), rejected, waitlisted
  */
-academyRouter.post('/events/:id/participants/:participantId/status', (req, res) => {
+const handleParticipantStatusModeration = (req, res) => {
   try {
     const db = req.tenantDb;
     const eventId = Number(req.params.id);
@@ -4782,7 +5418,11 @@ academyRouter.post('/events/:id/participants/:participantId/status', (req, res) 
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
-});
+};
+
+academyRouter.post('/events/:id/participants/:participantId/status', handleParticipantStatusModeration);
+academyRouter.put('/events/:id/participants/:participantId/status', handleParticipantStatusModeration);
+academyRouter.post('/dashboard/events/:id/participants/:participantId/status', handleParticipantStatusModeration);
 
 /**
  * GET /api/academy/events/:id/export
@@ -5538,6 +6178,35 @@ academyRouter.get('/inquiries/check-duplicates', (req, res) => {
 });
 
 /**
+ * GET /api/academy/inquiries/:id
+ */
+academyRouter.get('/inquiries/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const inquiry = db.prepare(`
+      SELECT 
+        i.*,
+        b.name as branch_name,
+        sp.name as sport_name,
+        bt.name as preferred_batch_name
+      FROM inquiries i
+      LEFT JOIN branches b ON b.id = i.branch_id
+      LEFT JOIN sports sp ON sp.id = i.sport_id
+      LEFT JOIN batches bt ON bt.id = i.preferred_batch_id
+      WHERE i.id = ? AND i.academy_id = ?
+    `).get(Number(req.params.id), req.academy.id);
+
+    if (!inquiry) {
+      return res.status(404).json({ success: false, error: 'Inquiry not found' });
+    }
+
+    res.json({ success: true, inquiry });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * POST /api/academy/inquiries
  */
 academyRouter.post('/inquiries', (req, res) => {
@@ -5551,13 +6220,103 @@ academyRouter.post('/inquiries', (req, res) => {
 });
 
 /**
+ * POST /api/academy/inquiries/import
+ */
+academyRouter.post('/inquiries/import', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { inquiries } = req.body;
+
+    if (!Array.isArray(inquiries) || inquiries.length === 0) {
+      return res.status(400).json({ success: false, error: 'inquiries array is required and must not be empty' });
+    }
+
+    const imported = [];
+    const errors = [];
+
+    // Preload branches and sports for flexible name matching
+    const branches = db.prepare('SELECT id, name FROM branches').all();
+    const sports = db.prepare('SELECT id, name FROM sports').all();
+
+    const resolveBranchId = (val) => {
+      if (!val) return branches[0]?.id || 1;
+      const numeric = Number(val);
+      if (!isNaN(numeric) && branches.some(b => b.id === numeric)) return numeric;
+      const match = branches.find(b => b.name.toLowerCase() === String(val).trim().toLowerCase());
+      return match ? match.id : (branches[0]?.id || 1);
+    };
+
+    const resolveSportId = (val) => {
+      if (!val) return sports[0]?.id || 1;
+      const numeric = Number(val);
+      if (!isNaN(numeric) && sports.some(s => s.id === numeric)) return numeric;
+      const match = sports.find(s => s.name.toLowerCase() === String(val).trim().toLowerCase());
+      return match ? match.id : (sports[0]?.id || 1);
+    };
+
+    inquiries.forEach((item, index) => {
+      const rowNum = index + 1;
+      try {
+        const student_name = item.student_name || item.name;
+        if (!student_name || !student_name.trim()) {
+          errors.push({ row: rowNum, error: 'Student/Lead name is required' });
+          return;
+        }
+
+        const phone = item.phone || item.mobile || item.guardian_phone || '0000000000';
+        const guardian_name = item.guardian_name || item.parent_name || '';
+        const email = item.email || null;
+        const branch_id = resolveBranchId(item.branch_id || item.branch);
+        const sport_id = resolveSportId(item.sport_id || item.sport);
+        const status = item.status || 'new';
+        const notes = item.notes || item.remarks || '';
+
+        const created = InquiryService.createInquiry(db, req.academy.id, {
+          student_name: student_name.trim(),
+          guardian_name,
+          phone,
+          email,
+          branch_id,
+          sport_id,
+          status,
+          notes,
+        }, req.user?.userId);
+
+        imported.push(created);
+      } catch (err) {
+        errors.push({ row: rowNum, error: err.message });
+      }
+    });
+
+    if (imported.length === 0 && errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Import failed: ${errors.map(e => `Row ${e.row}: ${e.error}`).join('; ')}`,
+        importedCount: 0,
+        errors,
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      importedCount: imported.length,
+      errors,
+      message: `Successfully imported ${imported.length} inquiry/lead(s).`,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * PUT /api/academy/inquiries/:id
  */
 academyRouter.put('/inquiries/:id', (req, res) => {
   try {
     const db = req.tenantDb;
     const inquiryId = Number(req.params.id);
-    const { student_name, guardian_name, phone, email, status, lost_reason, notes, next_followup_date, assigned_to_user_id, preferred_batch_id, branch_id, sport_id } = req.body;
+    const { student_name, guardian_name, phone, email, date_of_birth, dob, gender, status, lost_reason, notes, next_followup_date, assigned_to_user_id, preferred_batch_id, branch_id, sport_id } = req.body;
+    const resolvedDob = date_of_birth || dob || null;
 
     db.prepare(`
       UPDATE inquiries
@@ -5565,6 +6324,8 @@ academyRouter.put('/inquiries/:id', (req, res) => {
           guardian_name = COALESCE(?, guardian_name),
           phone = COALESCE(?, phone),
           email = COALESCE(?, email),
+          date_of_birth = COALESCE(?, date_of_birth),
+          gender = COALESCE(?, gender),
           status = COALESCE(?, status),
           lost_reason = COALESCE(?, lost_reason),
           notes = COALESCE(?, notes),
@@ -5580,6 +6341,8 @@ academyRouter.put('/inquiries/:id', (req, res) => {
       guardian_name || null,
       phone || null,
       email || null,
+      resolvedDob,
+      gender || null,
       status || null,
       lost_reason || null,
       notes || null,
