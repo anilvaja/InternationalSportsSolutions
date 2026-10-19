@@ -38,4 +38,8 @@ scripts/local_ftp_push.ps1
 !data/academies/.gitkeep
 scratch/
 scratch_inspect.mjs
+/mobile/node_modules
+/mobile/.expo
+.expo/
+
 

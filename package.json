@@ -9,6 +9,8 @@
         "migrate": "node scripts/run_migrations.js",
         "test": "node --test --test-concurrency=1 tests/unit/**/*.test.js",
         "mobile:start": "npm --prefix mobile run start",
+        "mobile:android": "npm --prefix mobile run android",
+        "mobile:web": "npm --prefix mobile run web",
         "push:ftp": "powershell -ExecutionPolicy Bypass -File scripts/local_ftp_push.ps1",
         "push:ftp:full": "powershell -ExecutionPolicy Bypass -File scripts/local_ftp_push.ps1 -FullUpload",
         "build": "vite build",

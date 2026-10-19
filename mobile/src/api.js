@@ -1,48 +1,201 @@
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
-const API_BASE_URL = 'http://10.0.2.2:3005'; // Default Android emulator host; use localhost for web
+const SECURE_STORE_KEYS = {
+  BASE_URL: 'iss_api_base_url',
+  AUTH_TOKEN: 'iss_auth_token',
+  USER_DATA: 'iss_user_data',
+  ACADEMY_SLUG: 'iss_academy_slug',
+  ACTIVE_SCREEN: 'iss_active_screen',
+};
 
-export async function storeAuthToken(token, user) {
-  try {
-    await SecureStore.setItemAsync('iss_user_token', token);
-    await SecureStore.setItemAsync('iss_user_data', JSON.stringify(user));
-  } catch (e) {
-    console.warn('SecureStore not available or web environment:', e);
+async function getItem(key) {
+  if (Platform.OS === 'web') {
+    try {
+      return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+    } catch (e) {
+      return null;
+    }
   }
-}
-
-export async function getAuthToken() {
   try {
-    return await SecureStore.getItemAsync('iss_user_token');
+    return await SecureStore.getItemAsync(key);
   } catch (e) {
     return null;
   }
 }
 
-export async function clearAuth() {
+async function setItem(key, value) {
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
+    } catch (e) {}
+    return;
+  }
   try {
-    await SecureStore.deleteItemAsync('iss_user_token');
-    await SecureStore.deleteItemAsync('iss_user_data');
+    await SecureStore.setItemAsync(key, value);
+  } catch (e) {}
+}
+
+async function deleteItem(key) {
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
+    } catch (e) {}
+    return;
+  }
+  try {
+    await SecureStore.deleteItemAsync(key);
+  } catch (e) {}
+}
+
+let cachedBaseUrl = null;
+let cachedSlug = null;
+let sessionExpiredHandler = null;
+
+export function setSessionExpiredHandler(handler) {
+  sessionExpiredHandler = handler;
+}
+
+export function getDefaultHost() {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:3005';
+  }
+  // User's active LAN Wi-Fi IP for direct physical Android phone verification
+  return 'http://192.168.29.75:3005';
+}
+
+export async function getApiUrl() {
+  if (cachedBaseUrl) return cachedBaseUrl;
+  try {
+    const stored = await getItem(SECURE_STORE_KEYS.BASE_URL);
+    cachedBaseUrl = stored || getDefaultHost();
+    return cachedBaseUrl;
   } catch (e) {
-    // ignore
+    return getDefaultHost();
   }
 }
 
-export async function mobileApiRequest(endpoint, method = 'GET', body = null) {
-  const token = await getAuthToken();
-  const headers = {
-    'Content-Type': 'application/json',
+export async function setApiUrl(url) {
+  cachedBaseUrl = url;
+  await setItem(SECURE_STORE_KEYS.BASE_URL, url);
+}
+
+export async function getStoredSlug() {
+  if (cachedSlug) return cachedSlug;
+  try {
+    cachedSlug = await getItem(SECURE_STORE_KEYS.ACADEMY_SLUG);
+    return cachedSlug || 'pratik-karate-academy';
+  } catch (e) {
+    return 'pratik-karate-academy';
+  }
+}
+
+export async function setStoredSlug(slug) {
+  cachedSlug = slug;
+  if (slug) {
+    await setItem(SECURE_STORE_KEYS.ACADEMY_SLUG, slug);
+  } else {
+    await deleteItem(SECURE_STORE_KEYS.ACADEMY_SLUG);
+  }
+}
+
+export async function getStoredToken() {
+  return await getItem(SECURE_STORE_KEYS.AUTH_TOKEN);
+}
+
+export async function setStoredToken(token) {
+  if (token) {
+    await setItem(SECURE_STORE_KEYS.AUTH_TOKEN, token);
+  } else {
+    await deleteItem(SECURE_STORE_KEYS.AUTH_TOKEN);
+  }
+}
+
+export async function getStoredUser() {
+  try {
+    const raw = await getItem(SECURE_STORE_KEYS.USER_DATA);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function setStoredUser(user) {
+  if (user) {
+    await setItem(SECURE_STORE_KEYS.USER_DATA, JSON.stringify(user));
+  } else {
+    await deleteItem(SECURE_STORE_KEYS.USER_DATA);
+  }
+}
+
+export async function getStoredScreen() {
+  return await getItem(SECURE_STORE_KEYS.ACTIVE_SCREEN);
+}
+
+export async function setStoredScreen(screenName) {
+  if (screenName) {
+    await setItem(SECURE_STORE_KEYS.ACTIVE_SCREEN, screenName);
+  } else {
+    await deleteItem(SECURE_STORE_KEYS.ACTIVE_SCREEN);
+  }
+}
+
+export async function clearSession() {
+  cachedBaseUrl = null;
+  cachedSlug = null;
+  await deleteItem(SECURE_STORE_KEYS.AUTH_TOKEN);
+  await deleteItem(SECURE_STORE_KEYS.USER_DATA);
+  await deleteItem(SECURE_STORE_KEYS.ACTIVE_SCREEN);
+}
+
+/**
+ * Core API caller with automatic authorization headers and multi-tenant scoping
+ */
+export async function api(method, path, body = undefined, overrideSlug = null) {
+  const baseUrl = await getApiUrl();
+  const token = await getStoredToken();
+  const slug = overrideSlug || await getStoredSlug();
+
+  const opts = {
+    method,
+    headers: {},
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+  if (slug) {
+    opts.headers['X-Tenant-Id'] = slug;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : null,
-  });
+  if (token) {
+    opts.headers['Authorization'] = `Bearer ${token}`;
+  }
 
-  return await response.json();
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+
+  const url = `${baseUrl.replace(/\/+$/, '')}${path}`;
+  const res = await fetch(url, opts);
+
+  if (res.status === 401 && path !== '/api/auth/login') {
+    await clearSession();
+    if (sessionExpiredHandler) sessionExpiredHandler();
+    throw new Error('Session expired. Please log in again.');
+  }
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (e) {}
+
+  if (!res.ok) {
+    throw new Error((data && data.error) || `Request failed with status ${res.status}`);
+  }
+
+  return data;
+}
+
+export function formatCurrency(amount) {
+  const num = Number(amount || 0);
+  return `₹${num.toLocaleString('en-IN')}`;
 }

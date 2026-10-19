@@ -3,360 +3,494 @@ import {
   StyleSheet,
   Text,
   View,
-  TextInput,
+  StatusBar,
   TouchableOpacity,
+  Modal,
+  Animated,
   ScrollView,
   SafeAreaView,
-  Alert,
+  Platform,
   ActivityIndicator,
-  Share,
 } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
-import * as Sharing from 'expo-sharing';
-import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
-import { mobileApiRequest, storeAuthToken, clearAuth, getAuthToken } from './src/api';
+import { colors } from './src/theme';
+import {
+  getStoredToken,
+  getStoredUser,
+  clearSession,
+  api,
+  setSessionExpiredHandler,
+  getStoredScreen,
+  setStoredScreen,
+} from './src/api';
 
-const Stack = createStackNavigator();
+// Screens
+import LoginScreen from './src/screens/LoginScreen';
+import DashboardScreen from './src/screens/DashboardScreen';
+import StudentsScreen from './src/screens/StudentsScreen';
+import BatchesScreen from './src/screens/BatchesScreen';
+import AttendanceScreen from './src/screens/AttendanceScreen';
+import FeesScreen from './src/screens/FeesScreen';
+import EventsScreen from './src/screens/EventsScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
 
-// ==========================================
-// 1. LOGIN SCREEN
-// ==========================================
-function LoginScreen({ navigation }) {
-  const [email, setEmail] = useState('aarav.patel@student.com');
-  const [password, setPassword] = useState('password123');
-  const [loading, setLoading] = useState(false);
+const NAV_ITEMS = [
+  { id: 'dashboard', label: 'Academy Overview', icon: '📊' },
+  { id: 'students', label: 'Students Directory', icon: '🥋' },
+  { id: 'batches', label: 'Batches & Schedules', icon: '⏰' },
+  { id: 'attendance', label: 'Daily Attendance', icon: '📅' },
+  { id: 'fees', label: 'Fee Invoices & Ledger', icon: '💳' },
+  { id: 'events', label: 'Events & Tournaments', icon: '🏆' },
+  { id: 'settings', label: 'Settings & Network', icon: '⚙' },
+];
 
-  async function handleLogin() {
-    setLoading(true);
-    try {
-      const res = await mobileApiRequest('/api/auth/login', 'POST', { email, password });
-      if (res.success) {
-        await storeAuthToken(res.token, res.user);
-        navigation.replace('Dashboard', { user: res.user });
-      } else {
-        Alert.alert('Login Failed', res.error || 'Invalid credentials');
-      }
-    } catch (e) {
-      Alert.alert('Connection Error', e.message);
-    } finally {
-      setLoading(false);
+const BOTTOM_TABS = [
+  { id: 'dashboard', label: 'Overview', icon: '📊' },
+  { id: 'students', label: 'Students', icon: '🥋' },
+  { id: 'attendance', label: 'Attendance', icon: '📅' },
+  { id: 'fees', label: 'Fees', icon: '💳' },
+];
+
+export default function App() {
+  const [booting, setBooting] = useState(true);
+  const [user, setUser] = useState(null);
+  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarAnim] = useState(new Animated.Value(-260));
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.title = 'International Sports Solutions Mobile';
     }
+    setSessionExpiredHandler(() => {
+      setUser(null);
+    });
+  }, []);
+
+  // Boot validation
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        const token = await getStoredToken();
+        const storedUser = await getStoredUser();
+        const storedScreen = await getStoredScreen();
+
+        if (storedScreen) {
+          setCurrentPage(storedScreen);
+        }
+
+        if (token && storedUser) {
+          // Verify with server
+          const meRes = await api('GET', '/api/auth/me').catch(() => null);
+          if (meRes && meRes.success && meRes.user) {
+            setUser(meRes.user);
+          } else {
+            setUser(storedUser);
+          }
+        }
+      } catch (e) {
+        await clearSession();
+        setUser(null);
+      } finally {
+        setBooting(false);
+      }
+    }
+    checkSession();
+  }, []);
+
+  const handleLoginSuccess = async (userData) => {
+    setUser(userData);
+    const storedScreen = await getStoredScreen();
+    setCurrentPage(storedScreen || 'dashboard');
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api('POST', '/api/auth/logout').catch(() => {});
+    } catch (e) {}
+    await clearSession();
+    setUser(null);
+    setCurrentPage('dashboard');
+    if (sidebarOpen) toggleSidebar();
+  };
+
+  const toggleSidebar = () => {
+    if (sidebarOpen) {
+      Animated.timing(sidebarAnim, {
+        toValue: -260,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(() => setSidebarOpen(false));
+    } else {
+      setSidebarOpen(true);
+      Animated.timing(sidebarAnim, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+    }
+  };
+
+  const navigateTo = async (pageId) => {
+    setCurrentPage(pageId);
+    await setStoredScreen(pageId);
+    if (sidebarOpen) {
+      toggleSidebar();
+    }
+  };
+
+  if (booting) {
+    return (
+      <View style={styles.bootingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.bootingTitle}>International Sports Solutions</Text>
+        <Text style={styles.bootingText}>Connecting to Academy Database...</Text>
+      </View>
+    );
   }
 
+  if (!user) {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  const renderActiveScreen = () => {
+    switch (currentPage) {
+      case 'dashboard':
+        return <DashboardScreen user={user} onNavigate={navigateTo} />;
+      case 'students':
+        return <StudentsScreen user={user} />;
+      case 'batches':
+        return <BatchesScreen user={user} />;
+      case 'attendance':
+        return <AttendanceScreen user={user} />;
+      case 'fees':
+        return <FeesScreen user={user} />;
+      case 'events':
+        return <EventsScreen user={user} />;
+      case 'settings':
+        return <SettingsScreen user={user} onLogout={handleLogout} />;
+      default:
+        return <DashboardScreen user={user} onNavigate={navigateTo} />;
+    }
+  };
+
+  const currentNav = NAV_ITEMS.find((n) => n.id === currentPage) || NAV_ITEMS[0];
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.loginCard}>
-        <Text style={styles.brandTitle}>🏆 Sports Solutions</Text>
-        <Text style={styles.brandSub}>Multi-Tenant Mobile Portal</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.bgDark} />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email Address"
-          placeholderTextColor="#94a3b8"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-        />
+      {/* Top Navigation Bar */}
+      <View style={styles.navbar}>
+        <TouchableOpacity style={styles.menuBtn} onPress={toggleSidebar}>
+          <Text style={styles.menuIcon}>☰</Text>
+        </TouchableOpacity>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#94a3b8"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
+        <View style={styles.navTitleContainer}>
+          <Text style={styles.navTitle} numberOfLines={1}>
+            {currentNav.icon} {currentNav.label}
+          </Text>
+          <Text style={styles.navSub} numberOfLines={1}>
+            {user.academyName || 'Pratik Karate Academy'}
+          </Text>
+        </View>
 
-        <TouchableOpacity style={styles.primaryButton} onPress={handleLogin} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Sign In to Mobile</Text>
-          )}
+        <TouchableOpacity
+          style={styles.profileBtn}
+          onPress={() => navigateTo('settings')}
+        >
+          <Text style={styles.profileInitials}>
+            {(user.name || user.email || 'U').slice(0, 2).toUpperCase()}
+          </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
-  );
-}
 
-// ==========================================
-// 2. DASHBOARD SCREEN
-// ==========================================
-function DashboardScreen({ route, navigation }) {
-  const user = route.params?.user || {};
-  const [stats, setStats] = useState(null);
+      {/* Main Screen Body */}
+      <View style={styles.screenBody}>{renderActiveScreen()}</View>
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
-
-  async function loadDashboard() {
-    const res = await mobileApiRequest('/api/student/dashboard');
-    if (res.success) {
-      setStats(res);
-    }
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.welcomeText}>Welcome back,</Text>
-            <Text style={styles.userName}>{user.name || 'Student'}</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.secondaryButtonSm}
-            onPress={async () => {
-              await clearAuth();
-              navigation.replace('Login');
-            }}
-          >
-            <Text style={styles.secondaryButtonText}>Logout</Text>
-          </TouchableOpacity>
-        </View>
-
-        {stats && (
-          <View style={styles.statsContainer}>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Attendance</Text>
-              <Text style={styles.statVal}>{stats.attendance.percentage}%</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Sessions</Text>
-              <Text style={styles.statVal}>{stats.attendance.present}/{stats.attendance.totalSessions}</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Due Fees</Text>
-              <Text style={styles.statVal}>₹{stats.fees.outstanding_balance}</Text>
-            </View>
-          </View>
-        )}
-
-        <View style={styles.navGrid}>
-          <TouchableOpacity style={styles.navCard} onPress={() => navigation.navigate('Attendance')}>
-            <Text style={styles.navCardTitle}>📅 Attendance</Text>
-            <Text style={styles.navCardSub}>Check session records</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navCard} onPress={() => navigation.navigate('Fees')}>
-            <Text style={styles.navCardTitle}>💳 Fee Invoices</Text>
-            <Text style={styles.navCardSub}>View dues & receipts</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navCard} onPress={() => navigation.navigate('Profile')}>
-            <Text style={styles.navCardTitle}>👤 My Profile</Text>
-            <Text style={styles.navCardSub}>Certificates & uploads</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-// ==========================================
-// 3. ATTENDANCE SCREEN
-// ==========================================
-function AttendanceScreen() {
-  const [records, setRecords] = useState([]);
-
-  useEffect(() => {
-    loadAttendance();
-  }, []);
-
-  async function loadAttendance() {
-    const res = await mobileApiRequest('/api/student/attendance');
-    if (res.success) setRecords(res.records || []);
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.screenHeader}>My Attendance History</Text>
-        {records.map((r, i) => (
-          <View key={i} style={styles.cardItem}>
-            <View>
-              <Text style={styles.itemTitle}>{r.date}</Text>
-              <Text style={styles.itemSub}>{r.batch_name}</Text>
-            </View>
-            <Text style={r.status === 'present' ? styles.tagSuccess : styles.tagDanger}>
-              {r.status.toUpperCase()}
-            </Text>
-          </View>
-        ))}
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-// ==========================================
-// 4. FEES & SHARING SCREEN
-// ==========================================
-function FeesScreen() {
-  const [invoices, setInvoices] = useState([]);
-
-  useEffect(() => {
-    loadFees();
-  }, []);
-
-  async function loadFees() {
-    const res = await mobileApiRequest('/api/student/fees');
-    if (res.success) setInvoices(res.invoices || []);
-  }
-
-  async function shareReceipt(inv) {
-    try {
-      await Share.share({
-        message: `🏆 Sports Academy Fee Receipt: ${inv.invoice_number} | Paid: ₹${inv.paid_amount} | Status: ${inv.status.toUpperCase()}`,
-      });
-    } catch (e) {
-      console.warn('Share error:', e);
-    }
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.screenHeader}>Invoices & Fee Statements</Text>
-        {invoices.map((inv, idx) => (
-          <View key={idx} style={styles.cardItemCol}>
-            <View style={styles.itemRow}>
-              <Text style={styles.itemTitle}>{inv.title}</Text>
-              <Text style={inv.status === 'paid' ? styles.tagSuccess : styles.tagWarning}>
-                {inv.status.toUpperCase()}
+      {/* Bottom Quick Navigation Tabs */}
+      <View style={styles.bottomBar}>
+        {BOTTOM_TABS.map((tab) => {
+          const isActive = currentPage === tab.id;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={[styles.bottomTab, isActive && styles.bottomTabActive]}
+              onPress={() => navigateTo(tab.id)}
+            >
+              <Text style={styles.bottomTabIcon}>{tab.icon}</Text>
+              <Text style={[styles.bottomTabLabel, isActive && styles.bottomTabLabelActive]}>
+                {tab.label}
               </Text>
-            </View>
-            <Text style={styles.itemSub}>Invoice: #{inv.invoice_number} | Due: {inv.due_date}</Text>
-            <Text style={styles.feeHighlight}>
-              Net: ₹{inv.net_amount} | Balance: ₹{inv.balance_amount}
-            </Text>
-            <TouchableOpacity style={styles.shareBtn} onPress={() => shareReceipt(inv)}>
-              <Text style={styles.shareBtnText}>📤 Share Official Receipt</Text>
             </TouchableOpacity>
-          </View>
-        ))}
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-// ==========================================
-// 5. PROFILE & ATTACHMENT UPLOAD SCREEN
-// ==========================================
-function ProfileScreen() {
-  const [pickedFile, setPickedFile] = useState(null);
-
-  async function pickDocument() {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['image/*', 'application/pdf'],
-      });
-      if (!result.canceled && result.assets) {
-        setPickedFile(result.assets[0].name);
-        Alert.alert('Document Selected', `Ready to sync: ${result.assets[0].name}`);
-      }
-    } catch (e) {
-      console.warn('Picker error:', e);
-    }
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.scrollContent}>
-        <Text style={styles.screenHeader}>Student Documents & Profile</Text>
-        <View style={styles.cardItemCol}>
-          <Text style={styles.itemTitle}>Document / Medical Certificate Upload</Text>
-          <Text style={styles.itemSub}>Upload proof of payment or sports medical certificate</Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={pickDocument}>
-            <Text style={styles.buttonText}>📎 Choose Attachment</Text>
-          </TouchableOpacity>
-          {pickedFile && (
-            <Text style={{ color: '#10b981', marginTop: 12 }}>Selected: {pickedFile}</Text>
-          )}
-        </View>
+          );
+        })}
       </View>
-    </SafeAreaView>
-  );
-}
 
-// ==========================================
-// NAVIGATION CONTAINER
-// ==========================================
-export default function App() {
-  return (
-    <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName="Login"
-        screenOptions={{
-          headerStyle: { backgroundColor: '#0f172a' },
-          headerTintColor: '#fff',
-          headerTitleStyle: { fontWeight: '700' },
-        }}
-      >
-        <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Academy Portal' }} />
-        <Stack.Screen name="Attendance" component={AttendanceScreen} options={{ title: 'Attendance' }} />
-        <Stack.Screen name="Fees" component={FeesScreen} options={{ title: 'Fee Management' }} />
-        <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Student Profile' }} />
-      </Stack.Navigator>
-    </NavigationContainer>
+      {/* Slide-out Sidebar Drawer Overlay */}
+      {sidebarOpen && (
+        <Modal transparent visible={sidebarOpen} animationType="none" onRequestClose={toggleSidebar}>
+          <View style={styles.drawerOverlay}>
+            <TouchableOpacity style={styles.drawerBackdrop} onPress={toggleSidebar} />
+            <Animated.View style={[styles.drawer, { transform: [{ translateX: sidebarAnim }] }]}>
+              {/* Drawer Header */}
+              <View style={styles.drawerHeader}>
+                <View style={styles.drawerLogoRow}>
+                  <Text style={styles.drawerLogoIcon}>🏆</Text>
+                  <Text style={styles.drawerLogoTitle}>International Sports</Text>
+                </View>
+                <Text style={styles.drawerUserName}>{user.name || user.email}</Text>
+                <Text style={styles.drawerUserRole}>
+                  Role: {user.isSuperAdmin ? 'SUPER ADMIN' : (user.role || 'STAFF').toUpperCase()}
+                </Text>
+              </View>
+
+              {/* Navigation Links */}
+              <ScrollView style={styles.drawerLinks}>
+                {NAV_ITEMS.map((item) => {
+                  const isActive = currentPage === item.id;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.drawerItem, isActive && styles.drawerItemActive]}
+                      onPress={() => navigateTo(item.id)}
+                    >
+                      <Text style={styles.drawerItemIcon}>{item.icon}</Text>
+                      <Text style={[styles.drawerItemText, isActive && styles.drawerItemTextActive]}>
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Drawer Footer */}
+              <View style={styles.drawerFooter}>
+                <TouchableOpacity style={styles.drawerLogoutBtn} onPress={handleLogout}>
+                  <Text style={styles.drawerLogoutText}>🔒 Sign Out</Text>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          </View>
+        </Modal>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  scrollContent: { padding: 20 },
-  loginCard: {
-    margin: 20,
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    padding: 28,
-    borderWidth: 1,
-    borderColor: '#334155',
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.bgDark,
   },
-  brandTitle: { fontSize: 24, fontWeight: '700', color: '#fff', textAlign: 'center', marginBottom: 4 },
-  brandSub: { fontSize: 13, color: '#94a3b8', textAlign: 'center', marginBottom: 24 },
-  input: {
-    backgroundColor: '#334155',
-    color: '#fff',
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 16,
-    fontSize: 14,
-  },
-  primaryButton: {
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    padding: 14,
+  bootingContainer: {
+    flex: 1,
+    backgroundColor: colors.bgDark,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    padding: 20,
   },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  welcomeText: { color: '#94a3b8', fontSize: 13 },
-  userName: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  secondaryButtonSm: { backgroundColor: '#334155', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  secondaryButtonText: { color: '#ef4444', fontSize: 12, fontWeight: '600' },
-  statsContainer: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, marginBottom: 20 },
-  statBox: { flex: 1, backgroundColor: '#1e293b', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#334155', alignItems: 'center' },
-  statLabel: { color: '#94a3b8', fontSize: 11, textTransform: 'uppercase' },
-  statVal: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 4 },
-  navGrid: { gap: 12 },
-  navCard: { backgroundColor: '#1e293b', padding: 18, borderRadius: 12, borderWidth: 1, borderColor: '#334155' },
-  navCardTitle: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  navCardSub: { color: '#94a3b8', fontSize: 12, marginTop: 4 },
-  screenHeader: { fontSize: 18, fontWeight: '700', color: '#fff', marginBottom: 16 },
-  cardItem: { backgroundColor: '#1e293b', padding: 16, borderRadius: 10, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
-  cardItemCol: { backgroundColor: '#1e293b', padding: 16, borderRadius: 10, marginBottom: 14, borderWidth: 1, borderColor: '#334155' },
-  itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  itemTitle: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  itemSub: { color: '#94a3b8', fontSize: 12, marginTop: 4 },
-  feeHighlight: { color: '#f59e0b', fontSize: 14, fontWeight: '700', marginTop: 8 },
-  tagSuccess: { backgroundColor: 'rgba(16,185,129,0.2)', color: '#10b981', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, fontSize: 11, fontWeight: '700' },
-  tagDanger: { backgroundColor: 'rgba(239,68,68,0.2)', color: '#ef4444', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, fontSize: 11, fontWeight: '700' },
-  tagWarning: { backgroundColor: 'rgba(245,158,11,0.2)', color: '#f59e0b', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, fontSize: 11, fontWeight: '700' },
-  shareBtn: { marginTop: 12, backgroundColor: '#334155', padding: 10, borderRadius: 6, alignItems: 'center' },
-  shareBtnText: { color: '#38bdf8', fontSize: 12, fontWeight: '600' },
+  bootingTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginTop: 16,
+  },
+  bootingText: {
+    fontSize: 12.5,
+    color: colors.textMuted,
+    marginTop: 6,
+  },
+  navbar: {
+    height: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    backgroundColor: colors.bgCard,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  menuBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: colors.bgInput,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  menuIcon: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  navTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  navTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  navSub: {
+    fontSize: 11,
+    color: colors.gold,
+    marginTop: 1,
+  },
+  profileBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(37,99,235,0.4)',
+  },
+  profileInitials: {
+    color: colors.primary,
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  screenBody: {
+    flex: 1,
+    backgroundColor: colors.bgDark,
+  },
+  bottomBar: {
+    height: 56,
+    flexDirection: 'row',
+    backgroundColor: colors.bgCard,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  bottomTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  bottomTabActive: {
+    backgroundColor: 'rgba(37,99,235,0.08)',
+  },
+  bottomTabIcon: {
+    fontSize: 18,
+  },
+  bottomTabLabel: {
+    fontSize: 10.5,
+    color: colors.textSubtle,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  bottomTabLabelActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  drawerOverlay: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  drawerBackdrop: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  drawer: {
+    width: 260,
+    backgroundColor: colors.bgCard,
+    height: '100%',
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+    paddingTop: Platform.OS === 'ios' ? 44 : 20,
+    paddingBottom: 20,
+    elevation: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+  },
+  drawerHeader: {
+    paddingHorizontal: 18,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  drawerLogoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
+  },
+  drawerLogoIcon: {
+    fontSize: 22,
+  },
+  drawerLogoTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  drawerUserName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  drawerUserRole: {
+    fontSize: 11,
+    color: colors.gold,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  drawerLinks: {
+    flex: 1,
+    paddingTop: 10,
+    paddingHorizontal: 10,
+  },
+  drawerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 4,
+    gap: 12,
+  },
+  drawerItemActive: {
+    backgroundColor: colors.primaryLight,
+  },
+  drawerItemIcon: {
+    fontSize: 17,
+  },
+  drawerItemText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  drawerItemTextActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  drawerFooter: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  drawerLogoutBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  drawerLogoutText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: '700',
+  },
 });
