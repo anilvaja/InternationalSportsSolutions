@@ -4,6 +4,7 @@ import { getCentralDb } from '../db/centralDb.js';
 import { provisionAcademyDb, getTenantDbById, closeTenantDb } from '../db/connectionManager.js';
 import { requireAuth, requireSuperAdmin } from '../middleware/auth.js';
 import { streamAcademyBackup, streamCentralPlatformBackup } from '../services/backupService.js';
+import { QuotaService, STANDARD_QUOTA_KEYS, DEFAULT_PLAN_VALUES } from '../services/quotaService.js';
 
 export const centralRouter = express.Router();
 
@@ -501,6 +502,585 @@ centralRouter.delete('/academies/:id/domains/:domainId', (req, res) => {
     `).run(req.user.userId, req.user.email, String(domainId), `Removed domain ${existing.domain} from academy ${id}`, req.ip);
 
     res.json({ success: true, message: `Domain '${existing.domain}' removed successfully` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// SUBSCRIPTION PLANS & QUOTA MANAGEMENT ENDPOINTS (SUPER ADMIN)
+// ==========================================
+
+/**
+ * GET /api/central/plans
+ * Lists all subscription plans with limits, feature entitlements, and assigned academy count
+ */
+centralRouter.get('/plans', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const plans = centralDb.prepare(`
+      SELECT p.*,
+        (SELECT COUNT(*) FROM academy_subscriptions s WHERE s.plan_id = p.id AND s.status IN ('active', 'trial')) as active_subscriptions_count
+      FROM subscription_plans p
+      ORDER BY p.price ASC, p.id ASC
+    `).all();
+
+    const enriched = plans.map(p => {
+      const limitsRows = centralDb.prepare('SELECT quota_key, limit_value, counting_policy FROM subscription_plan_limits WHERE plan_id = ?').all(p.id);
+      const limits = {};
+      for (const row of limitsRows) {
+        limits[row.quota_key] = row.limit_value;
+      }
+
+      const featuresRows = centralDb.prepare('SELECT feature_key, is_enabled FROM subscription_plan_features WHERE plan_id = ?').all(p.id);
+      const features = {};
+      for (const row of featuresRows) {
+        features[row.feature_key] = Boolean(row.is_enabled);
+      }
+
+      return {
+        ...p,
+        limits,
+        features,
+      };
+    });
+
+    res.json({ success: true, plans: enriched });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/plans
+ * Creates a new subscription plan with configurable quota limits and feature toggles
+ */
+centralRouter.post('/plans', (req, res) => {
+  try {
+    const { name, slug, description, price, billing_interval, trial_days, status, limits, features } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Plan name is required' });
+    }
+
+    const planSlug = (slug || name).toLowerCase().trim().replace(/[^a-z0-9_-]/g, '-');
+    const centralDb = getCentralDb();
+
+    // Check duplicate name or slug
+    const existing = centralDb.prepare('SELECT id FROM subscription_plans WHERE name = ? OR slug = ? COLLATE NOCASE').get(name.trim(), planSlug);
+    if (existing) {
+      return res.status(400).json({ success: false, error: `Plan with name '${name}' or slug '${planSlug}' already exists` });
+    }
+
+    let newPlanId;
+    const tx = centralDb.transaction(() => {
+      const ins = centralDb.prepare(`
+        INSERT INTO subscription_plans (name, slug, description, price, billing_interval, trial_days, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        name.trim(),
+        planSlug,
+        description || null,
+        price !== undefined ? Number(price) : 0,
+        billing_interval || 'monthly',
+        trial_days !== undefined ? Number(trial_days) : 14,
+        status || 'active'
+      );
+      newPlanId = Number(ins.lastInsertRowid);
+
+      // Save limits (merge provided limits with DEFAULT_PLAN_VALUES)
+      const limitsToSave = { ...DEFAULT_PLAN_VALUES, ...(limits || {}) };
+      for (const [key, val] of Object.entries(limitsToSave)) {
+        if (val !== undefined && val !== null) {
+          const numVal = Number(val);
+          if (isNaN(numVal) || numVal < 0) {
+            throw new Error(`Limit for ${key} must be a non-negative integer`);
+          }
+          centralDb.prepare(`
+            INSERT INTO subscription_plan_limits (plan_id, quota_key, limit_value, counting_policy)
+            VALUES (?, ?, ?, 'active_only')
+          `).run(newPlanId, key, numVal);
+        }
+      }
+
+      // Save features
+      if (features && typeof features === 'object') {
+        for (const [fKey, isEnabled] of Object.entries(features)) {
+          centralDb.prepare(`
+            INSERT INTO subscription_plan_features (plan_id, feature_key, is_enabled)
+            VALUES (?, ?, ?)
+          `).run(newPlanId, fKey, isEnabled ? 1 : 0);
+        }
+      }
+    });
+
+    tx();
+
+    QuotaService.logAudit(
+      req.user.userId,
+      req.user.email,
+      'CREATE_PLAN',
+      'subscription_plans',
+      newPlanId,
+      `Created subscription plan '${name}' (${planSlug})`,
+      req.ip
+    );
+
+    res.status(201).json({
+      success: true,
+      message: `Subscription plan '${name}' created successfully`,
+      planId: newPlanId,
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/central/plans/:id
+ */
+centralRouter.get('/plans/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const centralDb = getCentralDb();
+    const plan = centralDb.prepare('SELECT * FROM subscription_plans WHERE id = ?').get(id);
+
+    if (!plan) {
+      return res.status(404).json({ success: false, error: 'Subscription plan not found' });
+    }
+
+    const limitsRows = centralDb.prepare('SELECT quota_key, limit_value, counting_policy FROM subscription_plan_limits WHERE plan_id = ?').all(id);
+    const limits = {};
+    for (const row of limitsRows) {
+      limits[row.quota_key] = row.limit_value;
+    }
+
+    const featuresRows = centralDb.prepare('SELECT feature_key, is_enabled FROM subscription_plan_features WHERE plan_id = ?').all(id);
+    const features = {};
+    for (const row of featuresRows) {
+      features[row.feature_key] = Boolean(row.is_enabled);
+    }
+
+    res.json({ success: true, plan: { ...plan, limits, features } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/central/plans/:id
+ * Updates plan details, quotas, and feature entitlements
+ */
+centralRouter.put('/plans/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { name, description, price, billing_interval, trial_days, status, limits, features } = req.body;
+
+    const centralDb = getCentralDb();
+    const existing = centralDb.prepare('SELECT * FROM subscription_plans WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Subscription plan not found' });
+    }
+
+    const tx = centralDb.transaction(() => {
+      centralDb.prepare(`
+        UPDATE subscription_plans
+        SET name = COALESCE(?, name),
+            description = COALESCE(?, description),
+            price = COALESCE(?, price),
+            billing_interval = COALESCE(?, billing_interval),
+            trial_days = COALESCE(?, trial_days),
+            status = COALESCE(?, status),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(
+        name ? name.trim() : null,
+        description !== undefined ? description : null,
+        price !== undefined ? Number(price) : null,
+        billing_interval || null,
+        trial_days !== undefined ? Number(trial_days) : null,
+        status || null,
+        id
+      );
+
+      // Update limits
+      if (limits && typeof limits === 'object') {
+        for (const [key, val] of Object.entries(limits)) {
+          if (val !== undefined && val !== null) {
+            const numVal = Number(val);
+            if (isNaN(numVal) || numVal < 0) {
+              throw new Error(`Limit for ${key} must be a non-negative integer`);
+            }
+            centralDb.prepare(`
+              INSERT INTO subscription_plan_limits (plan_id, quota_key, limit_value, counting_policy, updated_at)
+              VALUES (?, ?, ?, 'active_only', CURRENT_TIMESTAMP)
+              ON CONFLICT(plan_id, quota_key) DO UPDATE SET
+                limit_value = excluded.limit_value,
+                updated_at = CURRENT_TIMESTAMP
+            `).run(id, key, numVal);
+          }
+        }
+      }
+
+      // Update features
+      if (features && typeof features === 'object') {
+        for (const [fKey, isEnabled] of Object.entries(features)) {
+          centralDb.prepare(`
+            INSERT INTO subscription_plan_features (plan_id, feature_key, is_enabled, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(plan_id, feature_key) DO UPDATE SET
+              is_enabled = excluded.is_enabled,
+              updated_at = CURRENT_TIMESTAMP
+          `).run(id, fKey, isEnabled ? 1 : 0);
+        }
+      }
+    });
+
+    tx();
+
+    QuotaService.logAudit(
+      req.user.userId,
+      req.user.email,
+      'UPDATE_PLAN',
+      'subscription_plans',
+      id,
+      `Updated plan '${existing.name}' configuration`,
+      req.ip
+    );
+
+    res.json({ success: true, message: 'Subscription plan updated successfully' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/central/plans/:id
+ */
+centralRouter.delete('/plans/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const centralDb = getCentralDb();
+    const plan = centralDb.prepare('SELECT * FROM subscription_plans WHERE id = ?').get(id);
+    if (!plan) {
+      return res.status(404).json({ success: false, error: 'Plan not found' });
+    }
+
+    // Check if academies are currently assigned
+    const assignedCount = centralDb.prepare(`
+      SELECT COUNT(*) as c FROM academy_subscriptions WHERE plan_id = ? AND status IN ('active', 'trial')
+    `).get(id).c;
+
+    if (assignedCount > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot delete plan '${plan.name}' because ${assignedCount} academy(ies) are currently subscribed to it. Please reassign them first.`,
+      });
+    }
+
+    centralDb.prepare('DELETE FROM subscription_plans WHERE id = ?').run(id);
+
+    QuotaService.logAudit(
+      req.user.userId,
+      req.user.email,
+      'DELETE_PLAN',
+      'subscription_plans',
+      id,
+      `Deleted subscription plan '${plan.name}'`,
+      req.ip
+    );
+
+    res.json({ success: true, message: `Subscription plan '${plan.name}' deleted successfully` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/central/academies/:id/subscription
+ * Retrieves current subscription, plan, overrides, and live quota usage for an academy
+ */
+centralRouter.get('/academies/:id/subscription', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT id, name, slug, plan, status FROM academies WHERE id = ?').get(id);
+
+    if (!academy) {
+      return res.status(404).json({ success: false, error: 'Academy not found' });
+    }
+
+    const subscription = centralDb.prepare(`
+      SELECT s.*, p.name as plan_name, p.slug as plan_slug, p.description as plan_description
+      FROM academy_subscriptions s
+      JOIN subscription_plans p ON p.id = s.plan_id
+      WHERE s.academy_id = ?
+      ORDER BY s.id DESC
+      LIMIT 1
+    `).get(id);
+
+    const overrides = centralDb.prepare(`
+      SELECT *
+      FROM academy_limit_overrides
+      WHERE academy_id = ?
+      ORDER BY id DESC
+    `).all(id);
+
+    const featureOverrides = centralDb.prepare(`
+      SELECT *
+      FROM academy_feature_overrides
+      WHERE academy_id = ?
+      ORDER BY id DESC
+    `).all(id);
+
+    // Live quota metrics & over-limit warnings
+    const quotaSummary = QuotaService.getAcademyQuotaSummary(id);
+
+    res.json({
+      success: true,
+      academy,
+      subscription: subscription || null,
+      overrides,
+      featureOverrides,
+      quotaSummary,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/academies/:id/subscription
+ * Assigns or updates the subscription plan for an academy with over-limit protection
+ */
+centralRouter.post('/academies/:id/subscription', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { plan_id, status, starts_at, ends_at, auto_renew } = req.body;
+
+    if (!plan_id) {
+      return res.status(400).json({ success: false, error: 'Plan ID is required' });
+    }
+
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT id, name FROM academies WHERE id = ?').get(id);
+    if (!academy) {
+      return res.status(404).json({ success: false, error: 'Academy not found' });
+    }
+
+    const plan = centralDb.prepare('SELECT * FROM subscription_plans WHERE id = ?').get(Number(plan_id));
+    if (!plan) {
+      return res.status(404).json({ success: false, error: 'Subscription plan not found' });
+    }
+
+    // Inspect usage vs new plan limits to flag over-limit warnings
+    const planLimits = centralDb.prepare('SELECT quota_key, limit_value FROM subscription_plan_limits WHERE plan_id = ?').all(plan.id);
+    const overLimitWarnings = [];
+
+    for (const pl of planLimits) {
+      const currentUsage = QuotaService.usage(id, pl.quota_key);
+      if (currentUsage > pl.limit_value) {
+        overLimitWarnings.push({
+          quota_key: pl.quota_key,
+          current_usage: currentUsage,
+          new_limit: pl.limit_value,
+          message: `Current usage of ${currentUsage} exceeds new plan limit of ${pl.limit_value}. Existing records are preserved, but new additions will be blocked.`,
+        });
+      }
+    }
+
+    let subId;
+    const tx = centralDb.transaction(() => {
+      // Deactivate previous active subscriptions
+      centralDb.prepare("UPDATE academy_subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE academy_id = ? AND status = 'active'").run(id);
+
+      const ins = centralDb.prepare(`
+        INSERT INTO academy_subscriptions (academy_id, plan_id, status, starts_at, ends_at, auto_renew)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        plan.id,
+        status || 'active',
+        starts_at || new Date().toISOString(),
+        ends_at || null,
+        auto_renew !== undefined ? (auto_renew ? 1 : 0) : 1
+      );
+      subId = Number(ins.lastInsertRowid);
+
+      // Update academy's plan slug
+      centralDb.prepare('UPDATE academies SET plan = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(plan.slug, id);
+    });
+
+    tx();
+
+    QuotaService.logAudit(
+      req.user.userId,
+      req.user.email,
+      'ASSIGN_SUBSCRIPTION',
+      'academies',
+      id,
+      `Assigned subscription plan '${plan.name}' to academy '${academy.name}'. Over-limit warnings: ${overLimitWarnings.length}`,
+      req.ip
+    );
+
+    res.json({
+      success: true,
+      message: `Subscription plan '${plan.name}' assigned to '${academy.name}' successfully`,
+      subscriptionId: subId,
+      overLimitWarnings,
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/academies/:id/overrides
+ * Sets an academy-specific quota limit override or feature override with mandatory reason
+ */
+centralRouter.post('/academies/:id/overrides', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { quota_key, override_value, reason, starts_at, ends_at, feature_key, is_enabled } = req.body;
+
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT id, name FROM academies WHERE id = ?').get(id);
+    if (!academy) {
+      return res.status(404).json({ success: false, error: 'Academy not found' });
+    }
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, error: 'Reason for override is required for audit compliance' });
+    }
+
+    if (quota_key) {
+      if (!STANDARD_QUOTA_KEYS.includes(quota_key)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid quota_key. Must be one of: ${STANDARD_QUOTA_KEYS.join(', ')}`,
+        });
+      }
+
+      const numVal = Number(override_value);
+      if (isNaN(numVal) || numVal < 0) {
+        return res.status(400).json({ success: false, error: 'Override value must be a non-negative integer' });
+      }
+
+      // Check current usage if lowering limit
+      const currentUsage = QuotaService.usage(id, quota_key);
+      const isOverLimit = currentUsage > numVal;
+
+      const ins = centralDb.prepare(`
+        INSERT INTO academy_limit_overrides (academy_id, quota_key, override_value, reason, starts_at, ends_at, changed_by_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        quota_key,
+        numVal,
+        reason.trim(),
+        starts_at || new Date().toISOString(),
+        ends_at || null,
+        req.user.userId
+      );
+
+      QuotaService.logAudit(
+        req.user.userId,
+        req.user.email,
+        'SET_QUOTA_OVERRIDE',
+        'academy_limit_overrides',
+        ins.lastInsertRowid,
+        `Set ${quota_key} override to ${numVal} for ${academy.name}. Reason: ${reason}. Over-limit: ${isOverLimit}`,
+        req.ip
+      );
+
+      return res.status(201).json({
+        success: true,
+        message: `Quota override for '${quota_key}' set to ${numVal}`,
+        overrideId: ins.lastInsertRowid,
+        isOverLimit,
+        warning: isOverLimit ? `Current usage (${currentUsage}) exceeds new override (${numVal}). Further creation is blocked.` : null,
+      });
+    }
+
+    if (feature_key) {
+      const ins = centralDb.prepare(`
+        INSERT INTO academy_feature_overrides (academy_id, feature_key, is_enabled, reason, starts_at, ends_at, changed_by_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        feature_key.trim(),
+        is_enabled ? 1 : 0,
+        reason.trim(),
+        starts_at || new Date().toISOString(),
+        ends_at || null,
+        req.user.userId
+      );
+
+      QuotaService.logAudit(
+        req.user.userId,
+        req.user.email,
+        'SET_FEATURE_OVERRIDE',
+        'academy_feature_overrides',
+        ins.lastInsertRowid,
+        `Set feature '${feature_key}' to ${is_enabled ? 'enabled' : 'disabled'} for ${academy.name}. Reason: ${reason}`,
+        req.ip
+      );
+
+      return res.status(201).json({
+        success: true,
+        message: `Feature override for '${feature_key}' saved`,
+        overrideId: ins.lastInsertRowid,
+      });
+    }
+
+    res.status(400).json({ success: false, error: 'Either quota_key or feature_key must be specified' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/central/academies/:id/overrides/:overrideId
+ * Removes an override so academy limit reverts to the active subscription plan value
+ */
+centralRouter.delete('/academies/:id/overrides/:overrideId', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const overrideId = Number(req.params.overrideId);
+
+    const centralDb = getCentralDb();
+    const existing = centralDb.prepare('SELECT * FROM academy_limit_overrides WHERE id = ? AND academy_id = ?').get(overrideId, id);
+
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Override not found' });
+    }
+
+    centralDb.prepare('DELETE FROM academy_limit_overrides WHERE id = ?').run(overrideId);
+
+    QuotaService.logAudit(
+      req.user.userId,
+      req.user.email,
+      'REMOVE_QUOTA_OVERRIDE',
+      'academy_limit_overrides',
+      overrideId,
+      `Removed ${existing.quota_key} override from academy ${id}`,
+      req.ip
+    );
+
+    res.json({ success: true, message: `Override removed. Limit reverted to plan value.` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/central/academies/:id/quota-summary
+ */
+centralRouter.get('/academies/:id/quota-summary', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const summary = QuotaService.getAcademyQuotaSummary(id);
+    res.json({ success: true, summary });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
