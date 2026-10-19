@@ -1092,6 +1092,49 @@ academyRouter.delete('/students/:id', (req, res) => {
   }
 });
 
+/**
+ * POST /api/academy/students/bulk
+ * Bulk actions on students: 'deactivate', 'activate', 'delete'
+ */
+academyRouter.post('/students/bulk', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { action, ids } = req.body;
+
+    const isAuthorized = req.user && (
+      req.user.isSuperAdmin ||
+      req.user.role === 'academy_admin' ||
+      (req.user.permissions && req.user.permissions.includes('delete_students'))
+    );
+
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Academy Admin authorization required for bulk operations' });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Please select at least one student' });
+    }
+
+    const cleanIds = ids.map(Number).filter(Boolean);
+    const placeholders = cleanIds.map(() => '?').join(',');
+
+    if (action === 'deactivate' || action === 'delete') {
+      db.prepare(`UPDATE students SET status = 'inactive', updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`).run(...cleanIds);
+      db.prepare(`UPDATE student_batch_enrollments SET status = 'completed', end_date = date('now') WHERE student_id IN (${placeholders}) AND status = 'active'`).run(...cleanIds);
+      return res.json({ success: true, message: `Successfully archived ${cleanIds.length} student(s)` });
+    }
+
+    if (action === 'activate') {
+      db.prepare(`UPDATE students SET status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`).run(...cleanIds);
+      return res.json({ success: true, message: `Successfully reactivated ${cleanIds.length} student(s)` });
+    }
+
+    return res.status(400).json({ success: false, error: 'Invalid bulk action' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ==========================================
 // COACHES & STAFF
 // ==========================================
@@ -1709,6 +1752,68 @@ academyRouter.delete('/batches/:id', (req, res) => {
     db.prepare('DELETE FROM batches WHERE id = ?').run(batchId);
 
     res.json({ success: true, message: `Batch "${batch.name}" deleted successfully` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/batches/bulk
+ * Bulk actions on batches: 'deactivate', 'activate', 'delete'
+ */
+academyRouter.post('/batches/bulk', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { action, ids } = req.body;
+
+    const isAuthorized = req.user && (
+      req.user.isSuperAdmin ||
+      req.user.role === 'academy_admin' ||
+      (req.user.permissions && req.user.permissions.includes('manage_batches'))
+    );
+
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Academy Admin authorization required for bulk operations' });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Please select at least one batch' });
+    }
+
+    const cleanIds = ids.map(Number).filter(Boolean);
+    if (action === 'deactivate') {
+      const placeholders = cleanIds.map(() => '?').join(',');
+      const info = db.prepare(`UPDATE batches SET is_active = 0 WHERE id IN (${placeholders})`).run(...cleanIds);
+      return res.json({ success: true, message: `Successfully deactivated ${info.changes} batches` });
+    }
+
+    if (action === 'activate') {
+      const placeholders = cleanIds.map(() => '?').join(',');
+      const info = db.prepare(`UPDATE batches SET is_active = 1 WHERE id IN (${placeholders})`).run(...cleanIds);
+      return res.json({ success: true, message: `Successfully activated ${info.changes} batches` });
+    }
+
+    if (action === 'delete') {
+      let deleted = 0;
+      let blocked = 0;
+      for (const id of cleanIds) {
+        const activeEnrollments = db.prepare("SELECT COUNT(*) as c FROM student_batch_enrollments WHERE batch_id = ? AND status = 'active'").get(id)?.c || 0;
+        if (activeEnrollments > 0) {
+          db.prepare('UPDATE batches SET is_active = 0 WHERE id = ?').run(id);
+          blocked++;
+        } else {
+          db.prepare('DELETE FROM batches WHERE id = ?').run(id);
+          deleted++;
+        }
+      }
+      let msg = `Deleted ${deleted} batches.`;
+      if (blocked > 0) {
+        msg += ` (${blocked} batches had active students and were safely marked inactive instead).`;
+      }
+      return res.json({ success: true, message: msg, deleted, blocked });
+    }
+
+    return res.status(400).json({ success: false, error: 'Invalid action' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -3119,6 +3224,76 @@ academyRouter.delete('/sports/:id', (req, res) => {
 
     db.prepare('DELETE FROM sports WHERE id = ?').run(sportId);
     res.json({ success: true, message: `Sport '${existing.name}' deleted successfully` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/sports/bulk
+ * Bulk actions on sports: 'deactivate', 'activate', 'delete'
+ */
+academyRouter.post('/sports/bulk', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { action, ids } = req.body;
+
+    const isAuthorized = req.user && (
+      req.user.isSuperAdmin ||
+      req.user.role === 'academy_admin' ||
+      (req.user.permissions && (req.user.permissions.includes('manage_sports') || req.user.permissions.includes('delete_sports')))
+    );
+
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Academy Admin authorization required for bulk operations' });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Please select at least one sport to perform bulk action' });
+    }
+
+    const cleanIds = ids.map(Number).filter(Boolean);
+    let affectedCount = 0;
+    let safeDeactivatedCount = 0;
+
+    if (action === 'deactivate') {
+      const placeholders = cleanIds.map(() => '?').join(',');
+      const info = db.prepare(`UPDATE sports SET is_active = 0 WHERE id IN (${placeholders})`).run(...cleanIds);
+      affectedCount = info.changes;
+      return res.json({ success: true, message: `Successfully deactivated ${affectedCount} sports` });
+    }
+
+    if (action === 'activate') {
+      const placeholders = cleanIds.map(() => '?').join(',');
+      const info = db.prepare(`UPDATE sports SET is_active = 1 WHERE id IN (${placeholders})`).run(...cleanIds);
+      affectedCount = info.changes;
+      return res.json({ success: true, message: `Successfully activated ${affectedCount} sports` });
+    }
+
+    if (action === 'delete') {
+      for (const id of cleanIds) {
+        const coachCount = db.prepare('SELECT COUNT(*) as c FROM coaches WHERE sport_id = ?').get(id)?.c || 0;
+        const batchCount = db.prepare('SELECT COUNT(*) as c FROM batches WHERE sport_id = ?').get(id)?.c || 0;
+        const equipCount = db.prepare('SELECT COUNT(*) as c FROM equipment_inventory WHERE sport_id = ?').get(id)?.c || 0;
+        const feeCount = db.prepare('SELECT COUNT(*) as c FROM fee_structures WHERE sport_id = ?').get(id)?.c || 0;
+
+        if ((coachCount + batchCount + equipCount + feeCount) > 0) {
+          db.prepare('UPDATE sports SET is_active = 0 WHERE id = ?').run(id);
+          safeDeactivatedCount++;
+        } else {
+          db.prepare('DELETE FROM sports WHERE id = ?').run(id);
+          affectedCount++;
+        }
+      }
+
+      let msg = `Deleted ${affectedCount} sports.`;
+      if (safeDeactivatedCount > 0) {
+        msg += ` (${safeDeactivatedCount} sports had existing batches/coaches and were safely marked inactive instead of deleted).`;
+      }
+      return res.json({ success: true, message: msg, deleted: affectedCount, deactivated: safeDeactivatedCount });
+    }
+
+    return res.status(400).json({ success: false, error: `Invalid bulk action: '${action}'. Allowed: 'deactivate', 'activate', 'delete'` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

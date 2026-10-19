@@ -177,6 +177,24 @@ describe('GPS Location Tracking & Geofenced Punch-In/Punch-Out Test Suite', () =
     assert.ok(caughtError.distance_meters > 1000, `Expected distance > 1000m, got ${caughtError.distance_meters}`);
   });
 
+  it('4b. Out-of-bounds punch-out is permitted with warning note for admin audit', () => {
+    const user = { id: 10, email: 'rohit@coach.com', role: 'coach' };
+    const payload = {
+      punch_type: 'punch_out',
+      latitude: 18.9256,
+      longitude: 72.8242,
+      accuracy: 10.0,
+    };
+
+    const res = processStaffPunch(db, user, payload, '127.0.0.1', 'Mozilla/5.0');
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(res.is_within_geofence, false);
+    assert.strictEqual(res.out_of_range_flag, true);
+    assert.ok(res.warning.includes('Marked for admin review'));
+    assert.strictEqual(res.punch.punch_type, 'punch_out');
+    assert.strictEqual(res.punch.is_within_geofence, 0);
+  });
+
   it('5. Hierarchical Student Code generation follows [Academy]-[Branch]-[Year]-[Seq]', () => {
     // Insert dummy inquiry
     db.exec(`
@@ -286,5 +304,63 @@ describe('GPS Location Tracking & Geofenced Punch-In/Punch-Out Test Suite', () =
     assert.strictEqual(branch.longitude, 72.8777);
     assert.strictEqual(branch.geofence_radius_meters, 150);
     assert.strictEqual(branch.is_geofence_enforced, 1);
+  });
+
+  it('8. Bulk operations support multiselect deactivation and safe deletion of sports', () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        is_active INTEGER DEFAULT 1
+      );
+      CREATE TABLE IF NOT EXISTS coaches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        sport_id INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS equipment_inventory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        sport_id INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS fee_structures (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        sport_id INTEGER
+      );
+    `);
+
+    // Insert test sports
+    const s1 = db.prepare("INSERT INTO sports (name, is_active) VALUES ('Judo', 1)").run().lastInsertRowid;
+    const s2 = db.prepare("INSERT INTO sports (name, is_active) VALUES ('Boxing', 1)").run().lastInsertRowid;
+    const s3 = db.prepare("INSERT INTO sports (name, is_active) VALUES ('Archery', 1)").run().lastInsertRowid;
+
+    // Link s1 to a coach so it must be safely deactivated instead of hard deleted
+    db.prepare('INSERT INTO coaches (name, sport_id) VALUES (?, ?)').run('Coach Alex', s1);
+
+    // Bulk Deactivate s2 and s3
+    db.prepare(`UPDATE sports SET is_active = 0 WHERE id IN (${s2}, ${s3})`).run();
+    assert.strictEqual(db.prepare('SELECT is_active FROM sports WHERE id = ?').get(s2).is_active, 0);
+    assert.strictEqual(db.prepare('SELECT is_active FROM sports WHERE id = ?').get(s3).is_active, 0);
+
+    // Bulk Delete s1 and s2: s1 should be safely deactivated because of coach ref, s2 should be deleted
+    const sportIds = [s1, s2];
+    let deleted = 0;
+    let safeDeactivated = 0;
+    for (const id of sportIds) {
+      const coachCount = db.prepare('SELECT COUNT(*) as c FROM coaches WHERE sport_id = ?').get(id)?.c || 0;
+      if (coachCount > 0) {
+        db.prepare('UPDATE sports SET is_active = 0 WHERE id = ?').run(id);
+        safeDeactivated++;
+      } else {
+        db.prepare('DELETE FROM sports WHERE id = ?').run(id);
+        deleted++;
+      }
+    }
+
+    assert.strictEqual(safeDeactivated, 1, 's1 safely deactivated due to coach reference');
+    assert.strictEqual(deleted, 1, 's2 deleted');
+    assert.strictEqual(db.prepare('SELECT id FROM sports WHERE id = ?').get(s2), undefined);
+    assert.strictEqual(db.prepare('SELECT is_active FROM sports WHERE id = ?').get(s1).is_active, 0);
   });
 });

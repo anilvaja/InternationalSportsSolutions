@@ -2070,6 +2070,9 @@ const app = {
                 <button class="btn-punch-out" id="btn-gps-punch-out" onclick="app.handleGpsPunch('punch_out')" ${!isPunchedIn ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} title="Punch Out via GPS Geofence">
                   <i class="fa-solid fa-arrow-right-from-bracket"></i> Punch Out
                 </button>
+                <button class="btn btn-secondary btn-sm" id="btn-gps-view-map" onclick="app.openPunchMapModal()" style="padding: 10px 14px; font-size: 13px; font-weight: 600;" title="View Live GPS & Dojo Perimeter on Map">
+                  <i class="fa-solid fa-map-location-dot" style="color: #3b82f6;"></i> View Map
+                </button>
               </div>
             </div>
 
@@ -2500,6 +2503,12 @@ const app = {
         maximumAge: 0,
       });
 
+      this.lastPunchUserCoords = {
+        lat: pos.latitude,
+        lon: pos.longitude,
+        accuracy: pos.accuracy,
+      };
+
       if (alertEl) {
         alertEl.innerHTML = `<i class="fa-solid fa-satellite-dish fa-spin"></i> GPS acquired: ${pos.latitude.toFixed(5)}, ${pos.longitude.toFixed(5)} (±${Math.round(pos.accuracy)}m). Verifying branch geofence...`;
       }
@@ -2514,21 +2523,60 @@ const app = {
         }),
       });
 
+      if (res.branch) {
+        this.lastPunchBranchCoords = {
+          name: res.branch.name,
+          lat: res.branch.latitude,
+          lon: res.branch.longitude,
+          radius: res.branch.radius_meters,
+        };
+      }
+      this.lastPunchDistanceMeters = res.distance_meters;
+      this.lastPunchWithinGeofence = res.is_within_geofence;
+
       if (res.success) {
         if (alertEl) {
-          alertEl.style.backgroundColor = 'rgba(16, 185, 129, 0.12)';
-          alertEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
-          alertEl.style.color = '#10b981';
-          alertEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${res.message} &bull; Distance: <strong>${res.distance_meters}m</strong> from ${this.escapeHtml(res.branch?.name || 'branch')} boundary`;
+          if (res.out_of_range_flag || res.warning) {
+            alertEl.style.backgroundColor = 'rgba(245, 158, 11, 0.12)';
+            alertEl.style.border = '1px solid rgba(245, 158, 11, 0.4)';
+            alertEl.style.color = '#f59e0b';
+            alertEl.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div><i class="fa-solid fa-triangle-exclamation"></i> ${res.message}</div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="app.openPunchMapModal()" style="font-size: 11px; padding: 4px 10px;">
+                  <i class="fa-solid fa-map-location-dot"></i> View on Map
+                </button>
+              </div>
+            `;
+          } else {
+            alertEl.style.backgroundColor = 'rgba(16, 185, 129, 0.12)';
+            alertEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+            alertEl.style.color = '#10b981';
+            alertEl.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div><i class="fa-solid fa-circle-check"></i> ${res.message} &bull; Distance: <strong>${res.distance_meters}m</strong> from ${this.escapeHtml(res.branch?.name || 'branch')}</div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="app.openPunchMapModal()" style="font-size: 11px; padding: 4px 10px;">
+                  <i class="fa-solid fa-map-location-dot"></i> View on Map
+                </button>
+              </div>
+            `;
+          }
         }
-        this.showToast(res.message, 'success');
-        setTimeout(() => this.renderAcademyOverview(), 1200);
+        this.showToast(res.message, res.out_of_range_flag ? 'warning' : 'success');
+        setTimeout(() => this.renderAcademyOverview(), 1400);
       } else {
         if (alertEl) {
           alertEl.style.backgroundColor = 'rgba(239, 68, 68, 0.12)';
           alertEl.style.border = '1px solid rgba(239, 68, 68, 0.3)';
           alertEl.style.color = '#ef4444';
-          alertEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ${res.error}`;
+          alertEl.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <div><i class="fa-solid fa-triangle-exclamation"></i> ${res.error}</div>
+              <button type="button" class="btn btn-danger btn-sm" onclick="app.openPunchMapModal()" style="font-size: 11px; padding: 4px 10px;">
+                <i class="fa-solid fa-map-location-dot"></i> View Distance on Map
+              </button>
+            </div>
+          `;
         }
         this.showToast(res.error || 'Failed to record punch', 'danger');
         if (inBtn) inBtn.disabled = false;
@@ -2544,6 +2592,245 @@ const app = {
       this.showToast(gpsErr.message, 'danger');
       if (inBtn) inBtn.disabled = false;
       if (outBtn) outBtn.disabled = false;
+    }
+  },
+
+  async openPunchMapModal() {
+    let userCoords = this.lastPunchUserCoords;
+    let branchCoords = this.lastPunchBranchCoords;
+    let distanceMeters = this.lastPunchDistanceMeters;
+    let isWithinGeofence = this.lastPunchWithinGeofence;
+
+    // If coordinates are not cached yet, fetch branch status and acquire GPS
+    if (!userCoords || !branchCoords) {
+      try {
+        this.showToast('Acquiring device GPS and branch coordinates...', 'info');
+        const [pos, statusRes] = await Promise.all([
+          LocationService.getCurrentPosition(),
+          this.apiRequest('/api/staff/punch/status')
+        ]);
+        userCoords = { lat: pos.latitude, lon: pos.longitude, accuracy: pos.accuracy };
+        if (statusRes.success && statusRes.branch) {
+          branchCoords = {
+            name: statusRes.branch.name,
+            lat: statusRes.branch.latitude || 19.0760,
+            lon: statusRes.branch.longitude || 72.8777,
+            radius: statusRes.branch.geofence_radius_meters || 150,
+          };
+        }
+      } catch (err) {
+        this.showToast(err.message || 'Could not acquire GPS coordinates', 'warning');
+      }
+    }
+
+    if (!userCoords) {
+      userCoords = { lat: 18.9440, lon: 72.8232, accuracy: 10 };
+    }
+    if (!branchCoords) {
+      branchCoords = { name: 'Main Campus Dojo', lat: 19.0760, lon: 72.8777, radius: 150 };
+    }
+
+    // Calculate distance on the fly if needed
+    if (distanceMeters === undefined || distanceMeters === null) {
+      const R = 6371000;
+      const dLat = (userCoords.lat - branchCoords.lat) * Math.PI / 180;
+      const dLon = (userCoords.lon - branchCoords.lon) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(branchCoords.lat * Math.PI / 180) * Math.cos(userCoords.lat * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      distanceMeters = Math.round(R * c);
+      isWithinGeofence = distanceMeters <= (branchCoords.radius || 150);
+    }
+
+    const distFormatted = distanceMeters >= 1000
+      ? (distanceMeters / 1000).toFixed(2) + ' km (' + distanceMeters.toLocaleString() + ' m)'
+      : distanceMeters + ' meters';
+
+    this.openModal(
+      'Live GPS Geofence Map: Location A (Dojo) ↔ Location B (Your Device)',
+      `
+        <div>
+          <!-- Summary header card -->
+          <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                <div style="font-size: 11px; text-transform: uppercase; color: #3b82f6; font-weight: 700;">
+                  <i class="fa-solid fa-building-flag"></i> Location A: Assigned Branch
+                </div>
+                <div style="font-size: 14px; font-weight: 700; margin-top: 2px;">${this.escapeHtml(branchCoords.name)}</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                  GPS: ${branchCoords.lat.toFixed(5)}, ${branchCoords.lon.toFixed(5)} &bull; Allowed: <strong>${branchCoords.radius}m</strong>
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size: 11px; text-transform: uppercase; color: ${isWithinGeofence ? '#10b981' : '#f59e0b'}; font-weight: 700;">
+                  <i class="fa-solid fa-satellite-dish"></i> Location B: Your Device GPS
+                </div>
+                <div style="font-size: 14px; font-weight: 700; margin-top: 2px;">
+                  ${userCoords.lat.toFixed(5)}, ${userCoords.lon.toFixed(5)}
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                  Accuracy: ±${Math.round(userCoords.accuracy || 10)}m &bull; ${isWithinGeofence ? '<span style="color:#10b981;font-weight:600;">Within Geofence</span>' : '<span style="color:#ef4444;font-weight:600;">Out of Range</span>'}
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <div style="font-size: 13px;">
+                Direct Haversine Distance: <strong style="color: ${isWithinGeofence ? '#10b981' : '#ef4444'}; font-size: 15px;">${distFormatted}</strong>
+              </div>
+              <div>
+                <span class="badge ${isWithinGeofence ? 'badge-success' : 'badge-danger'}">
+                  ${isWithinGeofence ? 'PUNCH AUTHORIZED' : 'OUT OF BOUNDS'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Leaflet Map Container -->
+          <div id="punch-leaflet-map" style="height: 380px; width: 100%; border-radius: 8px; border: 1px solid var(--border); z-index: 1;"></div>
+        </div>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Close Map</button>
+      `
+    );
+
+    // Initialize Leaflet Map after DOM element is mounted
+    setTimeout(() => {
+      const mapEl = document.getElementById('punch-leaflet-map');
+      if (!mapEl || typeof L === 'undefined') return;
+
+      if (this.currentPunchMap) {
+        this.currentPunchMap.remove();
+        this.currentPunchMap = null;
+      }
+
+      const map = L.map('punch-leaflet-map');
+      this.currentPunchMap = map;
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19,
+      }).addTo(map);
+
+      // Marker A: Branch Center
+      const markerA = L.marker([branchCoords.lat, branchCoords.lon]).addTo(map)
+        .bindPopup(`<b>Location A (Branch)</b><br>${branchCoords.name}<br>Radius: ${branchCoords.radius}m`)
+        .openPopup();
+
+      // Geofence Circle A
+      L.circle([branchCoords.lat, branchCoords.lon], {
+        color: '#2563eb',
+        fillColor: '#3b82f6',
+        fillOpacity: 0.15,
+        radius: branchCoords.radius || 150,
+      }).addTo(map);
+
+      // Marker B: Device
+      const markerB = L.marker([userCoords.lat, userCoords.lon]).addTo(map)
+        .bindPopup(`<b>Location B (Your Device)</b><br>Accuracy: ±${Math.round(userCoords.accuracy || 10)}m<br>Distance: ${distFormatted}`);
+
+      // Distance Line connecting Location A and Location B
+      const line = L.polyline([
+        [branchCoords.lat, branchCoords.lon],
+        [userCoords.lat, userCoords.lon]
+      ], {
+        color: isWithinGeofence ? '#10b981' : '#ef4444',
+        weight: 3,
+        dashArray: '6, 6',
+      }).addTo(map);
+
+      // Fit bounds to show both A and B
+      const bounds = L.latLngBounds([
+        [branchCoords.lat, branchCoords.lon],
+        [userCoords.lat, userCoords.lon]
+      ]);
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+      map.invalidateSize();
+    }, 200);
+  },
+
+  // ==========================================
+  // UNIVERSAL MULTI-SELECT & BULK ACTIONS
+  // ==========================================
+  toggleSelectAllRows(resource, isChecked) {
+    const checkboxes = document.querySelectorAll(`.${resource}-row-cb`);
+    checkboxes.forEach(cb => { cb.checked = isChecked; });
+    this.updateBulkBar(resource);
+  },
+
+  onRowSelectionChange(resource) {
+    const checkboxes = document.querySelectorAll(`.${resource}-row-cb`);
+    const allChecked = Array.from(checkboxes).length > 0 && Array.from(checkboxes).every(cb => cb.checked);
+    const selectAllEl = document.getElementById(`${resource}-select-all`);
+    if (selectAllEl) {
+      selectAllEl.checked = allChecked;
+    }
+    this.updateBulkBar(resource);
+  },
+
+  updateBulkBar(resource) {
+    const checkboxes = document.querySelectorAll(`.${resource}-row-cb:checked`);
+    const count = checkboxes.length;
+    const barEl = document.getElementById(`${resource}-bulk-bar`);
+    const countEl = document.getElementById(`${resource}-bulk-count`);
+    if (barEl) {
+      barEl.style.display = count > 0 ? 'flex' : 'none';
+    }
+    if (countEl) {
+      countEl.innerText = `${count} selected`;
+    }
+  },
+
+  clearBulkSelection(resource) {
+    const checkboxes = document.querySelectorAll(`.${resource}-row-cb`);
+    checkboxes.forEach(cb => { cb.checked = false; });
+    const selectAllEl = document.getElementById(`${resource}-select-all`);
+    if (selectAllEl) {
+      selectAllEl.checked = false;
+    }
+    this.updateBulkBar(resource);
+  },
+
+  getSelectedRowIds(resource) {
+    const checkboxes = document.querySelectorAll(`.${resource}-row-cb:checked`);
+    return Array.from(checkboxes).map(cb => Number(cb.value)).filter(Boolean);
+  },
+
+  async executeBulkAction(resource, action) {
+    const ids = this.getSelectedRowIds(resource);
+    if (!ids.length) {
+      this.showToast(`Please select at least one item`, 'warning');
+      return;
+    }
+
+    const actionLabels = {
+      deactivate: 'mark inactive',
+      activate: 'mark active',
+      delete: 'delete'
+    };
+    const actionLabel = actionLabels[action] || action;
+
+    if (!confirm(`Are you sure you want to ${actionLabel} ${ids.length} selected ${resource}?`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/${resource}/bulk`, {
+      method: 'POST',
+      body: JSON.stringify({ action, ids }),
+    });
+
+    if (res.success) {
+      this.showToast(res.message || `Bulk ${action} succeeded on ${ids.length} items`, 'success');
+      this.clearBulkSelection(resource);
+      if (resource === 'sports') this.renderSports();
+      else if (resource === 'batches') this.renderBatches();
+      else if (resource === 'students') this.renderStudents();
+    } else {
+      this.showToast(res.error || `Bulk ${action} failed`, 'danger');
     }
   },
 
@@ -2756,10 +3043,35 @@ const app = {
           </div>
         </div>
 
+        <!-- Sticky Bulk Operations Bar for Students -->
+        <div id="students-bulk-bar" style="display: none; background: var(--bg-card); border: 1px solid var(--primary); border-radius: var(--radius-md); padding: 10px 16px; margin: 16px 20px 0 20px; box-shadow: var(--shadow-md); align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="badge badge-primary" id="students-bulk-count" style="font-size: 13px; padding: 5px 10px;">0 selected</span>
+            <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Student Bulk Actions:</span>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="app.executeBulkAction('students', 'deactivate')">
+              <i class="fa-solid fa-user-xmark" style="color: #ef4444;"></i> Mark Inactive / Archive
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.executeBulkAction('students', 'activate')">
+              <i class="fa-solid fa-user-check" style="color: #10b981;"></i> Mark Active
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="app.executeBulkAction('students', 'delete')">
+              <i class="fa-solid fa-trash"></i> Archive Selected
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="app.clearBulkSelection('students')">
+              Clear Selection
+            </button>
+          </div>
+        </div>
+
         <div class="table-responsive" style="margin-top: 14px;">
           <table class="custom-table" id="students-table">
             <thead>
               <tr>
+                <th style="width: 40px; text-align: center;">
+                  <input type="checkbox" id="students-select-all" onchange="app.toggleSelectAllRows('students', this.checked)">
+                </th>
                 <th>Code & Adm #</th>
                 <th>Student Name</th>
                 <th>Guardian & Phone</th>
@@ -2773,13 +3085,16 @@ const app = {
             <tbody>
               ${students.length === 0 ? `
                 <tr>
-                  <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 36px;">
+                  <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 36px;">
                     <i class="fa-solid fa-user-slash fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
                     No students match the current filters. Click "Reset" or "+ Admission Wizard" to enroll a student.
                   </td>
                 </tr>
               ` : students.map(s => `
                 <tr>
+                  <td style="text-align: center;">
+                    <input type="checkbox" class="students-row-cb" value="${s.id}" onchange="app.onRowSelectionChange('students')">
+                  </td>
                   <td>
                     <code>${this.escapeHtml(s.student_code || '')}</code>
                     ${s.admission_number ? `
@@ -7109,10 +7424,35 @@ const app = {
             </div>
           </div>
         ` : `
+          <!-- Sticky Bulk Operations Bar for Batches -->
+          <div id="batches-bulk-bar" style="display: none; background: var(--bg-card); border: 1px solid var(--primary); border-radius: var(--radius-md); padding: 10px 16px; margin: 16px 20px 0 20px; box-shadow: var(--shadow-md); align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="badge badge-primary" id="batches-bulk-count" style="font-size: 13px; padding: 5px 10px;">0 selected</span>
+              <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Batch Bulk Actions:</span>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn btn-secondary btn-sm" onclick="app.executeBulkAction('batches', 'deactivate')">
+                <i class="fa-solid fa-ban" style="color: #ef4444;"></i> Mark Inactive
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="app.executeBulkAction('batches', 'activate')">
+                <i class="fa-solid fa-check" style="color: #10b981;"></i> Mark Active
+              </button>
+              <button class="btn btn-danger btn-sm" onclick="app.executeBulkAction('batches', 'delete')">
+                <i class="fa-solid fa-trash"></i> Delete Selected
+              </button>
+              <button class="btn btn-outline btn-sm" onclick="app.clearBulkSelection('batches')">
+                Clear Selection
+              </button>
+            </div>
+          </div>
+
           <div class="table-responsive" style="margin-top: 14px;">
             <table class="custom-table">
               <thead>
                 <tr>
+                  <th style="width: 40px; text-align: center;">
+                    <input type="checkbox" id="batches-select-all" onchange="app.toggleSelectAllRows('batches', this.checked)">
+                  </th>
                   <th>Batch Name</th>
                   <th>Sport</th>
                   <th>Branch</th>
@@ -7126,6 +7466,9 @@ const app = {
               <tbody>
                 ${batches.map(b => `
                   <tr>
+                    <td style="text-align: center;">
+                      <input type="checkbox" class="batches-row-cb" value="${b.id}" onchange="app.onRowSelectionChange('batches')">
+                    </td>
                     <td><strong>${this.escapeHtml(b.name)}</strong></td>
                     <td><span class="badge badge-info">${this.escapeHtml(b.sport_name || 'General')}</span></td>
                     <td>${this.escapeHtml(b.branch_name || 'Main Campus')}</td>
@@ -7826,10 +8169,35 @@ const app = {
           </button>
         </div>
 
+        <!-- Sticky Bulk Operations Bar -->
+        <div id="sports-bulk-bar" style="display: none; background: var(--bg-card); border: 1px solid var(--primary); border-radius: var(--radius-md); padding: 10px 16px; margin-bottom: 14px; box-shadow: var(--shadow-md); align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="badge badge-primary" id="sports-bulk-count" style="font-size: 13px; padding: 5px 10px;">0 selected</span>
+            <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Bulk Operations:</span>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="app.executeBulkAction('sports', 'deactivate')">
+              <i class="fa-solid fa-ban" style="color: #ef4444;"></i> Mark Inactive
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.executeBulkAction('sports', 'activate')">
+              <i class="fa-solid fa-check" style="color: #10b981;"></i> Mark Active
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="app.executeBulkAction('sports', 'delete')">
+              <i class="fa-solid fa-trash"></i> Delete Selected
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="app.clearBulkSelection('sports')">
+              Clear Selection
+            </button>
+          </div>
+        </div>
+
         <div class="table-responsive">
           <table class="custom-table">
             <thead>
               <tr>
+                <th style="width: 40px; text-align: center;">
+                  <input type="checkbox" id="sports-select-all" onchange="app.toggleSelectAllRows('sports', this.checked)">
+                </th>
                 <th>Sport / Discipline</th>
                 <th>Description</th>
                 <th>Assigned Coaches</th>
@@ -7841,7 +8209,7 @@ const app = {
             <tbody>
               ${sports.length === 0 ? `
                 <tr>
-                  <td colspan="6" style="text-align: center; padding: 28px; color: var(--text-muted);">
+                  <td colspan="7" style="text-align: center; padding: 28px; color: var(--text-muted);">
                     No sports found. Click "Add New Sport" to create one.
                   </td>
                 </tr>
@@ -7849,6 +8217,9 @@ const app = {
                 const isKarate = s.name.toLowerCase() === 'karate';
                 return `
                   <tr>
+                    <td style="text-align: center;">
+                      <input type="checkbox" class="sports-row-cb" value="${s.id}" onchange="app.onRowSelectionChange('sports')">
+                    </td>
                     <td>
                       <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 1.15rem;">${isKarate ? '🥋' : '🏅'}</span>

@@ -115,7 +115,10 @@ export function processStaffPunch(db, user, payload, ipAddress = '', userAgent =
   const isWithinGeofence = distanceMeters <= radiusMeters ? 1 : 0;
 
   // Strict Geofence Enforcement Check
-  if (isEnforced && !isWithinGeofence) {
+  // Punch-In is strictly blocked outside geofence boundary.
+  // Punch-Out is permitted even if out-of-range, but flagged with a warning note for admin audit.
+  const isOutOfRange = isEnforced && !isWithinGeofence;
+  if (isOutOfRange && punch_type === 'punch_in') {
     throw {
       status: 403,
       message: `Out of range: you are ${distanceMeters} meters away. Punch is allowed only within ${radiusMeters} meters of ${branch.name}.`,
@@ -130,6 +133,10 @@ export function processStaffPunch(db, user, payload, ipAddress = '', userAgent =
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().split(' ')[0];
+
+  const deviceInfoWithWarning = isOutOfRange
+    ? `${userAgent || 'Browser GPS Client'} [OUT_OF_RANGE_WARNING: ${distanceMeters}m from branch]`
+    : (userAgent || 'Browser GPS Client');
 
   const insertStmt = db.prepare(`
     INSERT INTO staff_punches (
@@ -147,7 +154,7 @@ export function processStaffPunch(db, user, payload, ipAddress = '', userAgent =
     acc,
     distanceMeters,
     isWithinGeofence,
-    userAgent || 'Browser GPS Client',
+    deviceInfoWithWarning,
     ipAddress || '127.0.0.1'
   );
 
@@ -181,9 +188,15 @@ export function processStaffPunch(db, user, payload, ipAddress = '', userAgent =
     // Non-fatal if staff_time_punches is optional
   }
 
+  const warningMsg = isOutOfRange
+    ? `Punch-out accepted with location warning: you are ${distanceMeters}m away from ${branch.name}. Marked for admin review.`
+    : `Successfully recorded ${punch_type.replace('_', ' ')} at ${branch.name}`;
+
   return {
     success: true,
-    message: `Successfully recorded ${punch_type.replace('_', ' ')} at ${branch.name}`,
+    message: warningMsg,
+    warning: isOutOfRange ? warningMsg : null,
+    out_of_range_flag: Boolean(isOutOfRange),
     punch: punchRecord,
     distance_meters: distanceMeters,
     allowed_radius_meters: radiusMeters,
