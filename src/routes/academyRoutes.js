@@ -3270,6 +3270,49 @@ academyRouter.get('/fees/discount-presets', (req, res) => {
 });
 
 /**
+ * PUT /api/academy/fees/discount-presets
+ * Updates multi-month discount presets (quarterly, half-yearly, annual, etc.)
+ */
+academyRouter.put('/fees/discount-presets', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { presets } = req.body;
+
+    if (!Array.isArray(presets)) {
+      return res.status(400).json({ success: false, error: 'presets array required' });
+    }
+
+    const tx = db.transaction(() => {
+      for (const p of presets) {
+        const months = Number(p.months);
+        const discount_percentage = Number(p.discount_percentage);
+        const is_active = p.is_active !== undefined ? (p.is_active ? 1 : 0) : 1;
+
+        if (isNaN(months) || months < 1 || isNaN(discount_percentage) || discount_percentage < 0) {
+          continue;
+        }
+
+        const existing = db.prepare('SELECT id FROM fee_discount_presets WHERE months = ?').get(months);
+        if (existing) {
+          db.prepare('UPDATE fee_discount_presets SET discount_percentage = ?, is_active = ? WHERE id = ?')
+            .run(discount_percentage, is_active, existing.id);
+        } else {
+          db.prepare('INSERT INTO fee_discount_presets (months, discount_percentage, is_active) VALUES (?, ?, ?)')
+            .run(months, discount_percentage, is_active);
+        }
+      }
+    });
+
+    tx();
+
+    const updated = db.prepare('SELECT * FROM fee_discount_presets ORDER BY months ASC').all();
+    res.json({ success: true, message: 'Multi-month discount presets updated successfully', presets: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/academy/fees
  */
 academyRouter.get('/fees', (req, res) => {

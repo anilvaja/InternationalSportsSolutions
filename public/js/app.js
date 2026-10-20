@@ -7800,6 +7800,9 @@ const app = {
             <button class="btn btn-primary btn-sm" onclick="app.showCollectStudentFeeModal()">
               <i class="fa-solid fa-hand-holding-dollar"></i> Collect Student Fees
             </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.showFeeDiscountPresetsModal()">
+              <i class="fa-solid fa-percent" style="color: #f59e0b;"></i> Multi-Month Discounts
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="app.showFeePauseRequestModal()">
               <i class="fa-solid fa-pause"></i> Request Fee Pause
             </button>
@@ -7863,6 +7866,9 @@ const app = {
           <button class="btn btn-sm ${activeTab === 'ledger' ? 'btn-primary' : 'btn-secondary'}" onclick="app.switchFeesTab('ledger')">
             <i class="fa-solid fa-book-journal-whills"></i> Student Fee Ledger & Timeline
           </button>
+          <button class="btn btn-sm ${activeTab === 'discounts' ? 'btn-primary' : 'btn-secondary'}" onclick="app.switchFeesTab('discounts')">
+            <i class="fa-solid fa-tags"></i> Multi-Month Discounts (${(this.feesState.presetsCache || []).length})
+          </button>
           <button class="btn btn-sm ${activeTab === 'pauses' ? 'btn-primary' : 'btn-secondary'}" onclick="app.switchFeesTab('pauses')">
             <i class="fa-solid fa-clock-pause"></i> Fee Pauses & Holds (${pauses.length})
             ${dash.pendingPausesCount > 0 ? `<span class="badge badge-warning" style="margin-left: 4px;">${dash.pendingPausesCount}</span>` : ''}
@@ -7901,6 +7907,8 @@ const app = {
       return this.renderPausesTabHtml();
     } else if (tab === 'analytics') {
       return this.renderAnalyticsTabHtml();
+    } else if (tab === 'discounts') {
+      return this.renderDiscountsTabHtml();
     }
     return this.renderInvoicesTabHtml();
   },
@@ -8449,6 +8457,318 @@ const app = {
   },
 
   // ==========================================
+  // 5. MULTI-MONTH DISCOUNT RULES & SETTINGS
+  // ==========================================
+
+  renderDiscountsTabHtml() {
+    const presets = this.feesState.presetsCache || [];
+    const defaultLabels = {
+      1: 'Monthly (1 Month - Base)',
+      2: 'Bi-Monthly (2 Months)',
+      3: 'Quarterly (3 Months Advance)',
+      4: '4-Month Advance',
+      5: '5-Month Advance',
+      6: 'Half-Yearly (6 Months Advance)',
+      12: 'Annual / Full Year (12 Months)',
+    };
+
+    return `
+      <div class="content-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h3 class="card-title"><i class="fa-solid fa-tags" style="color: #f59e0b;"></i> Multi-Month Discount Settings & Presets</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;">
+              Manage the automatic percentage discounts applied when collecting fees for Quarterly (3 mo), Half-Yearly (6 mo), or Annual (12 mo) durations.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="app.showAddPresetTierModal()">
+              <i class="fa-solid fa-plus"></i> Add Month Tier
+            </button>
+            <button class="btn btn-success btn-sm" onclick="app.saveInlineDiscountPresets()">
+              <i class="fa-solid fa-floppy-disk"></i> Save Discount Rules
+            </button>
+          </div>
+        </div>
+
+        <div style="padding: 16px 20px; background: rgba(245, 158, 11, 0.04); border-bottom: 1px solid var(--border); font-size: 13px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <i class="fa-solid fa-circle-info" style="color: #3b82f6; margin-right: 6px;"></i>
+            <strong>Rule Mechanism:</strong> When collecting student fees, entering <strong>3</strong>, <strong>6</strong>, or <strong>12</strong> months automatically applies these discounts to the base fee. You can also give any manual discount or waiver directly during fee collection.
+          </div>
+          <span class="badge badge-success" style="font-size: 11px;"><i class="fa-solid fa-bolt"></i> Live In Fee Calculator</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th style="width: 100px;">Duration</th>
+                <th>Coverage Period</th>
+                <th style="width: 200px;">Discount Percentage (%)</th>
+                <th style="width: 140px;">Status</th>
+                <th>Estimated Student Savings (at ₹2,000/mo)</th>
+                <th style="text-align: right; width: 100px;">Quick Save</th>
+              </tr>
+            </thead>
+            <tbody id="discount-presets-table-body">
+              ${presets.length === 0 ? `
+                <tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">No discount presets configured yet.</td></tr>
+              ` : presets.map(p => {
+                const label = defaultLabels[p.months] || `${p.months} Months Advance`;
+                const exBase = 2000 * p.months;
+                const exSave = (exBase * (p.discount_percentage || 0)) / 100;
+                const exNet = exBase - exSave;
+                return `
+                  <tr data-months="${p.months}">
+                    <td>
+                      <span class="badge badge-primary" style="font-size: 13px; font-family: monospace;">${p.months} mo</span>
+                    </td>
+                    <td>
+                      <strong>${label}</strong>
+                    </td>
+                    <td>
+                      <div style="display: flex; align-items: center; gap: 6px;">
+                        <input type="number" class="form-input preset-pct-input" min="0" max="100" step="0.5"
+                               value="${p.discount_percentage}" style="width: 90px; font-weight: 700; text-align: right;"
+                               data-months="${p.months}">
+                        <span style="font-weight: 700; color: var(--text-muted);">%</span>
+                      </div>
+                    </td>
+                    <td>
+                      <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                        <input type="checkbox" class="preset-active-input" data-months="${p.months}" ${p.is_active ? 'checked' : ''}>
+                        <span class="badge ${p.is_active ? 'badge-success' : 'badge-secondary'}">
+                          ${p.is_active ? 'Active' : 'Disabled'}
+                        </span>
+                      </label>
+                    </td>
+                    <td style="font-size: 12px; color: var(--text-muted);">
+                      Base: ₹${exBase.toLocaleString()} &rarr; 
+                      <strong style="color: #10b981;">Save ₹${exSave.toLocaleString()}</strong> 
+                      (Student pays ₹${exNet.toLocaleString()})
+                    </td>
+                    <td style="text-align: right;">
+                      <button class="btn btn-secondary btn-sm" onclick="app.quickSaveSinglePreset(${p.months})" title="Save this tier">
+                        <i class="fa-solid fa-check"></i>
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  async showFeeDiscountPresetsModal() {
+    try {
+      const res = await this.apiRequest('/api/academy/fees/discount-presets');
+      const presets = (res && res.presets) || [];
+      this.feesState.presetsCache = presets;
+
+      const defaultLabels = {
+        1: 'Monthly (1 Month - Base)',
+        2: 'Bi-Monthly (2 Months)',
+        3: 'Quarterly (3 Months Advance)',
+        4: '4-Month Advance',
+        5: '5-Month Advance',
+        6: 'Half-Yearly (6 Months Advance)',
+        12: 'Annual / Full Year (12 Months)',
+      };
+
+      this.openModal(
+        'Multi-Month Fee Discount Settings',
+        `
+          <div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+              Configure percentage discounts automatically applied when students pay multiple months in advance (Quarterly, Half-Yearly, Yearly).
+            </p>
+
+            <div style="background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 16px; font-size: 12px;">
+              <i class="fa-solid fa-bolt" style="color: #f59e0b;"></i>
+              <strong>Tip:</strong> These rules automatically populate when selecting 3, 6, or 12 months in the fee collection modal.
+            </div>
+
+            <table class="custom-table" style="font-size: 13px;">
+              <thead>
+                <tr>
+                  <th>Months</th>
+                  <th>Coverage Plan</th>
+                  <th style="width: 140px;">Discount (%)</th>
+                  <th style="width: 100px;">Active</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${presets.map(p => `
+                  <tr>
+                    <td><strong style="font-family: monospace;">${p.months} mo</strong></td>
+                    <td><strong>${defaultLabels[p.months] || `${p.months} Months`}</strong></td>
+                    <td>
+                      <div style="display: flex; align-items: center; gap: 4px;">
+                        <input type="number" id="modal-preset-pct-${p.months}" class="form-input" min="0" max="100" step="0.5" value="${p.discount_percentage}" style="width: 80px; font-weight: 700; text-align: right;">
+                        <strong>%</strong>
+                      </div>
+                    </td>
+                    <td>
+                      <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                        <input type="checkbox" id="modal-preset-active-${p.months}" ${p.is_active ? 'checked' : ''}>
+                        <span>${p.is_active ? 'Yes' : 'No'}</span>
+                      </label>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `,
+        `
+          <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+          <button class="btn btn-primary" onclick="app.saveModalDiscountPresets()"><i class="fa-solid fa-save"></i> Save Settings</button>
+        `
+      );
+    } catch (err) {
+      this.showToast('Failed to load discount presets: ' + err.message, 'danger');
+    }
+  },
+
+  async saveModalDiscountPresets() {
+    const presets = this.feesState.presetsCache || [];
+    const payload = presets.map(p => {
+      const pctInput = document.getElementById(`modal-preset-pct-${p.months}`);
+      const activeInput = document.getElementById(`modal-preset-active-${p.months}`);
+      return {
+        months: p.months,
+        discount_percentage: pctInput ? Number(pctInput.value) : p.discount_percentage,
+        is_active: activeInput ? !!activeInput.checked : p.is_active,
+      };
+    });
+
+    const res = await this.apiRequest('/api/academy/fees/discount-presets', {
+      method: 'PUT',
+      body: JSON.stringify({ presets: payload }),
+    });
+
+    if (res.success) {
+      this.showToast('Multi-month discount rules saved successfully!', 'success');
+      this.feesState.presetsCache = res.presets || payload;
+      this.closeModal();
+      this.renderFees();
+    } else {
+      this.showToast(res.error || 'Failed to save discount rules', 'danger');
+    }
+  },
+
+  async saveInlineDiscountPresets() {
+    const rows = document.querySelectorAll('#discount-presets-table-body tr[data-months]');
+    const payload = [];
+
+    rows.forEach(tr => {
+      const months = Number(tr.dataset.months);
+      const pctInput = tr.querySelector('.preset-pct-input');
+      const activeInput = tr.querySelector('.preset-active-input');
+
+      if (months && pctInput) {
+        payload.push({
+          months,
+          discount_percentage: Number(pctInput.value) || 0,
+          is_active: activeInput ? !!activeInput.checked : true,
+        });
+      }
+    });
+
+    const res = await this.apiRequest('/api/academy/fees/discount-presets', {
+      method: 'PUT',
+      body: JSON.stringify({ presets: payload }),
+    });
+
+    if (res.success) {
+      this.showToast('Discount rules updated successfully!', 'success');
+      this.feesState.presetsCache = res.presets || payload;
+      this.renderFees();
+    } else {
+      this.showToast(res.error || 'Failed to update discount rules', 'danger');
+    }
+  },
+
+  async quickSaveSinglePreset(months) {
+    const tr = document.querySelector(`#discount-presets-table-body tr[data-months="${months}"]`);
+    if (!tr) return;
+
+    const pctInput = tr.querySelector('.preset-pct-input');
+    const activeInput = tr.querySelector('.preset-active-input');
+
+    const payload = [{
+      months,
+      discount_percentage: Number(pctInput.value) || 0,
+      is_active: activeInput ? !!activeInput.checked : true,
+    }];
+
+    const res = await this.apiRequest('/api/academy/fees/discount-presets', {
+      method: 'PUT',
+      body: JSON.stringify({ presets: payload }),
+    });
+
+    if (res.success) {
+      this.showToast(`Preset for ${months} month(s) updated!`, 'success');
+      this.feesState.presetsCache = res.presets;
+    } else {
+      this.showToast(res.error || 'Failed to update preset', 'danger');
+    }
+  },
+
+  showAddPresetTierModal() {
+    this.openModal(
+      'Add Multi-Month Discount Tier',
+      `
+        <div>
+          <div class="form-group">
+            <label>Duration in Months (e.g. 4, 5, 9, 24) *</label>
+            <input type="number" id="new-preset-months" class="form-input" min="1" max="36" required style="width: 100%;">
+          </div>
+          <div class="form-group">
+            <label>Discount Percentage (%) *</label>
+            <input type="number" id="new-preset-pct" class="form-input" min="0" max="100" step="0.5" required style="width: 100%;" placeholder="e.g. 7.5">
+          </div>
+        </div>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.submitNewPresetTier()"><i class="fa-solid fa-plus"></i> Add Tier</button>
+      `
+    );
+  },
+
+  async submitNewPresetTier() {
+    const months = Number(document.getElementById('new-preset-months').value);
+    const discount_percentage = Number(document.getElementById('new-preset-pct').value);
+
+    if (!months || months < 1 || isNaN(discount_percentage) || discount_percentage < 0) {
+      this.showToast('Please enter a valid month count and discount percentage', 'danger');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/academy/fees/discount-presets', {
+      method: 'PUT',
+      body: JSON.stringify({
+        presets: [{ months, discount_percentage, is_active: 1 }]
+      }),
+    });
+
+    if (res.success) {
+      this.showToast(`Tier for ${months} months added!`, 'success');
+      this.closeModal();
+      this.feesState.presetsCache = res.presets;
+      this.feesState.activeTab = 'discounts';
+      this.renderFees();
+    } else {
+      this.showToast(res.error || 'Failed to add tier', 'danger');
+    }
+  },
+
+  // ==========================================
   // COLLECT STUDENT FEES MODAL WITH LIVE PREVIEW
   // ==========================================
 
@@ -8876,11 +9196,20 @@ const app = {
       if (nextInstEl) nextInstEl.innerText = calc.nextInstallmentDate;
 
       document.getElementById('calc-base-fee').innerText = `₹${calc.baseFee.toLocaleString()} (${calc.monthsCount} mo × ₹${calc.monthlyRate.toLocaleString()})`;
-      document.getElementById('calc-discount-display').innerText = `− ₹${calc.totalDiscountAmount.toLocaleString()}`;
+      
+      let discountText = `− ₹${calc.totalDiscountAmount.toLocaleString()}`;
+      if (calc.presetPercentage > 0) {
+        discountText += ` (Includes ${calc.presetPercentage}% Multi-Month Preset)`;
+      }
+      document.getElementById('calc-discount-display').innerText = discountText;
       document.getElementById('calc-net-payable').innerText = `₹${calc.payableAmount.toLocaleString()}`;
       const discBadge = document.getElementById('calc-max-discount-badge');
       if (discBadge) {
-        discBadge.innerText = calc.totalDiscountAmount > 0 ? `Saved ₹${calc.totalDiscountAmount.toLocaleString()}` : `Manual Concession`;
+        if (calc.presetPercentage > 0) {
+          discBadge.innerHTML = `⚡ ${calc.presetPercentage}% Preset Applied <a href="javascript:void(0)" onclick="app.showFeeDiscountPresetsModal()" style="color: white; text-decoration: underline; margin-left: 4px;">(Edit Rules)</a>`;
+        } else {
+          discBadge.innerText = calc.totalDiscountAmount > 0 ? `Saved ₹${calc.totalDiscountAmount.toLocaleString()}` : `Manual Concession`;
+        }
       }
 
       // Set pay now default if empty or previously matched net payable
