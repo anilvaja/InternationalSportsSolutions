@@ -437,8 +437,13 @@ const app = {
       if (this.tenantAcademy && this.tenantAcademy.id) {
         this.selectedAcademyId = this.tenantAcademy.id;
         localStorage.setItem('selectedAcademyId', this.selectedAcademyId);
-      } else if (!this.selectedAcademyId && this.accessibleAcademies.length > 0) {
-        this.selectedAcademyId = this.accessibleAcademies[0].id;
+      } else if (this.accessibleAcademies && this.accessibleAcademies.length > 0) {
+        const matching = this.accessibleAcademies.find(a => a.id == this.selectedAcademyId);
+        if (matching) {
+          this.selectedAcademyId = matching.id;
+        } else {
+          this.selectedAcademyId = this.accessibleAcademies[0].id;
+        }
         localStorage.setItem('selectedAcademyId', this.selectedAcademyId);
       }
 
@@ -3028,17 +3033,21 @@ const app = {
       `;
     }).join('');
 
-    this.showModal(`Insert Row: ${schema.tableName}`, `
-      <form id="db-studio-insert-form" onsubmit="event.preventDefault(); app.saveDbStudioRow(false)">
-        <div style="max-height: 480px; overflow-y: auto; padding-right: 4px;">
-          ${fieldsHtml}
-        </div>
-        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
-          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Insert Record</button>
-        </div>
-      </form>
-    `);
+    this.openModal(
+      `Insert Row: ${schema.tableName}`,
+      `
+        <form id="db-studio-insert-form" onsubmit="event.preventDefault(); app.saveDbStudioRow(false)">
+          <div style="max-height: 480px; overflow-y: auto; padding-right: 4px;">
+            ${fieldsHtml}
+          </div>
+        </form>
+      `,
+      `
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="submit" form="db-studio-insert-form" class="btn btn-primary" onclick="app.saveDbStudioRow(false)"><i class="fa-solid fa-check"></i> Insert Record</button>
+      `,
+      '780px'
+    );
   },
 
   openDbStudioEditModal(rowIdx) {
@@ -3074,17 +3083,21 @@ const app = {
       `;
     }).join('');
 
-    this.showModal(`Edit Row: ${schema.tableName} (${pk.name} = ${pkVal})`, `
-      <form id="db-studio-edit-form" onsubmit="event.preventDefault(); app.saveDbStudioRow(true, '${pk.name}', '${pkVal}')">
-        <div style="max-height: 480px; overflow-y: auto; padding-right: 4px;">
-          ${fieldsHtml}
-        </div>
-        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
-          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
-        </div>
-      </form>
-    `);
+    this.openModal(
+      `Edit Row: ${schema.tableName} (${pk.name} = ${pkVal})`,
+      `
+        <form id="db-studio-edit-form" onsubmit="event.preventDefault(); app.saveDbStudioRow(true, '${pk.name}', '${pkVal}')">
+          <div style="max-height: 480px; overflow-y: auto; padding-right: 4px;">
+            ${fieldsHtml}
+          </div>
+        </form>
+      `,
+      `
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="submit" form="db-studio-edit-form" class="btn btn-primary" onclick="app.saveDbStudioRow(true, '${pk.name}', '${pkVal}')"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+      `,
+      '780px'
+    );
   },
 
   async saveDbStudioRow(isEdit, pkCol, pkVal) {

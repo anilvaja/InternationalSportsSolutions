@@ -100,17 +100,24 @@ export function resolveTenant(req, res, next) {
       }
     }
 
-    // 6. Localhost fallback
+    // 6. Host / Super Admin fallback (localhost, 127.0.0.1, internationalsportssolutions.test, or super admin default)
     if (!academyRecord && !academyId && !academySlug) {
       const host = extractHost(req);
-      if (host === 'localhost' || host === '127.0.0.1') {
-        academyId = 1;
+      if (host === 'localhost' || host === '127.0.0.1' || host === 'internationalsportssolutions.test' || (req.user && req.user.isSuperAdmin)) {
+        const defaultAcademy = centralDb.prepare("SELECT id FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
+        if (defaultAcademy) {
+          academyId = defaultAcademy.id;
+        }
       }
     }
 
     if (!academyRecord) {
       if (academyId) {
         academyRecord = centralDb.prepare('SELECT * FROM academies WHERE id = ?').get(academyId);
+        // If an explicit ID was provided but not found (e.g. stale super admin session), gracefully fall back for super admin
+        if (!academyRecord && req.user && req.user.isSuperAdmin) {
+          academyRecord = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
+        }
       } else if (academySlug) {
         academyRecord = centralDb.prepare('SELECT * FROM academies WHERE slug = ? COLLATE NOCASE').get(academySlug);
         if (!academyRecord) {
@@ -123,6 +130,9 @@ export function resolveTenant(req, res, next) {
           if (domainSubMatch) {
             academyRecord = domainSubMatch;
           }
+        }
+        if (!academyRecord && req.user && req.user.isSuperAdmin) {
+          academyRecord = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
         }
       }
     }
