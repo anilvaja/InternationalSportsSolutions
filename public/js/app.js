@@ -4137,7 +4137,7 @@ const app = {
   employeeMapMarkers: {},
 
   async renderEmployeeMap() {
-    const main = document.getElementById('main-content');
+    const main = document.getElementById('page-content') || document.getElementById('main-content');
     if (!main) return;
 
     const filters = this.employeeMapFilters;
