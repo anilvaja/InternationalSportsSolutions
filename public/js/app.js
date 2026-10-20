@@ -1294,6 +1294,9 @@ const app = {
                       <a href="/api/central/academies/${ac.id}/backup" class="btn btn-secondary btn-sm" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px; text-decoration: none;" title="Download SQLite DB ZIP">
                         <i class="fa-solid fa-download" style="color: #64748b; width: 14px;"></i> Backup DB
                       </a>
+                      <button class="btn btn-outline-danger btn-sm" onclick="app.showTenantCleanupModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}', '${ac.slug}')" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px;" title="Reset / Wipe Tenant Database">
+                        <i class="fa-solid fa-broom" style="width: 14px;"></i> Reset Data
+                      </button>
                       <button class="btn btn-primary btn-sm" onclick="app.switchAcademy(${ac.id}); app.navigate('overview');" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px;" title="Open Academy Dashboard">
                         <i class="fa-solid fa-arrow-up-right-from-square" style="width: 14px;"></i> Open Portal
                       </button>
@@ -1501,6 +1504,185 @@ const app = {
     XLSX.utils.book_append_sheet(wb, ws, 'Tenant_Academies');
     XLSX.writeFile(wb, `Central_Academies_${new Date().toISOString().split('T')[0]}.xlsx`);
     this.showToast('Exported academies registry to Excel via SheetJS', 'success');
+  },
+
+  async showTenantCleanupModal(academyId, academyName, academySlug) {
+    this.openModal(
+      `<i class="fa-solid fa-broom" style="color: #ef4444;"></i> Reset / Cleanup Tenant Database — ${this.escapeHtml(academyName)}`,
+      `<div style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i><p style="margin-top: 10px; color: var(--text-muted);">Inspecting database tables...</p></div>`
+    );
+
+    const res = await this.apiRequest(`/api/central/academies/${academyId}/cleanup-options`);
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to load database details', 'danger');
+      this.closeModal();
+      return;
+    }
+
+    const { tables, transactionalCount, totalTables } = res;
+    this._currentCleanupTables = tables || [];
+
+    const bodyHtml = `
+      <div style="font-size: 13px;">
+        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 18px;">
+          <div style="display: flex; gap: 10px; align-items: flex-start;">
+            <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444; font-size: 18px; margin-top: 2px;"></i>
+            <div>
+              <strong style="color: #ef4444; font-size: 14px; display: block;">Super Admin Database Reset & Purge</strong>
+              <span style="color: var(--text-muted); font-size: 12px; line-height: 1.5; display: block; margin-top: 4px;">
+                This utility wipes records from the isolated SQLite database for <strong>${this.escapeHtml(academyName)}</strong> (#${academyId}).
+                <strong>An automated pre-cleanup backup file will be created in <code>data/backups/</code> before any data is deleted.</strong>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 18px;">
+          <label style="font-weight: 700; margin-bottom: 8px; display: block;">Select Cleanup Mode</label>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <label style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface); cursor: pointer;">
+              <input type="radio" name="cleanup_mode" value="transactional" checked onchange="app.onCleanupModeChange(this.value)" style="margin-top: 3px;">
+              <div>
+                <strong style="color: var(--text-heading); font-size: 13px;">1. Wipe Operational & Transactional Data (Recommended)</strong>
+                <p style="font-size: 12px; color: var(--text-muted); margin: 3px 0 0 0;">
+                  Clears: Students, Batches, Attendance, Fees, Payments, Leaves, Overtime, Inquiries, Punches, and Event registrations.<br>
+                  <strong style="color: #10b981;">Preserves:</strong> Physical Branches, Sports/Disciplines, System Roles, Staff User Logins, and Academy Configurations.
+                </p>
+              </div>
+            </label>
+
+            <label style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface); cursor: pointer;">
+              <input type="radio" name="cleanup_mode" value="factory_reset" onchange="app.onCleanupModeChange(this.value)" style="margin-top: 3px;">
+              <div>
+                <strong style="color: #ef4444; font-size: 13px;">2. Factory Reset & Fresh Re-seed</strong>
+                <p style="font-size: 12px; color: var(--text-muted); margin: 3px 0 0 0;">
+                  Completely wipes all tables, re-runs clean baseline migrations, re-seeds default roles, default main branch, and re-creates clean initial academy administrator login.
+                </p>
+              </div>
+            </label>
+
+            <label style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface); cursor: pointer;">
+              <input type="radio" name="cleanup_mode" value="selective" onchange="app.onCleanupModeChange(this.value)" style="margin-top: 3px;">
+              <div>
+                <strong style="color: var(--text-heading); font-size: 13px;">3. Selective Table Purge</strong>
+                <p style="font-size: 12px; color: var(--text-muted); margin: 3px 0 0 0;">
+                  Manually select specific tables to clear.
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div id="cleanup-selective-tables-wrap" style="display: none; margin-bottom: 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; background: var(--bg-surface);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <strong style="font-size: 12px;">Choose Tables to Truncate:</strong>
+            <div style="font-size: 11px;">
+              <a href="#" onclick="event.preventDefault(); document.querySelectorAll('.cleanup-tbl-cb').forEach(c => c.checked = true);">Select All</a> &bull;
+              <a href="#" onclick="event.preventDefault(); document.querySelectorAll('.cleanup-tbl-cb').forEach(c => c.checked = false);">Deselect All</a>
+            </div>
+          </div>
+          <div style="max-height: 200px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px;">
+            ${tables.filter(t => !t.isSystem).map(t => `
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; padding: 3px 6px; border-radius: 4px; background: rgba(0,0,0,0.03);">
+                <input type="checkbox" class="cleanup-tbl-cb" value="${t.name}" ${t.isTransactional ? 'checked' : ''}>
+                <span style="font-family: monospace;">${t.name}</span>
+                <span class="badge ${t.rowCount > 0 ? 'badge-primary' : 'badge-secondary'}" style="font-size: 9px; margin-left: auto;">${t.rowCount} rows</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 14px;">
+          <label style="font-weight: 700; color: #dc2626; margin-bottom: 6px; display: block;">
+            Type '${academySlug}' or 'CONFIRM' to authorize:
+          </label>
+          <input type="text" id="cleanup-confirm-input" class="form-input" placeholder="Type ${academySlug} or CONFIRM" autocomplete="off" style="font-family: monospace; font-size: 14px; font-weight: 600;">
+        </div>
+      </div>
+    `;
+
+    const footerHtml = `
+      <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button type="button" class="btn btn-danger" id="cleanup-submit-btn" onclick="app.submitTenantCleanup(${academyId})">
+        <i class="fa-solid fa-broom"></i> Reset Tenant Database
+      </button>
+    `;
+
+    this.openModal(
+      `<i class="fa-solid fa-broom" style="color: #ef4444;"></i> Reset / Cleanup Tenant Database — ${this.escapeHtml(academyName)}`,
+      bodyHtml,
+      footerHtml,
+      '780px'
+    );
+  },
+
+  onCleanupModeChange(mode) {
+    const wrap = document.getElementById('cleanup-selective-tables-wrap');
+    if (wrap) {
+      wrap.style.display = mode === 'selective' ? 'block' : 'none';
+    }
+  },
+
+  openDbStudioCleanupModal() {
+    if (!this.dbStudio || !this.dbStudio.activeDb || this.dbStudio.activeDb === 'central') {
+      this.showToast('Please select a tenant database to reset', 'warning');
+      return;
+    }
+    const academyId = Number(String(this.dbStudio.activeDb).replace('academy_', ''));
+    const academy = (this.accessibleAcademies || []).find(a => a.id == academyId) || { id: academyId, name: `Academy #${academyId}`, slug: `academy-${academyId}` };
+    this.showTenantCleanupModal(academy.id, academy.name, academy.slug);
+  },
+
+  async submitTenantCleanup(academyId) {
+    const confirmInput = document.getElementById('cleanup-confirm-input');
+    const confirmation = confirmInput ? confirmInput.value.trim() : '';
+    if (!confirmation) {
+      this.showToast('Please type confirmation text to proceed', 'warning');
+      return;
+    }
+
+    const modeRadio = document.querySelector('input[name="cleanup_mode"]:checked');
+    const mode = modeRadio ? modeRadio.value : 'transactional';
+
+    let selectedTables = [];
+    if (mode === 'selective') {
+      const checkedBoxes = document.querySelectorAll('.cleanup-tbl-cb:checked');
+      selectedTables = Array.from(checkedBoxes).map(cb => cb.value);
+      if (selectedTables.length === 0) {
+        this.showToast('Please select at least one table to clean up', 'warning');
+        return;
+      }
+    }
+
+    const btn = document.getElementById('cleanup-submit-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Resetting Database...';
+    }
+
+    const res = await this.apiRequest(`/api/central/academies/${academyId}/cleanup`, {
+      method: 'POST',
+      body: JSON.stringify({ mode, selectedTables, confirmation }),
+    });
+
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-broom"></i> Reset Tenant Database';
+    }
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast(`Tenant database reset successfully! Backup saved: ${res.backupFile}`, 'success');
+      if (this.currentTab === 'central-academies') {
+        this.renderCentralAcademies();
+      } else if (this.currentTab === 'central-db-viewer') {
+        this.refreshDbStudio();
+      } else {
+        this.navigate(this.currentTab, false);
+      }
+    } else {
+      this.showToast(res.error || 'Failed to clean up tenant database', 'danger');
+    }
   },
 
   // ==========================================
@@ -2549,6 +2731,11 @@ const app = {
         </div>
 
         <div style="display: flex; align-items: center; gap: 8px;">
+          ${this.dbStudio.activeDb !== 'central' ? `
+            <button class="btn btn-outline-danger btn-sm" onclick="app.openDbStudioCleanupModal()" title="Reset / Truncate Tenant Data">
+              <i class="fa-solid fa-broom"></i> Reset DB
+            </button>
+          ` : ''}
           ${!isView ? `
             <button class="btn btn-primary btn-sm" onclick="app.openDbStudioInsertModal()">
               <i class="fa-solid fa-plus"></i> Insert Row

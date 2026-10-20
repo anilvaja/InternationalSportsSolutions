@@ -7,6 +7,7 @@ import { requireAuth, requireSuperAdmin } from '../middleware/auth.js';
 import { streamAcademyBackup, streamCentralPlatformBackup } from '../services/backupService.js';
 import { QuotaService, STANDARD_QUOTA_KEYS, DEFAULT_PLAN_VALUES } from '../services/quotaService.js';
 import { DbViewerService } from '../services/dbViewerService.js';
+import { TenantCleanupService } from '../services/tenantCleanupService.js';
 
 export const centralRouter = express.Router();
 
@@ -289,6 +290,97 @@ centralRouter.delete('/academies/:id', (req, res) => {
     res.json({ success: true, message: `Academy '${academy.name}' and its database removed` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/central/academies/:id/cleanup-options
+ * Retrieves list of tables in tenant database with row counts and classification
+ */
+centralRouter.get('/academies/:id/cleanup-options', (req, res) => {
+  try {
+    const academyId = Number(req.params.id);
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT id, name, slug FROM academies WHERE id = ?').get(academyId);
+    if (!academy) {
+      return res.status(404).json({ success: false, error: 'Academy not found' });
+    }
+
+    const tenantDb = getTenantDbById(academyId);
+    const rawTables = tenantDb.prepare(`
+      SELECT name, type 
+      FROM sqlite_master 
+      WHERE type='table' AND name NOT LIKE 'sqlite_%'
+      ORDER BY name ASC
+    `).all();
+
+    const tables = rawTables.map(t => {
+      let rowCount = 0;
+      try {
+        rowCount = tenantDb.prepare(`SELECT COUNT(*) as c FROM "${t.name}"`).get().c;
+      } catch (e) {}
+
+      const isTransactional = TenantCleanupService.TRANSACTIONAL_TABLES.includes(t.name);
+      const isSystem = t.name.startsWith('_') || t.name === 'tenant_settings';
+
+      return {
+        name: t.name,
+        rowCount,
+        isTransactional,
+        isSystem,
+        category: isSystem ? 'System / Config' : (isTransactional ? 'Transactional Data' : 'Core Structural')
+      };
+    });
+
+    res.json({
+      success: true,
+      academy,
+      tables,
+      transactionalCount: tables.filter(t => t.isTransactional).length,
+      totalTables: tables.length,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/academies/:id/cleanup
+ * Executes tenant database cleanup / wipe with safety backup and audit trail
+ */
+centralRouter.post('/academies/:id/cleanup', async (req, res) => {
+  try {
+    const academyId = Number(req.params.id);
+    const { mode = 'transactional', selectedTables = [], confirmation = '' } = req.body;
+
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT id, name, slug FROM academies WHERE id = ?').get(academyId);
+    if (!academy) {
+      return res.status(404).json({ success: false, error: 'Academy not found' });
+    }
+
+    // Safety confirmation validation
+    const cleanConfirm = confirmation.trim().toLowerCase();
+    const validConfirm = cleanConfirm === 'confirm' || cleanConfirm === academy.slug.toLowerCase();
+    if (!validConfirm) {
+      return res.status(400).json({
+        success: false,
+        error: `Confirmation failed: You must type 'CONFIRM' or the academy slug '${academy.slug}' to authorize this action.`
+      });
+    }
+
+    const result = await TenantCleanupService.cleanupTenant({
+      academyId,
+      mode,
+      selectedTables,
+      operatorUser: req.user,
+      ipAddress: req.ip
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('[Tenant Cleanup Error]', err);
+    res.status(500).json({ success: false, error: err.message || 'Tenant cleanup failed' });
   }
 });
 
