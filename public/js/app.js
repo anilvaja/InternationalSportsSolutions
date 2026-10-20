@@ -12900,82 +12900,292 @@ const app = {
   },
 
   async renderStudentFees() {
-    const data = await this.apiRequest('/api/student/fees');
     const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const data = await this.apiRequest('/api/student/fees');
     const invoices = data.invoices || [];
+    const dueInvoices = data.due_invoices || invoices.filter(inv => inv.balance_amount > 0);
+    const paidInvoices = data.paid_invoices || invoices.filter(inv => inv.balance_amount <= 0);
+    const summary = data.summary || {
+      total_due: dueInvoices.reduce((acc, i) => acc + Number(i.balance_amount || 0), 0),
+      total_paid: invoices.reduce((acc, i) => acc + Number(i.paid_amount || 0), 0),
+      overdue_amount: dueInvoices.filter(i => i.is_overdue).reduce((acc, i) => acc + Number(i.balance_amount || 0), 0),
+      overdue_count: dueInvoices.filter(i => i.is_overdue).length,
+      pending_invoices_count: dueInvoices.length,
+    };
+    const student = data.student || {};
+    const batch = data.active_batch || null;
 
     content.innerHTML = `
-      <div class="content-card">
-        <div class="card-header">
-          <h2 class="card-title"><i class="fa-solid fa-file-invoice-dollar"></i> My Invoices & Payment History</h2>
+      <div class="student-fees-container" style="max-width: 1100px; margin: 0 auto; padding-bottom: 40px;">
+        
+        <!-- TOP DUE FEES HIGHLIGHT BANNER -->
+        ${summary.total_due > 0 ? `
+          <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(245, 158, 11, 0.08)); border: 1.5px solid rgba(239, 68, 68, 0.35); border-radius: 14px; padding: 22px; margin-bottom: 24px; box-shadow: 0 4px 16px rgba(239, 68, 68, 0.08);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+              <div style="display: flex; align-items: center; gap: 16px;">
+                <div style="width: 54px; height: 54px; border-radius: 14px; background: #ef4444; color: white; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);">
+                  <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div>
+                  <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #ef4444;">
+                    Action Required • Outstanding Fee Dues
+                  </div>
+                  <h1 style="font-size: 26px; font-weight: 800; color: var(--text-heading); margin: 4px 0 2px;">
+                    Total Due: ₹${summary.total_due.toLocaleString()}
+                  </h1>
+                  <p style="font-size: 13px; color: var(--text-muted); margin: 0;">
+                    You have <strong>${summary.pending_invoices_count} pending fee invoice(s)</strong>.
+                    ${summary.overdue_amount > 0 ? `
+                      <span style="color: #ef4444; font-weight: 700; margin-left: 6px;">
+                        <i class="fa-solid fa-circle-exclamation"></i> ₹${summary.overdue_amount.toLocaleString()} is overdue!
+                      </span>
+                    ` : `
+                      <span style="color: #f59e0b; font-weight: 600; margin-left: 6px;">
+                        Next due date: ${summary.next_due_date || 'Upcoming'}
+                      </span>
+                    `}
+                  </p>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                ${dueInvoices.length > 0 ? `
+                  <button class="btn btn-primary btn-lg" onclick="app.payStudentFeeOnline(${dueInvoices[0].id}, ${dueInvoices[0].balance_amount}, '${dueInvoices[0].invoice_number}')" style="box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);">
+                    <i class="fa-solid fa-credit-card"></i> Pay Due Invoice (₹${dueInvoices[0].balance_amount.toLocaleString()})
+                  </button>
+                ` : ''}
+                <a href="/pay.html" target="_blank" class="btn btn-secondary btn-lg" title="Open Quick Pay Gateway">
+                  <i class="fa-solid fa-bolt" style="color: #10b981;"></i> Quick Pay Portal
+                </a>
+              </div>
+            </div>
+          </div>
+        ` : `
+          <div style="background: rgba(16, 185, 129, 0.08); border: 1.5px solid rgba(16, 185, 129, 0.3); border-radius: 14px; padding: 20px; margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 48px; height: 48px; border-radius: 12px; background: #10b981; color: white; display: flex; align-items: center; justify-content: center; font-size: 22px;">
+                  <i class="fa-solid fa-circle-check"></i>
+                </div>
+                <div>
+                  <h2 style="font-size: 18px; font-weight: 800; color: #10b981; margin: 0;">All Fees Cleared — Zero Outstanding Balance</h2>
+                  <p style="font-size: 13px; color: var(--text-muted); margin: 3px 0 0;">
+                    Your account is fully up to date. Thank you for timely fee settlements!
+                  </p>
+                </div>
+              </div>
+              <span class="badge badge-success" style="font-size: 12px; padding: 6px 12px;">
+                <i class="fa-solid fa-shield-check"></i> Fully Settled
+              </span>
+            </div>
+          </div>
+        `}
+
+        <!-- 4 KPI SUMMARY CARDS -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <!-- Total Due -->
+          <div class="content-card" style="padding: 18px; border-left: 4px solid ${summary.total_due > 0 ? '#ef4444' : '#10b981'};">
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Total Due Fees</div>
+            <div style="font-size: 24px; font-weight: 800; color: ${summary.total_due > 0 ? '#ef4444' : '#10b981'}; margin: 6px 0 2px;">
+              ₹${summary.total_due.toLocaleString()}
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted);">
+              ${summary.pending_invoices_count} pending invoice(s)
+            </div>
+          </div>
+
+          <!-- Overdue Fees -->
+          <div class="content-card" style="padding: 18px; border-left: 4px solid ${summary.overdue_amount > 0 ? '#ef4444' : '#9ca3af'};">
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Overdue Balance</div>
+            <div style="font-size: 24px; font-weight: 800; color: ${summary.overdue_amount > 0 ? '#ef4444' : 'var(--text-heading)'}; margin: 6px 0 2px;">
+              ₹${summary.overdue_amount.toLocaleString()}
+            </div>
+            <div style="font-size: 12px; color: ${summary.overdue_count > 0 ? '#ef4444' : 'var(--text-muted)'}; font-weight: 600;">
+              ${summary.overdue_count > 0 ? `${summary.overdue_count} invoice(s) past due date` : 'No overdue invoices'}
+            </div>
+          </div>
+
+          <!-- Total Paid -->
+          <div class="content-card" style="padding: 18px; border-left: 4px solid #10b981;">
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Total Paid to Date</div>
+            <div style="font-size: 24px; font-weight: 800; color: #10b981; margin: 6px 0 2px;">
+              ₹${summary.total_paid.toLocaleString()}
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted);">
+              Settled across all cycles
+            </div>
+          </div>
+
+          <!-- Active Batch Plan -->
+          <div class="content-card" style="padding: 18px; border-left: 4px solid var(--primary);">
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Enrolled Batch Rate</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-heading); margin: 6px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${batch ? batch.batch_name : 'General Enrollment'}
+            </div>
+            <div style="font-size: 12px; color: var(--primary); font-weight: 600;">
+              ${batch ? `₹${(batch.monthly_fee || 0).toLocaleString()} / month (${batch.sport_name || 'Sport'})` : 'No active batch fee'}
+            </div>
+          </div>
         </div>
-        <div class="table-responsive">
-          <table class="custom-table">
-            <thead>
-              <tr>
-                <th>Invoice #</th>
-                <th>Title</th>
-                <th>Due Date</th>
-                <th>Net Total</th>
-                <th>Paid</th>
-                <th>Balance Due</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${invoices.map(inv => `
-                <tr>
-                  <td><code>${inv.invoice_number}</code></td>
-                  <td><strong>${inv.title}</strong></td>
-                  <td>${inv.due_date}</td>
-                  <td>₹${inv.net_amount.toLocaleString()}</td>
-                  <td style="color: #10b981; font-weight: 600;">₹${inv.paid_amount.toLocaleString()}</td>
-                  <td style="color: #f59e0b; font-weight: 600;">₹${inv.balance_amount.toLocaleString()}</td>
-                  <td>
-                    <span class="badge ${inv.status === 'paid' ? 'badge-success' : 'badge-warning'}">
-                      ${inv.status}
-                    </span>
-                  </td>
-                  <td>
-                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                      ${inv.balance_amount > 0 ? `
+
+        <!-- SECTION 1: UNPAID & PENDING DUE INVOICES -->
+        <div class="content-card" style="margin-bottom: 24px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h2 class="card-title" style="margin: 0; display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-clock" style="color: #f59e0b;"></i>
+              Pending & Due Fees (${dueInvoices.length})
+            </h2>
+            ${dueInvoices.length > 0 ? `
+              <span class="badge badge-warning" style="font-size: 12px;">Payment Required</span>
+            ` : `
+              <span class="badge badge-success" style="font-size: 12px;">All Cleared</span>
+            `}
+          </div>
+
+          ${dueInvoices.length === 0 ? `
+            <div style="padding: 36px; text-align: center; color: var(--text-muted);">
+              <i class="fa-solid fa-circle-check fa-3x" style="color: #10b981; margin-bottom: 12px; display: block;"></i>
+              <h3 style="font-size: 16px; font-weight: 700; color: var(--text-heading); margin-bottom: 4px;">No Pending Fees Due!</h3>
+              <p style="font-size: 13px; margin: 0;">You have settled all generated invoices.</p>
+            </div>
+          ` : `
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Invoice #</th>
+                    <th>Fee Description</th>
+                    <th>Due Date</th>
+                    <th>Invoice Total</th>
+                    <th>Paid</th>
+                    <th style="color: #ef4444;">Balance Due</th>
+                    <th>Status</th>
+                    <th style="text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${dueInvoices.map(inv => `
+                    <tr style="background: ${inv.is_overdue ? 'rgba(239, 68, 68, 0.03)' : 'transparent'};">
+                      <td><code>${inv.invoice_number}</code></td>
+                      <td>
+                        <strong>${inv.title}</strong>
+                        ${inv.notes ? `<div style="font-size: 11px; color: var(--text-muted);">${inv.notes}</div>` : ''}
+                      </td>
+                      <td>
+                        <div>${inv.due_date}</div>
+                        ${inv.is_overdue ? `
+                          <span class="badge badge-danger" style="font-size: 10px; margin-top: 2px;">
+                            Overdue by ${inv.overdue_days}d
+                          </span>
+                        ` : `
+                          <span class="badge badge-warning" style="font-size: 10px; margin-top: 2px;">Due Soon</span>
+                        `}
+                      </td>
+                      <td>₹${inv.net_amount.toLocaleString()}</td>
+                      <td style="color: #10b981; font-weight: 600;">₹${(inv.paid_amount || 0).toLocaleString()}</td>
+                      <td>
+                        <strong style="color: #ef4444; font-size: 14px;">₹${inv.balance_amount.toLocaleString()}</strong>
+                      </td>
+                      <td>
+                        <span class="badge ${inv.is_overdue ? 'badge-danger' : 'badge-warning'}">
+                          ${inv.status}
+                        </span>
+                      </td>
+                      <td style="text-align: right;">
                         <button class="btn btn-primary btn-sm" onclick="app.payStudentFeeOnline(${inv.id}, ${inv.balance_amount}, '${inv.invoice_number}')">
                           <i class="fa-solid fa-credit-card"></i> Pay Online
                         </button>
-                      ` : ''}
-                      <button class="btn btn-secondary btn-sm" title="Direct Print Receipt" onclick="app.printFeeReceipt(${JSON.stringify(inv).replace(/"/g, '&quot;')})">
-                        <i class="fa-solid fa-print"></i> Print
-                      </button>
-                      <button class="btn btn-secondary btn-sm" title="Download PDF Receipt" onclick="app.generateFeeReceiptPdf(${JSON.stringify(inv).replace(/"/g, '&quot;')})">
-                        <i class="fa-solid fa-file-pdf"></i> PDF
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
         </div>
+
+        <!-- SECTION 2: SETTLED INVOICES & RECEIPT HISTORY -->
+        <div class="content-card">
+          <div class="card-header">
+            <h2 class="card-title" style="margin: 0; display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-receipt" style="color: #10b981;"></i>
+              Payment History & Receipts (${paidInvoices.length})
+            </h2>
+          </div>
+
+          ${paidInvoices.length === 0 ? `
+            <div style="padding: 30px; text-align: center; color: var(--text-muted); font-size: 13px;">
+              No completed payment receipts found.
+            </div>
+          ` : `
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Invoice #</th>
+                    <th>Fee Description</th>
+                    <th>Settlement Date</th>
+                    <th>Amount Paid</th>
+                    <th>Receipt #</th>
+                    <th>Status</th>
+                    <th style="text-align: right;">Receipt Downloads</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${paidInvoices.map(inv => {
+                    const firstReceipt = (inv.payments && inv.payments[0] && inv.payments[0].receipt_number) || 'PAID';
+                    return `
+                      <tr>
+                        <td><code>${inv.invoice_number}</code></td>
+                        <td><strong>${inv.title}</strong></td>
+                        <td>${inv.due_date}</td>
+                        <td style="color: #10b981; font-weight: 700;">₹${inv.paid_amount.toLocaleString()}</td>
+                        <td><span class="badge badge-secondary" style="font-family: monospace;">${firstReceipt}</span></td>
+                        <td><span class="badge badge-success">paid</span></td>
+                        <td style="text-align: right;">
+                          <div style="display: inline-flex; gap: 6px;">
+                            <button class="btn btn-secondary btn-sm" title="Print Receipt" onclick="app.printFeeReceipt(${JSON.stringify(inv).replace(/"/g, '&quot;')})">
+                              <i class="fa-solid fa-print"></i> Print
+                            </button>
+                            <button class="btn btn-secondary btn-sm" title="Download PDF" onclick="app.generateFeeReceiptPdf(${JSON.stringify(inv).replace(/"/g, '&quot;')})">
+                              <i class="fa-solid fa-file-pdf" style="color: #ef4444;"></i> PDF
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+
       </div>
     `;
   },
 
   async payStudentFeeOnline(invoiceId, balance, invoiceNumber) {
-    if (!confirm(`Confirm online payment of ₹${balance.toLocaleString()} for Invoice ${invoiceNumber}?`)) {
+    if (!confirm(`Proceed to settle due amount of ₹${balance.toLocaleString()} for invoice ${invoiceNumber}?`)) {
       return;
     }
 
-    const res = await this.apiRequest('/api/student/pay', {
-      method: 'POST',
-      body: JSON.stringify({ student_fee_id: invoiceId, amount: balance }),
-    });
+    try {
+      const res = await this.apiRequest('/api/student/pay', {
+        method: 'POST',
+        body: JSON.stringify({ student_fee_id: invoiceId, amount: balance }),
+      });
 
-    if (res.success) {
-      this.showToast(`Payment successful! Receipt #${res.receiptNumber}`, 'success');
-      this.renderStudentFees();
-    } else {
-      this.showToast(res.error || 'Payment failed', 'danger');
+      if (res.success) {
+        this.showToast(`Payment successful! Receipt #${res.receiptNumber}`, 'success');
+        this.renderStudentFees();
+      } else {
+        this.showToast(res.error || 'Payment failed', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Payment processing error: ' + err.message, 'danger');
     }
   },
 

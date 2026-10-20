@@ -73,8 +73,8 @@ export function resolveTenant(req, res, next) {
 
     // 3. Request headers override (allowed for SuperAdmin or explicitly declared by frontend)
     if (!academyRecord) {
-      const headerAcademyId = req.headers['x-academy-id'];
-      const headerAcademySlug = req.headers['x-academy-slug'];
+      const headerAcademyId = req.headers['x-academy-id'] || req.headers['x-tenant-id'];
+      const headerAcademySlug = req.headers['x-academy-slug'] || req.headers['x-tenant-slug'];
 
       if (headerAcademyId) {
         academyId = Number(headerAcademyId);
@@ -97,6 +97,14 @@ export function resolveTenant(req, res, next) {
       const sub = extractSubdomain(req);
       if (sub) {
         academySlug = sub;
+      }
+    }
+
+    // 6. Localhost fallback
+    if (!academyRecord && !academyId && !academySlug) {
+      const host = extractHost(req);
+      if (host === 'localhost' || host === '127.0.0.1') {
+        academyId = 1;
       }
     }
 

@@ -14,6 +14,7 @@ import { ScheduleService } from '../services/scheduleService.js';
 import { UserService } from '../services/userService.js';
 import { InquiryService } from '../services/inquiryService.js';
 import { AutoApprovalService } from '../services/autoApprovalService.js';
+import { StorageService } from '../services/storageService.js';
 import bcrypt from 'bcryptjs';
 
 export const academyRouter = express.Router();
@@ -5192,6 +5193,208 @@ academyRouter.post('/approvals/approve-all', (req, res) => {
       success: true,
       message: `Auto-approved ${results.totalApproved} pending items successfully!`,
       results,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// ACADEMY SETTINGS & LOGO BRANDING
+// ==========================================
+
+const uploadLogoMiddleware = StorageService.getLogoUploadMiddleware().single('logo');
+
+/**
+ * GET /api/academy/settings/profile
+ * Returns academy profile, branding info, and current logo_url
+ */
+academyRouter.get('/settings/profile', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare(`
+      SELECT id, name, slug, logo_url, contact_email, contact_phone,
+             address, city, country, plan, status, created_at,
+             is_gst_registered, gst_number, gst_rate, legal_business_name,
+             hsn_sac_code, gst_state_code
+      FROM academies WHERE id = ?
+    `).get(req.academy.id);
+
+    const tenantDb = req.tenantDb;
+    const tenantSettings = {};
+    try {
+      const rows = tenantDb.prepare('SELECT key, value FROM tenant_settings').all();
+      for (const r of rows) {
+        tenantSettings[r.key] = r.value;
+      }
+    } catch (e) {}
+
+    const logo_url = tenantSettings.logo_url || (academy && academy.logo_url) || null;
+
+    res.json({
+      success: true,
+      academy: {
+        ...academy,
+        logo_url,
+      },
+      tenantSettings,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/settings/logo
+ * Uploads academy logo to storage/academies/{id}/{YYYY-MM-DD}/academy_logo_{id}_{timestamp}.{ext}
+ */
+academyRouter.post('/settings/logo', (req, res) => {
+  if (req.user.role !== 'academy_admin' && !req.user.isSuperAdmin) {
+    return res.status(403).json({ success: false, error: 'Only Academy Admins can update the academy logo.' });
+  }
+
+  uploadLogoMiddleware(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No logo image file was uploaded.' });
+    }
+
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const publicUrl = `/storage/academies/${req.academy.id}/${today}/${req.file.filename}`;
+
+      // 1. Update central DB
+      const centralDb = getCentralDb();
+      centralDb.prepare('UPDATE academies SET logo_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(publicUrl, req.academy.id);
+
+      // 2. Update tenant DB settings
+      const tenantDb = req.tenantDb;
+      tenantDb.prepare(`
+        INSERT INTO tenant_settings (key, value, updated_at)
+        VALUES ('logo_url', ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+      `).run(publicUrl);
+
+      // 3. Audit log
+      tenantDb.prepare(`
+        INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, details, ip_address)
+        VALUES (?, ?, ?, 'UPDATE_LOGO', 'academies', ?, ?)
+      `).run(
+        req.user.userId,
+        req.user.name,
+        req.user.role,
+        `Uploaded academy logo: ${req.file.filename}`,
+        req.ip
+      );
+
+      res.json({
+        success: true,
+        message: 'Academy logo updated successfully!',
+        logo_url: publicUrl,
+        filename: req.file.filename,
+      });
+    } catch (e) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+});
+
+/**
+ * DELETE /api/academy/settings/logo
+ * Removes academy logo from central & tenant settings
+ */
+academyRouter.delete('/settings/logo', (req, res) => {
+  try {
+    if (req.user.role !== 'academy_admin' && !req.user.isSuperAdmin) {
+      return res.status(403).json({ success: false, error: 'Only Academy Admins can remove the academy logo.' });
+    }
+
+    const centralDb = getCentralDb();
+    centralDb.prepare('UPDATE academies SET logo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(req.academy.id);
+
+    const tenantDb = req.tenantDb;
+    tenantDb.prepare("DELETE FROM tenant_settings WHERE key = 'logo_url'").run();
+
+    tenantDb.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, details, ip_address)
+      VALUES (?, ?, ?, 'REMOVE_LOGO', 'academies', 'Removed academy logo', ?)
+    `).run(
+      req.user.userId,
+      req.user.name,
+      req.user.role,
+      req.ip
+    );
+
+    res.json({
+      success: true,
+      message: 'Academy logo removed successfully.',
+      logo_url: null,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/settings/profile
+ * Updates academy contact info and legal business profile
+ */
+academyRouter.put('/settings/profile', (req, res) => {
+  try {
+    if (req.user.role !== 'academy_admin' && !req.user.isSuperAdmin) {
+      return res.status(403).json({ success: false, error: 'Only Academy Admins can update academy profile settings.' });
+    }
+
+    const {
+      name,
+      contact_email,
+      contact_phone,
+      address,
+      city,
+      legal_business_name,
+      gst_number,
+      gst_rate,
+      hsn_sac_code,
+      gst_state_code,
+    } = req.body;
+
+    const centralDb = getCentralDb();
+    centralDb.prepare(`
+      UPDATE academies SET
+        name = COALESCE(?, name),
+        contact_email = COALESCE(?, contact_email),
+        contact_phone = COALESCE(?, contact_phone),
+        address = COALESCE(?, address),
+        city = COALESCE(?, city),
+        legal_business_name = COALESCE(?, legal_business_name),
+        gst_number = COALESCE(?, gst_number),
+        gst_rate = COALESCE(?, gst_rate),
+        hsn_sac_code = COALESCE(?, hsn_sac_code),
+        gst_state_code = COALESCE(?, gst_state_code),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      name ? name.trim() : null,
+      contact_email ? contact_email.trim() : null,
+      contact_phone ? contact_phone.trim() : null,
+      address ? address.trim() : null,
+      city ? city.trim() : null,
+      legal_business_name ? legal_business_name.trim() : null,
+      gst_number ? gst_number.trim().toUpperCase() : null,
+      gst_rate !== undefined ? Number(gst_rate) : null,
+      hsn_sac_code ? hsn_sac_code.trim() : null,
+      gst_state_code ? gst_state_code.trim() : null,
+      req.academy.id
+    );
+
+    res.json({
+      success: true,
+      message: 'Academy profile updated successfully!',
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

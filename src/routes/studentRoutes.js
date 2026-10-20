@@ -127,7 +127,35 @@ studentRouter.get('/attendance', (req, res) => {
 studentRouter.get('/fees', (req, res) => {
   try {
     const db = req.tenantDb;
-    const studentId = req.user.role === 'student' ? req.user.userId : Number(req.query.student_id);
+    let studentId = req.user.role === 'student' ? req.user.userId : Number(req.query.student_id);
+
+    // If staff/admin previewing without student_id, fallback to first active student with fees
+    if (!studentId || isNaN(studentId)) {
+      const fallback = db.prepare(`
+        SELECT student_id as id FROM student_fees ORDER BY balance_amount DESC, id DESC LIMIT 1
+      `).get() || db.prepare('SELECT id FROM students ORDER BY id ASC LIMIT 1').get();
+      if (fallback) studentId = fallback.id;
+    }
+
+    if (!studentId) {
+      return res.status(404).json({ success: false, error: 'Student profile not found' });
+    }
+
+    const student = db.prepare(`
+      SELECT id, student_code, first_name, last_name, email, phone, status
+      FROM students WHERE id = ?
+    `).get(studentId);
+
+    // Fetch active enrolled batch
+    const activeBatch = db.prepare(`
+      SELECT b.id, b.name as batch_name, b.monthly_fee, s.name as sport_name, br.name as branch_name
+      FROM student_batch_enrollments sbe
+      JOIN batches b ON b.id = sbe.batch_id
+      LEFT JOIN sports s ON s.id = b.sport_id
+      LEFT JOIN branches br ON br.id = b.branch_id
+      WHERE sbe.student_id = ? AND sbe.status = 'active'
+      LIMIT 1
+    `).get(studentId);
 
     const invoices = db.prepare(`
       SELECT sf.*, 
@@ -140,15 +168,80 @@ studentRouter.get('/fees', (req, res) => {
         )) FROM fee_payments fp WHERE fp.student_fee_id = sf.id) as payments_json
       FROM student_fees sf
       WHERE sf.student_id = ?
-      ORDER BY sf.due_date DESC
+      ORDER BY 
+        CASE WHEN sf.balance_amount > 0 THEN 0 ELSE 1 END,
+        sf.due_date DESC
     `).all(studentId);
 
-    const formatted = invoices.map(inv => ({
-      ...inv,
-      payments: inv.payments_json ? JSON.parse(inv.payments_json) : [],
-    }));
+    const today = new Date().toISOString().slice(0, 10);
 
-    res.json({ success: true, invoices: formatted });
+    let totalDue = 0;
+    let totalPaid = 0;
+    let overdueAmount = 0;
+    let overdueCount = 0;
+    let pendingCount = 0;
+    let nextDueDate = null;
+
+    const formatted = invoices.map(inv => {
+      const isDue = inv.balance_amount > 0;
+      const isOverdue = isDue && inv.due_date && inv.due_date < today;
+
+      if (isDue) {
+        totalDue += Number(inv.balance_amount);
+        pendingCount++;
+        if (isOverdue) {
+          overdueAmount += Number(inv.balance_amount);
+          overdueCount++;
+        }
+        if (!nextDueDate || inv.due_date < nextDueDate) {
+          nextDueDate = inv.due_date;
+        }
+      }
+      totalPaid += Number(inv.paid_amount || 0);
+
+      // Compute overdue days if past due
+      let daysDiff = 0;
+      if (inv.due_date) {
+        const d1 = new Date(inv.due_date);
+        const d2 = new Date(today);
+        daysDiff = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+      }
+
+      return {
+        ...inv,
+        is_due: isDue,
+        is_overdue: isOverdue,
+        overdue_days: daysDiff > 0 ? daysDiff : 0,
+        payments: inv.payments_json ? JSON.parse(inv.payments_json) : [],
+      };
+    });
+
+    const dueInvoices = formatted.filter(inv => inv.balance_amount > 0);
+    const paidInvoices = formatted.filter(inv => inv.balance_amount <= 0);
+
+    res.json({
+      success: true,
+      student: student ? {
+        id: student.id,
+        code: student.student_code,
+        name: `${student.first_name} ${student.last_name}`,
+        email: student.email,
+        phone: student.phone,
+      } : null,
+      summary: {
+        total_due: Math.round(totalDue),
+        total_paid: Math.round(totalPaid),
+        overdue_amount: Math.round(overdueAmount),
+        overdue_count: overdueCount,
+        pending_invoices_count: pendingCount,
+        next_due_date: nextDueDate,
+        is_all_clear: totalDue === 0,
+      },
+      active_batch: activeBatch || null,
+      invoices: formatted,
+      due_invoices: dueInvoices,
+      paid_invoices: paidInvoices,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
