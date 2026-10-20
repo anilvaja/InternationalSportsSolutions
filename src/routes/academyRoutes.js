@@ -2936,7 +2936,7 @@ academyRouter.get('/fees/timeline/:studentId', (req, res) => {
 academyRouter.get('/fees/calculate', (req, res) => {
   try {
     const db = req.tenantDb;
-    const { student_id, months_count = 1, start_date, discount_type = 'none', discount_value = 0 } = req.query;
+    const { student_id, months_count = 1, start_date, end_date, discount_type = 'none', discount_value = 0, override_ceiling } = req.query;
 
     if (!student_id) {
       return res.status(400).json({ success: false, error: 'student_id is required' });
@@ -2946,9 +2946,14 @@ academyRouter.get('/fees/calculate', (req, res) => {
     const timeline = FeeService.getStudentFeeTimeline(db, Number(student_id));
     const effectiveStart = start_date || timeline.nextStartDate;
 
-    const dates = FeeService.addCalendarMonths(effectiveStart, months);
+    const dateCalc = FeeService.addCalendarMonths(effectiveStart, months);
+    const periodEnd = end_date || dateCalc.periodEnd;
+    const nextInstallmentDate = end_date ? FeeService.addDays(end_date, 1) : dateCalc.nextInstallmentDate;
+
     const feeInfo = FeeService.getStudentMonthlyFee(db, Number(student_id), effectiveStart);
     const baseFee = FeeService.round2(feeInfo.monthlyFee * months);
+
+    const allowAdminOverride = override_ceiling === 'true' || override_ceiling === '1';
 
     const discount = FeeService.calculateDiscount({
       baseFee,
@@ -2956,6 +2961,7 @@ academyRouter.get('/fees/calculate', (req, res) => {
       discountType: discount_type,
       discountValue: Number(discount_value) || 0,
       db,
+      allowAdminOverride,
     });
 
     res.json({
@@ -2963,9 +2969,9 @@ academyRouter.get('/fees/calculate', (req, res) => {
       calculation: {
         studentId: Number(student_id),
         monthsCount: months,
-        periodStart: dates.periodStart,
-        periodEnd: dates.periodEnd,
-        nextInstallmentDate: dates.nextInstallmentDate,
+        periodStart: effectiveStart,
+        periodEnd,
+        nextInstallmentDate,
         monthlyRate: feeInfo.monthlyFee,
         rateSource: feeInfo.source,
         batchName: feeInfo.batchName || null,
@@ -2994,6 +3000,7 @@ academyRouter.post('/fees/collect', (req, res) => {
       student_id,
       months_count = 1,
       start_date,
+      end_date,
       payment_amount,
       payment_mode = 'cash',
       transaction_reference,
@@ -3002,16 +3009,21 @@ academyRouter.post('/fees/collect', (req, res) => {
       discount_value = 0,
       discount_reason,
       title,
+      override_ceiling = false,
     } = req.body;
 
     if (!student_id) {
       return res.status(400).json({ success: false, error: 'student_id is required' });
     }
 
+    const isAdmin = req.user && (req.user.isSuperAdmin || req.user.role === 'academy_admin');
+    const allowAdminOverride = Boolean(override_ceiling || isAdmin);
+
     const result = FeeService.collectFee(db, {
       student_id: Number(student_id),
       months_count: Number(months_count) || 1,
       start_date,
+      end_date: end_date || null,
       payment_amount,
       payment_mode,
       transaction_reference,
@@ -3021,6 +3033,7 @@ academyRouter.post('/fees/collect', (req, res) => {
       discount_reason,
       collected_by: req.user.userId,
       title,
+      allowAdminOverride,
     });
 
     res.status(201).json(result);

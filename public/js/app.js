@@ -8489,93 +8489,124 @@ const app = {
             <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 12px;">
               <div>Joining: <strong id="collect-info-joining">-</strong></div>
               <div>Paid Through: <strong id="collect-info-paidthrough">-</strong></div>
-              <div>Monthly Rate: <strong id="collect-info-rate">₹0</strong></div>
+              <div>Batch / Base Rate: <strong id="collect-info-rate">₹0 / month</strong></div>
             </div>
           </div>
 
-          <!-- 2. Months Count & Start Date -->
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
-            <div class="form-group" style="margin: 0;">
-              <label style="font-weight: 600;">Number of Months *</label>
-              <select id="collect-fee-months" class="form-select" style="width: 100%;" onchange="app.recalculateFeeLive()">
-                <option value="1" selected>1 month</option>
-                <option value="2">2 months</option>
-                <option value="3">3 months (Quarterly)</option>
-                <option value="4">4 months</option>
-                <option value="5">5 months</option>
-                <option value="6">6 months (Half Yearly)</option>
-                <option value="9">9 months</option>
-                <option value="12">12 months (Annual)</option>
-              </select>
+          <!-- 2. Fee Period & Duration (Interactive & Auto-Calculated) -->
+          <div style="background: var(--bg-surface, #f8fafc); border: 1px solid var(--border, #e2e8f0); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-heading); margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+              <span><i class="fa-solid fa-calendar-days" style="color: var(--primary);"></i> Fee Period & Duration</span>
+              <span id="collect-duration-tag" class="badge badge-primary" style="font-size: 11px;">1 Month Coverage</span>
             </div>
 
-            <div class="form-group" style="margin: 0;">
-              <label style="font-weight: 600;">Fee Period Starts *</label>
-              <input type="date" id="collect-fee-start-date" class="form-input" style="width: 100%;" onchange="app.recalculateFeeLive()">
-            </div>
-          </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 10px;">
+              <!-- Fee Period Starts (Date From) -->
+              <div class="form-group" style="margin: 0;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-heading); display: block; margin-bottom: 4px;">
+                  Date From (Starts) *
+                </label>
+                <input type="date" id="collect-fee-start-date" class="form-input" style="width: 100%; font-weight: 600;" required onchange="app.onFeeDateOrMonthsChange()">
+              </div>
 
-          <!-- Live Period & Installment Preview Banner -->
-          <div style="background: var(--bg-input); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px; font-size: 12px;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-              <span style="color: var(--text-muted);">Period Ends:</span>
-              <strong id="calc-period-end" style="color: var(--text-heading); font-family: monospace;">-</strong>
+              <!-- Number of Months -->
+              <div class="form-group" style="margin: 0;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-heading); display: block; margin-bottom: 4px;">
+                  Duration (Months) *
+                </label>
+                <input type="number" id="collect-fee-months" class="form-input" min="1" max="36" value="1" style="width: 100%; font-weight: 700; text-align: center;" required oninput="app.onFeeDateOrMonthsChange()">
+              </div>
+
+              <!-- Fee Period Ends (Date To) -->
+              <div class="form-group" style="margin: 0;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-heading); display: block; margin-bottom: 4px;">
+                  Date To (Ends) *
+                </label>
+                <input type="date" id="collect-fee-end-date" class="form-input" style="width: 100%; font-weight: 600; color: var(--primary);" required onchange="app.onFeeEndDateChange()">
+              </div>
             </div>
-            <div style="display: flex; justify-content: space-between;">
-              <span style="color: var(--text-muted);">Next Installment Starts:</span>
-              <strong id="calc-next-inst" style="color: #3b82f6; font-family: monospace;">-</strong>
+
+            <!-- Quick Month Selection Pills -->
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
+              <span style="font-size: 11px; color: var(--text-dim); margin-right: 2px;">Quick Months:</span>
+              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(1)">1 mo</button>
+              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(2)">2 mo</button>
+              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(3)">3 mo (Quarterly)</button>
+              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(4)">4 mo</button>
+              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(5)">5 mo</button>
+              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(6)">6 mo (Half-Yr)</button>
+              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(12)">12 mo (Annual)</button>
+            </div>
+
+            <!-- Auto-Calculated Next Installment Banner -->
+            <div style="background: var(--bg-card, #ffffff); border: 1px dashed var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+              <div>
+                <span style="color: var(--text-muted);">Next Fee Due Date:</span>
+                <strong id="calc-next-inst" style="color: #3b82f6; font-family: monospace; margin-left: 6px;">-</strong>
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted);">
+                <i class="fa-solid fa-wand-magic-sparkles" style="color: #f59e0b;"></i> Auto-calculated based on months
+              </div>
             </div>
           </div>
 
           <!-- Base Fee & Live Calculation Display -->
           <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px;">
             <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
-              <span>Base Fee:</span>
+              <span>Base Fee (Batch Rate × Months):</span>
               <strong id="calc-base-fee">₹0</strong>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #10b981;">
-              <span>Discount:</span>
+              <span>Manual Discount / Concession:</span>
               <strong id="calc-discount-display">&minus; ₹0</strong>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; border-top: 1px solid var(--border); padding-top: 6px;">
-              <span>Net Payable:</span>
+              <span>Net Payable Amount:</span>
               <span id="calc-net-payable" style="color: var(--primary);">₹0</span>
             </div>
           </div>
 
-          <!-- 3. Discount Settings (Capped at 20%) -->
+          <!-- 3. Direct Manual Discount Settings -->
           <div style="border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px; background: rgba(245, 158, 11, 0.02);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <label style="font-weight: 600; font-size: 13px; margin: 0;">
-                <i class="fa-solid fa-tags" style="color: #f59e0b;"></i> Discount Settings (Max 20%)
+              <label style="font-weight: 600; font-size: 13px; margin: 0; color: var(--text-heading);">
+                <i class="fa-solid fa-tags" style="color: #f59e0b;"></i> Manual Discount / Waiver
               </label>
-              <span id="calc-max-discount-badge" class="badge badge-secondary" style="font-size: 11px;">Max 20%: ₹0</span>
+              <span id="calc-max-discount-badge" class="badge badge-success" style="font-size: 11px;">Admin Discount</span>
             </div>
 
-            <div style="display: flex; gap: 16px; margin-bottom: 10px; font-size: 13px;">
+            <div style="display: flex; gap: 16px; margin-bottom: 10px; font-size: 13px; flex-wrap: wrap;">
               <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
                 <input type="radio" name="fee-disc-type" value="none" checked onchange="app.recalculateFeeLive()"> No Discount
               </label>
               <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                <input type="radio" name="fee-disc-type" value="percentage" onchange="app.recalculateFeeLive()"> Percentage (%)
+                <input type="radio" name="fee-disc-type" value="fixed" onchange="app.recalculateFeeLive()"> Fixed Amount (₹)
               </label>
               <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                <input type="radio" name="fee-disc-type" value="fixed" onchange="app.recalculateFeeLive()"> Fixed Amount (₹)
+                <input type="radio" name="fee-disc-type" value="percentage" onchange="app.recalculateFeeLive()"> Percentage (%)
               </label>
             </div>
 
             <div id="fee-disc-inputs" style="display: none;">
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
                 <div class="form-group" style="margin: 0;">
-                  <label id="fee-disc-val-label" style="font-size: 12px;">Discount Value</label>
-                  <input type="number" id="collect-fee-discount-val" class="form-input" style="width: 100%;" min="0" step="any" value="0" oninput="app.recalculateFeeLive()">
+                  <label id="fee-disc-val-label" style="font-size: 12px; font-weight: 600;">Discount Value (₹ or %)</label>
+                  <input type="number" id="collect-fee-discount-val" class="form-input" style="width: 100%; font-weight: 700; color: #10b981;" min="0" step="any" value="0" oninput="app.recalculateFeeLive()">
                 </div>
                 <div class="form-group" style="margin: 0;">
-                  <label style="font-size: 12px;">Discount Reason *</label>
-                  <input type="text" id="collect-fee-discount-reason" class="form-input" style="width: 100%;" placeholder="e.g. Sibling concession / Merit">
+                  <label style="font-size: 12px; font-weight: 600;">Discount Reason / Remarks</label>
+                  <input type="text" id="collect-fee-discount-reason" class="form-input" style="width: 100%;" placeholder="e.g. Sibling discount / Merit scholarship">
                 </div>
               </div>
-              <div id="calc-discount-error" style="color: #ef4444; font-size: 12px; font-weight: 600; display: none;"></div>
+              <!-- Quick Reason Tags -->
+              <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px;">
+                <span style="font-size: 11px; color: var(--text-dim);">Presets:</span>
+                <button type="button" class="badge badge-secondary" onclick="app.setDiscountReason('Sibling Concession')" style="cursor: pointer; border: none;">Sibling Concession</button>
+                <button type="button" class="badge badge-secondary" onclick="app.setDiscountReason('Merit / High Achiever')" style="cursor: pointer; border: none;">Merit Concession</button>
+                <button type="button" class="badge badge-secondary" onclick="app.setDiscountReason('Seasonal Festival Offer')" style="cursor: pointer; border: none;">Festival Offer</button>
+                <button type="button" class="badge badge-secondary" onclick="app.setDiscountReason('Management Waiver')" style="cursor: pointer; border: none;">Management Waiver</button>
+              </div>
+              <div id="calc-discount-error" style="color: #ef4444; font-size: 12px; font-weight: 600; display: none; margin-top: 6px;"></div>
             </div>
           </div>
 
@@ -8628,6 +8659,96 @@ const app = {
     }
   },
 
+  addCalendarMonths(startDateStr, monthsCount) {
+    if (!startDateStr) return null;
+    const count = Number(monthsCount) || 1;
+    const parts = startDateStr.split('-').map(Number);
+    if (parts.length !== 3) return null;
+    const startYear = parts[0];
+    const startMonth = parts[1];
+    const startDay = parts[2];
+
+    const totalMonths = (startYear * 12) + (startMonth - 1) + count;
+    const targetYear = Math.floor(totalMonths / 12);
+    const targetMonth = (totalMonths % 12) + 1;
+
+    // Days in target month
+    const maxDays = new Date(targetYear, targetMonth, 0).getDate();
+    const targetDay = Math.min(startDay, maxDays);
+
+    const pad = n => String(n).padStart(2, '0');
+    const nextInstallmentDate = `${targetYear}-${pad(targetMonth)}-${pad(targetDay)}`;
+
+    // Period end is 1 day before next installment
+    const nextObj = new Date(targetYear, targetMonth - 1, targetDay);
+    nextObj.setDate(nextObj.getDate() - 1);
+    const periodEnd = `${nextObj.getFullYear()}-${pad(nextObj.getMonth() + 1)}-${pad(nextObj.getDate())}`;
+
+    return {
+      periodStart: startDateStr,
+      periodEnd,
+      nextInstallmentDate
+    };
+  },
+
+  setFeeMonths(months) {
+    const input = document.getElementById('collect-fee-months');
+    if (input) {
+      input.value = months;
+      this.onFeeDateOrMonthsChange();
+    }
+  },
+
+  setDiscountReason(reason) {
+    const input = document.getElementById('collect-fee-discount-reason');
+    if (input) {
+      input.value = reason;
+    }
+  },
+
+  onFeeDateOrMonthsChange() {
+    const sInput = document.getElementById('collect-fee-start-date');
+    const mInput = document.getElementById('collect-fee-months');
+    const eInput = document.getElementById('collect-fee-end-date');
+    const nextInstEl = document.getElementById('calc-next-inst');
+    const durTag = document.getElementById('collect-duration-tag');
+
+    if (!sInput || !mInput) return;
+
+    const startDate = sInput.value;
+    const months = Math.max(1, parseInt(mInput.value, 10) || 1);
+
+    if (durTag) {
+      durTag.innerText = `${months} ${months === 1 ? 'Month' : 'Months'} Coverage`;
+    }
+
+    if (startDate) {
+      const dates = this.addCalendarMonths(startDate, months);
+      if (dates) {
+        if (eInput) eInput.value = dates.periodEnd;
+        if (nextInstEl) nextInstEl.innerText = dates.nextInstallmentDate;
+      }
+    }
+
+    this.recalculateFeeLive();
+  },
+
+  onFeeEndDateChange() {
+    const eInput = document.getElementById('collect-fee-end-date');
+    const nextInstEl = document.getElementById('calc-next-inst');
+
+    if (eInput && eInput.value) {
+      const endParts = eInput.value.split('-').map(Number);
+      const nextDate = new Date(Date.UTC(endParts[0], endParts[1] - 1, endParts[2]));
+      nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+      const pad = n => String(n).padStart(2, '0');
+      const nextStr = `${nextDate.getUTCFullYear()}-${pad(nextDate.getUTCMonth() + 1)}-${pad(nextDate.getUTCDate())}`;
+      if (nextInstEl) nextInstEl.innerText = nextStr;
+    }
+
+    this.recalculateFeeLive();
+  },
+
   async onCollectFeeStudentChange() {
     const studentSelect = document.getElementById('collect-fee-student');
     if (!studentSelect) return;
@@ -8641,11 +8762,23 @@ const app = {
 
         document.getElementById('collect-info-joining').innerText = t.joiningDate || '-';
         document.getElementById('collect-info-paidthrough').innerText = t.paidThroughDate || 'None';
-        document.getElementById('collect-info-rate').innerText = `₹${t.monthlyFee.toLocaleString()}`;
+        document.getElementById('collect-info-rate').innerText = `₹${t.monthlyFee.toLocaleString()} / month`;
 
         const startDateInput = document.getElementById('collect-fee-start-date');
+        const monthsInput = document.getElementById('collect-fee-months');
+        const endDateInput = document.getElementById('collect-fee-end-date');
+
+        const initialStart = t.nextStartDate || new Date().toISOString().split('T')[0];
         if (startDateInput) {
-          startDateInput.value = t.nextStartDate;
+          startDateInput.value = initialStart;
+        }
+
+        const initialMonths = monthsInput ? (parseInt(monthsInput.value, 10) || 1) : 1;
+        const initialDates = this.addCalendarMonths(initialStart, initialMonths);
+        if (initialDates && endDateInput) {
+          endDateInput.value = initialDates.periodEnd;
+          const nextInstEl = document.getElementById('calc-next-inst');
+          if (nextInstEl) nextInstEl.innerText = initialDates.nextInstallmentDate;
         }
 
         await this.recalculateFeeLive();
@@ -8657,19 +8790,21 @@ const app = {
 
   async recalculateFeeLive() {
     const studentSelect = document.getElementById('collect-fee-student');
-    const monthsSelect = document.getElementById('collect-fee-months');
+    const monthsInput = document.getElementById('collect-fee-months');
     const startDateInput = document.getElementById('collect-fee-start-date');
+    const endDateInput = document.getElementById('collect-fee-end-date');
     const discTypeRadio = document.querySelector('input[name="fee-disc-type"]:checked');
     const discValInput = document.getElementById('collect-fee-discount-val');
     const discInputsContainer = document.getElementById('fee-disc-inputs');
     const discError = document.getElementById('calc-discount-error');
     const submitBtn = document.getElementById('collect-fee-submit-btn');
 
-    if (!studentSelect || !monthsSelect || !startDateInput) return;
+    if (!studentSelect || !monthsInput || !startDateInput) return;
 
     const student_id = Number(studentSelect.value);
-    const months_count = Number(monthsSelect.value);
+    const months_count = Math.max(1, parseInt(monthsInput.value, 10) || 1);
     const start_date = startDateInput.value;
+    const end_date = endDateInput ? endDateInput.value : '';
     const discount_type = discTypeRadio ? discTypeRadio.value : 'none';
     const discount_value = Number(discValInput ? discValInput.value : 0) || 0;
 
@@ -8682,8 +8817,10 @@ const app = {
         student_id,
         months_count,
         start_date,
+        end_date,
         discount_type,
         discount_value,
+        override_ceiling: 'true',
       }).toString();
 
       const res = await this.apiRequest(`/api/academy/fees/calculate?${query}`);
@@ -8699,12 +8836,19 @@ const app = {
       const calc = res.calculation;
       this.lastCalculation = calc;
 
-      document.getElementById('calc-period-end').innerText = calc.periodEnd;
-      document.getElementById('calc-next-inst').innerText = calc.nextInstallmentDate;
-      document.getElementById('calc-base-fee').innerText = `₹${calc.baseFee.toLocaleString()} (${calc.monthsCount} × ₹${calc.monthlyRate.toLocaleString()})`;
+      if (endDateInput && !endDateInput.value) {
+        endDateInput.value = calc.periodEnd;
+      }
+      const nextInstEl = document.getElementById('calc-next-inst');
+      if (nextInstEl) nextInstEl.innerText = calc.nextInstallmentDate;
+
+      document.getElementById('calc-base-fee').innerText = `₹${calc.baseFee.toLocaleString()} (${calc.monthsCount} mo × ₹${calc.monthlyRate.toLocaleString()})`;
       document.getElementById('calc-discount-display').innerText = `− ₹${calc.totalDiscountAmount.toLocaleString()}`;
       document.getElementById('calc-net-payable').innerText = `₹${calc.payableAmount.toLocaleString()}`;
-      document.getElementById('calc-max-discount-badge').innerText = `Max 20%: ₹${calc.maxAllowedDiscount.toLocaleString()}`;
+      const discBadge = document.getElementById('calc-max-discount-badge');
+      if (discBadge) {
+        discBadge.innerText = calc.totalDiscountAmount > 0 ? `Saved ₹${calc.totalDiscountAmount.toLocaleString()}` : `Manual Concession`;
+      }
 
       // Set pay now default if empty or previously matched net payable
       const payNowInput = document.getElementById('collect-fee-pay-now');
@@ -8730,8 +8874,9 @@ const app = {
 
   async submitCollectFee() {
     const studentSelect = document.getElementById('collect-fee-student');
-    const monthsSelect = document.getElementById('collect-fee-months');
+    const monthsInput = document.getElementById('collect-fee-months');
     const startDateInput = document.getElementById('collect-fee-start-date');
+    const endDateInput = document.getElementById('collect-fee-end-date');
     const discTypeRadio = document.querySelector('input[name="fee-disc-type"]:checked');
     const discValInput = document.getElementById('collect-fee-discount-val');
     const discReasonInput = document.getElementById('collect-fee-discount-reason');
@@ -8741,8 +8886,9 @@ const app = {
     const notesInput = document.getElementById('collect-fee-notes');
 
     const student_id = Number(studentSelect.value);
-    const months_count = Number(monthsSelect.value);
+    const months_count = Math.max(1, parseInt(monthsInput.value, 10) || 1);
     const start_date = startDateInput.value;
+    const end_date = endDateInput ? endDateInput.value : null;
     const discount_type = discTypeRadio ? discTypeRadio.value : 'none';
     const discount_value = Number(discValInput ? discValInput.value : 0) || 0;
     const discount_reason = discReasonInput ? discReasonInput.value.trim() : '';
@@ -8752,7 +8898,7 @@ const app = {
     const notes = notesInput ? notesInput.value.trim() : '';
 
     if (discount_type !== 'none' && discount_value > 0 && !discount_reason) {
-      this.showToast('Please provide a reason for the discount', 'warning');
+      this.showToast('Please provide a reason or select a preset for the discount', 'warning');
       return;
     }
 

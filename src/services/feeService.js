@@ -278,10 +278,11 @@ export class FeeService {
   }
 
   /**
-   * Discount calculation with mandatory 20% ceiling validation.
+   * Discount calculation with mandatory ceiling validation.
+   * Standard accounts are capped at 20%; Admins can override up to 100% of base fee.
    * Never silently clamps invalid input; rejects with clear errors.
    */
-  static calculateDiscount({ baseFee, monthsCount, discountType = 'none', discountValue = 0, db = null }) {
+  static calculateDiscount({ baseFee, monthsCount, discountType = 'none', discountValue = 0, db = null, allowAdminOverride = false }) {
     const base = Number(baseFee);
     if (isNaN(base) || base <= 0) {
       throw new Error('Base fee must be a positive number');
@@ -319,13 +320,17 @@ export class FeeService {
     const percentageDiscountAmount = this.round2((combinedPercentage / 100) * base);
     const totalDiscountAmount = this.round2(percentageDiscountAmount + manualFixedAmount);
 
-    // Enforce 20% ceiling strictly
-    const maxAllowedDiscount = this.round2(base * 0.20);
+    // Enforce discount ceiling: Admin override allows up to 100% of base fee; standard ceiling is 20%
+    const maxAllowedDiscount = allowAdminOverride ? this.round2(base) : this.round2(base * 0.20);
 
     if (totalDiscountAmount > maxAllowedDiscount + 0.001) {
-      throw new Error(
-        `Total discount of ₹${totalDiscountAmount} exceeds the maximum permitted ceiling of 20% (₹${maxAllowedDiscount}) on base fee of ₹${base}`
-      );
+      if (allowAdminOverride) {
+        throw new Error(`Total discount of ₹${totalDiscountAmount} cannot exceed the total base fee of ₹${base}`);
+      } else {
+        throw new Error(
+          `Total discount of ₹${totalDiscountAmount} exceeds the maximum permitted ceiling of 20% (₹${maxAllowedDiscount}) on base fee of ₹${base}`
+        );
+      }
     }
 
     const payableAmount = this.round2(Math.max(0, base - totalDiscountAmount));
@@ -349,6 +354,7 @@ export class FeeService {
     student_id,
     months_count = 1,
     start_date,
+    end_date = null,
     payment_amount,
     payment_mode = 'cash',
     transaction_reference = null,
@@ -358,6 +364,7 @@ export class FeeService {
     discount_reason = null,
     collected_by = null,
     title = null,
+    allowAdminOverride = false,
   }) {
     const student = db.prepare('SELECT * FROM students WHERE id = ?').get(student_id);
     if (!student) {
@@ -365,8 +372,8 @@ export class FeeService {
     }
 
     const months = Number(months_count);
-    if (!Number.isInteger(months) || months < 1 || months > 12) {
-      throw new Error('months_count must be an integer between 1 and 12');
+    if (!Number.isInteger(months) || months < 1 || months > 36) {
+      throw new Error('months_count must be an integer between 1 and 36');
     }
 
     // Resolve timeline
@@ -375,8 +382,8 @@ export class FeeService {
 
     // Calculate dates
     const dateCalc = this.addCalendarMonths(periodStart, months);
-    const periodEnd = dateCalc.periodEnd;
-    const nextInstallmentDate = dateCalc.nextInstallmentDate;
+    const periodEnd = end_date || dateCalc.periodEnd;
+    const nextInstallmentDate = end_date ? this.addDays(end_date, 1) : dateCalc.nextInstallmentDate;
 
     // Monthly rate
     const feeInfo = this.getStudentMonthlyFee(db, student_id, periodStart);
@@ -390,6 +397,7 @@ export class FeeService {
       discountType: discount_type,
       discountValue: discount_value,
       db,
+      allowAdminOverride,
     });
 
     const netAmount = discountCalc.payableAmount;
