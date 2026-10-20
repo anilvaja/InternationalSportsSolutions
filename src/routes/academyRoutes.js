@@ -5025,19 +5025,37 @@ academyRouter.post('/compensation/preview', (req, res) => {
 
 /**
  * GET /api/academy/holidays
- * Returns list of academy & branch holidays
+ * Returns list of academy & branch holidays with optional filtering
  */
 academyRouter.get('/holidays', (req, res) => {
   try {
     const db = req.tenantDb;
-    const holidays = db.prepare(`
+    const { year, month, branch_id } = req.query;
+    let query = `
       SELECT h.*, b.name as branch_name 
       FROM academy_holidays h
       LEFT JOIN branches b ON h.branch_id = b.id
       WHERE h.academy_id = ?
-      ORDER BY h.holiday_date ASC
-    `).all(req.academy.id);
+    `;
+    const params = [req.academy.id];
 
+    if (branch_id) {
+      query += ` AND (h.branch_id IS NULL OR h.branch_id = ?)`;
+      params.push(Number(branch_id));
+    }
+    if (year) {
+      if (month) {
+        const padMonth = String(month).padStart(2, '0');
+        query += ` AND strftime('%Y-%m', h.holiday_date) = ?`;
+        params.push(`${year}-${padMonth}`);
+      } else {
+        query += ` AND strftime('%Y', h.holiday_date) = ?`;
+        params.push(String(year));
+      }
+    }
+    query += ` ORDER BY h.holiday_date ASC`;
+
+    const holidays = db.prepare(query).all(...params);
     res.json({ success: true, holidays });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -5046,7 +5064,7 @@ academyRouter.get('/holidays', (req, res) => {
 
 /**
  * POST /api/academy/holidays
- * Adds a holiday to the academy calendar
+ * Adds a holiday (or date range) to the academy calendar
  */
 academyRouter.post('/holidays', (req, res) => {
   try {
@@ -5055,21 +5073,145 @@ academyRouter.post('/holidays', (req, res) => {
       return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
     }
 
-    const { holiday_date, name, branch_id, is_paid = 1 } = req.body;
-    if (!holiday_date || !name) {
-      return res.status(400).json({ success: false, error: 'holiday_date and name are required' });
+    const { holiday_date, start_date, end_date, name, branch_id, is_paid = 1, description } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Holiday name is required' });
+    }
+
+    // Support single holiday_date OR start_date & end_date range
+    const dates = [];
+    if (start_date && end_date) {
+      const cur = new Date(start_date + 'T00:00:00');
+      const end = new Date(end_date + 'T00:00:00');
+      if (cur > end) {
+        return res.status(400).json({ success: false, error: 'End Date cannot be before Start Date' });
+      }
+      while (cur <= end) {
+        dates.push(cur.toISOString().split('T')[0]);
+        cur.setDate(cur.getDate() + 1);
+      }
+    } else if (holiday_date) {
+      dates.push(holiday_date);
+    } else {
+      return res.status(400).json({ success: false, error: 'holiday_date or start_date & end_date are required' });
     }
 
     const ins = db.prepare(`
-      INSERT INTO academy_holidays (academy_id, branch_id, holiday_date, name, is_paid)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(req.academy.id, branch_id || null, holiday_date, name.trim(), is_paid ? 1 : 0);
+      INSERT INTO academy_holidays (academy_id, branch_id, holiday_date, name, is_paid, description)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    let lastId = null;
+    const insertMany = db.transaction((dateList) => {
+      for (const d of dateList) {
+        const result = ins.run(req.academy.id, branch_id || null, d, name.trim(), is_paid ? 1 : 0, description || null);
+        lastId = result.lastInsertRowid;
+      }
+    });
+
+    insertMany(dates);
 
     res.status(201).json({
       success: true,
-      message: `Holiday '${name}' added successfully`,
-      holidayId: ins.lastInsertRowid,
+      message: dates.length > 1
+        ? `Added ${dates.length} holiday days for '${name.trim()}'`
+        : `Holiday '${name.trim()}' added successfully`,
+      holidayId: lastId,
+      daysCount: dates.length,
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/holidays/batch
+ * Batch populates standard or multiple holidays in one transaction
+ */
+academyRouter.post('/holidays/batch', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
+    }
+
+    const { holidays } = req.body;
+    if (!Array.isArray(holidays) || holidays.length === 0) {
+      return res.status(400).json({ success: false, error: 'Array of holidays is required' });
+    }
+
+    const ins = db.prepare(`
+      INSERT INTO academy_holidays (academy_id, branch_id, holiday_date, name, is_paid, description)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    let count = 0;
+    const insertBatch = db.transaction((list) => {
+      for (const h of list) {
+        if (!h.holiday_date || !h.name) continue;
+        const branchVal = h.branch_id || null;
+        const exists = db.prepare(`
+          SELECT id FROM academy_holidays 
+          WHERE academy_id = ? AND holiday_date = ? AND name = ?
+        `).get(req.academy.id, h.holiday_date, h.name.trim());
+
+        if (!exists) {
+          ins.run(
+            req.academy.id,
+            branchVal,
+            h.holiday_date,
+            h.name.trim(),
+            h.is_paid !== undefined ? (h.is_paid ? 1 : 0) : 1,
+            h.description || null
+          );
+          count++;
+        }
+      }
+    });
+
+    insertBatch(holidays);
+
+    res.json({
+      success: true,
+      message: `Successfully populated ${count} holiday(s)`,
+      count
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/holidays/:id
+ * Updates an existing holiday
+ */
+academyRouter.put('/holidays/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
+    }
+
+    const { holiday_date, name, branch_id, is_paid = 1, description } = req.body;
+    db.prepare(`
+      UPDATE academy_holidays 
+      SET holiday_date = COALESCE(?, holiday_date),
+          name = COALESCE(?, name),
+          branch_id = ?,
+          is_paid = ?,
+          description = ?
+      WHERE id = ? AND academy_id = ?
+    `).run(
+      holiday_date || null,
+      name ? name.trim() : null,
+      branch_id !== undefined ? (branch_id || null) : null,
+      is_paid ? 1 : 0,
+      description !== undefined ? description : null,
+      Number(req.params.id),
+      req.academy.id
+    );
+
+    res.json({ success: true, message: 'Holiday updated successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

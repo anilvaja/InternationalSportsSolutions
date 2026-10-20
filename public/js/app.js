@@ -761,6 +761,7 @@ const app = {
     'sports': '/academy/sports',
     'fees': '/academy/fees',
     'leaves': '/academy/leaves',
+    'holidays': '/academy/holidays',
     'facilities': '/academy/facilities',
     'audit-logs': '/academy/audit-logs',
     'payroll': '/academy/payroll',
@@ -796,6 +797,7 @@ const app = {
     'syllabus': 'Sports Syllabus & Learning Progression',
     'fees': 'Fees & Invoices',
     'leaves': 'Leaves Management',
+    'holidays': 'Academy Holiday Calendar',
     'facilities': 'Facilities & Equipment',
     'audit-logs': 'Tenant Audit Log',
     'payroll': 'Staff Payroll & Finalization',
@@ -854,6 +856,8 @@ const app = {
       '/academy/fees': 'fees',
       '/academy/fee-collections': 'fees',
       '/academy/leaves': 'leaves',
+      '/academy/holidays': 'holidays',
+      '/academy/calendar': 'holidays',
       '/academy/facilities': 'facilities',
       '/academy/audit-logs': 'audit-logs',
       '/academy/payroll': 'payroll',
@@ -895,7 +899,7 @@ const app = {
     }
     const academyTabs = [
       'overview', 'inquiries', 'branches', 'students', 'coaches', 'batches', 'attendance', 
-      'sports', 'syllabus', 'fees', 'leaves', 'facilities', 'audit-logs', 
+      'sports', 'syllabus', 'fees', 'leaves', 'holidays', 'facilities', 'audit-logs', 
       'payroll', 'my-salary', 'approvals', 'employee-map', 'policy-settings', 'events', 'roles-permissions'
     ];
     if (academyTabs.includes(tab)) return true;
@@ -997,6 +1001,9 @@ const app = {
         </a>
         <a href="${this.getPathForTab('leaves')}" class="nav-item ${this.currentTab === 'leaves' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('leaves')">
           <i class="fa-solid fa-calendar-check"></i> Leaves Management
+        </a>
+        <a href="${this.getPathForTab('holidays')}" class="nav-item ${this.currentTab === 'holidays' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('holidays')">
+          <i class="fa-solid fa-calendar-star" style="color: #f59e0b;"></i> Holiday Calendar
         </a>
         <a href="${this.getPathForTab('approvals')}" class="nav-item ${this.currentTab === 'approvals' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('approvals')">
           <i class="fa-solid fa-check-to-slot"></i> Approvals Inbox
@@ -1140,6 +1147,9 @@ const app = {
         break;
       case 'leaves':
         this.renderLeaves();
+        break;
+      case 'holidays':
+        this.renderHolidays();
         break;
       case 'facilities':
         this.renderFacilities();
@@ -12215,9 +12225,14 @@ const app = {
       <div class="content-card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <h2 class="card-title"><i class="fa-solid fa-calendar-check"></i> Leave Requests (${totalCount})</h2>
-          <button class="btn btn-primary btn-sm" onclick="app.showApplyLeaveModal()" style="display: inline-flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-plus"></i> Apply / Record Leave
-          </button>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('holidays')" style="display: inline-flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-calendar-star" style="color: #f59e0b;"></i> Holiday Calendar
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="app.showApplyLeaveModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-plus"></i> Apply / Record Leave
+            </button>
+          </div>
         </div>
 
         <!-- Universal Filter Bar -->
@@ -12577,6 +12592,697 @@ const app = {
       this.renderLeaves();
     } else {
       this.showToast(res.error || 'Failed to submit leave request', 'danger');
+    }
+  },
+
+  async deleteLeave(id) {
+    if (!confirm('Are you sure you want to delete this leave request record?')) return;
+    const res = await this.apiRequest(`/api/academy/leaves/${id}`, { method: 'DELETE' });
+    if (res.success) {
+      this.showToast('Leave request removed successfully', 'success');
+      this.renderLeaves();
+    } else {
+      this.showToast(res.error || 'Failed to remove leave request', 'danger');
+    }
+  },
+
+  // ==========================================
+  // ACADEMY HOLIDAY CALENDAR CONFIGURATION
+  // ==========================================
+
+  holidayCurrentYear: new Date().getFullYear(),
+  holidayCurrentMonth: new Date().getMonth() + 1,
+  holidayViewMode: 'calendar', // 'calendar' or 'list'
+  holidayBranchFilter: '',
+  holidaysList: [],
+
+  async renderHolidays() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    const curYear = this.holidayCurrentYear || new Date().getFullYear();
+    const curMonth = this.holidayCurrentMonth || (new Date().getMonth() + 1);
+
+    const [holidayRes, branches] = await Promise.all([
+      this.apiRequest(`/api/academy/holidays?year=${curYear}`),
+      this.getCachedBranches().catch(() => [])
+    ]);
+
+    const allHolidays = (holidayRes && holidayRes.holidays) || [];
+    this.holidaysList = allHolidays;
+    this.branchesList = branches || [];
+
+    // Filter by branch if active
+    let filteredHolidays = allHolidays;
+    if (this.holidayBranchFilter) {
+      filteredHolidays = allHolidays.filter(h => !h.branch_id || String(h.branch_id) === String(this.holidayBranchFilter));
+    }
+
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const monthName = monthNames[curMonth - 1];
+
+    // Compute month-specific holidays
+    const padMonth = String(curMonth).padStart(2, '0');
+    const monthPrefix = `${curYear}-${padMonth}`;
+    const monthHolidays = filteredHolidays.filter(h => h.holiday_date && h.holiday_date.startsWith(monthPrefix));
+    const paidCount = filteredHolidays.filter(h => h.is_paid).length;
+    const unpaidCount = filteredHolidays.length - paidCount;
+
+    content.innerHTML = `
+      <div class="content-card">
+        <!-- HEADER -->
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; display: flex; align-items: center; justify-content: center; font-size: 18px;">
+                <i class="fa-solid fa-calendar-star"></i>
+              </div>
+              <div>
+                <h2 class="card-title" style="margin: 0;">Academy Holiday Calendar (${curYear})</h2>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Multi-Branch Operational Off-Days & Festival Schedule</div>
+              </div>
+            </div>
+            <p style="font-size: 13px; color: var(--text-muted); margin: 6px 0 0 0;">
+              Configure official academy closures, festival breaks, and branch holidays. Integrated into student attendance, coach schedules, and payroll.
+            </p>
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <button class="btn btn-secondary btn-sm" onclick="app.showQuickPopulateHolidaysModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-bolt" style="color: #f59e0b;"></i> Quick Populate National Holidays
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="app.showAddHolidayModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-plus"></i> Add Holiday
+            </button>
+          </div>
+        </div>
+
+        <!-- STATS & KPI STRIP -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 16px 20px;">
+          <div style="background: var(--bg-surface, #f8fafc); border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 12px 16px;">
+            <div style="font-size: 11px; text-transform: uppercase; font-weight: 600; color: var(--text-muted);">Total Holidays (${curYear})</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--text-heading); margin-top: 4px;">${filteredHolidays.length} days</div>
+          </div>
+          <div style="background: var(--bg-surface, #f8fafc); border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 12px 16px;">
+            <div style="font-size: 11px; text-transform: uppercase; font-weight: 600; color: #10b981;">Paid Holidays</div>
+            <div style="font-size: 22px; font-weight: 800; color: #10b981; margin-top: 4px;">${paidCount} days</div>
+          </div>
+          <div style="background: var(--bg-surface, #f8fafc); border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 12px 16px;">
+            <div style="font-size: 11px; text-transform: uppercase; font-weight: 600; color: var(--text-muted);">Holidays in ${monthName}</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--primary); margin-top: 4px;">${monthHolidays.length} days</div>
+          </div>
+          <div style="background: var(--bg-surface, #f8fafc); border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 12px 16px;">
+            <div style="font-size: 11px; text-transform: uppercase; font-weight: 600; color: var(--text-muted);">Applicable Scope</div>
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-heading); margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${this.holidayBranchFilter ? (this.branchesList.find(b => String(b.id) === String(this.holidayBranchFilter))?.name || 'Selected Branch') : 'All Branches (Academy-wide)'}
+            </div>
+          </div>
+        </div>
+
+        <!-- CONTROLS & NAVIGATION BAR -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 20px 16px 20px; padding-top: 14px; border-top: 1px solid var(--border);">
+          <!-- Month & Year Selector -->
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <div class="btn-group" style="display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;">
+              <button class="btn btn-sm btn-secondary" onclick="app.changeHolidayMonth(-1)" title="Previous Month" style="border-radius: 0; border: none; padding: 5px 10px;">
+                <i class="fa-solid fa-chevron-left"></i>
+              </button>
+              <button class="btn btn-sm btn-secondary" onclick="app.setHolidayMonthToCurrent()" title="Current Month" style="border-radius: 0; border-left: 1px solid var(--border); border-right: 1px solid var(--border); padding: 5px 12px; font-size: 12px;">
+                Today
+              </button>
+              <button class="btn btn-sm btn-secondary" onclick="app.changeHolidayMonth(1)" title="Next Month" style="border-radius: 0; border: none; padding: 5px 10px;">
+                <i class="fa-solid fa-chevron-right"></i>
+              </button>
+            </div>
+
+            <!-- Month Select -->
+            <select class="form-select" style="width: auto; padding: 5px 10px; font-weight: 600; font-size: 13px;" onchange="app.selectHolidayMonth(Number(this.value))">
+              ${monthNames.map((m, idx) => `
+                <option value="${idx + 1}" ${idx + 1 === curMonth ? 'selected' : ''}>${m}</option>
+              `).join('')}
+            </select>
+
+            <!-- Year Select -->
+            <select class="form-select" style="width: auto; padding: 5px 10px; font-weight: 600; font-size: 13px;" onchange="app.selectHolidayYear(Number(this.value))">
+              ${[curYear - 1, curYear, curYear + 1, curYear + 2].map(y => `
+                <option value="${y}" ${y === curYear ? 'selected' : ''}>${y}</option>
+              `).join('')}
+            </select>
+          </div>
+
+          <!-- Branch Filter & View Toggle -->
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <select class="form-select" style="width: auto; padding: 5px 10px; font-size: 13px;" onchange="app.filterHolidaysByBranch(this.value)">
+              <option value="" ${!this.holidayBranchFilter ? 'selected' : ''}>All Branches (Academy-wide)</option>
+              ${this.branchesList.map(b => `
+                <option value="${b.id}" ${String(this.holidayBranchFilter) === String(b.id) ? 'selected' : ''}>${b.name}</option>
+              `).join('')}
+            </select>
+
+            <div class="btn-group" style="display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;">
+              <button class="btn btn-sm ${this.holidayViewMode === 'calendar' ? 'btn-primary' : 'btn-secondary'}" onclick="app.setHolidayView('calendar')" style="border-radius: 0; border: none; padding: 5px 12px;">
+                <i class="fa-solid fa-calendar-days"></i> Calendar Grid
+              </button>
+              <button class="btn btn-sm ${this.holidayViewMode === 'list' ? 'btn-primary' : 'btn-secondary'}" onclick="app.setHolidayView('list')" style="border-radius: 0; border: none; padding: 5px 12px;">
+                <i class="fa-solid fa-list"></i> List View (${filteredHolidays.length})
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MAIN BODY -->
+        <div style="padding: 0 20px 20px 20px;">
+          ${this.holidayViewMode === 'calendar' ? this.renderHolidayMonthCalendar(curYear, curMonth, monthHolidays) : this.renderHolidayListView(filteredHolidays)}
+        </div>
+      </div>
+    `;
+  },
+
+  renderHolidayMonthCalendar(year, month, monthHolidays) {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const firstDate = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00`);
+    const jsDay = firstDate.getDay();
+    const prefixBlanks = jsDay === 0 ? 6 : jsDay - 1; // Mon = 0, Sun = 6
+
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    let cellsHtml = '';
+    for (let i = 0; i < prefixBlanks; i++) {
+      cellsHtml += '<div class="calendar-day-cell empty-pad"></div>';
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const padD = String(d).padStart(2, '0');
+      const padM = String(month).padStart(2, '0');
+      const dateStr = `${year}-${padM}-${padD}`;
+      const isToday = dateStr === todayStr;
+
+      const dayHolidays = monthHolidays.filter(h => h.holiday_date === dateStr);
+      const hasHoliday = dayHolidays.length > 0;
+
+      const dateObj = new Date(dateStr + 'T00:00:00');
+      const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+
+      let holidayBadges = '';
+      if (hasHoliday) {
+        holidayBadges = dayHolidays.map(h => `
+          <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.05)); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 6px; padding: 5px 8px; margin-top: 4px; font-size: 11px; position: relative;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 4px;">
+              <span style="font-weight: 700; color: #b45309; line-height: 1.2;">
+                <i class="fa-solid fa-star" style="font-size: 9px; margin-right: 3px;"></i>${this.escapeHtml(h.name)}
+              </span>
+              <button onclick="event.stopPropagation(); app.deleteHoliday(${h.id}, '${this.escapeHtml(h.name)}')" title="Delete Holiday" style="border: none; background: transparent; color: #ef4444; cursor: pointer; padding: 0; font-size: 11px; opacity: 0.7;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+            </div>
+            <div style="display: flex; gap: 4px; align-items: center; margin-top: 3px; flex-wrap: wrap;">
+              <span style="font-size: 9px; background: ${h.is_paid ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.2)'}; color: ${h.is_paid ? '#059669' : '#64748b'}; padding: 1px 4px; border-radius: 4px; font-weight: 600;">
+                ${h.is_paid ? 'Paid' : 'Unpaid'}
+              </span>
+              <span style="font-size: 9px; color: var(--text-muted); font-weight: 500;">
+                ${h.branch_name || 'All Branches'}
+              </span>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      cellsHtml += `
+        <div class="calendar-day-cell ${hasHoliday ? 'status-holiday' : ''} ${isToday ? 'is-today' : ''}"
+             onclick="app.showAddHolidayModal('${dateStr}')"
+             title="${hasHoliday ? dayHolidays.map(h => h.name).join(', ') : `Click to add holiday on ${dateStr}`}"
+             style="min-height: 105px; cursor: pointer;">
+          <div class="calendar-cell-top">
+            <span class="calendar-cell-num ${isToday ? 'today-pill' : ''}" style="font-weight: 700;">
+              ${d} <span style="font-size: 10px; font-weight: 400; color: var(--text-dim); margin-left: 2px;">${dayOfWeek}</span>
+            </span>
+            ${hasHoliday ? `
+              <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #d97706; font-size: 9px; padding: 2px 5px; font-weight: 700;">
+                Holiday
+              </span>
+            ` : `
+              <span class="add-holiday-hint" style="font-size: 10px; color: var(--text-dim); opacity: 0.4;">
+                <i class="fa-solid fa-plus"></i>
+              </span>
+            `}
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; justify-content: flex-start;">
+            ${holidayBadges}
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div>
+        <div class="salary-calendar-grid" style="margin-bottom: 6px;">
+          <div class="calendar-day-header">Mon</div>
+          <div class="calendar-day-header">Tue</div>
+          <div class="calendar-day-header">Wed</div>
+          <div class="calendar-day-header">Thu</div>
+          <div class="calendar-day-header">Fri</div>
+          <div class="calendar-day-header">Sat</div>
+          <div class="calendar-day-header">Sun</div>
+        </div>
+        <div class="salary-calendar-grid">
+          ${cellsHtml}
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-circle-info" style="color: var(--primary);"></i>
+          <span>Click on any date box to schedule or record an academy holiday for that day.</span>
+        </div>
+      </div>
+    `;
+  },
+
+  renderHolidayListView(holidays) {
+    if (!holidays || holidays.length === 0) {
+      return `
+        <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+          <i class="fa-solid fa-calendar-star" style="font-size: 32px; color: #94a3b8; margin-bottom: 10px;"></i>
+          <p style="font-size: 14px; margin: 0;">No holidays configured for this period.</p>
+          <button class="btn btn-primary btn-sm" onclick="app.showAddHolidayModal()" style="margin-top: 12px;">
+            <i class="fa-solid fa-plus"></i> Add First Holiday
+          </button>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Day</th>
+              <th>Holiday Name</th>
+              <th>Applicable Branch</th>
+              <th>Compensation Status</th>
+              <th>Notes / Remarks</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${holidays.map(h => {
+              const d = new Date(h.holiday_date + 'T00:00:00');
+              const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+              const dateFmt = d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+              return `
+                <tr>
+                  <td><strong>${dateFmt}</strong> <span style="font-size: 11px; color: var(--text-muted);">(${h.holiday_date})</span></td>
+                  <td><span class="badge badge-secondary">${dayName}</span></td>
+                  <td>
+                    <span style="font-weight: 700; color: var(--text-heading); display: inline-flex; align-items: center; gap: 6px;">
+                      <i class="fa-solid fa-calendar-star" style="color: #f59e0b;"></i> ${this.escapeHtml(h.name)}
+                    </span>
+                  </td>
+                  <td>${h.branch_name ? `<span class="badge badge-info">${this.escapeHtml(h.branch_name)}</span>` : '<span class="badge badge-primary">All Branches</span>'}</td>
+                  <td>
+                    <span class="badge ${h.is_paid ? 'badge-success' : 'badge-secondary'}">
+                      <i class="fa-solid ${h.is_paid ? 'fa-check' : 'fa-minus'}"></i> ${h.is_paid ? 'Paid Holiday' : 'Unpaid'}
+                    </span>
+                  </td>
+                  <td style="font-size: 12px; color: var(--text-muted);">${h.description ? this.escapeHtml(h.description) : '<span style="color: var(--text-dim); font-style: italic;">No extra notes</span>'}</td>
+                  <td style="text-align: right;">
+                    <button class="btn btn-danger btn-sm" onclick="app.deleteHoliday(${h.id}, '${this.escapeHtml(h.name)}')" title="Delete Holiday" style="padding: 4px 8px;">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  changeHolidayMonth(offset) {
+    let m = (this.holidayCurrentMonth || (new Date().getMonth() + 1)) + offset;
+    let y = this.holidayCurrentYear || new Date().getFullYear();
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    } else if (m < 1) {
+      m = 12;
+      y -= 1;
+    }
+    this.holidayCurrentMonth = m;
+    this.holidayCurrentYear = y;
+    this.renderHolidays();
+  },
+
+  selectHolidayMonth(m) {
+    this.holidayCurrentMonth = m;
+    this.renderHolidays();
+  },
+
+  selectHolidayYear(y) {
+    this.holidayCurrentYear = y;
+    this.renderHolidays();
+  },
+
+  setHolidayMonthToCurrent() {
+    const now = new Date();
+    this.holidayCurrentYear = now.getFullYear();
+    this.holidayCurrentMonth = now.getMonth() + 1;
+    this.renderHolidays();
+  },
+
+  filterHolidaysByBranch(branchId) {
+    this.holidayBranchFilter = branchId || '';
+    this.renderHolidays();
+  },
+
+  setHolidayView(mode) {
+    this.holidayViewMode = mode;
+    this.renderHolidays();
+  },
+
+  showAddHolidayModal(prefillDate) {
+    const defaultDate = prefillDate || new Date().toISOString().split('T')[0];
+    const branches = this.branchesList || [];
+
+    this.openModal(
+      `<i class="fa-solid fa-calendar-star" style="color: #f59e0b;"></i> Schedule Academy Holiday`,
+      `
+        <form id="add-holiday-form" onsubmit="event.preventDefault(); app.saveHoliday();">
+          <!-- Single vs Multi-Day Selection -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-heading);">
+              Holiday Duration Format:
+            </label>
+            <div style="display: flex; gap: 16px; margin-bottom: 6px;">
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                <input type="radio" name="holiday_date_mode" value="single" checked onchange="app.toggleHolidayDateMode('single')">
+                <span>Single Day</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                <input type="radio" name="holiday_date_mode" value="range" onchange="app.toggleHolidayDateMode('range')">
+                <span>Multi-Day Vacation / Break</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Single Date Input -->
+          <div id="holiday-single-date-wrap" class="form-group" style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+              Holiday Date <span style="color: #dc2626;">*</span>
+            </label>
+            <input type="date" id="holiday-date-input" class="form-control" value="${defaultDate}" required style="width: 100%;">
+          </div>
+
+          <!-- Date Range Inputs (hidden initially) -->
+          <div id="holiday-range-date-wrap" style="display: none; margin-bottom: 14px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group">
+                <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+                  Start Date <span style="color: #dc2626;">*</span>
+                </label>
+                <input type="date" id="holiday-start-date" class="form-control" value="${defaultDate}" onchange="app.updateHolidayDaysCount()">
+              </div>
+              <div class="form-group">
+                <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+                  End Date <span style="color: #dc2626;">*</span>
+                </label>
+                <input type="date" id="holiday-end-date" class="form-control" value="${defaultDate}" onchange="app.updateHolidayDaysCount()">
+              </div>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; display: flex; align-items: center; gap: 6px;">
+              <i class="fa-regular fa-clock" style="color: #f59e0b;"></i>
+              <span>Total Days: <strong id="holiday-days-count" style="color: #f59e0b;">1 day</strong></span>
+            </div>
+          </div>
+
+          <!-- Holiday Name -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+              Holiday Name / Title <span style="color: #dc2626;">*</span>
+            </label>
+            <input type="text" id="holiday-name-input" class="form-control" placeholder="e.g. Diwali Vacation, Independence Day, Annual Academy Break" required style="width: 100%;">
+            
+            <!-- Quick Suggestion Pills -->
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;">
+              <span style="font-size: 11px; color: var(--text-dim); margin-right: 2px;">Quick Names:</span>
+              <button type="button" class="badge badge-secondary" onclick="document.getElementById('holiday-name-input').value='Diwali Vacation'" style="cursor: pointer; border: none;">Diwali Break</button>
+              <button type="button" class="badge badge-secondary" onclick="document.getElementById('holiday-name-input').value='Christmas & Winter Break'" style="cursor: pointer; border: none;">Winter Break</button>
+              <button type="button" class="badge badge-secondary" onclick="document.getElementById('holiday-name-input').value='Annual Sports Day Break'" style="cursor: pointer; border: none;">Academy Break</button>
+              <button type="button" class="badge badge-secondary" onclick="document.getElementById('holiday-name-input').value='Summer Training Break'" style="cursor: pointer; border: none;">Summer Break</button>
+            </div>
+          </div>
+
+          <!-- Branch Scope -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+              Applicable Branch:
+            </label>
+            <select id="holiday-branch-input" class="form-control" style="width: 100%;">
+              <option value="">All Branches (Academy-wide Closure)</option>
+              ${branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('')}
+            </select>
+          </div>
+
+          <!-- Paid vs Unpaid Holiday -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+              Compensation & Attendance Impact:
+            </label>
+            <select id="holiday-is-paid-input" class="form-control" style="width: 100%;">
+              <option value="1" selected>Paid Holiday (Standard — Coaches & staff receive full pay; student attendance protected)</option>
+              <option value="0">Unpaid Holiday / Academy Shutdown (No salary compensation)</option>
+            </select>
+          </div>
+
+          <!-- Notes / Description -->
+          <div class="form-group" style="margin-bottom: 6px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+              Description / Notes (Optional):
+            </label>
+            <textarea id="holiday-desc-input" class="form-control" rows="2" placeholder="Extra remarks or circular details for coaches and students..." style="width: 100%;"></textarea>
+          </div>
+        </form>
+      `,
+      `
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="app.saveHoliday()" style="display: inline-flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-check"></i> Save Holiday to Calendar
+        </button>
+      `
+    );
+  },
+
+  toggleHolidayDateMode(mode) {
+    const singleWrap = document.getElementById('holiday-single-date-wrap');
+    const rangeWrap = document.getElementById('holiday-range-date-wrap');
+    const dateInput = document.getElementById('holiday-date-input');
+
+    if (mode === 'range') {
+      if (singleWrap) singleWrap.style.display = 'none';
+      if (rangeWrap) rangeWrap.style.display = 'block';
+      if (dateInput) dateInput.removeAttribute('required');
+      this.updateHolidayDaysCount();
+    } else {
+      if (singleWrap) singleWrap.style.display = 'block';
+      if (rangeWrap) rangeWrap.style.display = 'none';
+      if (dateInput) dateInput.setAttribute('required', 'required');
+    }
+  },
+
+  updateHolidayDaysCount() {
+    const sStr = document.getElementById('holiday-start-date')?.value;
+    const eStr = document.getElementById('holiday-end-date')?.value;
+    const countEl = document.getElementById('holiday-days-count');
+    if (!sStr || !eStr || !countEl) return;
+
+    const s = new Date(sStr);
+    const e = new Date(eStr);
+    const diffTime = e - s;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    if (diffDays <= 0) {
+      countEl.textContent = 'Invalid (End date before Start date)';
+      countEl.style.color = '#dc2626';
+    } else {
+      countEl.textContent = `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+      countEl.style.color = '#f59e0b';
+    }
+  },
+
+  async saveHoliday() {
+    const mode = document.querySelector('input[name="holiday_date_mode"]:checked')?.value || 'single';
+    const name = document.getElementById('holiday-name-input')?.value?.trim();
+    const branchId = document.getElementById('holiday-branch-input')?.value;
+    const isPaid = Number(document.getElementById('holiday-is-paid-input')?.value || 1);
+    const description = document.getElementById('holiday-desc-input')?.value?.trim();
+
+    if (!name) {
+      this.showToast('Please provide a holiday name', 'warning');
+      return;
+    }
+
+    const payload = {
+      name,
+      branch_id: branchId ? Number(branchId) : null,
+      is_paid: isPaid,
+      description: description || null
+    };
+
+    if (mode === 'range') {
+      const startDate = document.getElementById('holiday-start-date')?.value;
+      const endDate = document.getElementById('holiday-end-date')?.value;
+      if (!startDate || !endDate) {
+        this.showToast('Please specify both Start Date and End Date', 'warning');
+        return;
+      }
+      if (new Date(endDate) < new Date(startDate)) {
+        this.showToast('End date cannot be earlier than start date', 'warning');
+        return;
+      }
+      payload.start_date = startDate;
+      payload.end_date = endDate;
+    } else {
+      const dateVal = document.getElementById('holiday-date-input')?.value;
+      if (!dateVal) {
+        this.showToast('Please select a holiday date', 'warning');
+        return;
+      }
+      payload.holiday_date = dateVal;
+    }
+
+    const res = await this.apiRequest('/api/academy/holidays', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast(res.message || 'Holiday saved successfully', 'success');
+      this.renderHolidays();
+    } else {
+      this.showToast(res.error || 'Failed to save holiday', 'danger');
+    }
+  },
+
+  async deleteHoliday(id, name) {
+    if (!confirm(`Are you sure you want to remove '${name}' from academy holidays?`)) return;
+
+    const res = await this.apiRequest(`/api/academy/holidays/${id}`, {
+      method: 'DELETE'
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Holiday removed successfully', 'success');
+      this.renderHolidays();
+    } else {
+      this.showToast(res.error || 'Failed to remove holiday', 'danger');
+    }
+  },
+
+  showQuickPopulateHolidaysModal() {
+    const curYear = this.holidayCurrentYear || new Date().getFullYear();
+
+    const standardHolidays = [
+      { date: `${curYear}-01-01`, name: "New Year's Day", paid: 1, desc: 'Public Holiday' },
+      { date: `${curYear}-01-26`, name: "Republic Day", paid: 1, desc: 'National Holiday' },
+      { date: `${curYear}-03-08`, name: "Maha Shivratri", paid: 1, desc: 'Festival Holiday' },
+      { date: `${curYear}-03-25`, name: "Holi (Festival of Colors)", paid: 1, desc: 'Festival Holiday' },
+      { date: `${curYear}-04-03`, name: "Good Friday", paid: 1, desc: 'Public Holiday' },
+      { date: `${curYear}-04-14`, name: "Dr. B.R. Ambedkar Jayanti", paid: 1, desc: 'Public Holiday' },
+      { date: `${curYear}-05-01`, name: "Maharashtra Day / Labour Day", paid: 1, desc: 'State / Labour Holiday' },
+      { date: `${curYear}-08-15`, name: "Independence Day", paid: 1, desc: 'National Holiday' },
+      { date: `${curYear}-08-28`, name: "Raksha Bandhan", paid: 1, desc: 'Festival Holiday' },
+      { date: `${curYear}-09-04`, name: "Janmashtami", paid: 1, desc: 'Festival Holiday' },
+      { date: `${curYear}-10-02`, name: "Mahatma Gandhi Jayanti", paid: 1, desc: 'National Holiday' },
+      { date: `${curYear}-10-20`, name: "Dussehra (Vijayadashami)", paid: 1, desc: 'Festival Holiday' },
+      { date: `${curYear}-11-09`, name: "Diwali (Deepavali Break)", paid: 1, desc: 'Festival Holiday' },
+      { date: `${curYear}-11-10`, name: "Diwali (Govardhan Puja)", paid: 1, desc: 'Festival Holiday' },
+      { date: `${curYear}-11-11`, name: "Bhai Dooj", paid: 1, desc: 'Festival Holiday' },
+      { date: `${curYear}-12-25`, name: "Christmas Day", paid: 1, desc: 'Public Holiday' }
+    ];
+
+    this.standardHolidaysToPopulate = standardHolidays;
+
+    this.openModal(
+      `<i class="fa-solid fa-bolt" style="color: #f59e0b;"></i> Quick Populate National & Festive Holidays`,
+      `
+        <div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+            Select which standard public and festival holidays to automatically add to your academy calendar for <strong>${curYear}</strong>. Existing holidays with matching dates will not be duplicated.
+          </p>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span style="font-size: 12px; font-weight: 700; color: var(--text-heading);">Standard Holidays (${standardHolidays.length}):</span>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.toggleAllQuickHolidays(true)" style="padding: 2px 8px; font-size: 11px;">Select All</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.toggleAllQuickHolidays(false)" style="padding: 2px 8px; font-size: 11px;">Clear All</button>
+            </div>
+          </div>
+
+          <div style="max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; background: var(--bg-surface);">
+            ${standardHolidays.map((h, i) => `
+              <label style="display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <input type="checkbox" class="quick-holiday-check" value="${i}" checked style="accent-color: var(--primary);">
+                  <div>
+                    <strong style="color: var(--text-heading);">${h.name}</strong>
+                    <div style="font-size: 11px; color: var(--text-muted);">${h.desc}</div>
+                  </div>
+                </div>
+                <div style="font-family: monospace; font-size: 12px; font-weight: 600; color: var(--primary);">
+                  ${h.date}
+                </div>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      `,
+      `
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="app.submitQuickPopulateHolidays()" style="display: inline-flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-download"></i> Populate Selected Holidays
+        </button>
+      `
+    );
+  },
+
+  toggleAllQuickHolidays(check) {
+    document.querySelectorAll('.quick-holiday-check').forEach(cb => {
+      cb.checked = check;
+    });
+  },
+
+  async submitQuickPopulateHolidays() {
+    const checked = Array.from(document.querySelectorAll('.quick-holiday-check:checked')).map(cb => Number(cb.value));
+    if (checked.length === 0) {
+      this.showToast('Please select at least one holiday to populate', 'warning');
+      return;
+    }
+
+    const holidaysToInsert = checked.map(idx => {
+      const h = this.standardHolidaysToPopulate[idx];
+      return {
+        holiday_date: h.date,
+        name: h.name,
+        is_paid: h.paid,
+        description: h.desc,
+        branch_id: null
+      };
+    });
+
+    const res = await this.apiRequest('/api/academy/holidays/batch', {
+      method: 'POST',
+      body: JSON.stringify({ holidays: holidaysToInsert })
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast(res.message || 'Holidays populated successfully', 'success');
+      this.renderHolidays();
+    } else {
+      this.showToast(res.error || 'Failed to populate holidays', 'danger');
     }
   },
 
@@ -19964,7 +20670,7 @@ const app = {
 
   openModal(title, bodyHtml, footerHtml = '', maxWidth = null) {
     const titleEl = document.getElementById('modal-title');
-    if (titleEl) titleEl.innerText = title;
+    if (titleEl) titleEl.innerHTML = title;
     const bodyEl = document.getElementById('modal-body');
     if (bodyEl) bodyEl.innerHTML = bodyHtml;
     const footerEl = document.getElementById('modal-footer');
