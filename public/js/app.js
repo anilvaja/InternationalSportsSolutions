@@ -4211,24 +4211,24 @@ const app = {
                   const admNo = s.admission_number || ('#STU-' + s.id);
                   const joinDate = s.admission_date || (s.created_at ? s.created_at.split('T')[0] : 'Recent');
                   return `
-                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface, #f8fafc); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; transition: transform 0.15s ease;">
                       <div style="display: flex; align-items: center; gap: 12px;">
-                        <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(37,99,235,0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;">
+                        <div style="width: 38px; height: 38px; border-radius: 50%; background: rgba(37,99,235,0.12); color: var(--primary, #2563eb); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13.5px;">
                           ${initials}
                         </div>
                         <div>
-                          <div style="font-size: 13px; font-weight: 600; color: var(--text-heading);">${app.escapeHtml(sName)}</div>
-                          <div style="font-size: 11.5px; color: var(--text-muted); display: flex; gap: 8px; align-items: center;">
-                            <span>${admNo}</span>
+                          <div style="font-size: 13.5px; font-weight: 700; color: var(--text-heading);">${app.escapeHtml(sName)}</div>
+                          <div style="font-size: 11.5px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; margin-top: 2px;">
+                            <span style="font-family: monospace; font-weight: 600;">${admNo}</span>
                             <span>•</span>
                             <span>${app.escapeHtml(s.branch_name || 'Main Campus')}</span>
-                            ${s.inquiry_source ? `<span class="badge badge-info" style="font-size: 9.5px; padding: 1px 5px;">Via: ${app.escapeHtml(s.inquiry_source)}</span>` : ''}
+                            ${s.inquiry_source ? `<span class="badge badge-info" style="font-size: 10px; padding: 2px 6px;">Via: ${app.escapeHtml(s.inquiry_source)}</span>` : ''}
                           </div>
                         </div>
                       </div>
                       <div style="text-align: right;">
-                        <div style="font-size: 11.5px; color: var(--text-muted);"><i class="fa-regular fa-calendar"></i> ${joinDate}</div>
-                        <span class="badge badge-success" style="font-size: 10px; padding: 2px 6px;">${s.status || 'Active'}</span>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 2px;"><i class="fa-regular fa-calendar"></i> ${joinDate}</div>
+                        <span class="badge badge-success" style="font-size: 10.5px; padding: 2px 8px;">${s.status || 'Active'}</span>
                       </div>
                     </div>
                   `;
@@ -4495,7 +4495,7 @@ const app = {
           <div id="admin-tools-collapse-body" style="display: none; padding: 20px; border-top: 1px solid var(--border);">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 16px;">
               <!-- Backup Box -->
-              <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+              <div class="admin-sub-card">
                 <h4 style="font-size: 13.5px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
                   <i class="fa-solid fa-download" style="color: var(--primary);"></i> Tenant Database Backup
                 </h4>
@@ -4508,9 +4508,9 @@ const app = {
               </div>
 
               <!-- Settings Box -->
-              <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+              <div class="admin-sub-card">
                 <h4 style="font-size: 13.5px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
-                  <i class="fa-solid fa-gear" style="color: #f59e0b;"></i> Academy Policies & Settings
+                  <i class="fa-solid fa-gear" style="color: #d97706;"></i> Academy Policies & Settings
                 </h4>
                 <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
                   Configure default currency, timezone, grace periods, and late fees.
@@ -4521,7 +4521,7 @@ const app = {
               </div>
 
               <!-- Roles & Security Box -->
-              <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+              <div class="admin-sub-card">
                 <h4 style="font-size: 13.5px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
                   <i class="fa-solid fa-shield-halved" style="color: #6366f1;"></i> Roles & Access Control
                 </h4>
@@ -4544,8 +4544,8 @@ const app = {
               </div>
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
                 ${Object.entries(quotas).map(([k, q]) => `
-                  <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px;">
+                  <div class="admin-quota-chip">
+                    <div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 4px; color: var(--text-heading);">
                       <span style="font-weight: 600; text-transform: capitalize;">${k.replace(/_/g, ' ')}</span>
                       <span><strong>${q.usage}</strong> / ${q.limit}</span>
                     </div>
