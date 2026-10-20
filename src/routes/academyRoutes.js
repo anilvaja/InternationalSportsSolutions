@@ -233,6 +233,40 @@ academyRouter.get('/dashboard', (req, res) => {
         coachBranchIds = cBranches.map(b => b.branch_id);
       }
 
+      let coachTodayAtt = { total_marked: 0, present_count: 0, absent_count: 0, late_count: 0 };
+      if (todayBatchIds.length > 0) {
+        coachTodayAtt = db.prepare(`
+          SELECT 
+            COUNT(sa.id) as total_marked,
+            SUM(CASE WHEN sa.status = 'present' THEN 1 ELSE 0 END) as present_count,
+            SUM(CASE WHEN sa.status = 'absent' THEN 1 ELSE 0 END) as absent_count,
+            SUM(CASE WHEN sa.status = 'late' THEN 1 ELSE 0 END) as late_count
+          FROM attendance a
+          JOIN student_attendance sa ON sa.attendance_id = a.id
+          WHERE a.batch_id IN (${todayBatchIds.map(() => '?').join(',')}) AND a.date = ?
+        `).get(...todayBatchIds, today);
+      }
+
+      const coachRecentAbsences = coachId ? db.prepare(`
+        SELECT 
+          sa.id,
+          sa.status,
+          sa.remarks,
+          s.id as student_id,
+          s.first_name,
+          s.last_name,
+          s.admission_number,
+          b.name as batch_name,
+          a.date as attendance_date
+        FROM student_attendance sa
+        JOIN attendance a ON a.id = sa.attendance_id
+        JOIN students s ON s.id = sa.student_id
+        JOIN batches b ON b.id = a.batch_id
+        WHERE sa.status = 'absent' AND b.coach_id = ?
+        ORDER BY a.date DESC, sa.id DESC
+        LIMIT 10
+      `).all(coachId) : [];
+
       return res.json({
         success: true,
         userRole: 'coach',
@@ -246,6 +280,10 @@ academyRouter.get('/dashboard', (req, res) => {
         },
         metrics: {
           isCoach: true,
+          totalStudents: totalEnrolledStudents,
+          totalCoaches: 1,
+          totalBatches: coachBatches.length,
+          totalBranches: coachBranchIds.length,
           todayBatchesCount: todayBatches.length,
           studentsToTrainToday,
           totalMyStudents: totalEnrolledStudents,
@@ -256,8 +294,14 @@ academyRouter.get('/dashboard', (req, res) => {
             markedBatches: markedBatchesCount,
             pendingBatches: pendingBatchesCount,
             completionRate: todayBatches.length > 0 ? Math.round((markedBatchesCount / todayBatches.length) * 100) : 100,
+            marked: coachTodayAtt.total_marked || 0,
+            present: coachTodayAtt.present_count || 0,
+            absent: coachTodayAtt.absent_count || 0,
+            late: coachTodayAtt.late_count || 0,
+            scheduledStudents: studentsToTrainToday,
           },
         },
+        recentAbsences: coachRecentAbsences,
         newlyJoinedStudents: fetchNewlyJoinedStudents(db, coachBranchIds),
         upcomingFees: fetchUpcomingFees(db, coachBranchIds),
         upcomingEvents: fetchUpcomingEvents(db),
@@ -273,29 +317,73 @@ academyRouter.get('/dashboard', (req, res) => {
     let studentCountQuery = "SELECT COUNT(*) as c FROM students WHERE status = 'active'";
     let coachCountQuery = "SELECT COUNT(*) as c FROM coaches WHERE is_active = 1";
     let batchCountQuery = "SELECT COUNT(*) as c FROM batches WHERE is_active = 1";
+    let branchCountQuery = "SELECT COUNT(*) as c FROM branches WHERE is_active = 1";
     const studentParams = [];
     const batchParams = [];
+    const branchParams = [];
 
     if (isBranchAdmin && branchIds.length > 0) {
       studentCountQuery += ` AND branch_id IN (${branchIds.map(() => '?').join(',')})`;
       studentParams.push(...branchIds);
       batchCountQuery += ` AND branch_id IN (${branchIds.map(() => '?').join(',')})`;
       batchParams.push(...branchIds);
+      branchCountQuery += ` AND id IN (${branchIds.map(() => '?').join(',')})`;
+      branchParams.push(...branchIds);
     }
 
     const totalStudents = db.prepare(studentCountQuery).get(...studentParams).c;
     const totalCoaches = db.prepare(coachCountQuery).get().c;
     const totalBatches = db.prepare(batchCountQuery).get(...batchParams).c;
+    const totalBranches = db.prepare(branchCountQuery).get(...branchParams).c;
 
     const todayAttendance = db.prepare(`
       SELECT 
         COUNT(sa.id) as total_marked,
         SUM(CASE WHEN sa.status = 'present' THEN 1 ELSE 0 END) as present_count,
-        SUM(CASE WHEN sa.status = 'absent' THEN 1 ELSE 0 END) as absent_count
+        SUM(CASE WHEN sa.status = 'absent' THEN 1 ELSE 0 END) as absent_count,
+        SUM(CASE WHEN sa.status = 'late' THEN 1 ELSE 0 END) as late_count
       FROM attendance a
       JOIN student_attendance sa ON sa.attendance_id = a.id
       WHERE a.date = ?
     `).get(today);
+
+    // Calculate total scheduled students today across active batches
+    let scheduledStudentsToday = 0;
+    try {
+      const activeBatchesToday = db.prepare(`SELECT id, days_of_week FROM batches WHERE is_active = 1`).all();
+      const matchedBatchesToday = activeBatchesToday.filter(b => {
+        const days = b.days_of_week || '';
+        return days.includes(curDayShort) || days.includes(curDayFull) || days.toLowerCase().includes('daily') || days.toLowerCase().includes('all');
+      });
+      const batchIdsToday = matchedBatchesToday.map(b => b.id);
+      if (batchIdsToday.length > 0) {
+        scheduledStudentsToday = db.prepare(`
+          SELECT COUNT(DISTINCT student_id) as c
+          FROM student_batch_enrollments
+          WHERE batch_id IN (${batchIdsToday.map(() => '?').join(',')}) AND status = 'active'
+        `).get(...batchIdsToday).c;
+      }
+    } catch (_e) {}
+
+    const recentAbsences = db.prepare(`
+      SELECT 
+        sa.id,
+        sa.status,
+        sa.remarks,
+        s.id as student_id,
+        s.first_name,
+        s.last_name,
+        s.admission_number,
+        b.name as batch_name,
+        a.date as attendance_date
+      FROM student_attendance sa
+      JOIN attendance a ON a.id = sa.attendance_id
+      JOIN students s ON s.id = sa.student_id
+      LEFT JOIN batches b ON b.id = a.batch_id
+      WHERE sa.status = 'absent'
+      ORDER BY a.date DESC, sa.id DESC
+      LIMIT 10
+    `).all();
 
     const feeStats = db.prepare(`
       SELECT 
@@ -329,15 +417,19 @@ academyRouter.get('/dashboard', (req, res) => {
         totalStudents,
         totalCoaches,
         totalBatches,
+        totalBranches,
         todayAttendance: {
           date: today,
           marked: todayAttendance.total_marked || 0,
           present: todayAttendance.present_count || 0,
           absent: todayAttendance.absent_count || 0,
+          late: todayAttendance.late_count || 0,
+          scheduledStudents: scheduledStudentsToday,
         },
         fees: feeStats,
         pendingLeaves,
       },
+      recentAbsences,
       newlyJoinedStudents: fetchNewlyJoinedStudents(db, branchIds),
       upcomingFees: fetchUpcomingFees(db, branchIds),
       upcomingEvents: fetchUpcomingEvents(db),

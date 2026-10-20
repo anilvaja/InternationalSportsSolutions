@@ -954,53 +954,62 @@ const app = {
 
     if (this.user.role !== 'student') {
       html += `
-        <div class="nav-section-title">Main</div>
         <a href="${this.getPathForTab('overview')}" class="nav-item ${this.currentTab === 'overview' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('overview')">
-          <i class="fa-solid fa-gauge-high"></i> Dashboard
+          <i class="fa-solid fa-house-chimney"></i> Dashboard
         </a>
 
-        <div class="nav-section-title">Academic & Training</div>
-        <a href="${this.getPathForTab('inquiries')}" class="nav-item ${this.currentTab === 'inquiries' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('inquiries')">
-          <i class="fa-solid fa-address-book"></i> Inquiries & Leads
+        <div class="nav-section-title">Academy</div>
+        <a href="${this.getPathForTab('students')}" class="nav-item ${this.currentTab === 'students' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('students')">
+          <i class="fa-solid fa-graduation-cap"></i> Students
+        </a>
+        <a href="${this.getPathForTab('batches')}" class="nav-item ${this.currentTab === 'batches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('batches')">
+          <i class="fa-solid fa-calendar-days"></i> Batches
+        </a>
+        <a href="${this.getPathForTab('attendance')}" class="nav-item ${this.currentTab === 'attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('attendance')">
+          <i class="fa-solid fa-clipboard-user"></i> Class Attendance
         </a>
         <a href="${this.getPathForTab('branches')}" class="nav-item ${this.currentTab === 'branches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('branches')">
           <i class="fa-solid fa-code-branch"></i> Branches
         </a>
-        <a href="${this.getPathForTab('batches')}" class="nav-item ${this.currentTab === 'batches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('batches')">
-          <i class="fa-solid fa-calendar-days"></i> Batches & Schedules
-        </a>
-        <a href="${this.getPathForTab('students')}" class="nav-item ${this.currentTab === 'students' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('students')">
-          <i class="fa-solid fa-users"></i> Students Directory
-        </a>
-        <a href="${this.getPathForTab('attendance')}" class="nav-item ${this.currentTab === 'attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('attendance')">
-          <i class="fa-solid fa-clipboard-user"></i> Attendance Sheet
-        </a>
-        <a href="${this.getPathForTab('syllabus')}" class="nav-item ${this.currentTab === 'syllabus' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('syllabus')">
-          <i class="fa-solid fa-graduation-cap"></i> Sports Syllabus
-        </a>
         <a href="${this.getPathForTab('sports')}" class="nav-item ${this.currentTab === 'sports' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('sports')">
           <i class="fa-solid fa-medal"></i> Sports & Disciplines
         </a>
-        <a href="${this.getPathForTab('events')}" class="nav-item ${this.currentTab === 'events' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('events')">
-          <i class="fa-solid fa-trophy"></i> Events & Tournaments
+        <a href="${this.getPathForTab('syllabus')}" class="nav-item ${this.currentTab === 'syllabus' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('syllabus')">
+          <i class="fa-solid fa-book-open-reader"></i> Sports Syllabus
+        </a>
+        <a href="${this.getPathForTab('inquiries')}" class="nav-item ${this.currentTab === 'inquiries' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('inquiries')">
+          <i class="fa-solid fa-address-book"></i> Inquiries & Leads
         </a>
 
         ${this.user.role !== 'coach' ? `
-        <div class="nav-section-title">Finance & Billing</div>
+        <div class="nav-section-title">Finance</div>
         <a href="${this.getPathForTab('fees')}" class="nav-item ${this.currentTab === 'fees' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('fees')">
-          <i class="fa-solid fa-file-invoice-dollar"></i> Fees & Invoices
+          <i class="fa-solid fa-file-invoice-dollar"></i> Fee Collection
         </a>
+        <a href="${this.getPathForTab('events')}" class="nav-item ${this.currentTab === 'events' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('events')">
+          <i class="fa-solid fa-trophy"></i> Event Fees
+        </a>
+        ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
+          <a href="${this.getPathForTab('payroll')}" class="nav-item ${this.currentTab === 'payroll' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('payroll')">
+            <i class="fa-solid fa-money-check-dollar"></i> Staff Payroll
+          </a>
         ` : ''}
+        ` : `
+        <div class="nav-section-title">Finance</div>
+        <a href="${this.getPathForTab('my-salary')}" class="nav-item ${this.currentTab === 'my-salary' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('my-salary')">
+          <i class="fa-solid fa-wallet"></i> My Salary Statement
+        </a>
+        `}
 
         <div class="nav-section-title">Staff & Operations</div>
         <a href="${this.getPathForTab('coaches')}" class="nav-item ${this.currentTab === 'coaches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('coaches')">
           <i class="fa-solid fa-user-ninja"></i> Coaches & Staff
         </a>
         <a href="${this.getPathForTab('employee-map')}" class="nav-item ${this.currentTab === 'employee-map' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('employee-map')">
-          <i class="fa-solid fa-map-location-dot" style="color: #10b981;"></i> Staff Sign-In / Out Map
+          <i class="fa-solid fa-map-location-dot" style="color: #10b981;"></i> Self Attendance / Map
         </a>
         <a href="${this.getPathForTab('leaves')}" class="nav-item ${this.currentTab === 'leaves' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('leaves')">
-          <i class="fa-solid fa-calendar-check"></i> Leaves Management
+          <i class="fa-solid fa-calendar-check"></i> Staff Leaves
         </a>
         <a href="${this.getPathForTab('holidays')}" class="nav-item ${this.currentTab === 'holidays' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('holidays')">
           <i class="fa-solid fa-calendar-star" style="color: #f59e0b;"></i> Holiday Calendar
@@ -1008,19 +1017,8 @@ const app = {
         <a href="${this.getPathForTab('approvals')}" class="nav-item ${this.currentTab === 'approvals' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('approvals')">
           <i class="fa-solid fa-check-to-slot"></i> Approvals Inbox
         </a>
-        <a href="${this.getPathForTab('my-salary')}" class="nav-item ${this.currentTab === 'my-salary' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('my-salary')">
-          <i class="fa-solid fa-wallet"></i> My Salary Statement
-        </a>
-        ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
-          <a href="${this.getPathForTab('payroll')}" class="nav-item ${this.currentTab === 'payroll' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('payroll')">
-            <i class="fa-solid fa-money-check-dollar"></i> Staff Payroll
-          </a>
-          <a href="${this.getPathForTab('policy-settings')}" class="nav-item ${this.currentTab === 'policy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('policy-settings')">
-            <i class="fa-solid fa-sliders"></i> Policy Settings
-          </a>
-        ` : ''}
 
-        <div class="nav-section-title">Access Control & System</div>
+        <div class="nav-section-title">System & Settings</div>
         ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
           <a href="${this.getPathForTab('roles-permissions')}" class="nav-item ${this.currentTab === 'roles-permissions' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('roles-permissions')">
             <i class="fa-solid fa-key"></i> Roles & Permissions
@@ -1029,6 +1027,11 @@ const app = {
         <a href="${this.getPathForTab('facilities')}" class="nav-item ${this.currentTab === 'facilities' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('facilities')">
           <i class="fa-solid fa-dumbbell"></i> Facilities & Equipment
         </a>
+        ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
+          <a href="${this.getPathForTab('policy-settings')}" class="nav-item ${this.currentTab === 'policy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('policy-settings')">
+            <i class="fa-solid fa-sliders"></i> Policy Settings
+          </a>
+        ` : ''}
         <a href="${this.getPathForTab('audit-logs')}" class="nav-item ${this.currentTab === 'audit-logs' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('audit-logs')">
           <i class="fa-solid fa-shield-halved"></i> Tenant Audit Log
         </a>
@@ -3387,93 +3390,33 @@ const app = {
     const todayBatches = (todayBatchesRes && todayBatchesRes.success) ? (todayBatchesRes.batches || []) : [];
     const todayDateStr = (todayBatchesRes && todayBatchesRes.today) || new Date().toISOString().split('T')[0];
 
-    const isCoach = (this.user.role === 'coach') || (m && m.isCoach);
+    const curHour = new Date().getHours();
+    const greetingTime = curHour < 12 ? 'Good Morning' : (curHour < 17 ? 'Good Afternoon' : 'Good Evening');
+    const greetingUser = this.user.name || this.user.username || 'Admin';
+    const dateOptions = { weekday: 'long', day: 'numeric', month: 'long' };
+    const formattedTodayDate = new Date().toLocaleDateString('en-GB', dateOptions);
 
-    // Build Role-Scoped Metrics Cards
-    let metricsCardsHtml = '';
-    if (isCoach) {
-      metricsCardsHtml = `
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-icon icon-blue"><i class="fa-solid fa-calendar-check"></i></div>
-            <div class="stat-details">
-              <h3>Today's Batches</h3>
-              <div class="stat-value">${m.todayBatchesCount || 0} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Scheduled</span></div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon icon-purple"><i class="fa-solid fa-users"></i></div>
-            <div class="stat-details">
-              <h3>Students to Train Today</h3>
-              <div class="stat-value">${m.studentsToTrainToday || 0} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Active</span></div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon icon-green"><i class="fa-solid fa-clipboard-check"></i></div>
-            <div class="stat-details">
-              <h3>Attendance Status</h3>
-              <div class="stat-value" id="overview-att-status-counter">
-                ${m.todayAttendance ? `${m.todayAttendance.markedBatches} / ${m.todayAttendance.scheduledBatches}` : '0 / 0'}
-                <span style="font-size: 13px; font-weight: 500; color: ${m.todayAttendance && m.todayAttendance.pendingBatches === 0 ? '#10b981' : '#f59e0b'};">
-                  ${m.todayAttendance ? `(${m.todayAttendance.completionRate}%)` : ''}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon icon-amber"><i class="fa-solid fa-user-graduate"></i></div>
-            <div class="stat-details">
-              <h3>Enrolled in My Batches</h3>
-              <div class="stat-value">${m.totalMyStudents || 0} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Students</span></div>
-            </div>
-          </div>
-        </div>
-      `;
-    } else {
-      metricsCardsHtml = `
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-icon icon-blue"><i class="fa-solid fa-user-graduate"></i></div>
-            <div class="stat-details">
-              <h3>Enrolled Students</h3>
-              <div class="stat-value">${m.totalStudents}</div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon icon-purple"><i class="fa-solid fa-user-ninja"></i></div>
-            <div class="stat-details">
-              <h3>Active Coaches</h3>
-              <div class="stat-value">${m.totalCoaches}</div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon icon-green"><i class="fa-solid fa-indian-rupee-sign"></i></div>
-            <div class="stat-details">
-              <h3>Fee Collections</h3>
-              <div class="stat-value">₹${m.fees ? m.fees.total_collected.toLocaleString() : '0'}</div>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-icon icon-amber"><i class="fa-solid fa-clock"></i></div>
-            <div class="stat-details">
-              <h3>Outstanding Fees</h3>
-              <div class="stat-value">₹${m.fees ? m.fees.total_outstanding.toLocaleString() : '0'}</div>
-            </div>
-          </div>
-        </div>
-      `;
-    }
+    const att = (m && m.todayAttendance) || {};
+    const attPresent = Number(att.present || 0);
+    const attAbsent = Number(att.absent || 0);
+    const attLate = Number(att.late || 0);
+    const attTotalMarked = Number(att.marked || (attPresent + attAbsent + attLate) || 0);
+    const attScheduled = Number(att.scheduledStudents || m.studentsToTrainToday || m.totalStudents || 0);
+    const attRate = attTotalMarked > 0 ? Math.round((attPresent / attTotalMarked) * 100) : 0;
 
     // Build Today's Assigned Batches Widget HTML
     let todayBatchesHtml = '';
     if (todayBatches.length === 0) {
       todayBatchesHtml = `
-        <div style="text-align: center; padding: 36px 18px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: 8px;">
-          <div style="font-size: 32px; color: var(--text-muted); margin-bottom: 8px;"><i class="fa-regular fa-calendar-xmark"></i></div>
-          <h4 style="color: var(--text-heading); font-size: 15px; margin-bottom: 4px;">No Training Batches Scheduled for Today</h4>
-          <p style="font-size: 13px; color: var(--text-muted); max-width: 460px; margin: 0 auto;">
-            ${isCoach ? 'You do not have any batches assigned on today’s schedule.' : 'No batches match today’s day of week or branch schedule.'}
+        <div style="text-align: center; padding: 40px 20px; background: rgba(100, 116, 139, 0.02); border: 1px dashed var(--border); border-radius: 8px;">
+          <div style="font-size: 38px; color: var(--text-dim); margin-bottom: 12px;"><i class="fa-regular fa-calendar-xmark"></i></div>
+          <h4 style="color: var(--text-heading); font-size: 15px; font-weight: 700; margin-bottom: 4px;">No Batches Scheduled Today</h4>
+          <p style="font-size: 13px; color: var(--text-muted); max-width: 440px; margin: 0 auto 16px;">
+            Enjoy the quiet day! Or create a new batch schedule if needed.
           </p>
+          <button class="btn btn-primary btn-sm" onclick="app.showAddBatchModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-plus"></i> Create Batch Schedule
+          </button>
         </div>
       `;
     } else {
@@ -3550,16 +3493,321 @@ const app = {
     }
 
     content.innerHTML = `
+      <!-- Greeting & Action Banner -->
+      <div class="dashboard-greeting-bar">
+        <div>
+          <div class="dashboard-greeting-title">
+            ${greetingTime}, ${this.escapeHtml(greetingUser)} 👋
+          </div>
+          <div class="dashboard-greeting-subtitle">
+            <span>${formattedTodayDate}</span>
+            <span>•</span>
+            <span>Operational Summary</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <button class="btn btn-primary" onclick="app.showAddStudentModal()" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; font-weight: 600; font-size: 13.5px; border-radius: var(--radius-sm);">
+            <i class="fa-solid fa-plus"></i> Student
+          </button>
+        </div>
+      </div>
+
+      <!-- 4 Core Metric Cards (Parity with reference) -->
+      <div class="kpi-metric-grid">
+        <div class="kpi-card" onclick="app.navigate('students')" title="View Students Directory">
+          <div>
+            <div class="kpi-label">Total Students</div>
+            <div class="kpi-value">${m.totalStudents ?? 0}</div>
+            <div class="kpi-subtext">Active academy roster</div>
+          </div>
+          <div class="kpi-icon-badge">
+            <i class="fa-solid fa-graduation-cap"></i>
+          </div>
+        </div>
+
+        <div class="kpi-card" onclick="app.navigate('batches')" title="View Batches & Schedules">
+          <div>
+            <div class="kpi-label">Active Batches</div>
+            <div class="kpi-value">${m.totalBatches ?? 0}</div>
+            <div class="kpi-subtext muted">Running class schedules</div>
+          </div>
+          <div class="kpi-icon-badge dark">
+            <i class="fa-solid fa-calendar-days"></i>
+          </div>
+        </div>
+
+        <div class="kpi-card" onclick="app.navigate('coaches')" title="View Coaches & Staff">
+          <div>
+            <div class="kpi-label">Coaches & Staff</div>
+            <div class="kpi-value">${m.totalCoaches ?? 0}</div>
+            <div class="kpi-subtext muted">Active staff members</div>
+          </div>
+          <div class="kpi-icon-badge dark">
+            <i class="fa-solid fa-user-group"></i>
+          </div>
+        </div>
+
+        <div class="kpi-card" onclick="app.navigate('branches')" title="View Academy Branches">
+          <div>
+            <div class="kpi-label">Academy Branches</div>
+            <div class="kpi-value">${m.totalBranches ?? 0}</div>
+            <div class="kpi-subtext muted">Operational locations</div>
+          </div>
+          <div class="kpi-icon-badge dark">
+            <i class="fa-solid fa-code-branch"></i>
+          </div>
+        </div>
+      </div>
+
       ${punchHtml}
 
-      ${metricsCardsHtml}
+      <!-- Quick Access Launchpad Grid (13 Interactive Operation Cards) -->
+      <div class="launchpad-section">
+        <div class="launchpad-header">
+          <div class="launchpad-title">
+            <i class="fa-solid fa-bolt" style="color: #f59e0b;"></i> Quick Access Launchpad
+          </div>
+          <span style="font-size: 12px; color: var(--text-muted);">Direct operations & shortcuts</span>
+        </div>
+        <div class="launchpad-grid">
+          <!-- 1. Class Attendance -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-clipboard-user" style="color: #2563eb;"></i> Class Attendance</div>
+                <span class="launchpad-tile-badge">Class Roster</span>
+              </div>
+              <div class="launchpad-tile-desc">Mark batch attendance & track team levels</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('attendance')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.navigate('attendance')"><i class="fa-solid fa-plus"></i> Take Attendance</button>
+            </div>
+          </div>
 
-      <!-- Today's Assigned Batches (Direct Attendance Widget) -->
+          <!-- 2. Self Attendance -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-clock-rotate-left" style="color: #10b981;"></i> Self Attendance</div>
+                <span class="launchpad-tile-badge">My Hours</span>
+              </div>
+              <div class="launchpad-tile-desc">Check-in/out & live work hours</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('employee-map')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.openPunchMapModal()"><i class="fa-solid fa-fingerprint"></i> Log Check-In</button>
+            </div>
+          </div>
+
+          <!-- 3. Students Directory -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-users" style="color: #3b82f6;"></i> Students Directory</div>
+                <span class="launchpad-tile-badge">Profiles</span>
+              </div>
+              <div class="launchpad-tile-desc">Student list, belt levels & records</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('students')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.showAddStudentModal()"><i class="fa-solid fa-plus"></i> Add Student</button>
+            </div>
+          </div>
+
+          <!-- 4. Batches & Schedule -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-calendar-days" style="color: #8b5cf6;"></i> Batches & Schedule</div>
+                <span class="launchpad-tile-badge">Schedules</span>
+              </div>
+              <div class="launchpad-tile-desc">Class timings & coach assignments</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('batches')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.showAddBatchModal()"><i class="fa-solid fa-plus"></i> New Batch</button>
+            </div>
+          </div>
+
+          <!-- 5. Fee Collection -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-file-invoice-dollar" style="color: #10b981;"></i> Fee Collection</div>
+                <span class="launchpad-tile-badge">Payments</span>
+              </div>
+              <div class="launchpad-tile-desc">Collect student fees & receipts</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('fees')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.showCollectStudentFeeModal()"><i class="fa-solid fa-plus"></i> Collect Fee</button>
+            </div>
+          </div>
+
+          <!-- 6. Staff Leaves -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-calendar-check" style="color: #f59e0b;"></i> Staff Leaves</div>
+                <span class="launchpad-tile-badge">Leaves</span>
+              </div>
+              <div class="launchpad-tile-desc">Apply leave & view request status</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('leaves')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.showApplyLeaveModal()"><i class="fa-solid fa-plus"></i> Apply Leave</button>
+            </div>
+          </div>
+
+          <!-- 7. Staff Attendance -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-id-badge" style="color: #6366f1;"></i> Staff Attendance</div>
+              </div>
+              <div class="launchpad-tile-desc">All staff attendance logs</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('employee-map')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.openPunchHistoryModal()"><i class="fa-solid fa-clock-rotate-left"></i> Punch Logs</button>
+            </div>
+          </div>
+
+          <!-- 8. Syllabus / Belt Techniques -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-book-open-reader" style="color: #ec4899;"></i> Syllabus / Belt Techniques</div>
+              </div>
+              <div class="launchpad-tile-desc">Belt categories & techniques</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('syllabus')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.navigate('syllabus')"><i class="fa-solid fa-sliders"></i> Techniques</button>
+            </div>
+          </div>
+
+          <!-- 9. Academy Branches -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-code-branch" style="color: #06b6d4;"></i> Academy Branches</div>
+              </div>
+              <div class="launchpad-tile-desc">Academy locations & details</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('branches')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.showAddBranchModal()"><i class="fa-solid fa-plus"></i> New Branch</button>
+            </div>
+          </div>
+
+          <!-- 10. Holidays & Calendar -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-calendar-star" style="color: #f59e0b;"></i> Holidays & Calendar</div>
+              </div>
+              <div class="launchpad-tile-desc">Academy annual holiday list</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('holidays')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.navigate('holidays')"><i class="fa-regular fa-calendar"></i> View Calendar</button>
+            </div>
+          </div>
+
+          <!-- 11. Events & Tournaments -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-trophy" style="color: #eab308;"></i> Events & Tournaments</div>
+              </div>
+              <div class="launchpad-tile-desc">Competitions & event fees</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('events')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.openCreateEventModal()"><i class="fa-solid fa-plus"></i> New Event</button>
+            </div>
+          </div>
+
+          <!-- 12. Roles & Permissions -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-key" style="color: #64748b;"></i> Roles & Permissions</div>
+              </div>
+              <div class="launchpad-tile-desc">Staff permissions & security</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('roles-permissions')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.navigate('roles-permissions')"><i class="fa-solid fa-user-shield"></i> Security</button>
+            </div>
+          </div>
+
+          <!-- 13. Currency & Timezone -->
+          <div class="launchpad-tile">
+            <div>
+              <div class="launchpad-tile-top">
+                <div class="launchpad-tile-name"><i class="fa-solid fa-sliders" style="color: #475569;"></i> Currency & Timezone</div>
+              </div>
+              <div class="launchpad-tile-desc">System currency & timezone</div>
+            </div>
+            <div class="launchpad-tile-bottom">
+              <a class="launchpad-open-link" onclick="app.navigate('policy-settings')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+              <button class="launchpad-action-btn" onclick="app.navigate('policy-settings')"><i class="fa-solid fa-gear"></i> Settings</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Today's Class Attendance Widget (Stats breakdown & rate) -->
+      <div class="content-card" style="margin-bottom: 24px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 class="card-title" style="font-size: 14px;">
+            <i class="fa-solid fa-clipboard-user" style="color: var(--primary);"></i> Today's Class Attendance
+          </h2>
+          <button class="btn btn-secondary btn-sm" onclick="app.navigate('attendance')">View All</button>
+        </div>
+        <div style="padding: 16px 20px;">
+          <div class="attendance-kpi-row">
+            <div class="attendance-kpi-item">
+              <div class="label">Present</div>
+              <div class="val" style="color: #10b981;">${attPresent}</div>
+            </div>
+            <div class="attendance-kpi-item">
+              <div class="label">Absent</div>
+              <div class="val" style="color: #ef4444;">${attAbsent}</div>
+            </div>
+            <div class="attendance-kpi-item">
+              <div class="label">Late</div>
+              <div class="val" style="color: #f59e0b;">${attLate}</div>
+            </div>
+            <div class="attendance-kpi-item">
+              <div class="label">Attendance</div>
+              <div class="val">${attRate}%</div>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 12px; color: var(--text-muted);">
+            <span>Attendance rate</span>
+            <span>${attPresent} / ${attScheduled > 0 ? attScheduled : (attTotalMarked > 0 ? attTotalMarked : 100)}</span>
+          </div>
+          <div style="width: 100%; height: 6px; background: rgba(100, 116, 139, 0.15); border-radius: 3px; overflow: hidden; margin-top: 6px;">
+            <div style="height: 100%; width: ${Math.min(100, attRate)}%; background: #10b981; border-radius: 3px; transition: width 0.4s ease;"></div>
+          </div>
+
+          <div style="padding: 10px 14px; background: rgba(100, 116, 139, 0.04); border-radius: 6px; font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 14px;">
+            <i class="fa-regular fa-circle-check"></i> ${attTotalMarked > 0 ? `${attTotalMarked} student attendance records marked today.` : 'No class attendance records marked today yet.'}
+          </div>
+        </div>
+      </div>
+
+      <!-- Today's Batch Schedule Widget -->
       <div class="content-card" style="margin-bottom: 24px;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <div>
-            <h2 class="card-title">
-              <i class="fa-solid fa-calendar-day" style="color: var(--primary);"></i> Today's Assigned Batches & Quick Attendance
+            <h2 class="card-title" style="font-size: 14px;">
+              <i class="fa-solid fa-calendar-day" style="color: var(--primary);"></i> Today's Batch Schedule
             </h2>
             <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
               Date: <strong>${todayDateStr}</strong> · Role-scoped scheduled sessions with direct 1-click attendance marking
@@ -3569,13 +3817,73 @@ const app = {
             <button class="btn btn-secondary btn-sm" onclick="app.renderAcademyOverview()">
               <i class="fa-solid fa-rotate"></i> Refresh Schedule
             </button>
-            <button class="btn btn-primary btn-sm" onclick="app.navigate('attendance')">
-              <i class="fa-solid fa-table-list"></i> Full Attendance Sheet
+            <button class="btn btn-primary btn-sm" onclick="app.navigate('batches')">
+              <i class="fa-solid fa-calendar-days"></i> View Batches
             </button>
           </div>
         </div>
         <div style="padding: 16px 20px;">
           ${todayBatchesHtml}
+        </div>
+      </div>
+
+      <!-- Recent Student Absences Audit Widget (Parity with reference) -->
+      <div class="content-card" style="margin-bottom: 24px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 class="card-title" style="font-size: 14px;">
+            <i class="fa-solid fa-user-xmark" style="color: #ef4444;"></i> Student Absence Audit
+          </h2>
+          <button class="btn btn-secondary btn-sm" onclick="app.navigate('attendance')">Audit Sheet</button>
+        </div>
+        <div style="padding: 24px 20px; text-align: center;">
+          ${(!data.recentAbsences || data.recentAbsences.length === 0) ? `
+            <div style="font-size: 38px; color: var(--text-dim); margin-bottom: 8px;">
+              <i class="fa-regular fa-face-smile"></i>
+            </div>
+            <h4 style="font-size: 15px; font-weight: 700; color: var(--text-heading); margin-bottom: 4px;">
+              No Recent Absences
+            </h4>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+              Good! No students have been absent in recent session.
+            </p>
+            <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted);">
+              <span>Per page:</span>
+              <select class="form-input form-input-sm" style="width: auto; padding: 2px 8px;" disabled>
+                <option selected>10</option>
+              </select>
+            </div>
+          ` : `
+            <div class="table-responsive">
+              <table class="table" style="text-align: left;">
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    <th>Admission #</th>
+                    <th>Batch</th>
+                    <th>Date</th>
+                    <th>Remarks</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${data.recentAbsences.map(a => `
+                    <tr>
+                      <td><strong>${app.escapeHtml((a.first_name || '') + ' ' + (a.last_name || ''))}</strong></td>
+                      <td><code>${app.escapeHtml(a.admission_number || '-')}</code></td>
+                      <td>${app.escapeHtml(a.batch_name || '-')}</td>
+                      <td>${app.escapeHtml(a.attendance_date || '-')}</td>
+                      <td style="color: var(--text-muted);">${app.escapeHtml(a.remarks || 'Absent')}</td>
+                      <td>
+                        <button class="btn btn-secondary btn-sm" onclick="app.navigate('attendance')">
+                          View Attendance
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
         </div>
       </div>
 
