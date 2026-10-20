@@ -14942,16 +14942,16 @@ const app = {
             <span style="font-size: 12px; color: var(--text-muted);">Check all permissions authorized for this role</span>
           </div>
 
-          <div style="max-height: 400px; overflow-y: auto; padding-right: 6px;">
+          <div style="max-height: 380px; overflow-y: auto; padding-right: 6px;">
             ${this.buildPermissionsCheckboxMatrix([])}
           </div>
-
-          <div id="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
-            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Create Custom Role</button>
-          </div>
         </form>
+      `,
       `
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="submit" form="create-role-form" class="btn btn-primary" onclick="app.submitCreateRole()"><i class="fa-solid fa-plus"></i> Create Custom Role</button>
+      `,
+      '960px'
     );
   },
 
@@ -15027,16 +15027,18 @@ const app = {
             <span style="font-size: 12px; color: var(--text-muted);">${role.permissions.length} active permission(s)</span>
           </div>
 
-          <div style="max-height: 400px; overflow-y: auto; padding-right: 6px;">
+          <div style="max-height: 380px; overflow-y: auto; padding-right: 6px;">
             ${this.buildPermissionsCheckboxMatrix(role.permissions || [])}
           </div>
-
-          <div id="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
-            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Permissions Matrix</button>
-          </div>
         </form>
+      `,
       `
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="submit" form="edit-role-form" class="btn btn-primary" onclick="app.submitEditRole(${roleId})">
+          <i class="fa-solid fa-floppy-disk"></i> Save Permissions Matrix
+        </button>
+      `,
+      '960px'
     );
   },
 
@@ -15151,13 +15153,15 @@ const app = {
               }).join('')}
             </div>
           </div>
-
-          <div id="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
-            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-user-check"></i> Save Role Assignment</button>
-          </div>
         </form>
+      `,
       `
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="submit" form="assign-role-form" class="btn btn-primary" onclick="app.submitAssignRole(${userId})">
+          <i class="fa-solid fa-user-check"></i> Save Role Assignment
+        </button>
+      `,
+      '840px'
     );
   },
 
@@ -15227,13 +15231,15 @@ const app = {
               `).join('')}
             </select>
           </div>
-
-          <div id="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
-            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-user-plus"></i> Create & Enroll Staff</button>
-          </div>
         </form>
+      `,
       `
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="submit" form="add-staff-form" class="btn btn-primary" onclick="app.submitAddStaff()">
+          <i class="fa-solid fa-user-plus"></i> Create & Enroll Staff
+        </button>
+      `,
+      '800px'
     );
   },
 
@@ -21494,8 +21500,11 @@ const app = {
     if (titleEl) titleEl.innerHTML = title;
     const bodyEl = document.getElementById('modal-body');
     if (bodyEl) bodyEl.innerHTML = bodyHtml;
-    const footerEl = document.getElementById('modal-footer');
-    if (footerEl) footerEl.innerHTML = footerHtml;
+    const footerEl = document.querySelector('#modal-dialog > #modal-footer') || document.getElementById('modal-footer');
+    if (footerEl) {
+      footerEl.innerHTML = footerHtml || '';
+      footerEl.style.display = (footerHtml && footerHtml.trim()) ? 'flex' : 'none';
+    }
 
     const overlay = document.getElementById('modal-container');
     const wrapper = document.querySelector('.modal-wrapper');
@@ -21524,6 +21533,7 @@ const app = {
     const overlay = document.getElementById('modal-container');
     const wrapper = document.querySelector('.modal-wrapper');
     const dialog = document.getElementById('modal-dialog') || document.querySelector('.modal-container');
+    const footerEl = document.querySelector('#modal-dialog > #modal-footer') || document.getElementById('modal-footer');
 
     if (overlay) {
       overlay.classList.remove('active');
@@ -21534,6 +21544,10 @@ const app = {
     }
     if (dialog) {
       dialog.style.maxWidth = '';
+    }
+    if (footerEl) {
+      footerEl.innerHTML = '';
+      footerEl.style.display = 'none';
     }
   },
 };
