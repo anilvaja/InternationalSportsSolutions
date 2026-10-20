@@ -45,7 +45,7 @@ const QUICK_ACCOUNTS = [
   },
 ];
 
-export default function LoginScreen({ onLoginSuccess }) {
+export default function LoginScreen({ onLoginSuccess, bottomOffset = 30 }) {
   const [slug, setSlug] = useState('pratik-karate-academy');
   const [email, setEmail] = useState('admin@pratik-karate-academy.internationalsportssolutions.test');
   const [password, setPassword] = useState('password');
@@ -107,7 +107,13 @@ export default function LoginScreen({ onLoginSuccess }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={[
+        styles.container,
+        { paddingBottom: Math.max(bottomOffset, 36) + 30 },
+      ]}
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.card}>
         {/* Brand Header */}
         <View style={styles.header}>

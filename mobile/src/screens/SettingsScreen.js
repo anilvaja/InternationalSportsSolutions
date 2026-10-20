@@ -17,7 +17,7 @@ import {
   getDefaultHost,
 } from '../api';
 
-export default function SettingsScreen({ user, onLogout }) {
+export default function SettingsScreen({ user, onLogout, onOffsetChange, currentOffset }) {
   const [apiUrl, setApiUrlState] = useState('');
   const [slug, setSlug] = useState('');
   const [saving, setSaving] = useState(false);
@@ -125,6 +125,32 @@ export default function SettingsScreen({ user, onLogout }) {
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
           <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save Settings'}</Text>
         </TouchableOpacity>
+      </View>
+
+      {/* Phone Button Clearance Sizer */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>📱 Bottom Phone Buttons Clearance</Text>
+        <Text style={styles.cardSub}>Lift bottom navigation tabs to prevent phone Back/Home button overlap</Text>
+
+        <View style={styles.presetGrid}>
+          {[20, 28, 40, 54].map((val) => {
+            const isSelected = (currentOffset || 28) === val;
+            return (
+              <TouchableOpacity
+                key={val}
+                style={[styles.presetChip, isSelected && styles.offsetChipActive]}
+                onPress={async () => {
+                  if (onOffsetChange) onOffsetChange(val);
+                  Alert.alert('Updated', `Bottom clearance set to +${val}px.`);
+                }}
+              >
+                <Text style={[styles.presetChipText, isSelected && styles.offsetChipTextActive]}>
+                  +{val}px {val === 28 ? '(Std)' : val === 40 ? '(Tall)' : ''}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       {/* Logout Card */}
@@ -263,6 +289,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textMuted,
     fontWeight: '600',
+  },
+  offsetChipActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+  },
+  offsetChipTextActive: {
+    color: colors.primary,
+    fontWeight: '700',
   },
   saveBtn: {
     backgroundColor: colors.primary,

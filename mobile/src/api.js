@@ -7,6 +7,7 @@ const SECURE_STORE_KEYS = {
   USER_DATA: 'iss_user_data',
   ACADEMY_SLUG: 'iss_academy_slug',
   ACTIVE_SCREEN: 'iss_active_screen',
+  BOTTOM_OFFSET: 'iss_bottom_offset',
 };
 
 async function getItem(key) {
@@ -198,4 +199,26 @@ export async function api(method, path, body = undefined, overrideSlug = null) {
 export function formatCurrency(amount) {
   const num = Number(amount || 0);
   return `₹${num.toLocaleString('en-IN')}`;
+}
+
+let cachedBottomOffset = null;
+
+export async function getStoredBottomOffset() {
+  if (cachedBottomOffset !== null) return cachedBottomOffset;
+  try {
+    const stored = await getItem(SECURE_STORE_KEYS.BOTTOM_OFFSET);
+    if (stored !== null && !isNaN(Number(stored))) {
+      cachedBottomOffset = Number(stored);
+      return cachedBottomOffset;
+    }
+  } catch (e) {}
+  // Default offset: 28px on Android to comfortably clear 3-button system navigation bar
+  cachedBottomOffset = Platform.OS === 'android' ? 28 : 12;
+  return cachedBottomOffset;
+}
+
+export async function setStoredBottomOffset(offset) {
+  const num = Number(offset || 0);
+  cachedBottomOffset = num;
+  await setItem(SECURE_STORE_KEYS.BOTTOM_OFFSET, String(num));
 }

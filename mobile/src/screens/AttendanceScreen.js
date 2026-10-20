@@ -166,55 +166,8 @@ export default function AttendanceScreen({ user }) {
         </View>
       </View>
 
-      {/* Student Attendance List */}
-      <ScrollView contentContainerStyle={styles.scrollList}>
-        {students.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>No students actively enrolled in this batch.</Text>
-          </View>
-        ) : (
-          students.map((s) => {
-            const status = attendanceMap[s.id] || 'present';
-            const isPresent = status === 'present';
-            const sName = `${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Student';
-
-            return (
-              <TouchableOpacity
-                key={s.id}
-                style={[
-                  styles.studentRow,
-                  isPresent ? styles.rowPresent : styles.rowAbsent,
-                ]}
-                onPress={() => toggleStudentStatus(s.id)}
-              >
-                <View style={styles.studentInfo}>
-                  <Text style={styles.studentName}>{sName}</Text>
-                  <Text style={styles.studentId}>{s.admission_number || `#STU-${s.id}`}</Text>
-                </View>
-
-                <View
-                  style={[
-                    styles.toggleBadge,
-                    isPresent ? styles.togglePresent : styles.toggleAbsent,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.toggleText,
-                      isPresent ? styles.toggleTextPresent : styles.toggleTextAbsent,
-                    ]}
-                  >
-                    {isPresent ? '✓ PRESENT' : '✕ ABSENT'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
-      </ScrollView>
-
-      {/* Bottom Save Bar */}
-      <View style={styles.bottomBar}>
+      {/* Save Button Header Banner */}
+      <View style={styles.saveHeaderBanner}>
         <TouchableOpacity
           style={[styles.submitBtn, submitting && styles.btnDisabled]}
           onPress={submitAttendance}
@@ -223,10 +176,71 @@ export default function AttendanceScreen({ user }) {
           {submitting ? (
             <ActivityIndicator color={colors.white} />
           ) : (
-            <Text style={styles.submitBtnText}>Save Batch Attendance</Text>
+            <Text style={styles.submitBtnText}>💾 Save Attendance ({presentCount} Present)</Text>
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Student Attendance List */}
+      <ScrollView contentContainerStyle={styles.scrollList}>
+        {students.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No students actively enrolled in this batch.</Text>
+          </View>
+        ) : (
+          <>
+            {students.map((s) => {
+              const status = attendanceMap[s.id] || 'present';
+              const isPresent = status === 'present';
+              const sName = `${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Student';
+
+              return (
+                <TouchableOpacity
+                  key={s.id}
+                  style={[
+                    styles.studentRow,
+                    isPresent ? styles.rowPresent : styles.rowAbsent,
+                  ]}
+                  onPress={() => toggleStudentStatus(s.id)}
+                >
+                  <View style={styles.studentInfo}>
+                    <Text style={styles.studentName}>{sName}</Text>
+                    <Text style={styles.studentId}>{s.admission_number || `#STU-${s.id}`}</Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.toggleBadge,
+                      isPresent ? styles.togglePresent : styles.toggleAbsent,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.toggleText,
+                        isPresent ? styles.toggleTextPresent : styles.toggleTextAbsent,
+                      ]}
+                    >
+                      {isPresent ? '✓ PRESENT' : '✕ ABSENT'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity
+              style={[styles.submitBtn, styles.footerSubmitBtn, submitting && styles.btnDisabled]}
+              onPress={submitAttendance}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color={colors.white} />
+              ) : (
+                <Text style={styles.submitBtnText}>💾 Save Attendance ({presentCount} Present)</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -384,28 +398,32 @@ const styles = StyleSheet.create({
   toggleTextAbsent: {
     color: colors.danger,
   },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: colors.bgCard,
-    padding: 14,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+  saveHeaderBanner: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
   },
   submitBtn: {
     backgroundColor: colors.primary,
-    paddingVertical: 13,
+    paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  footerSubmitBtn: {
+    marginTop: 14,
+    marginBottom: 40,
   },
   btnDisabled: {
     opacity: 0.7,
   },
   submitBtnText: {
     color: colors.white,
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: '700',
   },
 });
+

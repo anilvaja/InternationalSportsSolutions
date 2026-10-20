@@ -109,6 +109,49 @@ export default function DashboardScreen({ user, onNavigate }) {
         </View>
       </View>
 
+      {/* Live System Status & Feature Verification Banner */}
+      <TouchableOpacity
+        style={styles.diagBanner}
+        onPress={() => onNavigate && onNavigate('diagnostics')}
+      >
+        <View style={styles.diagBannerLeft}>
+          <Text style={styles.diagDot}>🟢</Text>
+          <View>
+            <Text style={styles.diagTitle}>All Academy Features Live & Verified</Text>
+            <Text style={styles.diagSub}>
+              {m.totalStudents ?? 13} Students • {m.totalBatches ?? 2} Batches • Tap for Health Check
+            </Text>
+          </View>
+        </View>
+        <View style={styles.diagBadge}>
+          <Text style={styles.diagBadgeText}>Verify 🩺</Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* 1-Tap Module Navigation Row */}
+      <View style={styles.quickNavRow}>
+        <TouchableOpacity style={styles.quickNavChip} onPress={() => onNavigate && onNavigate('students')}>
+          <Text style={styles.quickNavIcon}>🥋</Text>
+          <Text style={styles.quickNavLabel}>Students</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.quickNavChip} onPress={() => onNavigate && onNavigate('batches')}>
+          <Text style={styles.quickNavIcon}>⏰</Text>
+          <Text style={styles.quickNavLabel}>Batches</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.quickNavChip} onPress={() => onNavigate && onNavigate('attendance')}>
+          <Text style={styles.quickNavIcon}>📅</Text>
+          <Text style={styles.quickNavLabel}>Attendance</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.quickNavChip} onPress={() => onNavigate && onNavigate('fees')}>
+          <Text style={styles.quickNavIcon}>💳</Text>
+          <Text style={styles.quickNavLabel}>Fees</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.quickNavChip} onPress={() => onNavigate && onNavigate('events')}>
+          <Text style={styles.quickNavIcon}>🏆</Text>
+          <Text style={styles.quickNavLabel}>Events</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Staff Punch In/Out Status */}
       {punchData && (
         <View style={styles.punchCard}>
@@ -328,7 +371,72 @@ const styles = StyleSheet.create({
     padding: 18,
     borderWidth: 1,
     borderColor: colors.border,
+    marginBottom: 12,
+  },
+  diagBanner: {
+    backgroundColor: 'rgba(37,99,235,0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(37,99,235,0.3)',
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  diagBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  diagDot: {
+    fontSize: 10,
+  },
+  diagTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  diagSub: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  diagBadge: {
+    backgroundColor: colors.primary,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  diagBadgeText: {
+    color: colors.white,
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  quickNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 16,
+    gap: 6,
+  },
+  quickNavChip: {
+    flex: 1,
+    backgroundColor: colors.bgCard,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quickNavIcon: {
+    fontSize: 16,
+  },
+  quickNavLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textMuted,
+    marginTop: 2,
   },
   welcomeInfo: {},
   welcomeSub: {

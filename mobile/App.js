@@ -12,6 +12,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from './src/theme';
 import {
   getStoredToken,
@@ -21,6 +22,8 @@ import {
   setSessionExpiredHandler,
   getStoredScreen,
   setStoredScreen,
+  getStoredBottomOffset,
+  setStoredBottomOffset,
 } from './src/api';
 
 // Screens
@@ -31,6 +34,7 @@ import BatchesScreen from './src/screens/BatchesScreen';
 import AttendanceScreen from './src/screens/AttendanceScreen';
 import FeesScreen from './src/screens/FeesScreen';
 import EventsScreen from './src/screens/EventsScreen';
+import DiagnosticsScreen from './src/screens/DiagnosticsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 
 const NAV_ITEMS = [
@@ -40,6 +44,7 @@ const NAV_ITEMS = [
   { id: 'attendance', label: 'Daily Attendance', icon: '📅' },
   { id: 'fees', label: 'Fee Invoices & Ledger', icon: '💳' },
   { id: 'events', label: 'Events & Tournaments', icon: '🏆' },
+  { id: 'diagnostics', label: 'Verify All Features', icon: '🩺' },
   { id: 'settings', label: 'Settings & Network', icon: '⚙' },
 ];
 
@@ -48,14 +53,25 @@ const BOTTOM_TABS = [
   { id: 'students', label: 'Students', icon: '🥋' },
   { id: 'attendance', label: 'Attendance', icon: '📅' },
   { id: 'fees', label: 'Fees', icon: '💳' },
+  { id: 'diagnostics', label: 'Verify All', icon: '🩺' },
 ];
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}
+
+function AppContent() {
+  const insets = useSafeAreaInsets();
   const [booting, setBooting] = useState(true);
   const [user, setUser] = useState(null);
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarAnim] = useState(new Animated.Value(-260));
+  const [bottomOffset, setBottomOffset] = useState(Platform.OS === 'android' ? 28 : 12);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -66,13 +82,18 @@ export default function App() {
     });
   }, []);
 
-  // Boot validation
+  // Boot validation & offset load
   useEffect(() => {
     async function checkSession() {
       try {
         const token = await getStoredToken();
         const storedUser = await getStoredUser();
         const storedScreen = await getStoredScreen();
+        const storedOffset = await getStoredBottomOffset();
+
+        if (storedOffset !== null) {
+          setBottomOffset(storedOffset);
+        }
 
         if (storedScreen) {
           setCurrentPage(storedScreen);
@@ -96,6 +117,11 @@ export default function App() {
     }
     checkSession();
   }, []);
+
+  const handleOffsetChange = async (newVal) => {
+    setBottomOffset(newVal);
+    await setStoredBottomOffset(newVal);
+  };
 
   const handleLoginSuccess = async (userData) => {
     setUser(userData);
@@ -138,6 +164,9 @@ export default function App() {
     }
   };
 
+  // Safe bottom clearance to avoid colliding with Android virtual buttons or iOS home bar
+  const effectiveBottom = Math.max(insets.bottom, bottomOffset);
+
   if (booting) {
     return (
       <View style={styles.bootingContainer}>
@@ -149,7 +178,12 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <View style={[styles.safeArea, { paddingBottom: effectiveBottom }]}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.bgDark} />
+        <LoginScreen onLoginSuccess={handleLoginSuccess} bottomOffset={effectiveBottom} />
+      </View>
+    );
   }
 
   const renderActiveScreen = () => {
@@ -166,8 +200,24 @@ export default function App() {
         return <FeesScreen user={user} />;
       case 'events':
         return <EventsScreen user={user} />;
+      case 'diagnostics':
+        return (
+          <DiagnosticsScreen
+            user={user}
+            onNavigate={navigateTo}
+            onOffsetChange={handleOffsetChange}
+            currentOffset={bottomOffset}
+          />
+        );
       case 'settings':
-        return <SettingsScreen user={user} onLogout={handleLogout} />;
+        return (
+          <SettingsScreen
+            user={user}
+            onLogout={handleLogout}
+            onOffsetChange={handleOffsetChange}
+            currentOffset={bottomOffset}
+          />
+        );
       default:
         return <DashboardScreen user={user} onNavigate={navigateTo} />;
     }
@@ -196,19 +246,17 @@ export default function App() {
 
         <TouchableOpacity
           style={styles.profileBtn}
-          onPress={() => navigateTo('settings')}
+          onPress={() => navigateTo('diagnostics')}
         >
-          <Text style={styles.profileInitials}>
-            {(user.name || user.email || 'U').slice(0, 2).toUpperCase()}
-          </Text>
+          <Text style={styles.profileInitials}>🩺</Text>
         </TouchableOpacity>
       </View>
 
       {/* Main Screen Body */}
       <View style={styles.screenBody}>{renderActiveScreen()}</View>
 
-      {/* Bottom Quick Navigation Tabs */}
-      <View style={styles.bottomBar}>
+      {/* Elevated Bottom Quick Navigation Tabs */}
+      <View style={[styles.bottomBar, { paddingBottom: effectiveBottom + 2, minHeight: 56 + effectiveBottom }]}>
         {BOTTOM_TABS.map((tab) => {
           const isActive = currentPage === tab.id;
           return (
@@ -264,7 +312,7 @@ export default function App() {
               </ScrollView>
 
               {/* Drawer Footer */}
-              <View style={styles.drawerFooter}>
+              <View style={[styles.drawerFooter, { paddingBottom: effectiveBottom + 10 }]}>
                 <TouchableOpacity style={styles.drawerLogoutBtn} onPress={handleLogout}>
                   <Text style={styles.drawerLogoutText}>🔒 Sign Out</Text>
                 </TouchableOpacity>
@@ -351,32 +399,32 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(37,99,235,0.4)',
   },
   profileInitials: {
-    color: colors.primary,
-    fontSize: 12.5,
-    fontWeight: '700',
+    fontSize: 16,
   },
   screenBody: {
     flex: 1,
     backgroundColor: colors.bgDark,
   },
   bottomBar: {
-    height: 56,
     flexDirection: 'row',
     backgroundColor: colors.bgCard,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    paddingTop: 8,
   },
   bottomTab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 4,
+    borderRadius: 8,
+    marginHorizontal: 2,
   },
   bottomTabActive: {
-    backgroundColor: 'rgba(37,99,235,0.08)',
+    backgroundColor: 'rgba(37,99,235,0.12)',
   },
   bottomTabIcon: {
-    fontSize: 18,
+    fontSize: 19,
   },
   bottomTabLabel: {
     fontSize: 10.5,
@@ -401,13 +449,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.65)',
   },
   drawer: {
-    width: 260,
+    width: 270,
     backgroundColor: colors.bgCard,
     height: '100%',
     borderRightWidth: 1,
     borderRightColor: colors.border,
     paddingTop: Platform.OS === 'ios' ? 44 : 20,
-    paddingBottom: 20,
     elevation: 16,
     shadowColor: '#000',
     shadowOffset: { width: 4, height: 0 },
