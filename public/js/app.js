@@ -796,7 +796,7 @@ const app = {
     'payroll': 'Staff Payroll & Finalization',
     'my-salary': 'My Salary & Earnings Statement',
     'approvals': 'Approvals Inbox',
-    'employee-map': 'Employee Live GPS Punch & Attendance Map',
+    'employee-map': 'Staff Sign-In & Sign-Out Map',
     'policy-settings': 'Academy Policy Settings',
     'roles-permissions': 'Roles & Permissions Access Control',
     'events': 'Events & Tournaments',
@@ -988,7 +988,7 @@ const app = {
           <i class="fa-solid fa-user-ninja"></i> Coaches & Staff
         </a>
         <a href="${this.getPathForTab('employee-map')}" class="nav-item ${this.currentTab === 'employee-map' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('employee-map')">
-          <i class="fa-solid fa-map-location-dot" style="color: #10b981;"></i> Staff GPS Live Map
+          <i class="fa-solid fa-map-location-dot" style="color: #10b981;"></i> Staff Sign-In / Out Map
         </a>
         <a href="${this.getPathForTab('leaves')}" class="nav-item ${this.currentTab === 'leaves' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('leaves')">
           <i class="fa-solid fa-calendar-check"></i> Leaves Management
@@ -4139,17 +4139,17 @@ const app = {
     const dateVal = filters.date || new Date().toISOString().split('T')[0];
 
     main.innerHTML = `
-      <div class="content-header" style="margin-bottom: 1.5rem;">
+      <div class="content-header" style="margin-bottom: 1.25rem;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
           <div>
             <h1 style="font-size: 1.75rem; font-weight: 700; color: #0f172a; margin: 0 0 0.35rem 0; display: flex; align-items: center; gap: 0.6rem;">
-              <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; font-size: 1.15rem; box-shadow: 0 4px 12px rgba(37,99,235,0.25);">
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, #10b981, #047857); color: white; font-size: 1.15rem; box-shadow: 0 4px 12px rgba(16,185,129,0.25);">
                 <i class="fa-solid fa-map-location-dot"></i>
               </span>
-              Employee GPS Check-In & Check-Out Live Map
+              Staff Sign-In & Sign-Out Attendance Map
             </h1>
             <p style="margin: 0; color: #64748b; font-size: 0.95rem;">
-              Track where and when all staff, coaches, and employees punched in or out across all academy branches.
+              View verified GPS punch locations recorded strictly upon employee Sign-In and Sign-Out. Continuous live location tracking is disabled.
             </p>
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
@@ -4157,36 +4157,44 @@ const app = {
               <i class="fa-solid fa-users"></i> Staff List
             </button>
             <button class="btn btn-primary" onclick="app.renderEmployeeMap()" style="display: inline-flex; align-items: center; gap: 0.4rem;">
-              <i class="fa-solid fa-rotate"></i> Refresh Map
+              <i class="fa-solid fa-rotate"></i> Refresh Status
             </button>
           </div>
         </div>
       </div>
 
+      <!-- Privacy & GPS Tracking Policy Banner -->
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 0.85rem 1.15rem; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.75rem; color: #166534; font-size: 0.88rem;">
+        <i class="fa-solid fa-shield-halved" style="font-size: 1.3rem; color: #16a34a; flex-shrink: 0;"></i>
+        <div>
+          <strong>Privacy Protected:</strong> Staff GPS coordinates are captured <u>only</u> at the exact instant of tapping <strong>Sign In</strong> or <strong>Sign Out</strong> to verify branch proximity. The system does <strong>not</strong> track users' live GPS or background movement throughout the day.
+        </div>
+      </div>
+
       <!-- Filters & Toolbar -->
-      <div class="card" style="margin-bottom: 1.5rem; padding: 1.25rem; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+      <div class="card" style="margin-bottom: 1.25rem; padding: 1.15rem; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
           <div style="flex: 1; min-width: 170px;">
             <label style="display: block; font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 0.35rem;">
-              <i class="fa-regular fa-calendar" style="margin-right: 0.25rem;"></i> Select Date
+              <i class="fa-regular fa-calendar" style="margin-right: 0.25rem;"></i> Attendance Date
             </label>
             <input type="date" id="map-filter-date" class="form-control" value="${dateVal}" style="padding: 0.55rem 0.75rem; border-radius: 8px; font-size: 0.9rem;" onchange="app.employeeMapFilters.date = this.value; app.renderEmployeeMap();">
           </div>
 
           <div style="flex: 1; min-width: 170px;">
             <label style="display: block; font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 0.35rem;">
-              <i class="fa-solid fa-arrows-left-right-to-line" style="margin-right: 0.25rem;"></i> Punch Event Type
+              <i class="fa-solid fa-arrows-left-right-to-line" style="margin-right: 0.25rem;"></i> Event Type
             </label>
             <select id="map-filter-type" class="form-control" style="padding: 0.55rem 0.75rem; border-radius: 8px; font-size: 0.9rem;" onchange="app.employeeMapFilters.punch_type = this.value; app.renderEmployeeMap();">
-              <option value="" ${!filters.punch_type ? 'selected' : ''}>All Events (Check-In & Check-Out)</option>
-              <option value="punch_in" ${filters.punch_type === 'punch_in' ? 'selected' : ''}>🟢 Check-Ins Only</option>
-              <option value="punch_out" ${filters.punch_type === 'punch_out' ? 'selected' : ''}>🟠 Check-Outs Only</option>
+              <option value="" ${!filters.punch_type ? 'selected' : ''}>All Events (Sign-In & Sign-Out)</option>
+              <option value="punch_in" ${filters.punch_type === 'punch_in' ? 'selected' : ''}>🟢 Sign-Ins Only</option>
+              <option value="punch_out" ${filters.punch_type === 'punch_out' ? 'selected' : ''}>🟠 Sign-Outs Only</option>
             </select>
           </div>
 
           <div style="flex: 1; min-width: 180px;">
             <label style="display: block; font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 0.35rem;">
-              <i class="fa-solid fa-user-tie" style="margin-right: 0.25rem;"></i> Filter by Employee
+              <i class="fa-solid fa-user-tie" style="margin-right: 0.25rem;"></i> Filter by Staff Member
             </label>
             <select id="map-filter-user" class="form-control" style="padding: 0.55rem 0.75rem; border-radius: 8px; font-size: 0.9rem;" onchange="app.employeeMapFilters.user_id = this.value; app.renderEmployeeMap();">
               <option value="">All Staff Members</option>
@@ -4201,15 +4209,15 @@ const app = {
         </div>
       </div>
 
-      <!-- Live KPI Summary Badges -->
-      <div id="map-kpi-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+      <!-- KPI Summary Badges -->
+      <div id="map-kpi-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
         <div class="card" style="padding: 1rem 1.25rem; border-radius: 12px; background: #fff; border: 1px solid #e2e8f0; display: flex; align-items: center; gap: 1rem;">
           <div style="width: 44px; height: 44px; border-radius: 10px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">
-            <i class="fa-solid fa-location-crosshairs"></i>
+            <i class="fa-solid fa-users"></i>
           </div>
           <div>
-            <div style="font-size: 0.8rem; color: #64748b; font-weight: 600; text-transform: uppercase;">Total Punches</div>
-            <div id="kpi-total-punches" style="font-size: 1.45rem; font-weight: 700; color: #0f172a;">--</div>
+            <div style="font-size: 0.78rem; color: #64748b; font-weight: 600; text-transform: uppercase;">Total Staff</div>
+            <div id="kpi-total-staff" style="font-size: 1.45rem; font-weight: 700; color: #0f172a;">--</div>
           </div>
         </div>
 
@@ -4218,7 +4226,7 @@ const app = {
             <i class="fa-solid fa-right-to-bracket"></i>
           </div>
           <div>
-            <div style="font-size: 0.8rem; color: #047857; font-weight: 600; text-transform: uppercase;">Check-Ins</div>
+            <div style="font-size: 0.78rem; color: #047857; font-weight: 600; text-transform: uppercase;">Signed In Today</div>
             <div id="kpi-check-ins" style="font-size: 1.45rem; font-weight: 700; color: #047857;">--</div>
           </div>
         </div>
@@ -4228,7 +4236,7 @@ const app = {
             <i class="fa-solid fa-right-from-bracket"></i>
           </div>
           <div>
-            <div style="font-size: 0.8rem; color: #b45309; font-weight: 600; text-transform: uppercase;">Check-Outs</div>
+            <div style="font-size: 0.78rem; color: #b45309; font-weight: 600; text-transform: uppercase;">Signed Out</div>
             <div id="kpi-check-outs" style="font-size: 1.45rem; font-weight: 700; color: #b45309;">--</div>
           </div>
         </div>
@@ -4238,28 +4246,47 @@ const app = {
             <i class="fa-solid fa-triangle-exclamation"></i>
           </div>
           <div>
-            <div style="font-size: 0.8rem; color: #b91c1c; font-weight: 600; text-transform: uppercase;">Out of Geofence</div>
+            <div style="font-size: 0.78rem; color: #b91c1c; font-weight: 600; text-transform: uppercase;">Out of Geofence</div>
             <div id="kpi-out-geofence" style="font-size: 1.45rem; font-weight: 700; color: #b91c1c;">--</div>
           </div>
         </div>
       </div>
 
-      <!-- Main Map Grid (Map on Left/Center, Live Activity Feed on Right) -->
+      <!-- Employee Attendance & Sign-In/Out Status Board -->
+      <div class="card" style="margin-bottom: 1.5rem; border-radius: 12px; border: 1px solid #cbd5e1; background: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.04); overflow: hidden;">
+        <div style="padding: 0.9rem 1.25rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+          <div style="font-weight: 700; font-size: 0.95rem; color: #0f172a; display: flex; align-items: center; gap: 0.5rem;">
+            <i class="fa-solid fa-clipboard-user" style="color: #059669;"></i>
+            Employee Sign-In & Sign-Out Status Board (${dateVal})
+          </div>
+          <span style="font-size: 0.78rem; color: #64748b;">
+            Click <strong>"View on Map"</strong> on any punch to inspect exact coordinates
+          </span>
+        </div>
+        <div id="employee-status-board-container" style="overflow-x: auto;">
+          <div style="text-align: center; color: #94a3b8; padding: 2rem 1rem;">
+            <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
+            Loading employee status records...
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Map Grid (Map on Left/Center, Punch Feed on Right) -->
       <div style="display: grid; grid-template-columns: minmax(400px, 1fr) 380px; gap: 1.5rem; align-items: start;" class="employee-map-grid">
         <!-- Interactive Leaflet Map Container -->
         <div class="card" style="border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07); position: relative; background: #f8fafc;">
-          <div style="padding: 0.75rem 1rem; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+          <div style="padding: 0.75rem 1rem; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
             <div style="font-weight: 600; font-size: 0.85rem; color: #334155; display: flex; align-items: center; gap: 0.5rem;">
-              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e;"></span>
-              Live Geolocation View
+              <i class="fa-solid fa-location-pin" style="color: #2563eb;"></i>
+              Sign-In & Sign-Out Location Map
             </div>
             <!-- Map Legend -->
             <div style="display: flex; gap: 0.85rem; font-size: 0.75rem; color: #475569; align-items: center; flex-wrap: wrap;">
               <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
-                <span style="width: 10px; height: 10px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Check-In
+                <span style="width: 10px; height: 10px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Sign-In Point
               </span>
               <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
-                <span style="width: 10px; height: 10px; border-radius: 50%; background: #f59e0b; display: inline-block;"></span> Check-Out
+                <span style="width: 10px; height: 10px; border-radius: 50%; background: #f59e0b; display: inline-block;"></span> Sign-Out Point
               </span>
               <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
                 <span style="width: 10px; height: 10px; border-radius: 2px; background: #1e3a8a; display: inline-block;"></span> Branch Center
@@ -4270,22 +4297,22 @@ const app = {
             </div>
           </div>
 
-          <div id="all-employees-leaflet-map" style="height: 600px; width: 100%; z-index: 1;">
+          <div id="all-employees-leaflet-map" style="height: 560px; width: 100%; z-index: 1;">
             <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #64748b; gap: 0.75rem;">
               <i class="fa-solid fa-spinner fa-spin" style="font-size: 2rem; color: #3b82f6;"></i>
-              <span>Loading map and employee GPS coordinates...</span>
+              <span>Loading map and coordinates...</span>
             </div>
           </div>
         </div>
 
         <!-- Punch Events Activity Feed -->
-        <div class="card" style="border-radius: 12px; border: 1px solid #cbd5e1; background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07); overflow: hidden; display: flex; flex-direction: column; height: 645px;">
+        <div class="card" style="border-radius: 12px; border: 1px solid #cbd5e1; background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07); overflow: hidden; display: flex; flex-direction: column; height: 605px;">
           <div style="padding: 0.9rem 1.1rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
             <div style="font-weight: 700; font-size: 0.9rem; color: #0f172a; display: flex; align-items: center; gap: 0.4rem;">
               <i class="fa-solid fa-list-check" style="color: #3b82f6;"></i>
-              Punch Events Log (<span id="punch-feed-count">0</span>)
+              Punches Log (<span id="punch-feed-count">0</span>)
             </div>
-            <span style="font-size: 0.75rem; color: #64748b; font-weight: 500;">Click "Locate" to focus</span>
+            <span style="font-size: 0.75rem; color: #64748b; font-weight: 500;">Click "Locate"</span>
           </div>
 
           <div id="employee-punch-feed" style="flex: 1; overflow-y: auto; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.65rem;">
@@ -4313,35 +4340,32 @@ const app = {
 
       // Update KPI counters
       const s = res.summary || {};
-      const elTotal = document.getElementById('kpi-total-punches');
+      const elStaff = document.getElementById('kpi-total-staff');
       const elIn = document.getElementById('kpi-check-ins');
       const elOut = document.getElementById('kpi-check-outs');
       const elAlerts = document.getElementById('kpi-out-geofence');
       const elFeedCount = document.getElementById('punch-feed-count');
 
-      if (elTotal) elTotal.textContent = s.total_punches || 0;
-      if (elIn) elIn.textContent = s.check_ins || 0;
-      if (elOut) elOut.textContent = s.check_outs || 0;
+      if (elStaff) elStaff.textContent = s.total_staff || (res.employee_statuses || []).length || 0;
+      if (elIn) elIn.textContent = s.currently_signed_in || 0;
+      if (elOut) elOut.textContent = s.currently_signed_out || 0;
       if (elAlerts) elAlerts.textContent = s.out_of_geofence || 0;
       if (elFeedCount) elFeedCount.textContent = (res.punches || []).length;
 
       // Populate user dropdown if not populated
       const userSelect = document.getElementById('map-filter-user');
       if (userSelect && userSelect.options.length <= 1) {
-        const uniqueUsers = {};
-        (res.punches || []).forEach(p => {
-          if (p.user_id && !uniqueUsers[p.user_id]) {
-            uniqueUsers[p.user_id] = p.user_name || `Employee #${p.user_id}`;
-          }
-        });
-        Object.entries(uniqueUsers).forEach(([uid, name]) => {
+        (res.employee_statuses || []).forEach(emp => {
           const opt = document.createElement('option');
-          opt.value = uid;
-          opt.textContent = name;
-          if (filters.user_id === uid) opt.selected = true;
+          opt.value = emp.user_id;
+          opt.textContent = emp.name;
+          if (filters.user_id == emp.user_id) opt.selected = true;
           userSelect.appendChild(opt);
         });
       }
+
+      // Render Employee Status Board
+      this.renderEmployeeStatusBoard(res.employee_statuses || []);
 
       // Render Feed list
       this.renderPunchFeed(res.punches || []);
@@ -4363,6 +4387,128 @@ const app = {
         `;
       }
     }
+  },
+
+  renderEmployeeStatusBoard(statuses) {
+    const container = document.getElementById('employee-status-board-container');
+    if (!container) return;
+
+    if (!statuses || statuses.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; color: #94a3b8; padding: 2rem 1rem;">
+          No staff members found.
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <table class="table" style="width: 100%; margin: 0; border-collapse: collapse; font-size: 0.88rem;">
+        <thead>
+          <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #475569; text-align: left;">
+            <th style="padding: 0.75rem 1rem;">Staff Member</th>
+            <th style="padding: 0.75rem 1rem;">Role</th>
+            <th style="padding: 0.75rem 1rem;">Today's Status</th>
+            <th style="padding: 0.75rem 1rem;">Sign-In GPS Location</th>
+            <th style="padding: 0.75rem 1rem;">Sign-Out GPS Location</th>
+            <th style="padding: 0.75rem 1rem; text-align: center;">Punches</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${statuses.map(emp => {
+            let statusBadge = '';
+            if (emp.status === 'signed_in') {
+              statusBadge = `<span style="background: #ecfdf5; color: #047857; font-weight: 700; padding: 0.25rem 0.65rem; border-radius: 999px; display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.76rem; border: 1px solid #a7f3d0;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Signed In</span>`;
+            } else if (emp.status === 'signed_out') {
+              statusBadge = `<span style="background: #fffbeb; color: #b45309; font-weight: 700; padding: 0.25rem 0.65rem; border-radius: 999px; display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.76rem; border: 1px solid #fde68a;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; display: inline-block;"></span> Signed Out</span>`;
+            } else {
+              statusBadge = `<span style="background: #f1f5f9; color: #64748b; font-weight: 600; padding: 0.25rem 0.65rem; border-radius: 999px; display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.76rem;">Not Signed In</span>`;
+            }
+
+            // Sign In Block
+            let signInHtml = '<span style="color: #94a3b8; font-style: italic;">No punch</span>';
+            if (emp.first_sign_in) {
+              const p = emp.first_sign_in;
+              const time = p.punched_at ? new Date(p.punched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--';
+              const isWithin = p.is_within_geofence == 1;
+              const dist = p.distance_meters != null ? (p.distance_meters > 1000 ? `${(p.distance_meters/1000).toFixed(1)}km` : `${Math.round(p.distance_meters)}m`) : '';
+              signInHtml = `
+                <div style="display: flex; flex-direction: column; gap: 0.2rem;">
+                  <div style="display: flex; align-items: center; gap: 0.35rem; font-weight: 600; color: #0f172a;">
+                    <i class="fa-regular fa-clock" style="color: #059669; font-size: 0.75rem;"></i> ${time}
+                    <span style="font-size: 0.72rem; color: #64748b; font-weight: 400;">(${p.branch_name || 'Branch'})</span>
+                  </div>
+                  <div style="font-size: 0.74rem; color: #64748b; font-family: monospace;">
+                    ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}
+                    <span style="font-weight: 600; color: ${isWithin ? '#059669' : '#dc2626'};">${dist ? ` · ${dist}` : ''}</span>
+                  </div>
+                  <div>
+                    <button class="btn btn-outline-secondary" onclick="app.locatePunchOnMap(${p.latitude}, ${p.longitude}, ${p.id})" style="padding: 0.15rem 0.5rem; font-size: 0.7rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 0.25rem;">
+                      <i class="fa-solid fa-crosshairs"></i> View on Map
+                    </button>
+                  </div>
+                </div>
+              `;
+            }
+
+            // Sign Out Block
+            let signOutHtml = '<span style="color: #94a3b8; font-style: italic;">No punch</span>';
+            if (emp.last_sign_out) {
+              const p = emp.last_sign_out;
+              const time = p.punched_at ? new Date(p.punched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--';
+              const isWithin = p.is_within_geofence == 1;
+              const dist = p.distance_meters != null ? (p.distance_meters > 1000 ? `${(p.distance_meters/1000).toFixed(1)}km` : `${Math.round(p.distance_meters)}m`) : '';
+              signOutHtml = `
+                <div style="display: flex; flex-direction: column; gap: 0.2rem;">
+                  <div style="display: flex; align-items: center; gap: 0.35rem; font-weight: 600; color: #0f172a;">
+                    <i class="fa-regular fa-clock" style="color: #d97706; font-size: 0.75rem;"></i> ${time}
+                    <span style="font-size: 0.72rem; color: #64748b; font-weight: 400;">(${p.branch_name || 'Branch'})</span>
+                  </div>
+                  <div style="font-size: 0.74rem; color: #64748b; font-family: monospace;">
+                    ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}
+                    <span style="font-weight: 600; color: ${isWithin ? '#059669' : '#dc2626'};">${dist ? ` · ${dist}` : ''}</span>
+                  </div>
+                  <div>
+                    <button class="btn btn-outline-secondary" onclick="app.locatePunchOnMap(${p.latitude}, ${p.longitude}, ${p.id})" style="padding: 0.15rem 0.5rem; font-size: 0.7rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 0.25rem;">
+                      <i class="fa-solid fa-crosshairs"></i> View on Map
+                    </button>
+                  </div>
+                </div>
+              `;
+            }
+
+            return `
+              <tr style="border-bottom: 1px solid #f1f5f9; vertical-align: top;">
+                <td style="padding: 0.75rem 1rem;">
+                  <div style="font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 0.45rem;">
+                    <span style="width: 28px; height: 28px; border-radius: 50%; background: #e0e7ff; color: #4338ca; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700;">
+                      ${(emp.name || 'S').charAt(0)}
+                    </span>
+                    <span>${emp.name}</span>
+                  </div>
+                  <div style="font-size: 0.74rem; color: #64748b; margin-left: 36px;">${emp.email || ''}</div>
+                </td>
+                <td style="padding: 0.75rem 1rem; color: #475569; font-size: 0.8rem; text-transform: capitalize;">
+                  ${(emp.role || 'staff').replace('_', ' ')}
+                </td>
+                <td style="padding: 0.75rem 1rem;">
+                  ${statusBadge}
+                </td>
+                <td style="padding: 0.75rem 1rem;">
+                  ${signInHtml}
+                </td>
+                <td style="padding: 0.75rem 1rem;">
+                  ${signOutHtml}
+                </td>
+                <td style="padding: 0.75rem 1rem; text-align: center; font-weight: 700; color: #334155;">
+                  ${emp.total_punches_today}
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
   },
 
   renderPunchFeed(punches) {
@@ -10406,7 +10552,7 @@ const app = {
           <h2 class="card-title"><i class="fa-solid fa-user-ninja"></i> Coaching & Staff Team (${totalCount})</h2>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
             <button class="btn btn-secondary btn-sm" onclick="app.navigate('employee-map')">
-              <i class="fa-solid fa-map-location-dot" style="color: #10b981;"></i> GPS Live Map
+              <i class="fa-solid fa-map-location-dot" style="color: #10b981;"></i> Sign-In / Out Map
             </button>
             <button class="btn btn-secondary btn-sm" onclick="app.showImportCoachesModal()">
               <i class="fa-solid fa-file-import"></i> Import CSV

@@ -6553,22 +6553,70 @@ academyRouter.get('/punches/map', (req, res) => {
       WHERE latitude IS NOT NULL AND longitude IS NOT NULL
     `).all();
 
+    // Compute Sign-In / Sign-Out Attendance Status for each staff member
+    const targetDate = date || new Date().toISOString().split('T')[0];
+    const staffMembers = db.prepare(`
+      SELECT id, name, email, role, avatar_url
+      FROM users
+      WHERE role IN ('coach', 'academy_staff', 'branch_admin', 'academy_admin')
+      ORDER BY name ASC
+    `).all();
+
+    const datePunches = db.prepare(`
+      SELECT sp.*, b.name as branch_name 
+      FROM staff_punches sp 
+      LEFT JOIN branches b ON sp.branch_id = b.id 
+      WHERE date(sp.punched_at) = ?
+      ORDER BY sp.punched_at ASC
+    `).all(targetDate);
+
+    const employeeStatuses = staffMembers.map(emp => {
+      const empPunches = datePunches.filter(p => p.user_id === emp.id);
+      const firstIn = empPunches.find(p => p.punch_type === 'punch_in');
+      const lastOut = [...empPunches].reverse().find(p => p.punch_type === 'punch_out');
+      const latestPunch = empPunches.length > 0 ? empPunches[empPunches.length - 1] : null;
+
+      let status = 'not_signed_in';
+      if (latestPunch) {
+        status = latestPunch.punch_type === 'punch_in' ? 'signed_in' : 'signed_out';
+      }
+
+      return {
+        user_id: emp.id,
+        name: emp.name,
+        email: emp.email,
+        role: emp.role,
+        avatar_url: emp.avatar_url,
+        status,
+        first_sign_in: firstIn || null,
+        last_sign_out: lastOut || null,
+        latest_punch: latestPunch || null,
+        total_punches_today: empPunches.length,
+      };
+    });
+
     // Summary metrics
     const totalPunches = punches.length;
     const checkIns = punches.filter(p => p.punch_type === 'punch_in').length;
     const checkOuts = punches.filter(p => p.punch_type === 'punch_out').length;
     const outOfGeofence = punches.filter(p => !p.is_within_geofence).length;
+    const signedInCount = employeeStatuses.filter(e => e.status === 'signed_in').length;
+    const signedOutCount = employeeStatuses.filter(e => e.status === 'signed_out').length;
 
     res.json({
       success: true,
       punches,
       branches,
+      employee_statuses: employeeStatuses,
       summary: {
         total_punches: totalPunches,
         check_ins: checkIns,
         check_outs: checkOuts,
         out_of_geofence: outOfGeofence,
         unique_employees: new Set(punches.map(p => p.user_id)).size,
+        total_staff: staffMembers.length,
+        currently_signed_in: signedInCount,
+        currently_signed_out: signedOutCount,
       },
     });
   } catch (err) {
