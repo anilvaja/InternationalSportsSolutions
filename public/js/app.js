@@ -3227,13 +3227,14 @@ const app = {
   // ==========================================
 
   async renderAcademyOverview() {
-    const data = await this.apiRequest('/api/academy/dashboard');
-    const content = document.getElementById('page-content');
+    try {
+      const data = await this.apiRequest('/api/academy/dashboard');
+      const content = document.getElementById('page-content');
 
-    if (!data.success) {
-      content.innerHTML = `<div class="toast danger">${data.error}</div>`;
-      return;
-    }
+      if (!data || !data.success) {
+        if (content) content.innerHTML = `<div class="toast danger">${(data && data.error) || 'Failed to load dashboard data'}</div>`;
+        return;
+      }
 
     // Synchronize active academy branding if provided
     if (data.academy) {
@@ -3390,6 +3391,8 @@ const app = {
     const todayBatches = (todayBatchesRes && todayBatchesRes.success) ? (todayBatchesRes.batches || []) : [];
     const todayDateStr = (todayBatchesRes && todayBatchesRes.today) || new Date().toISOString().split('T')[0];
 
+    const isCoach = (this.user.role === 'coach') || (m && m.isCoach);
+
     const curHour = new Date().getHours();
     const greetingTime = curHour < 12 ? 'Good Morning' : (curHour < 17 ? 'Good Afternoon' : 'Good Evening');
     const greetingUser = this.user.name || this.user.username || 'Admin';
@@ -3401,7 +3404,7 @@ const app = {
     const attAbsent = Number(att.absent || 0);
     const attLate = Number(att.late || 0);
     const attTotalMarked = Number(att.marked || (attPresent + attAbsent + attLate) || 0);
-    const attScheduled = Number(att.scheduledStudents || m.studentsToTrainToday || m.totalStudents || 0);
+    const attScheduled = Number(att.scheduledStudents || (m && m.studentsToTrainToday) || (m && m.totalStudents) || 0);
     const attRate = attTotalMarked > 0 ? Math.round((attPresent / attTotalMarked) * 100) : 0;
 
     // Build Today's Assigned Batches Widget HTML
@@ -4113,6 +4116,22 @@ const app = {
       }
       const timerEl = document.getElementById('punch-live-timer');
       if (timerEl) timerEl.innerText = '00:00:00';
+    }
+    } catch (err) {
+      console.error('Error rendering dashboard:', err);
+      const content = document.getElementById('page-content');
+      if (content) {
+        content.innerHTML = `
+          <div style="padding: 30px; text-align: center;">
+            <div class="toast danger" style="margin-bottom: 16px;">
+              <i class="fa-solid fa-triangle-exclamation"></i> Error loading dashboard: ${this.escapeHtml(err.message)}
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="app.renderAcademyOverview()">
+              <i class="fa-solid fa-rotate"></i> Try Again
+            </button>
+          </div>
+        `;
+      }
     }
   },
 
