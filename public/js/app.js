@@ -6823,64 +6823,78 @@ const app = {
 
   openSetStudentPasswordModal(studentId, studentName, studentEmail = '', studentCode = '') {
     const content = `
-      <form id="set-student-password-form" onsubmit="event.preventDefault(); app.submitSetStudentPassword(${studentId});">
-        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
-          <div style="font-weight: 700; color: #059669; font-size: 13px; display: flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-shield-halved"></i> Student Portal Authentication
+      <form id="set-student-password-form" class="pwd-modal-card" onsubmit="event.preventDefault(); app.submitSetStudentPassword(${studentId});">
+        <div class="pwd-hero-banner">
+          <div class="pwd-hero-icon">
+            <i class="fa-solid fa-graduation-cap"></i>
           </div>
-          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.45;">
-            Configure the login credentials used by <strong>${this.escapeHtml(studentName)}</strong> to access the Student Portal (<strong>/student</strong>) to view attendance, syllabus techniques, fee ledger, and notifications.
-          </div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
-          <div>
-            <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Student Name</label>
-            <input type="text" class="form-control" value="${this.escapeHtml(studentName)}" disabled style="background: rgba(0,0,0,0.04);">
-          </div>
-          <div>
-            <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Student Code</label>
-            <input type="text" class="form-control" value="${this.escapeHtml(studentCode || '-')}" disabled style="background: rgba(0,0,0,0.04);">
+          <div class="pwd-hero-content">
+            <div class="pwd-hero-title">Student Portal Credentials</div>
+            <div class="pwd-hero-desc">
+              Configure login credentials for <strong>${this.escapeHtml(studentName)}</strong> to access their student portal.
+            </div>
+            <div class="pwd-hero-chips">
+              <span class="pwd-user-badge"><i class="fa-solid fa-id-badge"></i> Code: ${this.escapeHtml(studentCode || '-')}</span>
+              <span class="pwd-role-badge">STUDENT</span>
+            </div>
           </div>
         </div>
 
-        <div style="margin-bottom: 14px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
-            Portal Login Email <span style="color: #ef4444;">*</span>
-          </label>
-          <input type="email" id="set-student-email" class="form-control" value="${this.escapeHtml(studentEmail || '')}" placeholder="student@example.com" required style="font-weight: 500;">
-          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-            This email is used by the student/parent as their login username at the portal.
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>Portal Login Email <span class="pwd-req">*</span></span>
+          </div>
+          <div class="pwd-input-group">
+            <span class="pwd-input-icon"><i class="fa-solid fa-envelope"></i></span>
+            <input type="email" id="set-student-email" class="form-input pwd-input-field" value="${this.escapeHtml(studentEmail || '')}" placeholder="student@example.com" required>
+          </div>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+            This email is used by the student or parent to log in at /student.
           </div>
         </div>
 
-        <div style="margin-bottom: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-            <label style="font-size: 12px; font-weight: 600; margin: 0;">
-              New Password <span style="color: #ef4444;">*</span>
-            </label>
-            <button type="button" class="btn btn-xs btn-outline-secondary" onclick="app.generateRandomPassword('set-student-new-password')">
-              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Password
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>New Password <span class="pwd-req">*</span></span>
+            <button type="button" class="pwd-btn-generate" onclick="app.generateRandomPasswordForField('set-student-new-password', 'set-student-confirm-password')">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Strong
             </button>
           </div>
-          <div style="display: flex; gap: 6px;">
-            <input type="password" id="set-student-new-password" class="form-control" placeholder="Minimum 4 characters" minlength="4" required style="font-family: monospace; font-size: 13px;">
-            <button type="button" class="btn btn-secondary" onclick="app.togglePasswordVisibility('set-student-new-password', this)" title="Show/Hide Password">
+          <div class="pwd-input-group">
+            <span class="pwd-input-icon"><i class="fa-solid fa-key"></i></span>
+            <input type="password" id="set-student-new-password" class="form-input pwd-input-field" placeholder="Minimum 4 characters (recommended 8+)" minlength="4" required autocomplete="new-password" oninput="app.evaluatePasswordStrength(this.value)">
+            <button type="button" class="pwd-toggle-visibility" onclick="app.togglePasswordVisibility('set-student-new-password', this)" tabindex="-1" title="Show/Hide Password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+          <div class="pwd-strength-container" id="pwd-strength-container" style="display: none;">
+            <div class="pwd-strength-meter">
+              <div class="pwd-meter-segment" id="pwd-meter-1"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-2"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-3"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-4"></div>
+            </div>
+            <div class="pwd-strength-text" id="pwd-strength-text"></div>
+          </div>
+        </div>
+
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>Confirm Password <span class="pwd-req">*</span></span>
+            <span class="pwd-match-status" id="pwd-match-status"></span>
+          </div>
+          <div class="pwd-input-group">
+            <span class="pwd-input-icon"><i class="fa-solid fa-circle-check"></i></span>
+            <input type="password" id="set-student-confirm-password" class="form-input pwd-input-field" placeholder="Re-enter identical password" minlength="4" required autocomplete="new-password" oninput="app.checkPasswordMatch()">
+            <button type="button" class="pwd-toggle-visibility" onclick="app.togglePasswordVisibility('set-student-confirm-password', this)" tabindex="-1" title="Show/Hide Password">
               <i class="fa-solid fa-eye"></i>
             </button>
           </div>
         </div>
 
-        <div style="margin-bottom: 16px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
-            Confirm Password <span style="color: #ef4444;">*</span>
-          </label>
-          <input type="password" id="set-student-confirm-password" class="form-control" placeholder="Re-enter password to confirm" minlength="4" required style="font-family: monospace; font-size: 13px;">
-        </div>
-
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
-          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-          <button type="submit" class="btn btn-success" id="btn-submit-set-password">
+        <div class="pwd-modal-actions">
+          <button type="button" class="btn btn-secondary pwd-btn-cancel" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary pwd-btn-submit" id="btn-submit-set-password">
             <i class="fa-solid fa-key"></i> Save Credentials
           </button>
         </div>
@@ -6996,22 +7010,28 @@ const app = {
     } catch (e) {}
 
     const content = `
-      <form id="reset-academy-admin-password-form" onsubmit="event.preventDefault(); app.submitResetAcademyAdminPassword(${academyId});">
-        <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
-          <div style="font-weight: 700; color: #d97706; font-size: 13px; display: flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-key"></i> Super Admin — Academy Administrator Password Reset
+      <form id="reset-academy-admin-password-form" class="pwd-modal-card" onsubmit="event.preventDefault(); app.submitResetAcademyAdminPassword(${academyId});">
+        <div class="pwd-hero-banner">
+          <div class="pwd-hero-icon">
+            <i class="fa-solid fa-user-shield"></i>
           </div>
-          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.45;">
-            Reset the login credentials for the Academy Administrator or staff in <strong>${this.escapeHtml(academyName)}</strong> (Tenant #${academyId}). The new password will take effect immediately.
+          <div class="pwd-hero-content">
+            <div class="pwd-hero-title">Academy Administrator Password Reset</div>
+            <div class="pwd-hero-desc">
+              Reset login credentials for the Academy Administrator or staff in <strong>${this.escapeHtml(academyName)}</strong>.
+            </div>
+            <div class="pwd-hero-chips">
+              <span class="pwd-user-badge"><i class="fa-solid fa-building-columns"></i> Tenant #${academyId}</span>
+            </div>
           </div>
         </div>
 
-        <div style="margin-bottom: 14px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
-            Target Administrator / User <span style="color: #ef4444;">*</span>
-          </label>
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>Target Administrator / User <span class="pwd-req">*</span></span>
+          </div>
           ${adminsList.length > 0 ? `
-            <select id="reset-admin-user-id" class="form-control" style="font-weight: 500;">
+            <select id="reset-admin-user-id" class="form-select pwd-input-field" style="font-weight: 500;">
               ${adminsList.map(u => `
                 <option value="${u.id}" ${u.role === 'academy_admin' ? 'selected' : ''}>
                   ${this.escapeHtml(u.name)} (${this.escapeHtml(u.email)}) — [${u.role.toUpperCase()}]
@@ -7019,38 +7039,56 @@ const app = {
               `).join('')}
             </select>
           ` : `
-            <input type="email" id="reset-admin-email" class="form-control" value="${this.escapeHtml(defaultEmail)}" placeholder="admin@example.com" required>
+            <div class="pwd-input-group">
+              <span class="pwd-input-icon"><i class="fa-solid fa-envelope"></i></span>
+              <input type="email" id="reset-admin-email" class="form-input pwd-input-field" value="${this.escapeHtml(defaultEmail)}" placeholder="admin@example.com" required>
+            </div>
           `}
         </div>
 
-        <div style="margin-bottom: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-            <label style="font-size: 12px; font-weight: 600; margin: 0;">
-              New Password <span style="color: #ef4444;">*</span>
-            </label>
-            <button type="button" class="btn btn-xs btn-outline-secondary" onclick="app.generateRandomPasswordForField('reset-admin-new-password', 'reset-admin-confirm-password')">
-              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Password
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>New Password <span class="pwd-req">*</span></span>
+            <button type="button" class="pwd-btn-generate" onclick="app.generateRandomPasswordForField('reset-admin-new-password', 'reset-admin-confirm-password')">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Strong
             </button>
           </div>
-          <div style="display: flex; gap: 6px;">
-            <input type="password" id="reset-admin-new-password" class="form-control" placeholder="Minimum 4 characters" minlength="4" required style="font-family: monospace; font-size: 13px;">
-            <button type="button" class="btn btn-secondary" onclick="app.togglePasswordVisibility('reset-admin-new-password', this)" title="Show/Hide Password">
+          <div class="pwd-input-group">
+            <span class="pwd-input-icon"><i class="fa-solid fa-key"></i></span>
+            <input type="password" id="reset-admin-new-password" class="form-input pwd-input-field" placeholder="Minimum 4 characters (recommended 8+)" minlength="4" required autocomplete="new-password" oninput="app.evaluatePasswordStrength(this.value)">
+            <button type="button" class="pwd-toggle-visibility" onclick="app.togglePasswordVisibility('reset-admin-new-password', this)" tabindex="-1" title="Show/Hide Password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+          <div class="pwd-strength-container" id="pwd-strength-container" style="display: none;">
+            <div class="pwd-strength-meter">
+              <div class="pwd-meter-segment" id="pwd-meter-1"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-2"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-3"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-4"></div>
+            </div>
+            <div class="pwd-strength-text" id="pwd-strength-text"></div>
+          </div>
+        </div>
+
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>Confirm New Password <span class="pwd-req">*</span></span>
+            <span class="pwd-match-status" id="pwd-match-status"></span>
+          </div>
+          <div class="pwd-input-group">
+            <span class="pwd-input-icon"><i class="fa-solid fa-circle-check"></i></span>
+            <input type="password" id="reset-admin-confirm-password" class="form-input pwd-input-field" placeholder="Re-enter identical password" minlength="4" required autocomplete="new-password" oninput="app.checkPasswordMatch()">
+            <button type="button" class="pwd-toggle-visibility" onclick="app.togglePasswordVisibility('reset-admin-confirm-password', this)" tabindex="-1" title="Show/Hide Password">
               <i class="fa-solid fa-eye"></i>
             </button>
           </div>
         </div>
 
-        <div style="margin-bottom: 16px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
-            Confirm New Password <span style="color: #ef4444;">*</span>
-          </label>
-          <input type="password" id="reset-admin-confirm-password" class="form-control" placeholder="Re-enter identical password" minlength="4" required style="font-family: monospace; font-size: 13px;">
-        </div>
-
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
-          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-          <button type="submit" class="btn btn-warning" id="btn-submit-reset-admin-pwd">
-            <i class="fa-solid fa-key"></i> Reset Administrator Password
+        <div class="pwd-modal-actions">
+          <button type="button" class="btn btn-secondary pwd-btn-cancel" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary pwd-btn-submit" id="btn-submit-reset-admin-pwd">
+            <i class="fa-solid fa-key"></i> Reset Password
           </button>
         </div>
       </form>
@@ -7067,7 +7105,7 @@ const app = {
   generateRandomPasswordForField(newId, confirmId) {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
     let pwd = '';
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 12; i++) {
       pwd += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     const input = document.getElementById(newId);
@@ -7080,7 +7118,96 @@ const app = {
       confirmInput.type = 'text';
       confirmInput.value = pwd;
     }
-    this.showToast('Generated strong password: ' + pwd, 'info');
+    this.evaluatePasswordStrength(pwd);
+    this.checkPasswordMatch();
+    this.showToast('Generated strong 12-char password: ' + pwd, 'info');
+  },
+
+  evaluatePasswordStrength(val) {
+    const container = document.getElementById('pwd-strength-container');
+    const textEl = document.getElementById('pwd-strength-text');
+    const seg1 = document.getElementById('pwd-meter-1');
+    const seg2 = document.getElementById('pwd-meter-2');
+    const seg3 = document.getElementById('pwd-meter-3');
+    const seg4 = document.getElementById('pwd-meter-4');
+    if (!container || !textEl || !seg1) return;
+
+    if (!val || val.length === 0) {
+      container.style.display = 'none';
+      this.checkPasswordMatch();
+      return;
+    }
+
+    container.style.display = 'flex';
+    let score = 0;
+    if (val.length >= 4) score++;
+    if (val.length >= 8) score++;
+    if (/[0-9]/.test(val) && /[a-zA-Z]/.test(val)) score++;
+    if (/[^A-Za-z0-9]/.test(val) && val.length >= 8) score++;
+
+    const colors = {
+      empty: 'var(--border)',
+      weak: '#ef4444',
+      fair: '#f59e0b',
+      good: '#3b82f6',
+      strong: '#10b981'
+    };
+
+    if (score <= 1) {
+      seg1.style.background = colors.weak;
+      seg2.style.background = colors.empty;
+      seg3.style.background = colors.empty;
+      seg4.style.background = colors.empty;
+      textEl.textContent = 'Weak';
+      textEl.style.color = colors.weak;
+    } else if (score === 2) {
+      seg1.style.background = colors.fair;
+      seg2.style.background = colors.fair;
+      seg3.style.background = colors.empty;
+      seg4.style.background = colors.empty;
+      textEl.textContent = 'Fair';
+      textEl.style.color = colors.fair;
+    } else if (score === 3) {
+      seg1.style.background = colors.good;
+      seg2.style.background = colors.good;
+      seg3.style.background = colors.good;
+      seg4.style.background = colors.empty;
+      textEl.textContent = 'Good';
+      textEl.style.color = colors.good;
+    } else {
+      seg1.style.background = colors.strong;
+      seg2.style.background = colors.strong;
+      seg3.style.background = colors.strong;
+      seg4.style.background = colors.strong;
+      textEl.textContent = 'Strong';
+      textEl.style.color = colors.strong;
+    }
+
+    this.checkPasswordMatch();
+  },
+
+  checkPasswordMatch() {
+    const newEl = document.getElementById('change-pwd-new') || document.getElementById('reset-staff-new-password') || document.getElementById('reset-admin-new-password') || document.getElementById('set-student-new-password');
+    const confirmEl = document.getElementById('change-pwd-confirm') || document.getElementById('reset-staff-confirm-password') || document.getElementById('reset-admin-confirm-password') || document.getElementById('set-student-confirm-password');
+    const statusEl = document.getElementById('pwd-match-status');
+    if (!statusEl || !confirmEl || !newEl) return;
+
+    const newPwd = newEl.value;
+    const confirmPwd = confirmEl.value;
+
+    if (!confirmPwd) {
+      statusEl.innerHTML = '';
+      statusEl.className = 'pwd-match-status';
+      return;
+    }
+
+    if (newPwd === confirmPwd) {
+      statusEl.className = 'pwd-match-status match';
+      statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> Passwords match';
+    } else {
+      statusEl.className = 'pwd-match-status mismatch';
+      statusEl.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> Passwords do not match';
+    }
   },
 
   async submitResetAcademyAdminPassword(academyId) {
@@ -7139,43 +7266,65 @@ const app = {
 
   openResetStaffPasswordModal(userId, name, email, role) {
     const content = `
-      <form id="reset-staff-password-form" onsubmit="event.preventDefault(); app.submitResetStaffPassword(${userId});">
-        <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
-          <div style="font-weight: 700; color: var(--primary); font-size: 13px; display: flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-shield-halved"></i> Academy User Password Reset
+      <form id="reset-staff-password-form" class="pwd-modal-card" onsubmit="event.preventDefault(); app.submitResetStaffPassword(${userId});">
+        <div class="pwd-hero-banner">
+          <div class="pwd-hero-icon">
+            <i class="fa-solid fa-id-badge"></i>
           </div>
-          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.45;">
-            Reset login credentials for <strong>${this.escapeHtml(name)}</strong> (${this.escapeHtml(email)}) — [${(role || 'STAFF').toUpperCase()}].
+          <div class="pwd-hero-content">
+            <div class="pwd-hero-title">Academy Staff Password Reset</div>
+            <div class="pwd-hero-desc">
+              Set new sign-in password for <strong>${this.escapeHtml(name)}</strong>.
+            </div>
+            <div class="pwd-hero-chips">
+              <span class="pwd-user-badge"><i class="fa-solid fa-envelope"></i> ${this.escapeHtml(email)}</span>
+              <span class="pwd-role-badge">${(role || 'STAFF').toUpperCase()}</span>
+            </div>
           </div>
         </div>
 
-        <div style="margin-bottom: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-            <label style="font-size: 12px; font-weight: 600; margin: 0;">
-              New Password <span style="color: #ef4444;">*</span>
-            </label>
-            <button type="button" class="btn btn-xs btn-outline-secondary" onclick="app.generateRandomPasswordForField('reset-staff-new-password', 'reset-staff-confirm-password')">
-              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Password
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>New Password <span class="pwd-req">*</span></span>
+            <button type="button" class="pwd-btn-generate" onclick="app.generateRandomPasswordForField('reset-staff-new-password', 'reset-staff-confirm-password')">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Strong
             </button>
           </div>
-          <div style="display: flex; gap: 6px;">
-            <input type="password" id="reset-staff-new-password" class="form-control" placeholder="Minimum 4 characters" minlength="4" required style="font-family: monospace; font-size: 13px;">
-            <button type="button" class="btn btn-secondary" onclick="app.togglePasswordVisibility('reset-staff-new-password', this)" title="Show/Hide Password">
+          <div class="pwd-input-group">
+            <span class="pwd-input-icon"><i class="fa-solid fa-key"></i></span>
+            <input type="password" id="reset-staff-new-password" class="form-input pwd-input-field" placeholder="Minimum 4 characters (recommended 8+)" minlength="4" required autocomplete="new-password" oninput="app.evaluatePasswordStrength(this.value)">
+            <button type="button" class="pwd-toggle-visibility" onclick="app.togglePasswordVisibility('reset-staff-new-password', this)" tabindex="-1" title="Show/Hide Password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+          <div class="pwd-strength-container" id="pwd-strength-container" style="display: none;">
+            <div class="pwd-strength-meter">
+              <div class="pwd-meter-segment" id="pwd-meter-1"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-2"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-3"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-4"></div>
+            </div>
+            <div class="pwd-strength-text" id="pwd-strength-text"></div>
+          </div>
+        </div>
+
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>Confirm New Password <span class="pwd-req">*</span></span>
+            <span class="pwd-match-status" id="pwd-match-status"></span>
+          </div>
+          <div class="pwd-input-group">
+            <span class="pwd-input-icon"><i class="fa-solid fa-circle-check"></i></span>
+            <input type="password" id="reset-staff-confirm-password" class="form-input pwd-input-field" placeholder="Re-enter identical password" minlength="4" required autocomplete="new-password" oninput="app.checkPasswordMatch()">
+            <button type="button" class="pwd-toggle-visibility" onclick="app.togglePasswordVisibility('reset-staff-confirm-password', this)" tabindex="-1" title="Show/Hide Password">
               <i class="fa-solid fa-eye"></i>
             </button>
           </div>
         </div>
 
-        <div style="margin-bottom: 16px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
-            Confirm New Password <span style="color: #ef4444;">*</span>
-          </label>
-          <input type="password" id="reset-staff-confirm-password" class="form-control" placeholder="Re-enter identical password" minlength="4" required style="font-family: monospace; font-size: 13px;">
-        </div>
-
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
-          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="btn-submit-reset-staff-pwd">
+        <div class="pwd-modal-actions">
+          <button type="button" class="btn btn-secondary pwd-btn-cancel" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary pwd-btn-submit" id="btn-submit-reset-staff-pwd">
             <i class="fa-solid fa-key"></i> Update User Password
           </button>
         </div>
@@ -7186,7 +7335,7 @@ const app = {
       `Reset Password — ${name}`,
       content,
       '',
-      '500px'
+      '520px'
     );
   },
 
@@ -7237,50 +7386,82 @@ const app = {
 
   openChangeMyPasswordModal() {
     const content = `
-      <form id="change-my-password-form" onsubmit="event.preventDefault(); app.submitChangeMyPassword();">
-        <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
-          <div style="font-weight: 700; color: var(--primary); font-size: 13px; display: flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-lock"></i> Change Your Account Password
+      <form id="change-my-password-form" class="pwd-modal-card" onsubmit="event.preventDefault(); app.submitChangeMyPassword();">
+        <div class="pwd-hero-banner">
+          <div class="pwd-hero-icon">
+            <i class="fa-solid fa-shield-halved"></i>
           </div>
-          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.45;">
-            Updating password for logged-in account: <strong>${this.escapeHtml(this.user?.email || '')}</strong>
+          <div class="pwd-hero-content">
+            <div class="pwd-hero-title">Account Security Credentials</div>
+            <div class="pwd-hero-desc">
+              Update your account password to keep your dashboard and records secure.
+            </div>
+            <div class="pwd-hero-chips">
+              <span class="pwd-user-badge">
+                <i class="fa-solid fa-envelope"></i>
+                ${this.escapeHtml(this.user?.email || 'Current User')}
+              </span>
+              ${this.user?.role ? `<span class="pwd-role-badge">${this.escapeHtml(String(this.user.role).toUpperCase())}</span>` : ''}
+            </div>
           </div>
         </div>
 
-        <div style="margin-bottom: 14px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
-            Current Password <span style="font-size: 11px; color: var(--text-dim);">(Leave blank if first-time set)</span>
-          </label>
-          <input type="password" id="change-pwd-current" class="form-control" placeholder="Enter current password">
-        </div>
-
-        <div style="margin-bottom: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-            <label style="font-size: 12px; font-weight: 600; margin: 0;">
-              New Password <span style="color: #ef4444;">*</span>
-            </label>
-            <button type="button" class="btn btn-xs btn-outline-secondary" onclick="app.generateRandomPasswordForField('change-pwd-new', 'change-pwd-confirm')">
-              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Password
-            </button>
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>Current Password</span>
+            <span class="pwd-badge-optional">Leave blank if first-time set</span>
           </div>
-          <div style="display: flex; gap: 6px;">
-            <input type="password" id="change-pwd-new" class="form-control" placeholder="Minimum 4 characters" minlength="4" required style="font-family: monospace; font-size: 13px;">
-            <button type="button" class="btn btn-secondary" onclick="app.togglePasswordVisibility('change-pwd-new', this)" title="Show/Hide Password">
+          <div class="pwd-input-group">
+            <span class="pwd-input-icon"><i class="fa-solid fa-lock"></i></span>
+            <input type="password" id="change-pwd-current" class="form-input pwd-input-field" placeholder="Enter current password" autocomplete="current-password">
+            <button type="button" class="pwd-toggle-visibility" onclick="app.togglePasswordVisibility('change-pwd-current', this)" tabindex="-1" title="Show/Hide Password">
               <i class="fa-solid fa-eye"></i>
             </button>
           </div>
         </div>
 
-        <div style="margin-bottom: 16px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
-            Confirm New Password <span style="color: #ef4444;">*</span>
-          </label>
-          <input type="password" id="change-pwd-confirm" class="form-control" placeholder="Re-enter identical password" minlength="4" required style="font-family: monospace; font-size: 13px;">
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>New Password <span class="pwd-req">*</span></span>
+            <button type="button" class="pwd-btn-generate" onclick="app.generateRandomPasswordForField('change-pwd-new', 'change-pwd-confirm')">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Strong
+            </button>
+          </div>
+          <div class="pwd-input-group">
+            <span class="pwd-input-icon"><i class="fa-solid fa-key"></i></span>
+            <input type="password" id="change-pwd-new" class="form-input pwd-input-field" placeholder="Minimum 4 characters (recommended 8+)" minlength="4" required autocomplete="new-password" oninput="app.evaluatePasswordStrength(this.value)">
+            <button type="button" class="pwd-toggle-visibility" onclick="app.togglePasswordVisibility('change-pwd-new', this)" tabindex="-1" title="Show/Hide Password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+          <div class="pwd-strength-container" id="pwd-strength-container" style="display: none;">
+            <div class="pwd-strength-meter">
+              <div class="pwd-meter-segment" id="pwd-meter-1"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-2"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-3"></div>
+              <div class="pwd-meter-segment" id="pwd-meter-4"></div>
+            </div>
+            <div class="pwd-strength-text" id="pwd-strength-text"></div>
+          </div>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
-          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="btn-submit-change-my-pwd">
+        <div class="pwd-field-group">
+          <div class="pwd-field-label">
+            <span>Confirm New Password <span class="pwd-req">*</span></span>
+            <span class="pwd-match-status" id="pwd-match-status"></span>
+          </div>
+          <div class="pwd-input-group">
+            <span class="pwd-input-icon"><i class="fa-solid fa-circle-check"></i></span>
+            <input type="password" id="change-pwd-confirm" class="form-input pwd-input-field" placeholder="Re-enter identical password" minlength="4" required autocomplete="new-password" oninput="app.checkPasswordMatch()">
+            <button type="button" class="pwd-toggle-visibility" onclick="app.togglePasswordVisibility('change-pwd-confirm', this)" tabindex="-1" title="Show/Hide Password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="pwd-modal-actions">
+          <button type="button" class="btn btn-secondary pwd-btn-cancel" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary pwd-btn-submit" id="btn-submit-change-my-pwd">
             <i class="fa-solid fa-key"></i> Save New Password
           </button>
         </div>
@@ -7291,7 +7472,7 @@ const app = {
       'Change Account Password',
       content,
       '',
-      '500px'
+      '520px'
     );
   },
 
