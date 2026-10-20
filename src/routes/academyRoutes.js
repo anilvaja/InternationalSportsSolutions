@@ -6504,6 +6504,78 @@ academyRouter.get('/punches/history', (req, res) => {
   }
 });
 
+/**
+ * GET /api/academy/punches/map
+ * Returns all GPS check-in and check-out records with coordinates for map visualization across all employees
+ */
+academyRouter.get('/punches/map', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { date, user_id, punch_type, branch_id } = req.query;
+
+    let query = `
+      SELECT sp.*, 
+             u.name as user_name, u.role as user_role, u.email as user_email, u.avatar_url as user_avatar,
+             b.name as branch_name, b.latitude as branch_latitude, b.longitude as branch_longitude,
+             b.geofence_radius_meters
+      FROM staff_punches sp
+      JOIN users u ON sp.user_id = u.id
+      LEFT JOIN branches b ON sp.branch_id = b.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (date) {
+      query += ` AND date(sp.punched_at) = ?`;
+      params.push(date);
+    }
+    if (user_id) {
+      query += ` AND sp.user_id = ?`;
+      params.push(Number(user_id));
+    }
+    if (punch_type) {
+      query += ` AND sp.punch_type = ?`;
+      params.push(punch_type);
+    }
+    if (branch_id) {
+      query += ` AND sp.branch_id = ?`;
+      params.push(Number(branch_id));
+    }
+
+    query += ` ORDER BY sp.punched_at DESC LIMIT 250`;
+
+    const punches = db.prepare(query).all(...params);
+
+    // Fetch branches with coordinates for map overlays
+    const branches = db.prepare(`
+      SELECT id, name, latitude, longitude, geofence_radius_meters, is_geofence_enforced
+      FROM branches
+      WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+    `).all();
+
+    // Summary metrics
+    const totalPunches = punches.length;
+    const checkIns = punches.filter(p => p.punch_type === 'punch_in').length;
+    const checkOuts = punches.filter(p => p.punch_type === 'punch_out').length;
+    const outOfGeofence = punches.filter(p => !p.is_within_geofence).length;
+
+    res.json({
+      success: true,
+      punches,
+      branches,
+      summary: {
+        total_punches: totalPunches,
+        check_ins: checkIns,
+        check_outs: checkOuts,
+        out_of_geofence: outOfGeofence,
+        unique_employees: new Set(punches.map(p => p.user_id)).size,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ==========================================
 // INQUIRIES & ADMISSION WIZARD WORKFLOW
 // ==========================================
