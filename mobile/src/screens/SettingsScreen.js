@@ -15,12 +15,24 @@ import {
   getStoredSlug,
   setStoredSlug,
   getDefaultHost,
+  api,
 } from '../api';
 
 export default function SettingsScreen({ user, onLogout, onOffsetChange, currentOffset }) {
   const [apiUrl, setApiUrlState] = useState('');
   const [slug, setSlug] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Change Password state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  // Admin Reset Staff Password state
+  const [targetUserId, setTargetUserId] = useState('');
+  const [targetNewPassword, setTargetNewPassword] = useState('');
+  const [resettingStaff, setResettingStaff] = useState(false);
 
   useEffect(() => {
     async function loadConfig() {
@@ -31,6 +43,58 @@ export default function SettingsScreen({ user, onLogout, onOffsetChange, current
     }
     loadConfig();
   }, []);
+
+  const handleChangePassword = async () => {
+    if (!newPassword || newPassword.length < 4) {
+      Alert.alert('Validation Error', 'New password must be at least 4 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Validation Error', 'New passwords do not match.');
+      return;
+    }
+
+    setUpdatingPassword(true);
+    try {
+      const res = await api('POST', '/api/auth/change-password', {
+        current_password: currentPassword || undefined,
+        new_password: newPassword,
+      });
+      Alert.alert('Success', res.message || 'Password updated successfully!');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (e) {
+      Alert.alert('Password Change Failed', e.message);
+    } finally {
+      setUpdatingPassword(false);
+    }
+  };
+
+  const handleResetStaffPassword = async () => {
+    if (!targetUserId.trim()) {
+      Alert.alert('Validation Error', 'Please enter the Staff / User ID to reset.');
+      return;
+    }
+    if (!targetNewPassword || targetNewPassword.length < 4) {
+      Alert.alert('Validation Error', 'Password must be at least 4 characters long.');
+      return;
+    }
+
+    setResettingStaff(true);
+    try {
+      const res = await api('POST', `/api/academy/users/${targetUserId.trim()}/reset-password`, {
+        password: targetNewPassword,
+      });
+      Alert.alert('Success', res.message || 'Staff password reset successfully!');
+      setTargetUserId('');
+      setTargetNewPassword('');
+    } catch (e) {
+      Alert.alert('Reset Failed', e.message);
+    } finally {
+      setResettingStaff(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -152,6 +216,99 @@ export default function SettingsScreen({ user, onLogout, onOffsetChange, current
           })}
         </View>
       </View>
+
+      {/* Change Password Card */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>🔑 Change My Password</Text>
+        <Text style={styles.cardSub}>Update your personal login password</Text>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Current Password (Optional if first set)</Text>
+          <TextInput
+            style={styles.input}
+            value={currentPassword}
+            onChangeText={setCurrentPassword}
+            placeholder="Enter current password"
+            placeholderTextColor={colors.textSubtle}
+            secureTextEntry
+          />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>New Password (Min 4 characters)</Text>
+          <TextInput
+            style={styles.input}
+            value={newPassword}
+            onChangeText={setNewPassword}
+            placeholder="Enter new password"
+            placeholderTextColor={colors.textSubtle}
+            secureTextEntry
+          />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Confirm New Password</Text>
+          <TextInput
+            style={styles.input}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Re-enter identical password"
+            placeholderTextColor={colors.textSubtle}
+            secureTextEntry
+          />
+        </View>
+
+        <TouchableOpacity
+          style={styles.saveBtn}
+          onPress={handleChangePassword}
+          disabled={updatingPassword}
+        >
+          <Text style={styles.saveBtnText}>
+            {updatingPassword ? 'Updating Password...' : 'Save New Password'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Staff Password Reset Card (Academy Admin or Super Admin) */}
+      {(user.isSuperAdmin || user.role === 'academy_admin' || user.role === 'admin') && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>🛡 Staff / Coach Password Reset</Text>
+          <Text style={styles.cardSub}>Academy Admin privilege: reset any staff or coach login password</Text>
+
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>User / Staff ID</Text>
+            <TextInput
+              style={styles.input}
+              value={targetUserId}
+              onChangeText={setTargetUserId}
+              placeholder="e.g. 2"
+              placeholderTextColor={colors.textSubtle}
+              keyboardType="numeric"
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>New Password for Staff</Text>
+            <TextInput
+              style={styles.input}
+              value={targetNewPassword}
+              onChangeText={setTargetNewPassword}
+              placeholder="Enter temporary or new password"
+              placeholderTextColor={colors.textSubtle}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.saveBtn, { backgroundColor: '#f59e0b' }]}
+            onPress={handleResetStaffPassword}
+            disabled={resettingStaff}
+          >
+            <Text style={styles.saveBtnText}>
+              {resettingStaff ? 'Resetting Password...' : 'Reset Staff Password'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Logout Card */}
       <View style={styles.card}>

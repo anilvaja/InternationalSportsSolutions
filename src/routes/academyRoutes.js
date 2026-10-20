@@ -5947,6 +5947,71 @@ academyRouter.put('/users/:id/role', (req, res) => {
   }
 });
 
+/**
+ * POST /api/academy/users/:id/reset-password
+ * Academy Admin or Super Admin resets the password of a staff member, coach, or fellow administrator
+ */
+academyRouter.post('/users/:id/reset-password', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const targetUserId = Number(req.params.id);
+    const { password } = req.body;
+
+    // Check permissions: Must be super admin, academy admin, or have manage_users permission
+    const isAcademyAdmin = req.user.role === 'academy_admin';
+    const isSuperAdmin = Boolean(req.user.isSuperAdmin);
+    let userPermissions = [];
+    try {
+      userPermissions = Array.isArray(req.user.permissions) ? req.user.permissions : [];
+    } catch (e) {}
+
+    const hasPermission = isSuperAdmin || isAcademyAdmin || userPermissions.includes('all') || userPermissions.includes('manage_users');
+    if (!hasPermission) {
+      return res.status(403).json({ success: false, error: 'Access denied: Only Academy Administrators or Super Admins can reset user passwords' });
+    }
+
+    if (!password || String(password).trim().length < 4) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 4 characters long' });
+    }
+
+    const targetUser = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: 'User not found in this academy' });
+    }
+
+    const hash = bcrypt.hashSync(String(password).trim(), 10);
+    db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hash, targetUserId);
+
+    // Keep central lookup synchronized
+    const centralDb = getCentralDb();
+    centralDb.prepare(`
+      INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role)
+      VALUES (?, ?, ?)
+    `).run(targetUser.email.toLowerCase(), req.academy.id, targetUser.role);
+
+    // Audit log in tenant DB
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, details, ip_address)
+      VALUES (?, ?, ?, 'RESET_PASSWORD', 'users', ?, ?)
+    `).run(
+      req.user.userId,
+      req.user.name,
+      req.user.role,
+      `Reset password for user #${targetUserId} (${targetUser.name}, ${targetUser.email}, role: ${targetUser.role})`,
+      req.ip
+    );
+
+    res.json({
+      success: true,
+      message: `Password reset successfully for ${targetUser.name} (${targetUser.email})`,
+      user: targetUser,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 // ==========================================
 // STAFF TIME PUNCHES & OVERTIME TRACKING
 // ==========================================

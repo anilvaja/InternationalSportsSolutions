@@ -338,3 +338,101 @@ authRouter.post('/logout', (req, res) => {
     sessionMinutes,
   });
 });
+
+/**
+ * POST /api/auth/change-password
+ * Allows any authenticated user (Super Admin, Academy Admin, Staff, Coach, Student) to change their password
+ */
+authRouter.post('/change-password', (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Unauthorized. Please log in.' });
+    }
+
+    const { current_password, new_password } = req.body;
+
+    if (!new_password || String(new_password).trim().length < 4) {
+      return res.status(400).json({ success: false, error: 'New password must be at least 4 characters long' });
+    }
+
+    const centralDb = getCentralDb();
+
+    // 1. If Super Admin
+    if (req.user.isSuperAdmin) {
+      const superAdmin = centralDb.prepare('SELECT * FROM super_admins WHERE id = ?').get(req.user.userId);
+      if (!superAdmin) {
+        return res.status(404).json({ success: false, error: 'Super Admin account not found' });
+      }
+
+      if (current_password) {
+        const match = bcrypt.compareSync(current_password, superAdmin.password_hash);
+        if (!match) {
+          return res.status(400).json({ success: false, error: 'Current password is incorrect' });
+        }
+      }
+
+      const hash = bcrypt.hashSync(String(new_password).trim(), 10);
+      centralDb.prepare('UPDATE super_admins SET password_hash = ? WHERE id = ?').run(hash, superAdmin.id);
+
+      centralDb.prepare(`
+        INSERT INTO central_audit_logs (user_id, user_email, action, entity, details, ip_address)
+        VALUES (?, ?, 'CHANGE_PASSWORD', 'super_admins', 'Super Admin changed personal password', ?)
+      `).run(superAdmin.id, superAdmin.email, req.ip);
+
+      return res.json({ success: true, message: 'Your Super Admin password has been updated successfully' });
+    }
+
+    // 2. Academy User (Admin, Staff, Coach, Student)
+    if (!req.user.academyId) {
+      return res.status(400).json({ success: false, error: 'Academy context required' });
+    }
+
+    const tenantDb = getTenantDbById(req.user.academyId);
+
+    if (req.user.role === 'student') {
+      const student = tenantDb.prepare('SELECT * FROM students WHERE id = ?').get(req.user.userId);
+      if (!student) {
+        return res.status(404).json({ success: false, error: 'Student account not found' });
+      }
+
+      if (student.password_hash && current_password) {
+        const match = bcrypt.compareSync(current_password, student.password_hash);
+        if (!match) {
+          return res.status(400).json({ success: false, error: 'Current password is incorrect' });
+        }
+      }
+
+      const hash = bcrypt.hashSync(String(new_password).trim(), 10);
+      tenantDb.prepare('UPDATE students SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hash, student.id);
+
+      return res.json({ success: true, message: 'Student portal password updated successfully' });
+    }
+
+    // Staff / Admin / Coach
+    const user = tenantDb.prepare('SELECT * FROM users WHERE id = ?').get(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User account not found' });
+    }
+
+    if (user.password_hash && current_password) {
+      const match = bcrypt.compareSync(current_password, user.password_hash);
+      if (!match) {
+        return res.status(400).json({ success: false, error: 'Current password is incorrect' });
+      }
+    }
+
+    const hash = bcrypt.hashSync(String(new_password).trim(), 10);
+    tenantDb.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hash, user.id);
+
+    tenantDb.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, details, ip_address)
+      VALUES (?, ?, ?, 'CHANGE_PASSWORD', 'users', 'User changed personal password', ?)
+    `).run(user.id, user.name, user.role, req.ip);
+
+    return res.json({ success: true, message: 'Password updated successfully' });
+  } catch (err) {
+    console.error('[Change Password Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+

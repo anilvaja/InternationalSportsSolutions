@@ -1,5 +1,6 @@
 import express from 'express';
 import fs from 'fs';
+import bcrypt from 'bcryptjs';
 import { getCentralDb } from '../db/centralDb.js';
 import { provisionAcademyDb, getTenantDbById, closeTenantDb } from '../db/connectionManager.js';
 import { requireAuth, requireSuperAdmin } from '../middleware/auth.js';
@@ -290,6 +291,130 @@ centralRouter.delete('/academies/:id', (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+/**
+ * GET /api/central/academies/:id/admins
+ * Lists administrators and staff users for an academy
+ */
+centralRouter.get('/academies/:id/admins', (req, res) => {
+  try {
+    const academyId = Number(req.params.id);
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT * FROM academies WHERE id = ?').get(academyId);
+    if (!academy) {
+      return res.status(404).json({ success: false, error: 'Academy not found' });
+    }
+
+    const tenantDb = getTenantDbById(academyId);
+    const users = tenantDb.prepare(`
+      SELECT id, name, email, role, phone, status, created_at
+      FROM users
+      ORDER BY CASE WHEN role = 'academy_admin' THEN 0 ELSE 1 END, id ASC
+    `).all();
+
+    res.json({
+      success: true,
+      academy: { id: academy.id, name: academy.name, slug: academy.slug, contact_email: academy.contact_email },
+      admins: users,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/academies/:id/reset-admin-password
+ * Super Admin resets the password for an academy administrator or staff member
+ */
+centralRouter.post('/academies/:id/reset-admin-password', (req, res) => {
+  try {
+    const academyId = Number(req.params.id);
+    const { password, user_id, email } = req.body;
+
+    if (!password || String(password).trim().length < 4) {
+      return res.status(400).json({ success: false, error: 'New password must be at least 4 characters long' });
+    }
+
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT * FROM academies WHERE id = ?').get(academyId);
+    if (!academy) {
+      return res.status(404).json({ success: false, error: 'Academy not found' });
+    }
+
+    const tenantDb = getTenantDbById(academyId);
+    let targetUser = null;
+
+    if (user_id) {
+      targetUser = tenantDb.prepare('SELECT * FROM users WHERE id = ?').get(Number(user_id));
+    } else if (email) {
+      targetUser = tenantDb.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE').get(email.trim().toLowerCase());
+    } else {
+      // Find the primary admin
+      targetUser = tenantDb.prepare(`
+        SELECT * FROM users 
+        WHERE role = 'academy_admin' 
+        ORDER BY id ASC LIMIT 1
+      `).get();
+      if (!targetUser && academy.contact_email) {
+        targetUser = tenantDb.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE').get(academy.contact_email.trim().toLowerCase());
+      }
+    }
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: 'Target administrator user not found in this academy database' });
+    }
+
+    const passwordHash = bcrypt.hashSync(String(password).trim(), 10);
+    tenantDb.prepare(`
+      UPDATE users 
+      SET password_hash = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `).run(passwordHash, targetUser.id);
+
+    // Ensure user is in central lookup
+    centralDb.prepare(`
+      INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role)
+      VALUES (?, ?, ?)
+    `).run(targetUser.email.toLowerCase(), academyId, targetUser.role);
+
+    // Audit log in Central
+    centralDb.prepare(`
+      INSERT INTO central_audit_logs (user_id, user_email, action, entity, details, ip_address)
+      VALUES (?, ?, 'RESET_PASSWORD', 'users', ?, ?)
+    `).run(
+      req.user.userId,
+      req.user.email,
+      `Super Admin reset password for user ${targetUser.email} (ID ${targetUser.id}, role: ${targetUser.role}) in academy #${academyId} (${academy.name})`,
+      req.ip
+    );
+
+    // Audit log in Tenant DB
+    tenantDb.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, details, ip_address)
+      VALUES (?, ?, 'super_admin', 'PASSWORD_RESET', 'users', ?, ?)
+    `).run(
+      targetUser.id,
+      targetUser.name,
+      `Password was reset by Super Admin (${req.user.email})`,
+      req.ip
+    );
+
+    res.json({
+      success: true,
+      message: `Password reset successfully for ${targetUser.name} (${targetUser.email})`,
+      user: {
+        id: targetUser.id,
+        name: targetUser.name,
+        email: targetUser.email,
+        role: targetUser.role,
+      },
+    });
+  } catch (err) {
+    console.error('[Reset Admin Password Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 /**
  * GET /api/central/academies/:id/backup

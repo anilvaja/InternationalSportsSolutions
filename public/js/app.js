@@ -1252,6 +1252,9 @@ const app = {
                       <button class="btn btn-secondary btn-sm" onclick="app.showManageDomainsModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}')" title="Manage Domains & Subdomains">
                         <i class="fa-solid fa-globe" style="color: #3b82f6;"></i> Domains
                       </button>
+                      <button class="btn btn-secondary btn-sm" onclick="app.openResetAcademyAdminPasswordModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}', '${(ac.contact_email || '').replace(/'/g, "\\'")}')" title="Reset Academy Admin Password">
+                        <i class="fa-solid fa-key" style="color: #f59e0b;"></i> Password
+                      </button>
                       <a href="/api/central/academies/${ac.id}/backup" class="btn btn-secondary btn-sm" title="Download SQLite DB ZIP">
                         <i class="fa-solid fa-download"></i>
                       </a>
@@ -5497,6 +5500,365 @@ const app = {
       if (btn) {
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-key"></i> Save Credentials';
+      }
+    }
+  },
+
+  // ==========================================
+  // PASSWORD MANAGEMENT & RESET WORKFLOWS
+  // ==========================================
+
+  async openResetAcademyAdminPasswordModal(academyId, academyName, defaultEmail = '') {
+    let adminsList = [];
+    try {
+      const res = await this.apiRequest(`/api/central/academies/${academyId}/admins`);
+      if (res.success && res.admins) {
+        adminsList = res.admins;
+      }
+    } catch (e) {}
+
+    const content = `
+      <form id="reset-academy-admin-password-form" onsubmit="event.preventDefault(); app.submitResetAcademyAdminPassword(${academyId});">
+        <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+          <div style="font-weight: 700; color: #d97706; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-key"></i> Super Admin — Academy Administrator Password Reset
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.45;">
+            Reset the login credentials for the Academy Administrator or staff in <strong>${this.escapeHtml(academyName)}</strong> (Tenant #${academyId}). The new password will take effect immediately.
+          </div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
+            Target Administrator / User <span style="color: #ef4444;">*</span>
+          </label>
+          ${adminsList.length > 0 ? `
+            <select id="reset-admin-user-id" class="form-control" style="font-weight: 500;">
+              ${adminsList.map(u => `
+                <option value="${u.id}" ${u.role === 'academy_admin' ? 'selected' : ''}>
+                  ${this.escapeHtml(u.name)} (${this.escapeHtml(u.email)}) — [${u.role.toUpperCase()}]
+                </option>
+              `).join('')}
+            </select>
+          ` : `
+            <input type="email" id="reset-admin-email" class="form-control" value="${this.escapeHtml(defaultEmail)}" placeholder="admin@example.com" required>
+          `}
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 12px; font-weight: 600; margin: 0;">
+              New Password <span style="color: #ef4444;">*</span>
+            </label>
+            <button type="button" class="btn btn-xs btn-outline-secondary" onclick="app.generateRandomPasswordForField('reset-admin-new-password', 'reset-admin-confirm-password')">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Password
+            </button>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <input type="password" id="reset-admin-new-password" class="form-control" placeholder="Minimum 4 characters" minlength="4" required style="font-family: monospace; font-size: 13px;">
+            <button type="button" class="btn btn-secondary" onclick="app.togglePasswordVisibility('reset-admin-new-password', this)" title="Show/Hide Password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
+            Confirm New Password <span style="color: #ef4444;">*</span>
+          </label>
+          <input type="password" id="reset-admin-confirm-password" class="form-control" placeholder="Re-enter identical password" minlength="4" required style="font-family: monospace; font-size: 13px;">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-warning" id="btn-submit-reset-admin-pwd">
+            <i class="fa-solid fa-key"></i> Reset Administrator Password
+          </button>
+        </div>
+      </form>
+    `;
+
+    this.openModal(
+      `Reset Admin Password — ${academyName}`,
+      content,
+      '',
+      '520px'
+    );
+  },
+
+  generateRandomPasswordForField(newId, confirmId) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+    let pwd = '';
+    for (let i = 0; i < 10; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const input = document.getElementById(newId);
+    const confirmInput = document.getElementById(confirmId);
+    if (input) {
+      input.type = 'text';
+      input.value = pwd;
+    }
+    if (confirmInput) {
+      confirmInput.type = 'text';
+      confirmInput.value = pwd;
+    }
+    this.showToast('Generated strong password: ' + pwd, 'info');
+  },
+
+  async submitResetAcademyAdminPassword(academyId) {
+    const btn = document.getElementById('btn-submit-reset-admin-pwd');
+    const userSelect = document.getElementById('reset-admin-user-id');
+    const emailInput = document.getElementById('reset-admin-email');
+    const newPwd = document.getElementById('reset-admin-new-password')?.value.trim();
+    const confirmPwd = document.getElementById('reset-admin-confirm-password')?.value.trim();
+
+    if (!newPwd || newPwd.length < 4) {
+      this.showToast('Password must be at least 4 characters long', 'warning');
+      return;
+    }
+
+    if (newPwd !== confirmPwd) {
+      this.showToast('Passwords do not match. Please re-enter identical passwords.', 'warning');
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Resetting...';
+    }
+
+    try {
+      const payload = { password: newPwd };
+      if (userSelect && userSelect.value) {
+        payload.user_id = Number(userSelect.value);
+      } else if (emailInput && emailInput.value) {
+        payload.email = emailInput.value.trim();
+      }
+
+      const res = await this.apiRequest(`/api/central/academies/${academyId}/reset-admin-password`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'Administrator password reset successfully!', 'success');
+        this.closeModal();
+      } else {
+        this.showToast(res.error || 'Failed to reset password', 'danger');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-key"></i> Reset Administrator Password';
+        }
+      }
+    } catch (err) {
+      this.showToast('Error resetting password: ' + err.message, 'danger');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-key"></i> Reset Administrator Password';
+      }
+    }
+  },
+
+  openResetStaffPasswordModal(userId, name, email, role) {
+    const content = `
+      <form id="reset-staff-password-form" onsubmit="event.preventDefault(); app.submitResetStaffPassword(${userId});">
+        <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+          <div style="font-weight: 700; color: var(--primary); font-size: 13px; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-shield-halved"></i> Academy User Password Reset
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.45;">
+            Reset login credentials for <strong>${this.escapeHtml(name)}</strong> (${this.escapeHtml(email)}) — [${(role || 'STAFF').toUpperCase()}].
+          </div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 12px; font-weight: 600; margin: 0;">
+              New Password <span style="color: #ef4444;">*</span>
+            </label>
+            <button type="button" class="btn btn-xs btn-outline-secondary" onclick="app.generateRandomPasswordForField('reset-staff-new-password', 'reset-staff-confirm-password')">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Password
+            </button>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <input type="password" id="reset-staff-new-password" class="form-control" placeholder="Minimum 4 characters" minlength="4" required style="font-family: monospace; font-size: 13px;">
+            <button type="button" class="btn btn-secondary" onclick="app.togglePasswordVisibility('reset-staff-new-password', this)" title="Show/Hide Password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
+            Confirm New Password <span style="color: #ef4444;">*</span>
+          </label>
+          <input type="password" id="reset-staff-confirm-password" class="form-control" placeholder="Re-enter identical password" minlength="4" required style="font-family: monospace; font-size: 13px;">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-reset-staff-pwd">
+            <i class="fa-solid fa-key"></i> Update User Password
+          </button>
+        </div>
+      </form>
+    `;
+
+    this.openModal(
+      `Reset Password — ${name}`,
+      content,
+      '',
+      '500px'
+    );
+  },
+
+  async submitResetStaffPassword(userId) {
+    const btn = document.getElementById('btn-submit-reset-staff-pwd');
+    const newPwd = document.getElementById('reset-staff-new-password')?.value.trim();
+    const confirmPwd = document.getElementById('reset-staff-confirm-password')?.value.trim();
+
+    if (!newPwd || newPwd.length < 4) {
+      this.showToast('Password must be at least 4 characters long', 'warning');
+      return;
+    }
+
+    if (newPwd !== confirmPwd) {
+      this.showToast('Passwords do not match.', 'warning');
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+    }
+
+    try {
+      const res = await this.apiRequest(`/api/academy/users/${userId}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({ password: newPwd })
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'User password updated successfully!', 'success');
+        this.closeModal();
+      } else {
+        this.showToast(res.error || 'Failed to reset password', 'danger');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-key"></i> Update User Password';
+        }
+      }
+    } catch (err) {
+      this.showToast('Error resetting password: ' + err.message, 'danger');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-key"></i> Update User Password';
+      }
+    }
+  },
+
+  openChangeMyPasswordModal() {
+    const content = `
+      <form id="change-my-password-form" onsubmit="event.preventDefault(); app.submitChangeMyPassword();">
+        <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+          <div style="font-weight: 700; color: var(--primary); font-size: 13px; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-lock"></i> Change Your Account Password
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.45;">
+            Updating password for logged-in account: <strong>${this.escapeHtml(this.user?.email || '')}</strong>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
+            Current Password <span style="font-size: 11px; color: var(--text-dim);">(Leave blank if first-time set)</span>
+          </label>
+          <input type="password" id="change-pwd-current" class="form-control" placeholder="Enter current password">
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 12px; font-weight: 600; margin: 0;">
+              New Password <span style="color: #ef4444;">*</span>
+            </label>
+            <button type="button" class="btn btn-xs btn-outline-secondary" onclick="app.generateRandomPasswordForField('change-pwd-new', 'change-pwd-confirm')">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Password
+            </button>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <input type="password" id="change-pwd-new" class="form-control" placeholder="Minimum 4 characters" minlength="4" required style="font-family: monospace; font-size: 13px;">
+            <button type="button" class="btn btn-secondary" onclick="app.togglePasswordVisibility('change-pwd-new', this)" title="Show/Hide Password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">
+            Confirm New Password <span style="color: #ef4444;">*</span>
+          </label>
+          <input type="password" id="change-pwd-confirm" class="form-control" placeholder="Re-enter identical password" minlength="4" required style="font-family: monospace; font-size: 13px;">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-change-my-pwd">
+            <i class="fa-solid fa-key"></i> Save New Password
+          </button>
+        </div>
+      </form>
+    `;
+
+    this.openModal(
+      'Change Account Password',
+      content,
+      '',
+      '500px'
+    );
+  },
+
+  async submitChangeMyPassword() {
+    const btn = document.getElementById('btn-submit-change-my-pwd');
+    const currentPwd = document.getElementById('change-pwd-current')?.value.trim();
+    const newPwd = document.getElementById('change-pwd-new')?.value.trim();
+    const confirmPwd = document.getElementById('change-pwd-confirm')?.value.trim();
+
+    if (!newPwd || newPwd.length < 4) {
+      this.showToast('New password must be at least 4 characters long', 'warning');
+      return;
+    }
+
+    if (newPwd !== confirmPwd) {
+      this.showToast('New passwords do not match. Please re-enter identical passwords.', 'warning');
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Updating...';
+    }
+
+    try {
+      const res = await this.apiRequest('/api/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ current_password: currentPwd || undefined, new_password: newPwd })
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'Password changed successfully!', 'success');
+        this.closeModal();
+      } else {
+        this.showToast(res.error || 'Failed to change password', 'danger');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-key"></i> Save New Password';
+        }
+      }
+    } catch (err) {
+      this.showToast('Error changing password: ' + err.message, 'danger');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-key"></i> Save New Password';
       }
     }
   },
@@ -12021,7 +12383,10 @@ const app = {
                       ${u.status}
                     </span>
                   </td>
-                  <td style="text-align: right;">
+                  <td style="text-align: right; display: flex; justify-content: flex-end; gap: 6px;">
+                    <button class="btn btn-secondary btn-sm" onclick="app.openResetStaffPasswordModal(${u.id}, '${u.name.replace(/'/g, "\\'")}', '${u.email}', '${u.role}')" title="Reset password for ${u.name.replace(/'/g, "\\'")}">
+                      <i class="fa-solid fa-key" style="color: #f59e0b;"></i> Password
+                    </button>
                     <button class="btn btn-primary btn-sm" onclick="app.showAssignRoleModal(${u.id}, '${u.name.replace(/'/g, "\\'")}', '${u.role}')">
                       <i class="fa-solid fa-user-gear"></i> Assign Role
                     </button>

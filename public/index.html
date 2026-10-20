@@ -131,7 +131,11 @@
             <i class="fa-solid fa-credit-card" style="color: #10b981;"></i> Quick Pay Portal
           </a>
 
-          <div class="user-profile-menu">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.openChangeMyPasswordModal()" title="Change Account Password">
+            <i class="fa-solid fa-key" style="color: #f59e0b;"></i> Password
+          </button>
+
+          <div class="user-profile-menu" onclick="app.openChangeMyPasswordModal()" style="cursor: pointer;" title="Click to Change Password">
             <div class="user-avatar" id="header-user-avatar">U</div>
             <div class="user-info">
               <span class="user-name" id="header-user-name">User Name</span>
