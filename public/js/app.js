@@ -413,6 +413,11 @@ const app = {
     }
   },
 
+  async api(endpoint, options = {}) {
+    const url = endpoint.startsWith('/api') ? endpoint : `/api${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+    return this.apiRequest(url, options);
+  },
+
   // ==========================================
   // AUTHENTICATION
   // ==========================================
@@ -4333,7 +4338,7 @@ const app = {
       if (filters.user_id) qParams.append('user_id', filters.user_id);
       if (filters.branch_id) qParams.append('branch_id', filters.branch_id);
 
-      const res = await this.api(`/academy/punches/map?${qParams.toString()}`);
+      const res = await this.apiRequest(`/api/academy/punches/map?${qParams.toString()}`);
       if (!res || !res.success) {
         throw new Error(res?.error || 'Failed to fetch GPS punch records');
       }
@@ -4386,6 +4391,14 @@ const app = {
           </div>
         `;
       }
+      const boardEl = document.getElementById('employee-status-board-container');
+      if (boardEl) {
+        boardEl.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: #dc2626;">Failed to load attendance records: ${err.message}</div>`;
+      }
+      const feedEl = document.getElementById('employee-punch-feed');
+      if (feedEl) {
+        feedEl.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: #dc2626;">Failed to load punches.</div>`;
+      }
     }
   },
 
@@ -4432,6 +4445,8 @@ const app = {
               const time = p.punched_at ? new Date(p.punched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--';
               const isWithin = p.is_within_geofence == 1;
               const dist = p.distance_meters != null ? (p.distance_meters > 1000 ? `${(p.distance_meters/1000).toFixed(1)}km` : `${Math.round(p.distance_meters)}m`) : '';
+              const latStr = (p.latitude != null && !isNaN(Number(p.latitude))) ? Number(p.latitude).toFixed(4) : '--';
+              const lonStr = (p.longitude != null && !isNaN(Number(p.longitude))) ? Number(p.longitude).toFixed(4) : '--';
               signInHtml = `
                 <div style="display: flex; flex-direction: column; gap: 0.2rem;">
                   <div style="display: flex; align-items: center; gap: 0.35rem; font-weight: 600; color: #0f172a;">
@@ -4439,7 +4454,7 @@ const app = {
                     <span style="font-size: 0.72rem; color: #64748b; font-weight: 400;">(${p.branch_name || 'Branch'})</span>
                   </div>
                   <div style="font-size: 0.74rem; color: #64748b; font-family: monospace;">
-                    ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}
+                    ${latStr}, ${lonStr}
                     <span style="font-weight: 600; color: ${isWithin ? '#059669' : '#dc2626'};">${dist ? ` · ${dist}` : ''}</span>
                   </div>
                   <div>
@@ -4458,6 +4473,8 @@ const app = {
               const time = p.punched_at ? new Date(p.punched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--';
               const isWithin = p.is_within_geofence == 1;
               const dist = p.distance_meters != null ? (p.distance_meters > 1000 ? `${(p.distance_meters/1000).toFixed(1)}km` : `${Math.round(p.distance_meters)}m`) : '';
+              const latStr = (p.latitude != null && !isNaN(Number(p.latitude))) ? Number(p.latitude).toFixed(4) : '--';
+              const lonStr = (p.longitude != null && !isNaN(Number(p.longitude))) ? Number(p.longitude).toFixed(4) : '--';
               signOutHtml = `
                 <div style="display: flex; flex-direction: column; gap: 0.2rem;">
                   <div style="display: flex; align-items: center; gap: 0.35rem; font-weight: 600; color: #0f172a;">
@@ -4465,7 +4482,7 @@ const app = {
                     <span style="font-size: 0.72rem; color: #64748b; font-weight: 400;">(${p.branch_name || 'Branch'})</span>
                   </div>
                   <div style="font-size: 0.74rem; color: #64748b; font-family: monospace;">
-                    ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}
+                    ${latStr}, ${lonStr}
                     <span style="font-weight: 600; color: ${isWithin ? '#059669' : '#dc2626'};">${dist ? ` · ${dist}` : ''}</span>
                   </div>
                   <div>
@@ -4539,6 +4556,8 @@ const app = {
 
       const timeFormatted = p.punched_at ? new Date(p.punched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '--';
       const distFormatted = p.distance_meters != null ? (p.distance_meters > 1000 ? `${(p.distance_meters / 1000).toFixed(2)} km` : `${Math.round(p.distance_meters)} m`) : 'Unknown';
+      const latFeed = (p.latitude != null && !isNaN(Number(p.latitude))) ? Number(p.latitude).toFixed(5) : '--';
+      const lonFeed = (p.longitude != null && !isNaN(Number(p.longitude))) ? Number(p.longitude).toFixed(5) : '--';
 
       return `
         <div class="punch-feed-card" style="padding: 0.85rem; border-radius: 10px; background: #ffffff; border: 1px solid ${isWithin ? '#e2e8f0' : '#fecaca'}; box-shadow: 0 1px 3px rgba(0,0,0,0.03); transition: all 0.2s;" onmouseenter="this.style.borderColor='#3b82f6'" onmouseleave="this.style.borderColor='${isWithin ? '#e2e8f0' : '#fecaca'}'">
@@ -4571,7 +4590,7 @@ const app = {
             </div>
             <div style="margin-top: 0.2rem; display: flex; justify-content: space-between; align-items: center;">
               ${geofenceBadge}
-              <span style="font-size: 0.7rem; color: #94a3b8; font-family: monospace;">${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}</span>
+              <span style="font-size: 0.7rem; color: #94a3b8; font-family: monospace;">${latFeed}, ${lonFeed}</span>
             </div>
           </div>
 
@@ -4588,16 +4607,34 @@ const app = {
     }).join('');
   },
 
+
+
   initAllEmployeesMap(punches, branches) {
     setTimeout(() => {
       const mapEl = document.getElementById('all-employees-leaflet-map');
-      if (!mapEl || typeof L === 'undefined') return;
+      if (!mapEl) return;
+
+      if (typeof L === 'undefined') {
+        mapEl.innerHTML = `
+          <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #64748b; padding: 2rem; text-align: center;">
+            <i class="fa-solid fa-map-location-dot" style="font-size: 2.5rem; margin-bottom: 0.75rem; color: #94a3b8;"></i>
+            <h4 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;">Map Library Loading...</h4>
+            <p style="font-size: 0.85rem; color: #94a3b8;">If the map does not load, please check your internet connection for Leaflet OpenStreetMap CDN.</p>
+          </div>
+        `;
+        return;
+      }
 
       if (this.currentEmployeeMap) {
-        this.currentEmployeeMap.remove();
+        try {
+          this.currentEmployeeMap.remove();
+        } catch (e) {}
         this.currentEmployeeMap = null;
       }
       this.employeeMapMarkers = {};
+
+      // Clear the loading spinner
+      mapEl.innerHTML = '';
 
       const map = L.map('all-employees-leaflet-map');
       this.currentEmployeeMap = map;
