@@ -3565,6 +3565,53 @@ academyRouter.get('/leaves', (req, res) => {
 });
 
 /**
+ * POST /api/academy/leaves
+ * Apply or record a leave request for self (admin/staff) or on behalf of coach/student
+ */
+academyRouter.post('/leaves', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { applicant_type, applicant_id, applicant_name, start_date, end_date, reason, status, reviewer_comments } = req.body;
+
+    if (!start_date || !end_date || !reason) {
+      return res.status(400).json({ success: false, error: 'Start date, end date, and reason are required' });
+    }
+
+    const appType = applicant_type || 'staff';
+    const appId = Number(applicant_id) || req.user.userId;
+    const appName = applicant_name || req.user.name || 'Staff Member';
+    const leaveStatus = status === 'approved' ? 'approved' : 'pending';
+
+    const insertResult = db.prepare(`
+      INSERT INTO leave_requests (
+        applicant_type, applicant_id, applicant_name, start_date, end_date, reason, status,
+        reviewed_by, reviewed_at, reviewer_comments
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      appType,
+      appId,
+      appName,
+      start_date,
+      end_date,
+      reason,
+      leaveStatus,
+      leaveStatus === 'approved' ? req.user.userId : null,
+      leaveStatus === 'approved' ? new Date().toISOString() : null,
+      leaveStatus === 'approved' ? (reviewer_comments || 'Approved by Academy Admin') : null
+    );
+
+    res.json({
+      success: true,
+      message: leaveStatus === 'approved' ? 'Leave request created and approved successfully' : 'Leave request submitted successfully',
+      leaveId: insertResult.lastInsertRowid
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * PUT /api/academy/leaves/:id
  */
 academyRouter.put('/leaves/:id', (req, res) => {
@@ -3583,6 +3630,22 @@ academyRouter.put('/leaves/:id', (req, res) => {
     `).run(status, reviewer_comments || null, req.user.userId, id);
 
     res.json({ success: true, message: `Leave request ${status}` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/leaves/:id
+ */
+academyRouter.delete('/leaves/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+
+    db.prepare('DELETE FROM leave_requests WHERE id = ?').run(id);
+
+    res.json({ success: true, message: 'Leave request deleted successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

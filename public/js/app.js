@@ -12215,6 +12215,9 @@ const app = {
       <div class="content-card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <h2 class="card-title"><i class="fa-solid fa-calendar-check"></i> Leave Requests (${totalCount})</h2>
+          <button class="btn btn-primary btn-sm" onclick="app.showApplyLeaveModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-plus"></i> Apply / Record Leave
+          </button>
         </div>
 
         <!-- Universal Filter Bar -->
@@ -12278,10 +12281,15 @@ const app = {
                     </span>
                   </td>
                   <td>
-                    ${l.status === 'pending' ? `
-                      <button class="btn btn-success btn-sm" onclick="app.updateLeave(${l.id}, 'approved')">Approve</button>
-                      <button class="btn btn-danger btn-sm" onclick="app.updateLeave(${l.id}, 'rejected')">Reject</button>
-                    ` : (l.reviewer_comments ? `<span style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(l.reviewer_comments)}</span>` : '-')}
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                      ${l.status === 'pending' ? `
+                        <button class="btn btn-success btn-sm" onclick="app.updateLeave(${l.id}, 'approved')">Approve</button>
+                        <button class="btn btn-danger btn-sm" onclick="app.updateLeave(${l.id}, 'rejected')">Reject</button>
+                      ` : (l.reviewer_comments ? `<span style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(l.reviewer_comments)}</span>` : '-')}
+                      <button class="btn btn-outline-danger btn-sm" onclick="app.deleteLeave(${l.id})" title="Delete Leave Record" style="padding: 2px 6px; font-size: 11px;">
+                        <i class="fa-solid fa-trash"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               `).join('')}
@@ -12327,6 +12335,248 @@ const app = {
     if (res.success) {
       this.showToast(res.message, 'success');
       this.renderLeaves();
+    }
+  },
+
+  async deleteLeave(id) {
+    if (!confirm('Are you sure you want to delete this leave request?')) return;
+    const res = await this.apiRequest(`/api/academy/leaves/${id}`, {
+      method: 'DELETE'
+    });
+    if (res.success) {
+      this.showToast(res.message || 'Leave request deleted', 'success');
+      this.renderLeaves();
+    } else {
+      this.showToast(res.error || 'Failed to delete leave request', 'danger');
+    }
+  },
+
+  async showApplyLeaveModal() {
+    const today = new Date().toISOString().split('T')[0];
+
+    // Fetch coaches and students in parallel to populate selectors
+    const [coachesRes, studentsRes] = await Promise.all([
+      this.apiRequest('/api/academy/coaches?limit=100').catch(() => ({ coaches: [] })),
+      this.apiRequest('/api/academy/students?limit=200').catch(() => ({ students: [] }))
+    ]);
+
+    const coaches = coachesRes.coaches || [];
+    const students = studentsRes.students || [];
+
+    // Store in app cache for selector changes
+    this.leaveModalCoaches = coaches;
+    this.leaveModalStudents = students;
+
+    const currentUserName = this.user?.name || 'Academy Admin';
+    const currentUserId = this.user?.userId || 1;
+    const currentUserRole = this.user?.role || 'staff';
+
+    this.openModal(
+      `<i class="fa-solid fa-calendar-plus" style="color: var(--primary);"></i> Apply / Record Leave`,
+      `
+        <form id="apply-leave-form" onsubmit="event.preventDefault(); app.submitLeaveRequest();">
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-heading);">
+              Leave Application For:
+            </label>
+            <div style="display: flex; gap: 16px; margin-bottom: 10px; flex-wrap: wrap;">
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                <input type="radio" name="leave_for" value="myself" checked onchange="app.onLeaveTargetChange('myself')">
+                <span>Myself (${this.escapeHtml(currentUserName)})</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                <input type="radio" name="leave_for" value="coach" onchange="app.onLeaveTargetChange('coach')">
+                <span>Coach / Staff Member</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                <input type="radio" name="leave_for" value="student" onchange="app.onLeaveTargetChange('student')">
+                <span>Student</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Dynamic Target Person Selector -->
+          <div id="leave-person-picker-container" style="display: none; margin-bottom: 14px;">
+            <label id="leave-person-picker-label" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+              Select Person:
+            </label>
+            <select id="leave-person-id" class="form-control" style="width: 100%;">
+              <!-- Populated dynamically -->
+            </select>
+          </div>
+
+          <!-- Dates Range -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+            <div class="form-group">
+              <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+                Start Date <span style="color: #dc2626;">*</span>
+              </label>
+              <input type="date" id="leave-start-date" class="form-control" value="${today}" required onchange="app.updateLeaveDaysCount()">
+            </div>
+            <div class="form-group">
+              <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+                End Date <span style="color: #dc2626;">*</span>
+              </label>
+              <input type="date" id="leave-end-date" class="form-control" value="${today}" required onchange="app.updateLeaveDaysCount()">
+            </div>
+          </div>
+
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-regular fa-clock" style="color: var(--primary);"></i>
+            <span>Duration: <strong id="leave-days-count" style="color: var(--primary);">1 day</strong></span>
+          </div>
+
+          <!-- Reason Category -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+              Leave Type / Category:
+            </label>
+            <select id="leave-category" class="form-control" style="width: 100%;">
+              <option value="Casual Leave">Casual Leave</option>
+              <option value="Sick / Medical Leave">Sick / Medical Leave</option>
+              <option value="Personal / Family Emergency">Personal / Family Emergency</option>
+              <option value="Vacation / Travel">Vacation / Travel</option>
+              <option value="Tournament / Sports Event">Tournament / Sports Event</option>
+              <option value="Other">Other Reason</option>
+            </select>
+          </div>
+
+          <!-- Detailed Reason Note -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+              Reason / Explanation <span style="color: #dc2626;">*</span>
+            </label>
+            <textarea id="leave-reason-text" class="form-control" rows="3" placeholder="Provide details or notes regarding this leave..." required style="width: 100%;"></textarea>
+          </div>
+
+          <!-- Initial Approval Status -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+              Approval Decision:
+            </label>
+            <select id="leave-approval-status" class="form-control" style="width: 100%;">
+              <option value="approved" selected>Approve Immediately (Direct Record)</option>
+              <option value="pending">Submit as Pending (Requires Approval)</option>
+            </select>
+          </div>
+        </form>
+      `,
+      `
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="app.submitLeaveRequest()" style="display: inline-flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-check"></i> Submit Leave Request
+        </button>
+      `
+    );
+  },
+
+  onLeaveTargetChange(target) {
+    const container = document.getElementById('leave-person-picker-container');
+    const label = document.getElementById('leave-person-picker-label');
+    const select = document.getElementById('leave-person-id');
+    if (!container || !select) return;
+
+    if (target === 'myself') {
+      container.style.display = 'none';
+    } else if (target === 'coach') {
+      container.style.display = 'block';
+      label.textContent = 'Select Coach / Staff:';
+      const coaches = this.leaveModalCoaches || [];
+      select.innerHTML = coaches.length === 0
+        ? '<option value="">No coaches found</option>'
+        : coaches.map(c => `<option value="${c.id}" data-name="${this.escapeHtml(c.name)}">${this.escapeHtml(c.name)} (${c.sport_name || 'Coach'})</option>`).join('');
+    } else if (target === 'student') {
+      container.style.display = 'block';
+      label.textContent = 'Select Student:';
+      const students = this.leaveModalStudents || [];
+      select.innerHTML = students.length === 0
+        ? '<option value="">No students found</option>'
+        : students.map(s => `<option value="${s.id}" data-name="${this.escapeHtml(s.first_name + ' ' + (s.last_name || ''))}">${this.escapeHtml(s.first_name + ' ' + (s.last_name || ''))} (Adm: ${s.admission_number || s.id})</option>`).join('');
+    }
+  },
+
+  updateLeaveDaysCount() {
+    const sStr = document.getElementById('leave-start-date')?.value;
+    const eStr = document.getElementById('leave-end-date')?.value;
+    const countEl = document.getElementById('leave-days-count');
+    if (!sStr || !eStr || !countEl) return;
+
+    const s = new Date(sStr);
+    const e = new Date(eStr);
+    const diffTime = e - s;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    if (diffDays <= 0) {
+      countEl.textContent = 'Invalid dates (End date must be on or after Start date)';
+      countEl.style.color = '#dc2626';
+    } else {
+      countEl.textContent = `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+      countEl.style.color = 'var(--primary)';
+    }
+  },
+
+  async submitLeaveRequest() {
+    const target = document.querySelector('input[name="leave_for"]:checked')?.value || 'myself';
+    const startDate = document.getElementById('leave-start-date')?.value;
+    const endDate = document.getElementById('leave-end-date')?.value;
+    const category = document.getElementById('leave-category')?.value || 'Casual Leave';
+    const reasonDetail = document.getElementById('leave-reason-text')?.value?.trim();
+    const status = document.getElementById('leave-approval-status')?.value || 'approved';
+
+    if (!startDate || !endDate) {
+      this.showToast('Please specify both start date and end date', 'warning');
+      return;
+    }
+
+    if (new Date(endDate) < new Date(startDate)) {
+      this.showToast('End date cannot be earlier than start date', 'warning');
+      return;
+    }
+
+    if (!reasonDetail) {
+      this.showToast('Please provide a reason for the leave', 'warning');
+      return;
+    }
+
+    let applicantType = 'staff';
+    let applicantId = this.user?.userId || 1;
+    let applicantName = this.user?.name || 'Academy Admin';
+
+    if (target === 'coach') {
+      applicantType = 'coach';
+      const select = document.getElementById('leave-person-id');
+      applicantId = Number(select?.value);
+      const selectedOption = select?.options[select.selectedIndex];
+      applicantName = selectedOption?.getAttribute('data-name') || selectedOption?.textContent || 'Coach';
+    } else if (target === 'student') {
+      applicantType = 'student';
+      const select = document.getElementById('leave-person-id');
+      applicantId = Number(select?.value);
+      const selectedOption = select?.options[select.selectedIndex];
+      applicantName = selectedOption?.getAttribute('data-name') || selectedOption?.textContent || 'Student';
+    }
+
+    const payload = {
+      applicant_type: applicantType,
+      applicant_id: applicantId,
+      applicant_name: applicantName,
+      start_date: startDate,
+      end_date: endDate,
+      reason: `${category}: ${reasonDetail}`,
+      status: status,
+      reviewer_comments: status === 'approved' ? `Approved by ${this.user?.name || 'Academy Admin'}` : null
+    };
+
+    const res = await this.apiRequest('/api/academy/leaves', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast(res.message || 'Leave applied successfully', 'success');
+      this.renderLeaves();
+    } else {
+      this.showToast(res.error || 'Failed to submit leave request', 'danger');
     }
   },
 
