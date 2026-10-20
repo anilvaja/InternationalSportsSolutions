@@ -3270,8 +3270,11 @@ const app = {
     const schema = this.dbStudio.schema;
     if (!row || !schema) return;
 
-    const pk = schema.primaryKeys[0] || { name: 'id' };
-    const pkVal = row[pk.name];
+    const pkColObj = (schema.primaryKeys && schema.primaryKeys.length > 0)
+      ? schema.primaryKeys[0]
+      : (schema.columns.find(c => c.isPrimaryKey) || schema.columns.find(c => c.name.toLowerCase() === 'id') || { name: schema.columns[0]?.name || 'id' });
+    const pkName = pkColObj.name;
+    const pkVal = row[pkName];
 
     const fieldsHtml = schema.columns.map(c => {
       const isPk = c.isPrimaryKey;
@@ -3299,9 +3302,9 @@ const app = {
     }).join('');
 
     this.openModal(
-      `Edit Row: ${schema.tableName} (${pk.name} = ${pkVal})`,
+      `Edit Row: ${schema.tableName} (${pkName} = ${pkVal})`,
       `
-        <form id="db-studio-edit-form" onsubmit="event.preventDefault(); app.saveDbStudioRow(true, '${pk.name}', '${pkVal}')">
+        <form id="db-studio-edit-form" onsubmit="event.preventDefault(); app.saveDbStudioRow(true, '${pkName}', '${pkVal}')">
           <div style="max-height: 480px; overflow-y: auto; padding-right: 4px;">
             ${fieldsHtml}
           </div>
@@ -3309,7 +3312,7 @@ const app = {
       `,
       `
         <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-        <button type="submit" form="db-studio-edit-form" class="btn btn-primary" onclick="app.saveDbStudioRow(true, '${pk.name}', '${pkVal}')"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+        <button type="submit" form="db-studio-edit-form" class="btn btn-primary" onclick="app.saveDbStudioRow(true, '${pkName}', '${pkVal}')"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
       `,
       '780px'
     );
@@ -3380,10 +3383,13 @@ const app = {
     const schema = this.dbStudio.schema;
     if (!row || !schema) return;
 
-    const pk = schema.primaryKeys[0] || { name: 'id' };
-    const pkVal = row[pk.name];
+    const pkColObj = (schema.primaryKeys && schema.primaryKeys.length > 0)
+      ? schema.primaryKeys[0]
+      : (schema.columns.find(c => c.isPrimaryKey) || schema.columns.find(c => c.name.toLowerCase() === 'id') || { name: schema.columns[0]?.name || 'id' });
+    const pkName = pkColObj.name;
+    const pkVal = row[pkName];
 
-    if (!confirm(`Are you sure you want to permanently delete this row where ${pk.name} = ${pkVal}?`)) {
+    if (!confirm(`Are you sure you want to permanently delete this row where ${pkName} = ${pkVal}?`)) {
       return;
     }
 
@@ -3393,7 +3399,7 @@ const app = {
         body: JSON.stringify({
           dbKey: this.dbStudio.activeDb,
           table: schema.tableName,
-          pkCol: pk.name,
+          pkCol: pkName,
           pkVal
         })
       });

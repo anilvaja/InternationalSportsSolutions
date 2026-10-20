@@ -285,9 +285,12 @@ export class DbViewerService {
       };
     });
 
+    const primaryKeys = enrichedColumns.filter(c => c.isPrimaryKey).map(c => ({ name: c.name, type: c.type }));
+
     return {
       tableName: cleanTable,
       columns: enrichedColumns,
+      primaryKeys,
       foreignKeys,
       indexes: indexList,
       totalColumns: enrichedColumns.length,
