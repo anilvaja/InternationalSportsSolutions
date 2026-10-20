@@ -19,6 +19,16 @@ import bcrypt from 'bcryptjs';
 
 export const academyRouter = express.Router();
 
+// Exported pure helpers for testing and reusability
+export {
+  getDaysUntilBirthday,
+  fetchUpcomingBirthdays,
+  fetchInquiryPipeline,
+  fetchFeeDuesHub,
+  fetchStaffAvailability,
+  calculatePriorityActions
+};
+
 // All routes here require valid auth, academy staff access, and tenant DB resolution
 academyRouter.use(requireAuth, requireAcademyStaff, resolveTenant);
 
@@ -108,9 +118,11 @@ function fetchNewlyJoinedStudents(db, branchIds = []) {
       SELECT s.id, s.first_name, s.last_name, s.admission_number,
              COALESCE(s.enrolled_at, s.created_at) as admission_date,
              s.created_at, s.status, s.photo_url,
-             br.name as branch_name
+             br.name as branch_name,
+             inq.id as inquiry_id, inq.source as inquiry_source
       FROM students s
       LEFT JOIN branches br ON br.id = s.branch_id
+      LEFT JOIN inquiries inq ON inq.converted_student_id = s.id
     `;
     const params = [];
     if (branchIds && branchIds.length > 0) {
@@ -159,6 +171,428 @@ function fetchUpcomingFees(db, branchIds = []) {
   } catch (err) {
     return [];
   }
+}
+
+function getDaysUntilBirthday(dobStr, refDate = new Date()) {
+  if (!dobStr) return null;
+  const parts = String(dobStr).split(/[-/]/);
+  if (parts.length < 3) return null;
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  if (isNaN(month) || isNaN(day)) return null;
+
+  const todayZero = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+  let bdayThisYear = new Date(todayZero.getFullYear(), month, day);
+
+  if (bdayThisYear < todayZero) {
+    bdayThisYear = new Date(todayZero.getFullYear() + 1, month, day);
+  }
+
+  const diffMs = bdayThisYear.getTime() - todayZero.getTime();
+  const daysDiff = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  return {
+    daysDiff,
+    bdayDate: bdayThisYear,
+    monthDayStr: `${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  };
+}
+
+function fetchUpcomingBirthdays(db, branchIds = [], maxDays = 7) {
+  try {
+    const now = new Date();
+    // 1. Staff Birthdays (users and coaches)
+    const staffQuery = `
+      SELECT u.id, u.name, u.role, u.date_of_birth, u.avatar_url, 'user' as source
+      FROM users u
+      WHERE u.date_of_birth IS NOT NULL AND u.date_of_birth != ''
+      UNION
+      SELECT c.id, c.name, 'coach' as role, c.date_of_birth, c.profile_photo as avatar_url, 'coach' as source
+      FROM coaches c
+      WHERE c.date_of_birth IS NOT NULL AND c.date_of_birth != '' AND c.is_active = 1
+    `;
+    const allStaff = db.prepare(staffQuery).all();
+    const seenStaffNames = new Set();
+    const staffBirthdays = [];
+
+    for (const s of allStaff) {
+      const cleanName = (s.name || '').toLowerCase().trim();
+      if (!cleanName || seenStaffNames.has(cleanName)) continue;
+      seenStaffNames.add(cleanName);
+      const bInfo = getDaysUntilBirthday(s.date_of_birth, now);
+      if (bInfo && bInfo.daysDiff >= 0 && bInfo.daysDiff <= maxDays) {
+        staffBirthdays.push({
+          id: s.id,
+          name: s.name,
+          role: s.role || 'Staff',
+          date_of_birth: s.date_of_birth,
+          formatted_date: bInfo.bdayDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+          days_until: bInfo.daysDiff,
+          is_today: bInfo.daysDiff === 0,
+          avatar_url: s.avatar_url
+        });
+      }
+    }
+    staffBirthdays.sort((a, b) => a.days_until - b.days_until);
+
+    // 2. Student Birthdays
+    let studentQuery = `
+      SELECT s.id, s.first_name, s.last_name, s.admission_number, s.date_of_birth, s.photo_url, br.name as branch_name
+      FROM students s
+      LEFT JOIN branches br ON br.id = s.branch_id
+      WHERE s.status = 'active' AND s.date_of_birth IS NOT NULL AND s.date_of_birth != ''
+    `;
+    const sParams = [];
+    if (branchIds && branchIds.length > 0) {
+      studentQuery += ` AND s.branch_id IN (${branchIds.map(() => '?').join(',')})`;
+      sParams.push(...branchIds);
+    }
+    const allStudents = db.prepare(studentQuery).all(...sParams);
+    const studentBirthdays = [];
+
+    for (const st of allStudents) {
+      const bInfo = getDaysUntilBirthday(st.date_of_birth, now);
+      if (bInfo && bInfo.daysDiff >= 0 && bInfo.daysDiff <= maxDays) {
+        studentBirthdays.push({
+          id: st.id,
+          name: `${st.first_name || ''} ${st.last_name || ''}`.trim() || 'Student',
+          admission_number: st.admission_number,
+          branch_name: st.branch_name,
+          date_of_birth: st.date_of_birth,
+          formatted_date: bInfo.bdayDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+          days_until: bInfo.daysDiff,
+          is_today: bInfo.daysDiff === 0,
+          photo_url: st.photo_url
+        });
+      }
+    }
+    studentBirthdays.sort((a, b) => a.days_until - b.days_until);
+
+    return { staffBirthdays, studentBirthdays };
+  } catch (err) {
+    console.error('Error fetching birthdays:', err.message);
+    return { staffBirthdays: [], studentBirthdays: [] };
+  }
+}
+
+function fetchInquiryPipeline(db, branchIds = []) {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    let branchFilter = '';
+    const params = [];
+    if (branchIds && branchIds.length > 0) {
+      branchFilter = ` AND branch_id IN (${branchIds.map(() => '?').join(',')})`;
+      params.push(...branchIds);
+    }
+
+    const newCount = db.prepare(`SELECT COUNT(*) as c FROM inquiries WHERE status = 'new' ${branchFilter}`).get(...params).c;
+    const todayFollowUps = db.prepare(`SELECT COUNT(*) as c FROM inquiries WHERE next_followup_date = ? AND status NOT IN ('converted', 'lost', 'rejected') ${branchFilter}`).get(today, ...params).c;
+    const overdueFollowUps = db.prepare(`SELECT COUNT(*) as c FROM inquiries WHERE next_followup_date < ? AND status NOT IN ('converted', 'lost', 'rejected') ${branchFilter}`).get(today, ...params).c;
+    const trialsScheduled = db.prepare(`SELECT COUNT(*) as c FROM inquiry_trials WHERE trial_date >= ? ${branchIds && branchIds.length > 0 ? `AND branch_id IN (${branchIds.map(() => '?').join(',')})` : ''}`).get(today, ...(branchIds && branchIds.length > 0 ? branchIds : [])).c;
+    const totalActive = db.prepare(`SELECT COUNT(*) as c FROM inquiries WHERE status NOT IN ('converted', 'lost', 'rejected') ${branchFilter}`).get(...params).c;
+
+    const convertedCount = db.prepare(`SELECT COUNT(*) as c FROM inquiries WHERE status = 'converted' ${branchFilter}`).get(...params).c;
+    const totalInquiriesAll = db.prepare(`SELECT COUNT(*) as c FROM inquiries WHERE 1=1 ${branchFilter}`).get(...params).c;
+    const conversionRate = totalInquiriesAll > 0 ? Math.round((convertedCount / totalInquiriesAll) * 100) : 0;
+
+    let recentsQuery = `
+      SELECT i.id, i.student_name, i.phone, i.status, i.next_followup_date, i.source, i.created_at,
+             b.name as branch_name, s.name as sport_name
+      FROM inquiries i
+      LEFT JOIN branches b ON b.id = i.branch_id
+      LEFT JOIN sports s ON s.id = i.sport_id
+      WHERE i.status NOT IN ('converted', 'lost', 'rejected')
+      ${branchFilter}
+      ORDER BY 
+        CASE 
+          WHEN i.next_followup_date IS NOT NULL AND i.next_followup_date != '' AND i.next_followup_date < '${today}' THEN 1
+          WHEN i.next_followup_date = '${today}' THEN 2
+          ELSE 3
+        END,
+        i.id DESC
+      LIMIT 6
+    `;
+    const actionableInquiries = db.prepare(recentsQuery).all(...params);
+
+    return {
+      newCount,
+      todayFollowUps,
+      overdueFollowUps,
+      trialsScheduled,
+      totalActive,
+      convertedCount,
+      conversionRate,
+      actionableInquiries
+    };
+  } catch (err) {
+    console.error('Error fetching inquiry pipeline:', err.message);
+    return {
+      newCount: 0,
+      todayFollowUps: 0,
+      overdueFollowUps: 0,
+      trialsScheduled: 0,
+      totalActive: 0,
+      convertedCount: 0,
+      conversionRate: 0,
+      actionableInquiries: []
+    };
+  }
+}
+
+function fetchFeeDuesHub(db, branchIds = []) {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    let branchFilter = '';
+    const params = [];
+    if (branchIds && branchIds.length > 0) {
+      branchFilter = ` AND s.branch_id IN (${branchIds.map(() => '?').join(',')})`;
+      params.push(...branchIds);
+    }
+
+    const overdueRow = db.prepare(`
+      SELECT 
+        COALESCE(SUM(sf.balance_amount), 0) as amount,
+        COUNT(sf.id) as count,
+        COUNT(DISTINCT sf.student_id) as student_count
+      FROM student_fees sf
+      JOIN students s ON s.id = sf.student_id
+      WHERE sf.due_date < ? AND sf.balance_amount > 0 AND sf.status IN ('pending', 'partial', 'overdue')
+      ${branchFilter}
+    `).get(today, ...params);
+
+    const todayDueRow = db.prepare(`
+      SELECT 
+        COALESCE(SUM(sf.balance_amount), 0) as amount,
+        COUNT(sf.id) as count,
+        COUNT(DISTINCT sf.student_id) as student_count
+      FROM student_fees sf
+      JOIN students s ON s.id = sf.student_id
+      WHERE sf.due_date = ? AND sf.balance_amount > 0 AND sf.status IN ('pending', 'partial', 'overdue')
+      ${branchFilter}
+    `).get(today, ...params);
+
+    const upcoming7DaysRow = db.prepare(`
+      SELECT 
+        COALESCE(SUM(sf.balance_amount), 0) as amount,
+        COUNT(sf.id) as count,
+        COUNT(DISTINCT sf.student_id) as student_count
+      FROM student_fees sf
+      JOIN students s ON s.id = sf.student_id
+      WHERE sf.due_date > ? AND sf.due_date <= date(?, '+7 days') AND sf.balance_amount > 0 AND sf.status IN ('pending', 'partial', 'overdue')
+      ${branchFilter}
+    `).get(today, today, ...params);
+
+    const upcoming30DaysRow = db.prepare(`
+      SELECT 
+        COALESCE(SUM(sf.balance_amount), 0) as amount,
+        COUNT(sf.id) as count,
+        COUNT(DISTINCT sf.student_id) as student_count
+      FROM student_fees sf
+      JOIN students s ON s.id = sf.student_id
+      WHERE sf.due_date > ? AND sf.due_date <= date(?, '+30 days') AND sf.balance_amount > 0 AND sf.status IN ('pending', 'partial', 'overdue')
+      ${branchFilter}
+    `).get(today, today, ...params);
+
+    const totalRow = db.prepare(`
+      SELECT 
+        COALESCE(SUM(sf.balance_amount), 0) as total_outstanding,
+        COALESCE(SUM(sf.paid_amount), 0) as total_collected,
+        COUNT(DISTINCT sf.student_id) as total_affected_students
+      FROM student_fees sf
+      JOIN students s ON s.id = sf.student_id
+      WHERE sf.balance_amount > 0 AND sf.status IN ('pending', 'partial', 'overdue')
+      ${branchFilter}
+    `).get(...params);
+
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const collectedThisMonthRow = db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as amt FROM fee_payments
+      WHERE payment_date >= ? AND status = 'completed'
+    `).get(monthStart);
+
+    return {
+      overdue: {
+        amount: Number(overdueRow ? overdueRow.amount : 0),
+        count: Number(overdueRow ? overdueRow.count : 0),
+        studentCount: Number(overdueRow ? overdueRow.student_count : 0)
+      },
+      dueToday: {
+        amount: Number(todayDueRow ? todayDueRow.amount : 0),
+        count: Number(todayDueRow ? todayDueRow.count : 0),
+        studentCount: Number(todayDueRow ? todayDueRow.student_count : 0)
+      },
+      upcoming7Days: {
+        amount: Number(upcoming7DaysRow ? upcoming7DaysRow.amount : 0),
+        count: Number(upcoming7DaysRow ? upcoming7DaysRow.count : 0),
+        studentCount: Number(upcoming7DaysRow ? upcoming7DaysRow.student_count : 0)
+      },
+      upcoming30Days: {
+        amount: Number(upcoming30DaysRow ? upcoming30DaysRow.amount : 0),
+        count: Number(upcoming30DaysRow ? upcoming30DaysRow.count : 0),
+        studentCount: Number(upcoming30DaysRow ? upcoming30DaysRow.student_count : 0)
+      },
+      totalOutstanding: Number(totalRow ? totalRow.total_outstanding : 0),
+      totalCollected: Number(totalRow ? totalRow.total_collected : 0),
+      collectedThisMonth: Number(collectedThisMonthRow ? collectedThisMonthRow.amt : 0),
+      totalAffectedStudents: Number(totalRow ? totalRow.total_affected_students : 0)
+    };
+  } catch (err) {
+    console.error('Error fetching fee dues hub:', err.message);
+    return {
+      overdue: { amount: 0, count: 0, studentCount: 0 },
+      dueToday: { amount: 0, count: 0, studentCount: 0 },
+      upcoming7Days: { amount: 0, count: 0, studentCount: 0 },
+      upcoming30Days: { amount: 0, count: 0, studentCount: 0 },
+      totalOutstanding: 0,
+      totalCollected: 0,
+      collectedThisMonth: 0,
+      totalAffectedStudents: 0
+    };
+  }
+}
+
+function fetchStaffAvailability(db, todayStr, scheduledBatches = []) {
+  try {
+    const leavesToday = db.prepare(`
+      SELECT lr.id, lr.applicant_type, lr.applicant_id, lr.applicant_name,
+             lr.start_date, lr.end_date, lr.reason, lr.status
+      FROM leave_requests lr
+      WHERE lr.status = 'approved' AND lr.start_date <= ? AND lr.end_date >= ?
+      ORDER BY lr.id DESC
+    `).all(todayStr, todayStr);
+
+    const onLeaveApplicantIds = new Set(leavesToday.map(l => Number(l.applicant_id)));
+    const onLeaveNames = new Set(leavesToday.map(l => (l.applicant_name || '').toLowerCase().trim()));
+
+    const conflicts = [];
+    for (const b of scheduledBatches) {
+      const isCoachOnLeave = (b.coach_id && onLeaveApplicantIds.has(Number(b.coach_id))) ||
+                             (b.coach_name && onLeaveNames.has((b.coach_name || '').toLowerCase().trim()));
+      if (isCoachOnLeave) {
+        conflicts.push({
+          batch_id: b.id,
+          batch_name: b.name,
+          start_time: b.start_time,
+          end_time: b.end_time,
+          coach_id: b.coach_id,
+          coach_name: b.coach_name,
+          sport_name: b.sport_name,
+          branch_name: b.branch_name,
+          enrolled_count: b.enrolled_count || 0
+        });
+      }
+    }
+
+    const activeCoaches = db.prepare(`
+      SELECT id, name, phone, branch_id
+      FROM coaches
+      WHERE is_active = 1
+    `).all();
+
+    const availableCoaches = activeCoaches.filter(c => !onLeaveApplicantIds.has(Number(c.id)) && !onLeaveNames.has((c.name || '').toLowerCase().trim()));
+
+    return {
+      leavesToday,
+      conflicts,
+      affectedBatchesCount: conflicts.length,
+      availableCoaches
+    };
+  } catch (err) {
+    console.error('Error fetching staff availability:', err.message);
+    return {
+      leavesToday: [],
+      conflicts: [],
+      affectedBatchesCount: 0,
+      availableCoaches: []
+    };
+  }
+}
+
+function calculatePriorityActions({ inquiryPipeline, feeDuesHub, scheduledBatches = [], staffAvailability, pendingLeaves = 0, isCoach = false }) {
+  const actions = [];
+
+  if (!isCoach && inquiryPipeline && inquiryPipeline.overdueFollowUps > 0) {
+    actions.push({
+      id: 'overdue_inquiries',
+      type: 'danger',
+      icon: 'fa-solid fa-phone-slash',
+      title: `${inquiryPipeline.overdueFollowUps} Overdue Inquiry Follow-up${inquiryPipeline.overdueFollowUps === 1 ? '' : 's'}`,
+      description: 'Prospective students waiting for callback past scheduled follow-up date.',
+      actionLabel: 'Call Leads',
+      actionRoute: 'inquiries',
+      actionFilter: 'overdue',
+      count: inquiryPipeline.overdueFollowUps
+    });
+  }
+
+  if (staffAvailability && staffAvailability.affectedBatchesCount > 0) {
+    actions.push({
+      id: 'batch_leave_conflicts',
+      type: 'danger',
+      icon: 'fa-solid fa-person-circle-exclamation',
+      title: `${staffAvailability.affectedBatchesCount} Batch${staffAvailability.affectedBatchesCount === 1 ? '' : 'es'} with Coach on Leave`,
+      description: 'Assigned coach is on approved leave today. Assign substitute coach immediately.',
+      actionLabel: 'Assign Substitute',
+      actionRoute: 'batches',
+      count: staffAvailability.affectedBatchesCount
+    });
+  }
+
+  const uncompletedPastBatches = scheduledBatches.filter(b => b.attendance_status === 'not_started' || b.attendance_status === 'partially_marked');
+  if (uncompletedPastBatches.length > 0) {
+    actions.push({
+      id: 'pending_attendance',
+      type: 'warning',
+      icon: 'fa-solid fa-clipboard-user',
+      title: `${uncompletedPastBatches.length} Scheduled Batch${uncompletedPastBatches.length === 1 ? '' : 'es'} Need Attendance`,
+      description: 'Daily training sessions scheduled today require student attendance verification.',
+      actionLabel: 'Take Attendance',
+      actionRoute: 'attendance',
+      count: uncompletedPastBatches.length
+    });
+  }
+
+  if (!isCoach && feeDuesHub && feeDuesHub.overdue.count > 0) {
+    actions.push({
+      id: 'overdue_fees',
+      type: 'warning',
+      icon: 'fa-solid fa-file-invoice-dollar',
+      title: `₹${feeDuesHub.overdue.amount.toLocaleString()} Overdue Fees (${feeDuesHub.overdue.studentCount} Student${feeDuesHub.overdue.studentCount === 1 ? '' : 's'})`,
+      description: 'Fee liabilities past due date. Send reminders or record collections.',
+      actionLabel: 'Fee Ledger',
+      actionRoute: 'fees',
+      actionFilter: 'overdue',
+      count: feeDuesHub.overdue.count
+    });
+  }
+
+  if (!isCoach && pendingLeaves > 0) {
+    actions.push({
+      id: 'pending_leaves',
+      type: 'info',
+      icon: 'fa-solid fa-calendar-check',
+      title: `${pendingLeaves} Staff Leave Request${pendingLeaves === 1 ? '' : 's'} Pending`,
+      description: 'Review and approve/reject pending leave applications.',
+      actionLabel: 'Review Leaves',
+      actionRoute: 'leaves',
+      count: pendingLeaves
+    });
+  }
+
+  if (!isCoach && inquiryPipeline && inquiryPipeline.todayFollowUps > 0) {
+    actions.push({
+      id: 'today_inquiries',
+      type: 'info',
+      icon: 'fa-solid fa-calendar-day',
+      title: `${inquiryPipeline.todayFollowUps} Inquiry Follow-up${inquiryPipeline.todayFollowUps === 1 ? '' : 's'} Due Today`,
+      description: 'Scheduled outreach calls and follow-ups due today.',
+      actionLabel: 'Open Inquiries',
+      actionRoute: 'inquiries',
+      actionFilter: 'today',
+      count: inquiryPipeline.todayFollowUps
+    });
+  }
+
+  return actions;
 }
 
 /**
@@ -267,6 +701,17 @@ academyRouter.get('/dashboard', (req, res) => {
         LIMIT 10
       `).all(coachId) : [];
 
+      const coachBirthdays = fetchUpcomingBirthdays(db, coachBranchIds);
+      const coachStaffAvail = fetchStaffAvailability(db, today, todayBatches);
+      const coachPriorityActions = calculatePriorityActions({
+        inquiryPipeline: null,
+        feeDuesHub: null,
+        scheduledBatches: todayBatches,
+        staffAvailability: coachStaffAvail,
+        pendingLeaves: 0,
+        isCoach: true
+      });
+
       return res.json({
         success: true,
         userRole: 'coach',
@@ -303,8 +748,13 @@ academyRouter.get('/dashboard', (req, res) => {
         },
         recentAbsences: coachRecentAbsences,
         newlyJoinedStudents: fetchNewlyJoinedStudents(db, coachBranchIds),
-        upcomingFees: fetchUpcomingFees(db, coachBranchIds),
+        upcomingFees: [],
         upcomingEvents: fetchUpcomingEvents(db),
+        birthdays: coachBirthdays,
+        staffAvailability: coachStaffAvail,
+        priorityActions: coachPriorityActions,
+        feeDuesHub: null,
+        inquiryPipeline: null
       });
     }
 
@@ -347,14 +797,26 @@ academyRouter.get('/dashboard', (req, res) => {
       WHERE a.date = ?
     `).get(today);
 
-    // Calculate total scheduled students today across active batches
+    // Calculate total scheduled students today across active batches and fetch detailed batches
     let scheduledStudentsToday = 0;
+    let matchedBatchesToday = [];
     try {
-      const activeBatchesToday = db.prepare(`SELECT id, days_of_week FROM batches WHERE is_active = 1`).all();
-      const matchedBatchesToday = activeBatchesToday.filter(b => {
+      const activeBatchesToday = db.prepare(`
+        SELECT bt.*, s.name as sport_name, b.name as branch_name, c.name as coach_name,
+               (SELECT COUNT(*) FROM student_batch_enrollments sbe WHERE sbe.batch_id = bt.id AND sbe.status = 'active') as enrolled_count
+        FROM batches bt
+        LEFT JOIN sports s ON s.id = bt.sport_id
+        LEFT JOIN branches b ON b.id = bt.branch_id
+        LEFT JOIN coaches c ON c.id = bt.coach_id
+        WHERE bt.is_active = 1
+        ${(isBranchAdmin && branchIds.length > 0) ? `AND bt.branch_id IN (${branchIds.map(() => '?').join(',')})` : ''}
+      `).all(...((isBranchAdmin && branchIds.length > 0) ? branchIds : []));
+
+      matchedBatchesToday = activeBatchesToday.filter(b => {
         const days = b.days_of_week || '';
         return days.includes(curDayShort) || days.includes(curDayFull) || days.toLowerCase().includes('daily') || days.toLowerCase().includes('all');
       });
+
       const batchIdsToday = matchedBatchesToday.map(b => b.id);
       if (batchIdsToday.length > 0) {
         scheduledStudentsToday = db.prepare(`
@@ -398,6 +860,21 @@ academyRouter.get('/dashboard', (req, res) => {
     const pendingLeaves = db.prepare("SELECT COUNT(*) as c FROM leave_requests WHERE status = 'pending'").get().c;
     const recentActivity = db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 5').all();
 
+    // Priority Operations Hubs
+    const scopedBranchIds = isBranchAdmin ? branchIds : [];
+    const inquiryPipeline = fetchInquiryPipeline(db, scopedBranchIds);
+    const feeDuesHub = fetchFeeDuesHub(db, scopedBranchIds);
+    const staffAvailability = fetchStaffAvailability(db, today, matchedBatchesToday);
+    const birthdays = fetchUpcomingBirthdays(db, scopedBranchIds);
+    const priorityActions = calculatePriorityActions({
+      inquiryPipeline,
+      feeDuesHub,
+      scheduledBatches: matchedBatchesToday,
+      staffAvailability,
+      pendingLeaves,
+      isCoach: false
+    });
+
     res.json({
       success: true,
       role: req.user.role,
@@ -429,6 +906,11 @@ academyRouter.get('/dashboard', (req, res) => {
         fees: feeStats,
         pendingLeaves,
       },
+      inquiryPipeline,
+      feeDuesHub,
+      staffAvailability,
+      birthdays,
+      priorityActions,
       recentAbsences,
       newlyJoinedStudents: fetchNewlyJoinedStudents(db, branchIds),
       upcomingFees: fetchUpcomingFees(db, branchIds),
@@ -517,6 +999,14 @@ academyRouter.get('/dashboard/today-batches', (req, res) => {
 
     const currentTimeStr = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
 
+    // Query approved leaves covering today to detect coach availability conflicts
+    const approvedLeavesToday = db.prepare(`
+      SELECT applicant_id, applicant_name FROM leave_requests
+      WHERE status = 'approved' AND start_date <= ? AND end_date >= ?
+    `).all(todayStr, todayStr);
+    const leaveCoachIds = new Set(approvedLeavesToday.map(l => Number(l.applicant_id)));
+    const leaveNames = new Set(approvedLeavesToday.map(l => (l.applicant_name || '').toLowerCase().trim()));
+
     const enriched = scheduledBatches.map(batch => {
       const attRecord = db.prepare('SELECT id, taken_by_user_id, notes, created_at FROM attendance WHERE batch_id = ? AND date = ?').get(batch.id, todayStr);
       let markedCount = 0;
@@ -561,11 +1051,15 @@ academyRouter.get('/dashboard/today-batches', (req, res) => {
         }
       }
 
+      const isCoachOnLeave = (batch.coach_id && leaveCoachIds.has(Number(batch.coach_id))) ||
+                             (batch.coach_name && leaveNames.has((batch.coach_name || '').toLowerCase().trim()));
+
       return {
         ...batch,
         student_count: batch.enrolled_count || 0,
         attendance_id: attRecord ? attRecord.id : null,
         attendance_status: attendanceStatus,
+        is_coach_on_leave: !!isCoachOnLeave,
         marked_count: markedCount,
         present_count: presentCount,
         absent_count: absentCount,
