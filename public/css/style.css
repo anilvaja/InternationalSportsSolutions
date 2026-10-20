@@ -3544,5 +3544,104 @@ table.table, .table {
   box-shadow: 0 4px 12px var(--primary-glow);
 }
 
+/* ==========================================================================
+   Academy Profile, Settings & Logo Branding
+   ========================================================================== */
+.academy-settings-container {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.academy-branding-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.branding-hero-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.branding-logo-uploader-grid {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .branding-logo-uploader-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.branding-logo-preview-box {
+  width: 180px;
+  height: 180px;
+  border-radius: var(--radius-md);
+  border: 2px dashed var(--border);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  transition: var(--transition);
+  box-shadow: var(--shadow-sm);
+  margin: 0 auto;
+}
+
+.branding-logo-preview-box.has-logo {
+  border: 2px solid var(--border);
+  background: var(--bg-card);
+}
+
+.branding-logo-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 10px;
+}
+
+.branding-dropzone-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.branding-preview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.branding-mockup-chip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 200px;
+}
+
+
 
 

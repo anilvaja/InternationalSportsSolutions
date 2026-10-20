@@ -23,7 +23,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="/css/style.css?v=2.5.1">
+  <link rel="stylesheet" href="/css/style.css?v=2.5.2">
 </head>
 <body>
 
@@ -131,6 +131,10 @@
             <i class="fa-solid fa-credit-card" style="color: #10b981;"></i> Quick Pay Portal
           </a>
 
+          <button type="button" class="btn btn-secondary btn-sm" id="header-academy-settings-btn" onclick="app.openAcademySettingsModal()" title="Academy Profile & Logo Branding">
+            <i class="fa-solid fa-building" style="color: var(--primary);"></i> Academy Info
+          </button>
+
           <button type="button" class="btn btn-secondary btn-sm" onclick="app.openChangeMyPasswordModal()" title="Change Account Password">
             <i class="fa-solid fa-key" style="color: #f59e0b;"></i> Password
           </button>
@@ -182,6 +186,6 @@
   <script src="/js/locationService.js?v=2.2.0"></script>
 
   <!-- Application Logic -->
-  <script src="/js/app.js?v=2.5.1"></script>
+  <script src="/js/app.js?v=2.5.2"></script>
 </body>
 </html>

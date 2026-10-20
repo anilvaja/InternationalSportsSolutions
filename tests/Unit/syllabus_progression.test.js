@@ -19,6 +19,11 @@ describe('Sports Syllabus, Technique Progression & Learning Tracking', () => {
 
   before(async () => {
     process.env.NODE_ENV = 'test';
+    const centralDb = getCentralDb();
+    let a2 = centralDb.prepare('SELECT id FROM academies WHERE id = 2').get();
+    if (!a2) {
+      centralDb.prepare("INSERT INTO academies (id, name, slug, db_path, plan, max_branches, max_students, max_coaches) VALUES (2, 'Sardar Martial Arts Academy', 'sardar-martial-arts', 'data/academies/academy_2.db', 'professional', 5, 500, 50)").run();
+    }
     academy1Db = getTenantDbById(ACADEMY_1_ID);
     academy2Db = getTenantDbById(ACADEMY_2_ID);
 

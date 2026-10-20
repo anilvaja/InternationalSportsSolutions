@@ -142,6 +142,7 @@ export function provisionAcademyDb({
   contact_phone,
   address,
   city,
+  logo_url = null,
   plan = 'professional',
   max_branches = 5,
   max_students = 500,
@@ -169,8 +170,8 @@ export function provisionAcademyDb({
     INSERT INTO academies (
       name, slug, contact_email, contact_phone, address, city,
       plan, max_branches, max_students, max_coaches, db_path,
-      is_gst_registered, gst_number, gst_rate, legal_business_name, hsn_sac_code, gst_state_code
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      is_gst_registered, gst_number, gst_rate, legal_business_name, hsn_sac_code, gst_state_code, logo_url
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   let newAcademyId;
@@ -194,7 +195,8 @@ export function provisionAcademyDb({
       gst_rate !== undefined ? Number(gst_rate) : 18.0,
       legal_business_name ? legal_business_name.trim() : null,
       hsn_sac_code ? hsn_sac_code.trim() : '999293',
-      gst_state_code ? gst_state_code.trim() : null
+      gst_state_code ? gst_state_code.trim() : null,
+      logo_url || null
     );
     newAcademyId = Number(res.lastInsertRowid);
     const finalDbPath = getAcademyDbPath(newAcademyId);
@@ -230,6 +232,7 @@ export function provisionAcademyDb({
     if (legal_business_name) setTenantSetting.run('legal_business_name', legal_business_name.trim());
     if (hsn_sac_code) setTenantSetting.run('hsn_sac_code', hsn_sac_code.trim());
     if (gst_state_code) setTenantSetting.run('gst_state_code', gst_state_code.trim());
+    if (logo_url) setTenantSetting.run('logo_url', logo_url);
   } catch (e) {}
 
   // Seed default roles

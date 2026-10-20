@@ -801,6 +801,7 @@ const app = {
     'my-salary': '/academy/my-salary',
     'approvals': '/academy/approvals',
     'employee-map': '/academy/employee-map',
+    'academy-settings': '/academy/settings',
     'policy-settings': '/academy/policy-settings',
     'roles-permissions': '/academy/roles',
     'events': '/academy/events',
@@ -837,6 +838,7 @@ const app = {
     'my-salary': 'My Salary & Earnings Statement',
     'approvals': 'Approvals Inbox',
     'employee-map': 'Staff Sign-In & Sign-Out Map',
+    'academy-settings': 'Academy Profile & Logo Branding',
     'policy-settings': 'Academy Policy Settings',
     'roles-permissions': 'Roles & Permissions Access Control',
     'events': 'Events & Tournaments',
@@ -903,8 +905,11 @@ const app = {
       '/academy/gps': 'employee-map',
       '/academy/punches': 'employee-map',
       '/academy/staff-map': 'employee-map',
+      '/academy/settings': 'academy-settings',
+      '/academy/profile': 'academy-settings',
+      '/academy/branding': 'academy-settings',
+      '/academy/logo': 'academy-settings',
       '/academy/policy-settings': 'policy-settings',
-      '/academy/settings': 'policy-settings',
       '/academy/roles': 'roles-permissions',
       '/academy/permissions': 'roles-permissions',
       '/academy/academy-roles': 'roles-permissions',
@@ -933,7 +938,7 @@ const app = {
     const academyTabs = [
       'overview', 'inquiries', 'branches', 'students', 'coaches', 'batches', 'attendance', 
       'sports', 'syllabus', 'fees', 'leaves', 'holidays', 'facilities', 'audit-logs', 
-      'payroll', 'my-salary', 'approvals', 'employee-map', 'policy-settings', 'events', 'roles-permissions'
+      'payroll', 'my-salary', 'approvals', 'employee-map', 'academy-settings', 'policy-settings', 'events', 'roles-permissions'
     ];
     if (academyTabs.includes(tab)) return true;
     if (this.user.isSuperAdmin) {
@@ -1053,6 +1058,9 @@ const app = {
 
         <div class="nav-section-title">System & Settings</div>
         ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
+          <a href="${this.getPathForTab('academy-settings')}" class="nav-item ${this.currentTab === 'academy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('academy-settings')">
+            <i class="fa-solid fa-building-columns" style="color: #6366f1;"></i> Academy Profile & Logo
+          </a>
           <a href="${this.getPathForTab('roles-permissions')}" class="nav-item ${this.currentTab === 'roles-permissions' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('roles-permissions')">
             <i class="fa-solid fa-key"></i> Roles & Permissions
           </a>
@@ -1061,6 +1069,9 @@ const app = {
           <i class="fa-solid fa-dumbbell"></i> Facilities & Equipment
         </a>
         ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
+          <a href="${this.getPathForTab('academy-settings')}" class="nav-item ${this.currentTab === 'academy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('academy-settings')">
+            <i class="fa-solid fa-building-columns"></i> Academy Profile & Logo
+          </a>
           <a href="${this.getPathForTab('policy-settings')}" class="nav-item ${this.currentTab === 'policy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('policy-settings')">
             <i class="fa-solid fa-sliders"></i> Policy Settings
           </a>
@@ -1172,6 +1183,9 @@ const app = {
       case 'policy-settings':
         this.renderPolicySettings();
         break;
+      case 'academy-settings':
+        this.renderAcademySettings();
+        break;
       case 'syllabus':
         this.renderSyllabus();
         break;
@@ -1274,11 +1288,22 @@ const app = {
                 <tr>
                   <td>#${ac.id}</td>
                   <td>
-                    <strong>${ac.name}</strong>
-                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                      <i class="fa-solid fa-link" style="color: var(--primary);"></i> <code>${ac.slug}.internationalsportssolutions.test</code>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      ${ac.logo_url ? `
+                        <img src="${ac.logo_url}" alt="${ac.name}" style="width: 38px; height: 38px; border-radius: 8px; object-fit: contain; background: rgba(255,255,255,0.06); border: 1px solid var(--border); padding: 2px; flex-shrink: 0;">
+                      ` : `
+                        <div style="width: 38px; height: 38px; border-radius: 8px; background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.25); display: flex; align-items: center; justify-content: center; color: #818cf8; font-weight: 700; font-size: 14px; flex-shrink: 0;">
+                          ${(ac.name || 'A').charAt(0).toUpperCase()}
+                        </div>
+                      `}
+                      <div>
+                        <strong>${ac.name}</strong>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                          <i class="fa-solid fa-link" style="color: var(--primary);"></i> <code>${ac.slug}.internationalsportssolutions.test</code>
+                        </div>
+                      </div>
                     </div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px;">
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;">
                       ${(ac.domains || []).slice(0, 2).map(d => `
                         <span class="badge ${d.is_primary ? 'badge-primary' : 'badge-secondary'}" style="font-size: 10px; padding: 2px 6px;">
                           ${d.is_primary ? '<i class="fa-solid fa-star" style="color: #f59e0b; margin-right: 2px;"></i>' : ''}
@@ -1310,6 +1335,9 @@ const app = {
                   </td>
                   <td style="vertical-align: top;">
                     <div style="display: flex; flex-direction: column; gap: 5px; width: 110px;">
+                      <button class="btn btn-secondary btn-sm" onclick="app.openSuperAdminAcademyBrandingModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}', '${(ac.logo_url || '').replace(/'/g, "\\'")}')" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px;" title="Update Logo & Branding">
+                        <i class="fa-solid fa-image" style="color: #ec4899; width: 14px;"></i> Logo & Info
+                      </button>
                       <button class="btn btn-secondary btn-sm" onclick="app.showManageSubscriptionModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}')" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px;" title="Manage Subscription & Limits">
                         <i class="fa-solid fa-sliders" style="color: #10b981; width: 14px;"></i> Limits
                       </button>
@@ -2189,6 +2217,26 @@ const app = {
             </span>
           </div>
 
+          <!-- Academy Logo Upload -->
+          <div class="form-group" style="margin-top: 10px;">
+            <label style="display: flex; align-items: center; justify-content: space-between;">
+              <span><i class="fa-solid fa-image" style="color: var(--primary);"></i> Academy Official Logo (Optional)</span>
+              <span style="font-size: 11px; color: var(--text-dim);">PNG, JPG, SVG, WebP up to 5MB</span>
+            </label>
+            <div style="display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: 8px; padding: 12px;">
+              <div id="prov-logo-preview-box" style="width: 52px; height: 52px; border-radius: 8px; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; border: 1px solid var(--border);">
+                <i class="fa-solid fa-building-columns" id="prov-logo-placeholder-icon" style="font-size: 20px; color: var(--text-dim);"></i>
+                <img id="prov-logo-img" src="" alt="Preview" style="display: none; width: 100%; height: 100%; object-fit: contain;">
+              </div>
+              <div style="flex: 1;">
+                <input type="file" id="prov-logo-file" accept="image/*" class="form-input" style="width: 100%; font-size: 12px; padding: 6px 10px;" onchange="app.handleProvLogoPreview(event)">
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
+                  Upload your academy emblem/crest. It will appear on all dashboards, PDF invoices, and student portals.
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- GST & Tax Compliance Section -->
           <div style="border: 1px solid rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.04); border-radius: 6px; padding: 12px; margin-top: 14px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -2343,14 +2391,34 @@ const app = {
     }
   },
 
+  handleProvLogoPreview(event) {
+    const file = event.target.files && event.target.files[0];
+    const previewImg = document.getElementById('prov-logo-img');
+    const placeholder = document.getElementById('prov-logo-placeholder-icon');
+    if (!previewImg || !placeholder) return;
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        previewImg.src = e.target.result;
+        previewImg.style.display = 'block';
+        placeholder.style.display = 'none';
+      };
+      reader.readAsDataURL(file);
+    } else {
+      previewImg.src = '';
+      previewImg.style.display = 'none';
+      placeholder.style.display = 'block';
+    }
+  },
+
   async submitProvisionAcademy() {
     const name = document.getElementById('prov-name')?.value?.trim();
     const slug = document.getElementById('prov-slug')?.value?.trim();
     const city = document.getElementById('prov-city')?.value?.trim();
     const plan = document.getElementById('prov-plan')?.value || 'professional';
-    const custom_domain = document.getElementById('prov-custom-domain')?.value?.trim() || '';
+    const custom_domain = document.getElementById('prov-custom-domain')?.value?.trim() || null;
     const admin_email = document.getElementById('prov-admin-email')?.value?.trim();
-    const admin_password = document.getElementById('prov-admin-password')?.value?.trim();
+    const admin_password = document.getElementById('prov-admin-password')?.value;
 
     // GST fields
     const is_gst_registered = document.getElementById('prov-is-gst')?.checked ? 1 : 0;
@@ -2402,7 +2470,20 @@ const app = {
     });
 
     if (res.success) {
-      this.showToast(res.message || 'Academy provisioned successfully!', 'success');
+      const logoInput = document.getElementById('prov-logo-file');
+      if (logoInput && logoInput.files && logoInput.files[0] && res.academy && res.academy.id) {
+        try {
+          const formData = new FormData();
+          formData.append('logo', logoInput.files[0]);
+          await this.apiRequest(`/api/central/academies/${res.academy.id}/logo`, {
+            method: 'POST',
+            body: formData,
+          });
+        } catch (logoErr) {
+          console.error('Failed to upload initial logo:', logoErr);
+        }
+      }
+      this.showToast(res.message || 'Academy provisioned successfully with logo!', 'success');
       this.closeModal();
       await this.checkAuth();
       this.renderCentralAcademies();
@@ -16358,23 +16439,30 @@ const app = {
 
   async loadSyllabusTechniquesTab() {
     const container = document.getElementById('syllabus-tab-content');
-    const [techRes, catRes] = await Promise.all([
+    const [techRes, catRes, sportsRes] = await Promise.all([
       this.apiRequest('/api/academy/syllabus-techniques?include_inactive=true'),
       this.apiRequest('/api/academy/syllabus-categories?include_inactive=true'),
+      this.apiRequest('/api/academy/sports'),
     ]);
 
     const techniques = techRes.techniques || [];
     const categories = catRes.categories || [];
+    const sports = sportsRes.sports || [];
     window._cachedSyllabusCategories = categories;
     window._cachedSyllabusTechniques = techniques;
+    window._cachedAcademySports = sports;
 
     container.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
           <input type="text" id="tech-search-input" class="form-input" placeholder="Search name, code, belt..." oninput="app.filterTechniquesTable()" style="font-size: 12px; width: 190px;">
+          <select id="tech-filter-sport" class="form-select" onchange="app.onTechSportFilterChange()" style="font-size: 12px;">
+            <option value="">All Sports / Disciplines</option>
+            ${sports.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+          </select>
           <select id="tech-filter-category" class="form-select" onchange="app.filterTechniquesTable()" style="font-size: 12px;">
             <option value="">All Categories</option>
-            ${categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+            ${categories.map(c => `<option value="${c.id}" data-sport-id="${c.sport_id || ''}">${c.name} (${c.sport_name || 'Karate'})</option>`).join('')}
           </select>
           <select id="tech-filter-level" class="form-select" onchange="app.filterTechniquesTable()" style="font-size: 12px;">
             <option value="">All Difficulty Levels</option>
@@ -16398,7 +16486,7 @@ const app = {
             <tr>
               <th>Order</th>
               <th>Technique Name & Code</th>
-              <th>Category</th>
+              <th>Sport & Category</th>
               <th>Difficulty Level</th>
               <th>Belt / Rank</th>
               <th>Active Students</th>
@@ -16410,7 +16498,7 @@ const app = {
             ${techniques.length === 0 ? `
               <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">No techniques created yet. Click "New Technique" to build your syllabus curriculum.</td></tr>
             ` : techniques.map(t => `
-              <tr data-cat-id="${t.category_id}" data-level="${t.level}">
+              <tr data-sport-id="${t.sport_id || ''}" data-cat-id="${t.category_id}" data-level="${t.level}">
                 <td><code>#${t.display_order}</code></td>
                 <td>
                   <strong>${t.name}</strong>
@@ -16418,7 +16506,12 @@ const app = {
                   ${t.description ? `<div style="font-size: 11px; color: var(--text-muted);">${t.description}</div>` : ''}
                   ${t.media_url ? `<div style="margin-top: 2px;"><a href="${t.media_url}" target="_blank" style="font-size: 11px; color: var(--secondary);"><i class="fa-solid fa-link"></i> Media Reference</a></div>` : ''}
                 </td>
-                <td><span class="badge badge-info">${t.category_name}</span></td>
+                <td>
+                  <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                    <span class="badge badge-purple" style="font-size: 11px; font-weight: 600;"><i class="fa-solid fa-medal"></i> ${t.sport_name || 'Karate'}</span>
+                    <span class="badge badge-info">${t.category_name}</span>
+                  </div>
+                </td>
                 <td><span class="badge badge-purple">Level ${t.level}</span></td>
                 <td>
                   ${t.belt_level ? `<span class="badge badge-warning">${t.belt_level}</span>` : '<span style="color: var(--text-dim); font-size: 12px;">-</span>'}
@@ -16447,41 +16540,76 @@ const app = {
     `;
   },
 
+  onTechSportFilterChange() {
+    const selectedSportId = document.getElementById('tech-filter-sport')?.value;
+    const catSelect = document.getElementById('tech-filter-category');
+    if (catSelect) {
+      const options = catSelect.querySelectorAll('option');
+      options.forEach((opt, idx) => {
+        if (idx === 0) return; // Keep "All Categories"
+        const optSportId = opt.getAttribute('data-sport-id');
+        if (!selectedSportId || optSportId === selectedSportId) {
+          opt.style.display = '';
+        } else {
+          opt.style.display = 'none';
+          if (catSelect.value === opt.value) {
+            catSelect.value = '';
+          }
+        }
+      });
+    }
+    this.filterTechniquesTable();
+  },
+
   filterTechniquesTable() {
-    const catId = document.getElementById('tech-filter-category').value;
-    const level = document.getElementById('tech-filter-level').value;
+    const sportId = document.getElementById('tech-filter-sport')?.value;
+    const catId = document.getElementById('tech-filter-category')?.value;
+    const level = document.getElementById('tech-filter-level')?.value;
     const search = (document.getElementById('tech-search-input')?.value || '').toLowerCase().trim();
     const rows = document.querySelectorAll('#techniques-table tbody tr');
 
     rows.forEach(r => {
+      const matchSport = !sportId || r.getAttribute('data-sport-id') === sportId;
       const matchCat = !catId || r.getAttribute('data-cat-id') === catId;
       const matchLvl = !level || r.getAttribute('data-level') === level;
       const text = r.innerText.toLowerCase();
       const matchSearch = !search || text.includes(search);
-      r.style.display = (matchCat && matchLvl && matchSearch) ? '' : 'none';
+      r.style.display = (matchSport && matchCat && matchLvl && matchSearch) ? '' : 'none';
     });
   },
 
   async loadSyllabusCategoriesTab() {
     const container = document.getElementById('syllabus-tab-content');
-    const res = await this.apiRequest('/api/academy/syllabus-categories?include_inactive=true');
-    const categories = res.categories || [];
+    const [catRes, sportsRes] = await Promise.all([
+      this.apiRequest('/api/academy/syllabus-categories?include_inactive=true'),
+      this.apiRequest('/api/academy/sports'),
+    ]);
+    const categories = catRes.categories || [];
+    const sports = sportsRes.sports || [];
     window._cachedSyllabusCategories = categories;
+    window._cachedAcademySports = sports;
 
     container.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <span style="font-size: 13px; font-weight: 600;">Syllabus Categories (${categories.length})</span>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <span style="font-size: 13px; font-weight: 600;">Syllabus Categories (${categories.length})</span>
+          <select id="cat-filter-sport" class="form-select" onchange="app.filterCategoriesTable()" style="font-size: 12px; width: 180px;">
+            <option value="">All Sports / Disciplines</option>
+            ${sports.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+          </select>
+        </div>
         <button class="btn btn-secondary btn-sm" onclick="app.showReorderCategoriesModal()">
           <i class="fa-solid fa-arrows-up-down"></i> Reorder Categories
         </button>
       </div>
 
       <div class="table-responsive">
-        <table class="custom-table">
+        <table class="custom-table" id="categories-table">
           <thead>
             <tr>
               <th>Order</th>
               <th>Category Name</th>
+              <th>Sport Discipline</th>
               <th>Description</th>
               <th>Techniques Count</th>
               <th>Status</th>
@@ -16490,11 +16618,16 @@ const app = {
           </thead>
           <tbody>
             ${categories.length === 0 ? `
-              <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 30px;">No categories created yet. Click "New Category" to get started.</td></tr>
+              <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">No categories created yet. Click "New Category" to get started.</td></tr>
             ` : categories.map(c => `
-              <tr>
+              <tr data-sport-id="${c.sport_id || ''}">
                 <td><code>#${c.display_order}</code></td>
                 <td><strong>${c.name}</strong></td>
+                <td>
+                  <span class="badge badge-purple" style="font-weight: 600;">
+                    <i class="fa-solid fa-medal"></i> ${c.sport_name || 'Karate'}
+                  </span>
+                </td>
                 <td><span style="color: var(--text-muted); font-size: 12px;">${c.description || '-'}</span></td>
                 <td>
                   <span class="badge badge-info">${c.technique_count || 0} techniques</span>
@@ -16518,6 +16651,15 @@ const app = {
         </table>
       </div>
     `;
+  },
+
+  filterCategoriesTable() {
+    const sportId = document.getElementById('cat-filter-sport')?.value;
+    const rows = document.querySelectorAll('#categories-table tbody tr');
+    rows.forEach(r => {
+      const matchSport = !sportId || r.getAttribute('data-sport-id') === sportId;
+      r.style.display = matchSport ? '' : 'none';
+    });
   },
 
   async loadSyllabusReportsTab() {
@@ -16630,10 +16772,20 @@ const app = {
 
   // CATEGORY MODALS & ACTIONS
   showAddCategoryModal() {
+    const sports = window._cachedAcademySports || [];
     this.openModal(
       'New Syllabus Category',
       `
         <form id="add-cat-form">
+          <div class="form-group">
+            <label>Sport / Discipline *</label>
+            <select id="cat-sport" class="form-select" style="width: 100%;" required>
+              ${sports.map(s => `<option value="${s.id}" ${s.name.toLowerCase() === 'karate' ? 'selected' : ''}>${s.name}</option>`).join('')}
+            </select>
+            <span style="font-size: 11px; color: var(--text-dim); margin-top: 3px; display: block;">
+              Kata & Kumite fall under Karate. Other martial arts (Judo, Taekwondo, etc.) have their own distinct categories.
+            </span>
+          </div>
           <div class="form-group">
             <label>Category Name *</label>
             <input type="text" id="cat-name" class="form-input" style="width: 100%;" placeholder="e.g. Punching Techniques, Kata, Kumite" required>
@@ -16665,6 +16817,7 @@ const app = {
   },
 
   async submitAddCategory() {
+    const sport_id = Number(document.getElementById('cat-sport')?.value) || null;
     const name = document.getElementById('cat-name').value.trim();
     const description = document.getElementById('cat-desc').value.trim();
     const display_order = Number(document.getElementById('cat-order').value) || 0;
@@ -16677,7 +16830,7 @@ const app = {
 
     const res = await this.apiRequest('/api/academy/syllabus-categories', {
       method: 'POST',
-      body: JSON.stringify({ name, description, display_order, status }),
+      body: JSON.stringify({ sport_id, name, description, display_order, status }),
     });
 
     if (res.success) {
@@ -16691,12 +16844,19 @@ const app = {
 
   showEditCategoryModal(categoryId) {
     const cat = (window._cachedSyllabusCategories || []).find(c => c.id === categoryId);
+    const sports = window._cachedAcademySports || [];
     if (!cat) return;
 
     this.openModal(
       `Edit Category — ${cat.name}`,
       `
         <form id="edit-cat-form">
+          <div class="form-group">
+            <label>Sport / Discipline *</label>
+            <select id="edit-cat-sport" class="form-select" style="width: 100%;" required>
+              ${sports.map(s => `<option value="${s.id}" ${s.id === cat.sport_id ? 'selected' : ''}>${s.name}</option>`).join('')}
+            </select>
+          </div>
           <div class="form-group">
             <label>Category Name *</label>
             <input type="text" id="edit-cat-name" class="form-input" style="width: 100%;" value="${cat.name}" required>
@@ -16728,6 +16888,7 @@ const app = {
   },
 
   async submitEditCategory(categoryId) {
+    const sport_id = Number(document.getElementById('edit-cat-sport')?.value) || null;
     const name = document.getElementById('edit-cat-name').value.trim();
     const description = document.getElementById('edit-cat-desc').value.trim();
     const display_order = Number(document.getElementById('edit-cat-order').value) || 0;
@@ -16735,7 +16896,7 @@ const app = {
 
     const res = await this.apiRequest(`/api/academy/syllabus-categories/${categoryId}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, description, display_order, status }),
+      body: JSON.stringify({ sport_id, name, description, display_order, status }),
     });
 
     if (res.success) {
@@ -16779,7 +16940,7 @@ const app = {
                 <i class="fa-solid fa-grip-vertical reorder-handle"></i>
                 <span class="reorder-rank">${idx + 1}</span>
                 <div>
-                  <strong>${c.name}</strong>
+                  <strong>${c.name}</strong> <span class="badge badge-purple" style="font-size: 10px; margin-left: 6px;">${c.sport_name || 'Karate'}</span>
                   ${c.description ? `<div style="font-size: 11px; color: var(--text-muted);">${c.description}</div>` : ''}
                 </div>
               </div>
@@ -16828,10 +16989,10 @@ const app = {
         <form id="add-tech-form">
           <div class="form-grid">
             <div class="form-group">
-              <label>Syllabus Category *</label>
+              <label>Syllabus Category & Discipline *</label>
               <select id="tech-cat" class="form-select" style="width: 100%;" required>
                 <option value="">-- Select Category --</option>
-                ${categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                ${categories.map(c => `<option value="${c.id}">${c.name} (${c.sport_name || 'Karate'})</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -16922,9 +17083,9 @@ const app = {
         <form id="edit-tech-form">
           <div class="form-grid">
             <div class="form-group">
-              <label>Syllabus Category *</label>
+              <label>Syllabus Category & Discipline *</label>
               <select id="edit-tech-cat" class="form-select" style="width: 100%;">
-                ${categories.map(c => `<option value="${c.id}" ${c.id === tech.category_id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                ${categories.map(c => `<option value="${c.id}" ${c.id === tech.category_id ? 'selected' : ''}>${c.name} (${c.sport_name || 'Karate'})</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -22188,6 +22349,519 @@ const app = {
     if (footerEl) {
       footerEl.innerHTML = '';
       footerEl.style.display = 'none';
+    }
+  },
+
+  // ==========================================
+  // ACADEMY SETTINGS & BRANDING (LOGO & INFO)
+  // ==========================================
+
+  async renderAcademySettings() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    try {
+      const res = await this.apiRequest('/api/academy/settings/profile');
+      if (!res.success) {
+        content.innerHTML = `<div class="toast danger">${res.error || 'Failed to load academy profile'}</div>`;
+        return;
+      }
+
+      const p = res.profile || {};
+      const logoUrl = p.logo_url || this.user.academyLogo || '';
+      const academyName = p.name || this.user.academyName || 'My Academy';
+
+      content.innerHTML = `
+        <div class="academy-settings-container">
+          <!-- Hero Branding Card -->
+          <div class="content-card academy-branding-card" style="margin-bottom: 24px;">
+            <div class="branding-hero-header">
+              <div class="branding-logo-uploader-grid">
+                <div class="branding-logo-preview-box">
+                  ${logoUrl ? `
+                    <img id="settings-branding-logo-img" src="${logoUrl}" alt="${academyName}" class="branding-logo-preview-img">
+                  ` : `
+                    <div id="settings-branding-logo-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--text-muted);">
+                      <i class="fa-solid fa-building-columns" style="font-size: 28px; margin-bottom: 4px; color: #818cf8;"></i>
+                      <span style="font-size: 10px; font-weight: 600; text-transform: uppercase;">No Logo</span>
+                    </div>
+                  `}
+                </div>
+                <div style="flex: 1;">
+                  <h3 style="margin: 0 0 6px 0; font-size: 17px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-shield-halved" style="color: #6366f1;"></i> Official Academy Emblem & Crest
+                  </h3>
+                  <p style="margin: 0 0 12px 0; font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+                    Upload your high-resolution official logo (PNG, JPG, SVG, WebP up to 5MB). It instantly brands your navigation bar, top headers, printed fee receipts, downloadable PDF invoices, and student self-service dashboards.
+                  </p>
+                  <div class="branding-dropzone-actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <label class="btn btn-primary btn-sm" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                      <i class="fa-solid fa-cloud-arrow-up"></i> Upload New Logo
+                      <input type="file" id="settings-logo-input" accept="image/*" style="display: none;" onchange="app.handleAcademyLogoUpload(event)">
+                    </label>
+                    ${logoUrl ? `
+                      <button type="button" class="btn btn-outline-danger btn-sm" onclick="app.removeAcademyLogo()">
+                        <i class="fa-solid fa-trash"></i> Remove Logo
+                      </button>
+                    ` : ''}
+                    <span style="font-size: 11px; color: var(--text-dim);">Recommended: 400x400 transparent PNG</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Live Multi-Channel Branding Mockup Strip -->
+            <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
+              <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-dim); letter-spacing: 0.5px; margin-bottom: 8px;">
+                <i class="fa-solid fa-eye" style="color: #38bdf8;"></i> Live Preview Across Platform
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                <div class="branding-mockup-chip" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; align-items: center; gap: 10px;">
+                  <div style="width: 28px; height: 28px; border-radius: 6px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.25); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;">
+                    ${logoUrl ? `<img src="${logoUrl}" style="width: 100%; height: 100%; object-fit: contain;">` : `<i class="fa-solid fa-building-columns" style="font-size: 12px; color: #818cf8;"></i>`}
+                  </div>
+                  <div>
+                    <div style="font-size: 11px; font-weight: 700;">Sidebar Header</div>
+                    <div style="font-size: 10px; color: var(--text-dim);">Navigation brand</div>
+                  </div>
+                </div>
+
+                <div class="branding-mockup-chip" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; align-items: center; gap: 10px;">
+                  <div style="width: 28px; height: 28px; border-radius: 6px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.25); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;">
+                    ${logoUrl ? `<img src="${logoUrl}" style="width: 100%; height: 100%; object-fit: contain;">` : `<i class="fa-solid fa-file-invoice" style="font-size: 12px; color: #10b981;"></i>`}
+                  </div>
+                  <div>
+                    <div style="font-size: 11px; font-weight: 700;">Tax Invoice & Receipt</div>
+                    <div style="font-size: 10px; color: var(--text-dim);">Printed PDF letterhead</div>
+                  </div>
+                </div>
+
+                <div class="branding-mockup-chip" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; align-items: center; gap: 10px;">
+                  <div style="width: 28px; height: 28px; border-radius: 6px; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.25); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;">
+                    ${logoUrl ? `<img src="${logoUrl}" style="width: 100%; height: 100%; object-fit: contain;">` : `<i class="fa-solid fa-graduation-cap" style="font-size: 12px; color: #f59e0b;"></i>`}
+                  </div>
+                  <div>
+                    <div style="font-size: 11px; font-weight: 700;">Student Portal</div>
+                    <div style="font-size: 10px; color: var(--text-dim);">Parent & student app</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Academy Details & Legal Information Card -->
+          <div class="content-card">
+            <div class="card-header" style="margin-bottom: 16px;">
+              <div>
+                <h3 class="card-title" style="font-size: 16px;"><i class="fa-solid fa-id-card" style="color: #6366f1;"></i> Academy Organization & Profile</h3>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                  Official academy name, communication channels, business premises, and tax identification
+                </p>
+              </div>
+            </div>
+
+            <form id="academy-profile-form" onsubmit="event.preventDefault(); app.saveAcademyProfile();">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Official Academy Name *</label>
+                  <input type="text" id="setting-acad-name" class="form-input" style="width: 100%; font-weight: 600;" value="${p.name || ''}" required placeholder="e.g. Pratik Karate Academy">
+                  <span style="font-size: 11px; color: var(--text-dim); margin-top: 3px; display: block;">Displays prominently across headers, student portals, and invoices.</span>
+                </div>
+                <div class="form-group">
+                  <label>Contact Email *</label>
+                  <input type="email" id="setting-acad-email" class="form-input" style="width: 100%;" value="${p.contact_email || ''}" required placeholder="contact@academy.com">
+                </div>
+              </div>
+
+              <div class="form-grid" style="margin-top: 10px;">
+                <div class="form-group">
+                  <label>Contact Phone / Mobile</label>
+                  <input type="tel" id="setting-acad-phone" class="form-input" style="width: 100%;" value="${p.contact_phone || ''}" placeholder="+91 98765 43210">
+                </div>
+                <div class="form-group">
+                  <label>City *</label>
+                  <input type="text" id="setting-acad-city" class="form-input" style="width: 100%;" value="${p.city || ''}" required placeholder="e.g. Ahmedabad, Mumbai">
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-top: 10px;">
+                <label>Physical Academy Address</label>
+                <textarea id="setting-acad-address" class="form-textarea" style="width: 100%; height: 70px;" placeholder="Full street address, campus/dojo suite, landmark...">${p.address || ''}</textarea>
+              </div>
+
+              <!-- GST & Legal Invoicing Section -->
+              <div style="border: 1px solid rgba(16, 185, 129, 0.25); background: rgba(16, 185, 129, 0.03); border-radius: 8px; padding: 14px; margin-top: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                  <span style="font-size: 13px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 7px;">
+                    <i class="fa-solid fa-receipt" style="color: #10b981;"></i> GST Compliance & Legal Invoicing (India)
+                  </span>
+                  <span class="badge ${p.is_gst_registered ? 'badge-success' : 'badge-secondary'}">
+                    ${p.is_gst_registered ? 'GST Active' : 'Unregistered'}
+                  </span>
+                </div>
+
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Legal Business / Entity Name</label>
+                    <input type="text" id="setting-acad-legal-name" class="form-input" style="width: 100%;" value="${p.legal_business_name || ''}" placeholder="Registered trade or company name">
+                  </div>
+                  <div class="form-group">
+                    <label>GSTIN Number (15 Digits)</label>
+                    <input type="text" id="setting-acad-gst" class="form-input" maxlength="15" style="width: 100%; text-transform: uppercase; font-family: monospace;" value="${p.gst_number || ''}" placeholder="24AAAAA0000A1Z5">
+                  </div>
+                </div>
+
+                <div class="form-grid" style="margin-top: 10px;">
+                  <div class="form-group">
+                    <label>Default GST Rate (%)</label>
+                    <select id="setting-acad-gst-rate" class="form-select" style="width: 100%;">
+                      <option value="18" ${Number(p.gst_rate) === 18 ? 'selected' : ''}>18% Standard (9% CGST + 9% SGST)</option>
+                      <option value="12" ${Number(p.gst_rate) === 12 ? 'selected' : ''}>12% Concessional Sports Training</option>
+                      <option value="5" ${Number(p.gst_rate) === 5 ? 'selected' : ''}>5% Basic Sports Activities</option>
+                      <option value="0" ${Number(p.gst_rate) === 0 ? 'selected' : ''}>0% Non-Taxable / Exempted</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>HSN / SAC Service Code</label>
+                    <input type="text" id="setting-acad-sac" class="form-input" style="width: 100%;" value="${p.hsn_sac_code || '999293'}" placeholder="999293 (Sports Training)">
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button type="submit" class="btn btn-primary">
+                  <i class="fa-solid fa-floppy-disk"></i> Save Academy Profile
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+    } catch (err) {
+      content.innerHTML = `<div class="toast danger">Failed to load academy settings: ${err.message}</div>`;
+    }
+  },
+
+  async openAcademySettingsModal() {
+    try {
+      const res = await this.apiRequest('/api/academy/settings/profile');
+      if (!res.success) {
+        this.showToast(res.error || 'Failed to load academy details', 'danger');
+        return;
+      }
+      const p = res.profile || {};
+      const logoUrl = p.logo_url || this.user.academyLogo || '';
+      const academyName = p.name || this.user.academyName || 'My Academy';
+
+      this.openModal(
+        `<i class="fa-solid fa-building-columns" style="color: #6366f1;"></i> Academy Profile & Logo Settings`,
+        `
+          <div style="margin-bottom: 16px;">
+            <div style="display: flex; gap: 14px; align-items: center; background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+              <div style="width: 58px; height: 58px; border-radius: 8px; background: rgba(255,255,255,0.06); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;">
+                ${logoUrl ? `
+                  <img src="${logoUrl}" alt="${academyName}" style="width: 100%; height: 100%; object-fit: contain;">
+                ` : `
+                  <i class="fa-solid fa-building-columns" style="font-size: 22px; color: #818cf8;"></i>
+                `}
+              </div>
+              <div style="flex: 1;">
+                <div style="font-weight: 700; font-size: 13px; color: var(--text-heading); margin-bottom: 4px;">Academy Official Crest / Logo</div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <label class="btn btn-primary btn-sm" style="cursor: pointer; margin: 0; font-size: 11px;">
+                    <i class="fa-solid fa-cloud-arrow-up"></i> ${logoUrl ? 'Replace Logo' : 'Upload Logo'}
+                    <input type="file" accept="image/*" style="display: none;" onchange="app.handleAcademyLogoUpload(event)">
+                  </label>
+                  ${logoUrl ? `
+                    <button type="button" class="btn btn-outline-danger btn-sm" style="font-size: 11px;" onclick="app.removeAcademyLogo()">
+                      <i class="fa-solid fa-trash"></i> Remove
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            </div>
+
+            <form id="quick-academy-profile-form">
+              <div class="form-group">
+                <label>Academy Name *</label>
+                <input type="text" id="quick-acad-name" class="form-input" style="width: 100%; font-weight: 600;" value="${p.name || ''}" required>
+              </div>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Contact Email *</label>
+                  <input type="email" id="quick-acad-email" class="form-input" style="width: 100%;" value="${p.contact_email || ''}" required>
+                </div>
+                <div class="form-group">
+                  <label>Contact Phone</label>
+                  <input type="tel" id="quick-acad-phone" class="form-input" style="width: 100%;" value="${p.contact_phone || ''}">
+                </div>
+              </div>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>City *</label>
+                  <input type="text" id="quick-acad-city" class="form-input" style="width: 100%;" value="${p.city || ''}" required>
+                </div>
+                <div class="form-group">
+                  <label>GSTIN (Optional)</label>
+                  <input type="text" id="quick-acad-gst" class="form-input" style="width: 100%; text-transform: uppercase;" value="${p.gst_number || ''}">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Physical Address</label>
+                <textarea id="quick-acad-address" class="form-textarea" style="width: 100%; height: 60px;">${p.address || ''}</textarea>
+              </div>
+            </form>
+          </div>
+        `,
+        `
+          <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="app.saveQuickAcademyProfile()"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+        `
+      );
+    } catch (err) {
+      this.showToast('Failed to open settings modal: ' + err.message, 'danger');
+    }
+  },
+
+  async handleAcademyLogoUpload(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      this.showToast('Please select a valid image file (PNG, JPG, SVG, WebP)', 'danger');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      this.showToast('Image file size must be less than 5MB', 'danger');
+      return;
+    }
+
+    try {
+      this.showToast('Uploading academy logo...', 'info');
+      const formData = new FormData();
+      formData.append('logo', file);
+
+      const res = await this.apiRequest('/api/academy/settings/logo', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'Academy logo updated successfully!', 'success');
+        this.user.academyLogo = res.logo_url;
+        this.renderSidebarBrand();
+        if (this.currentTab === 'academy-settings') {
+          this.renderAcademySettings();
+        } else {
+          this.closeModal();
+        }
+      } else {
+        this.showToast(res.error || 'Failed to upload logo', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Logo upload error: ' + err.message, 'danger');
+    }
+  },
+
+  async removeAcademyLogo() {
+    if (!confirm('Are you sure you want to remove the official academy logo? The platform will revert to default text branding.')) {
+      return;
+    }
+
+    try {
+      const res = await this.apiRequest('/api/academy/settings/logo', {
+        method: 'DELETE',
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'Academy logo removed successfully', 'success');
+        this.user.academyLogo = null;
+        this.renderSidebarBrand();
+        if (this.currentTab === 'academy-settings') {
+          this.renderAcademySettings();
+        } else {
+          this.closeModal();
+        }
+      } else {
+        this.showToast(res.error || 'Failed to remove logo', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Error removing logo: ' + err.message, 'danger');
+    }
+  },
+
+  async saveAcademyProfile() {
+    const name = document.getElementById('setting-acad-name')?.value?.trim();
+    const contact_email = document.getElementById('setting-acad-email')?.value?.trim();
+    const contact_phone = document.getElementById('setting-acad-phone')?.value?.trim();
+    const city = document.getElementById('setting-acad-city')?.value?.trim();
+    const address = document.getElementById('setting-acad-address')?.value?.trim();
+    const legal_business_name = document.getElementById('setting-acad-legal-name')?.value?.trim() || null;
+    const gst_number = document.getElementById('setting-acad-gst')?.value?.trim()?.toUpperCase() || null;
+    const gst_rate = Number(document.getElementById('setting-acad-gst-rate')?.value || 18);
+    const hsn_sac_code = document.getElementById('setting-acad-sac')?.value?.trim() || '999293';
+    const is_gst_registered = gst_number && gst_number.length >= 15 ? 1 : 0;
+
+    if (!name || !contact_email || !city) {
+      this.showToast('Academy name, contact email, and city are required', 'danger');
+      return;
+    }
+
+    try {
+      const res = await this.apiRequest('/api/academy/settings/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          name,
+          contact_email,
+          contact_phone,
+          city,
+          address,
+          legal_business_name,
+          gst_number,
+          gst_rate,
+          hsn_sac_code,
+          is_gst_registered,
+        }),
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'Academy profile updated successfully!', 'success');
+        this.user.academyName = name;
+        this.renderSidebarBrand();
+        this.renderAcademySettings();
+      } else {
+        this.showToast(res.error || 'Failed to save academy profile', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Profile save error: ' + err.message, 'danger');
+    }
+  },
+
+  async saveQuickAcademyProfile() {
+    const name = document.getElementById('quick-acad-name')?.value?.trim();
+    const contact_email = document.getElementById('quick-acad-email')?.value?.trim();
+    const contact_phone = document.getElementById('quick-acad-phone')?.value?.trim();
+    const city = document.getElementById('quick-acad-city')?.value?.trim();
+    const address = document.getElementById('quick-acad-address')?.value?.trim();
+    const gst_number = document.getElementById('quick-acad-gst')?.value?.trim()?.toUpperCase() || null;
+
+    if (!name || !contact_email || !city) {
+      this.showToast('Academy name, contact email, and city are required', 'danger');
+      return;
+    }
+
+    try {
+      const res = await this.apiRequest('/api/academy/settings/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          name,
+          contact_email,
+          contact_phone,
+          city,
+          address,
+          gst_number,
+          is_gst_registered: gst_number && gst_number.length >= 15 ? 1 : 0,
+        }),
+      });
+
+      if (res.success) {
+        this.showToast('Academy profile updated successfully!', 'success');
+        this.user.academyName = name;
+        this.renderSidebarBrand();
+        this.closeModal();
+      } else {
+        this.showToast(res.error || 'Failed to save academy profile', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Profile save error: ' + err.message, 'danger');
+    }
+  },
+
+  openSuperAdminAcademyBrandingModal(academyId, academyName, currentLogoUrl) {
+    this.openModal(
+      `<i class="fa-solid fa-image" style="color: #ec4899;"></i> Academy Logo & Branding — ${academyName}`,
+      `
+        <div style="margin-bottom: 16px;">
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+            Super Admin Brand Manager: Update or remove the official crest/logo for <strong>${academyName}</strong> (#${academyId}).
+          </p>
+
+          <div style="display: flex; gap: 16px; align-items: center; background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: 8px; padding: 14px;">
+            <div id="sa-logo-preview-box" style="width: 64px; height: 64px; border-radius: 8px; background: rgba(255,255,255,0.06); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;">
+              ${currentLogoUrl ? `
+                <img id="sa-branding-logo-img" src="${currentLogoUrl}" alt="${academyName}" style="width: 100%; height: 100%; object-fit: contain;">
+              ` : `
+                <i class="fa-solid fa-building-columns" id="sa-branding-placeholder" style="font-size: 24px; color: #818cf8;"></i>
+              `}
+            </div>
+            <div style="flex: 1;">
+              <label class="btn btn-primary btn-sm" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin: 0 0 6px 0;">
+                <i class="fa-solid fa-cloud-arrow-up"></i> ${currentLogoUrl ? 'Replace Logo' : 'Upload New Logo'}
+                <input type="file" id="sa-logo-file-input" accept="image/*" style="display: none;" onchange="app.submitSuperAdminLogoUpload(${academyId})">
+              </label>
+              ${currentLogoUrl ? `
+                <button type="button" class="btn btn-outline-danger btn-sm" style="margin-left: 8px;" onclick="app.submitSuperAdminLogoDelete(${academyId})">
+                  <i class="fa-solid fa-trash"></i> Remove
+                </button>
+              ` : ''}
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                Accepted formats: PNG, JPG, SVG, WebP (Max: 5MB).
+              </div>
+            </div>
+          </div>
+        </div>
+      `,
+      `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+      `
+    );
+  },
+
+  async submitSuperAdminLogoUpload(academyId) {
+    const input = document.getElementById('sa-logo-file-input');
+    if (!input || !input.files || !input.files[0]) return;
+
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    try {
+      this.showToast('Uploading logo as Super Admin...', 'info');
+      const res = await this.apiRequest(`/api/central/academies/${academyId}/logo`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'Academy logo updated successfully!', 'success');
+        this.closeModal();
+        this.renderCentralAcademies();
+      } else {
+        this.showToast(res.error || 'Failed to upload logo', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Error uploading logo: ' + err.message, 'danger');
+    }
+  },
+
+  async submitSuperAdminLogoDelete(academyId) {
+    if (!confirm('Remove official logo for this academy?')) return;
+
+    try {
+      const res = await this.apiRequest(`/api/central/academies/${academyId}/logo`, {
+        method: 'DELETE',
+      });
+
+      if (res.success) {
+        this.showToast(res.message || 'Logo removed successfully', 'success');
+        this.closeModal();
+        this.renderCentralAcademies();
+      } else {
+        this.showToast(res.error || 'Failed to remove logo', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Error removing logo: ' + err.message, 'danger');
     }
   },
 };

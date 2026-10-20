@@ -11,46 +11,69 @@ export class SyllabusService {
   /**
    * List syllabus categories for an academy
    */
-  static listCategories(db, academyId, { includeInactive = false } = {}) {
+  static listCategories(db, academyId, { includeInactive = false, sportId = null } = {}) {
     let sql = `
       SELECT sc.*,
+             s.name as sport_name,
              (SELECT COUNT(*) FROM syllabus_techniques st WHERE st.category_id = sc.id AND st.deleted_at IS NULL) as technique_count
       FROM syllabus_categories sc
+      LEFT JOIN sports s ON s.id = sc.sport_id
       WHERE sc.academy_id = ? AND sc.deleted_at IS NULL
     `;
+    const params = [academyId];
+
+    if (sportId !== null && sportId !== undefined && sportId !== '') {
+      sql += ` AND sc.sport_id = ?`;
+      params.push(Number(sportId));
+    }
     if (!includeInactive) {
       sql += ` AND sc.status = 'active'`;
     }
     sql += ` ORDER BY sc.display_order ASC, sc.id ASC`;
-    return db.prepare(sql).all(academyId);
+    return db.prepare(sql).all(...params);
   }
 
   /**
    * Create a syllabus category
    */
-  static createCategory(db, academyId, { name, description, display_order = 0, status = 'active' }) {
+  static createCategory(db, academyId, { sport_id, name, description, display_order = 0, status = 'active' }) {
     if (!name || !name.trim()) {
       throw new Error('Category name is required');
     }
 
     const trimmedName = name.trim();
+    let finalSportId = sport_id ? Number(sport_id) : null;
+    if (!finalSportId) {
+      const defaultSport = db.prepare("SELECT id FROM sports WHERE LOWER(name) = 'karate' OR is_active = 1 ORDER BY CASE WHEN LOWER(name) = 'karate' THEN 0 ELSE 1 END, id ASC LIMIT 1").get();
+      if (defaultSport) {
+        finalSportId = defaultSport.id;
+      }
+    }
+
     const existing = db.prepare(`
       SELECT id FROM syllabus_categories 
-      WHERE academy_id = ? AND LOWER(name) = LOWER(?) AND deleted_at IS NULL
-    `).get(academyId, trimmedName);
+      WHERE academy_id = ? 
+        AND (sport_id = ? OR (? IS NULL AND sport_id IS NULL))
+        AND LOWER(name) = LOWER(?) 
+        AND deleted_at IS NULL
+    `).get(academyId, finalSportId, finalSportId, trimmedName);
 
     if (existing) {
-      throw new Error(`A syllabus category named "${trimmedName}" already exists in this academy`);
+      throw new Error(`A syllabus category named "${trimmedName}" already exists for this sport`);
     }
 
     const res = db.prepare(`
-      INSERT INTO syllabus_categories (academy_id, name, description, display_order, status)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(academyId, trimmedName, description || null, Number(display_order) || 0, status || 'active');
+      INSERT INTO syllabus_categories (academy_id, sport_id, name, description, display_order, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(academyId, finalSportId, trimmedName, description || null, Number(display_order) || 0, status || 'active');
+
+    const createdSport = finalSportId ? db.prepare('SELECT name FROM sports WHERE id = ?').get(finalSportId) : null;
 
     return {
       id: res.lastInsertRowid,
       academy_id: academyId,
+      sport_id: finalSportId,
+      sport_name: createdSport ? createdSport.name : null,
       name: trimmedName,
       description: description || null,
       display_order: Number(display_order) || 0,
@@ -61,31 +84,40 @@ export class SyllabusService {
   /**
    * Update a syllabus category
    */
-  static updateCategory(db, academyId, categoryId, { name, description, display_order, status }) {
+  static updateCategory(db, academyId, categoryId, { sport_id, name, description, display_order, status }) {
     const category = db.prepare('SELECT * FROM syllabus_categories WHERE id = ? AND academy_id = ? AND deleted_at IS NULL').get(categoryId, academyId);
     if (!category) {
       throw new Error('Syllabus category not found in this academy');
     }
 
-    if (name && name.trim().toLowerCase() !== category.name.toLowerCase()) {
+    const targetSportId = sport_id !== undefined ? (sport_id ? Number(sport_id) : null) : category.sport_id;
+    const targetName = name ? name.trim() : category.name;
+
+    if ((name && name.trim().toLowerCase() !== category.name.toLowerCase()) || (sport_id !== undefined && targetSportId !== category.sport_id)) {
       const existing = db.prepare(`
         SELECT id FROM syllabus_categories 
-        WHERE academy_id = ? AND LOWER(name) = LOWER(?) AND id != ? AND deleted_at IS NULL
-      `).get(academyId, name.trim(), categoryId);
+        WHERE academy_id = ? 
+          AND (sport_id = ? OR (? IS NULL AND sport_id IS NULL))
+          AND LOWER(name) = LOWER(?) 
+          AND id != ? 
+          AND deleted_at IS NULL
+      `).get(academyId, targetSportId, targetSportId, targetName, categoryId);
       if (existing) {
-        throw new Error(`A syllabus category named "${name.trim()}" already exists in this academy`);
+        throw new Error(`A syllabus category named "${targetName}" already exists for this sport`);
       }
     }
 
     db.prepare(`
       UPDATE syllabus_categories
-      SET name = COALESCE(?, name),
+      SET sport_id = COALESCE(?, sport_id),
+          name = COALESCE(?, name),
           description = COALESCE(?, description),
           display_order = COALESCE(?, display_order),
           status = COALESCE(?, status),
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND academy_id = ?
     `).run(
+      sport_id !== undefined ? (sport_id ? Number(sport_id) : null) : null,
       name ? name.trim() : null,
       description !== undefined ? description : null,
       display_order !== undefined ? Number(display_order) : null,
@@ -94,7 +126,20 @@ export class SyllabusService {
       academyId
     );
 
-    return db.prepare('SELECT * FROM syllabus_categories WHERE id = ?').get(categoryId);
+    if (sport_id !== undefined && targetSportId !== category.sport_id) {
+      db.prepare(`
+        UPDATE syllabus_techniques
+        SET sport_id = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE category_id = ? AND academy_id = ?
+      `).run(targetSportId, categoryId, academyId);
+    }
+
+    return db.prepare(`
+      SELECT sc.*, s.name as sport_name
+      FROM syllabus_categories sc
+      LEFT JOIN sports s ON s.id = sc.sport_id
+      WHERE sc.id = ?
+    `).get(categoryId);
   }
 
   /**
@@ -146,18 +191,23 @@ export class SyllabusService {
   // ==========================================
 
   /**
-   * List techniques for an academy, optionally filtered by category
+   * List techniques for an academy, optionally filtered by category or sport
    */
-  static listTechniques(db, academyId, { categoryId, level, beltLevel, includeInactive = false } = {}) {
+  static listTechniques(db, academyId, { sportId, categoryId, level, beltLevel, includeInactive = false } = {}) {
     let sql = `
-      SELECT st.*, sc.name as category_name,
+      SELECT st.*, sc.name as category_name, COALESCE(st.sport_id, sc.sport_id) as sport_id, s.name as sport_name,
              (SELECT COUNT(*) FROM student_technique_assignments sta WHERE sta.technique_id = st.id AND sta.status = 'active') as active_students_count
       FROM syllabus_techniques st
       JOIN syllabus_categories sc ON sc.id = st.category_id
+      LEFT JOIN sports s ON s.id = COALESCE(st.sport_id, sc.sport_id)
       WHERE st.academy_id = ? AND st.deleted_at IS NULL
     `;
     const params = [academyId];
 
+    if (sportId !== null && sportId !== undefined && sportId !== '') {
+      sql += ` AND (st.sport_id = ? OR (st.sport_id IS NULL AND sc.sport_id = ?))`;
+      params.push(Number(sportId), Number(sportId));
+    }
     if (categoryId) {
       sql += ` AND st.category_id = ?`;
       params.push(Number(categoryId));
@@ -183,6 +233,7 @@ export class SyllabusService {
    */
   static createTechnique(db, academyId, {
     category_id,
+    sport_id,
     name,
     code,
     description,
@@ -199,11 +250,12 @@ export class SyllabusService {
       throw new Error('Technique name is required');
     }
 
-    const category = db.prepare('SELECT id, name FROM syllabus_categories WHERE id = ? AND academy_id = ? AND deleted_at IS NULL').get(Number(category_id), academyId);
+    const category = db.prepare('SELECT id, name, sport_id FROM syllabus_categories WHERE id = ? AND academy_id = ? AND deleted_at IS NULL').get(Number(category_id), academyId);
     if (!category) {
       throw new Error('Syllabus category does not exist in this academy');
     }
 
+    const finalSportId = sport_id ? Number(sport_id) : (category.sport_id || null);
     const trimmedName = name.trim();
     const existing = db.prepare(`
       SELECT id FROM syllabus_techniques
@@ -216,12 +268,13 @@ export class SyllabusService {
 
     const res = db.prepare(`
       INSERT INTO syllabus_techniques (
-        academy_id, category_id, name, code, description, level, belt_level,
+        academy_id, category_id, sport_id, name, code, description, level, belt_level,
         media_url, display_order, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       academyId,
       category.id,
+      finalSportId,
       trimmedName,
       code ? code.trim() : null,
       description || null,
@@ -232,11 +285,15 @@ export class SyllabusService {
       status || 'active'
     );
 
+    const sport = finalSportId ? db.prepare('SELECT name FROM sports WHERE id = ?').get(finalSportId) : null;
+
     return {
       id: res.lastInsertRowid,
       academy_id: academyId,
       category_id: category.id,
       category_name: category.name,
+      sport_id: finalSportId,
+      sport_name: sport ? sport.name : null,
       name: trimmedName,
       code: code ? code.trim() : null,
       description: description || null,
@@ -257,13 +314,20 @@ export class SyllabusService {
       throw new Error('Technique not found in this academy');
     }
 
-    const { category_id, name, code, description, level, belt_level, media_url, display_order, status } = updates;
+    const { category_id, sport_id, name, code, description, level, belt_level, media_url, display_order, status } = updates;
 
     let targetCatId = technique.category_id;
+    let targetSportId = technique.sport_id;
+
     if (category_id && Number(category_id) !== technique.category_id) {
-      const cat = db.prepare('SELECT id FROM syllabus_categories WHERE id = ? AND academy_id = ? AND deleted_at IS NULL').get(Number(category_id), academyId);
+      const cat = db.prepare('SELECT id, sport_id FROM syllabus_categories WHERE id = ? AND academy_id = ? AND deleted_at IS NULL').get(Number(category_id), academyId);
       if (!cat) throw new Error('Target syllabus category does not exist in this academy');
       targetCatId = cat.id;
+      targetSportId = cat.sport_id;
+    }
+
+    if (sport_id !== undefined) {
+      targetSportId = sport_id ? Number(sport_id) : null;
     }
 
     if (name && (name.trim().toLowerCase() !== technique.name.toLowerCase() || targetCatId !== technique.category_id)) {
@@ -279,6 +343,7 @@ export class SyllabusService {
     db.prepare(`
       UPDATE syllabus_techniques
       SET category_id = ?,
+          sport_id = COALESCE(?, sport_id),
           name = COALESCE(?, name),
           code = COALESCE(?, code),
           description = COALESCE(?, description),
@@ -291,6 +356,7 @@ export class SyllabusService {
       WHERE id = ? AND academy_id = ?
     `).run(
       targetCatId,
+      targetSportId,
       name ? name.trim() : null,
       code !== undefined ? (code ? code.trim() : null) : null,
       description !== undefined ? description : null,
@@ -303,7 +369,13 @@ export class SyllabusService {
       academyId
     );
 
-    return db.prepare('SELECT * FROM syllabus_techniques WHERE id = ?').get(techniqueId);
+    return db.prepare(`
+      SELECT st.*, sc.name as category_name, COALESCE(st.sport_id, sc.sport_id) as sport_id, s.name as sport_name
+      FROM syllabus_techniques st
+      JOIN syllabus_categories sc ON sc.id = st.category_id
+      LEFT JOIN sports s ON s.id = COALESCE(st.sport_id, sc.sport_id)
+      WHERE st.id = ?
+    `).get(techniqueId);
   }
 
   /**

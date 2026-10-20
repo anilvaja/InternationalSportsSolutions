@@ -4803,7 +4803,8 @@ academyRouter.get('/syllabus-categories', (req, res) => {
   try {
     const db = req.tenantDb;
     const includeInactive = req.query.include_inactive === 'true' || req.query.all === 'true';
-    const categories = SyllabusService.listCategories(db, req.academy.id, { includeInactive });
+    const sportId = req.query.sport_id;
+    const categories = SyllabusService.listCategories(db, req.academy.id, { includeInactive, sportId });
     res.json({ success: true, categories });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -4816,13 +4817,14 @@ academyRouter.get('/syllabus-categories', (req, res) => {
 academyRouter.post('/syllabus-categories', (req, res) => {
   try {
     const db = req.tenantDb;
-    const { name, description, display_order, status, academy_id } = req.body;
+    const { sport_id, name, description, display_order, status, academy_id } = req.body;
 
     if (academy_id && Number(academy_id) !== req.academy.id) {
       return res.status(403).json({ success: false, error: 'Cross-academy operations are forbidden' });
     }
 
     const category = SyllabusService.createCategory(db, req.academy.id, {
+      sport_id,
       name,
       description,
       display_order,
@@ -4842,13 +4844,14 @@ academyRouter.put('/syllabus-categories/:id', (req, res) => {
   try {
     const db = req.tenantDb;
     const categoryId = Number(req.params.id);
-    const { name, description, display_order, status, academy_id } = req.body;
+    const { sport_id, name, description, display_order, status, academy_id } = req.body;
 
     if (academy_id && Number(academy_id) !== req.academy.id) {
       return res.status(403).json({ success: false, error: 'Cross-academy operations are forbidden' });
     }
 
     const updated = SyllabusService.updateCategory(db, req.academy.id, categoryId, {
+      sport_id,
       name,
       description,
       display_order,
@@ -4899,8 +4902,9 @@ academyRouter.post('/syllabus-categories/reorder', (req, res) => {
 academyRouter.get('/syllabus-techniques', (req, res) => {
   try {
     const db = req.tenantDb;
-    const { category_id, level, belt_level, include_inactive } = req.query;
+    const { category_id, sport_id, level, belt_level, include_inactive } = req.query;
     const techniques = SyllabusService.listTechniques(db, req.academy.id, {
+      sportId: sport_id,
       categoryId: category_id,
       level,
       beltLevel: belt_level,
@@ -4920,6 +4924,7 @@ academyRouter.post('/syllabus-techniques', (req, res) => {
     const db = req.tenantDb;
     const {
       category_id,
+      sport_id,
       name,
       code,
       description,
@@ -4937,6 +4942,7 @@ academyRouter.post('/syllabus-techniques', (req, res) => {
 
     const technique = SyllabusService.createTechnique(db, req.academy.id, {
       category_id,
+      sport_id,
       name,
       code,
       description,

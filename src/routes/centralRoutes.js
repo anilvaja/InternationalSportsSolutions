@@ -8,8 +8,10 @@ import { streamAcademyBackup, streamCentralPlatformBackup } from '../services/ba
 import { QuotaService, STANDARD_QUOTA_KEYS, DEFAULT_PLAN_VALUES } from '../services/quotaService.js';
 import { DbViewerService } from '../services/dbViewerService.js';
 import { TenantCleanupService } from '../services/tenantCleanupService.js';
+import { StorageService } from '../services/storageService.js';
 
 export const centralRouter = express.Router();
+const uploadLogoMiddleware = StorageService.getLogoUploadMiddleware().single('logo');
 
 // Enforce Super Admin on all central routes
 centralRouter.use(requireAuth, requireSuperAdmin);
@@ -65,7 +67,7 @@ centralRouter.get('/academies', (req, res) => {
   try {
     const centralDb = getCentralDb();
     const academies = centralDb.prepare(`
-      SELECT id, name, slug, contact_email, contact_phone, city, plan,
+      SELECT id, name, slug, logo_url, contact_email, contact_phone, city, plan,
              max_branches, max_students, max_coaches, status, created_at
       FROM academies
       ORDER BY created_at DESC
@@ -142,6 +144,7 @@ centralRouter.post('/academies', (req, res) => {
       legal_business_name,
       hsn_sac_code,
       gst_state_code,
+      logo_url,
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -169,6 +172,7 @@ centralRouter.post('/academies', (req, res) => {
       contact_phone,
       address,
       city,
+      logo_url: logo_url || null,
       plan: plan || 'professional',
       max_branches: max_branches ? Number(max_branches) : 5,
       max_students: max_students ? Number(max_students) : 500,
@@ -256,6 +260,94 @@ centralRouter.put('/academies/:id', (req, res) => {
     );
 
     res.json({ success: true, message: 'Academy updated successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/academies/:id/logo
+ * Super Admin: Upload and set academy logo for tenant
+ */
+centralRouter.post('/academies/:id/logo', (req, res) => {
+  const academyId = Number(req.params.id);
+  const centralDb = getCentralDb();
+  const academy = centralDb.prepare('SELECT id FROM academies WHERE id = ?').get(academyId);
+  if (!academy) {
+    return res.status(404).json({ success: false, error: 'Academy not found' });
+  }
+
+  req.params.academyId = academyId;
+  uploadLogoMiddleware(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No logo image file was uploaded.' });
+    }
+
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const publicUrl = `/storage/academies/${academyId}/${today}/${req.file.filename}`;
+
+      // 1. Central DB
+      centralDb.prepare('UPDATE academies SET logo_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(publicUrl, academyId);
+
+      // 2. Tenant DB
+      try {
+        const tenantDb = getTenantDbById(academyId);
+        tenantDb.prepare(`
+          INSERT INTO tenant_settings (key, value, updated_at)
+          VALUES ('logo_url', ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+        `).run(publicUrl);
+      } catch (e) {}
+
+      // 3. Central Audit Log
+      centralDb.prepare(`
+        INSERT INTO central_audit_logs (user_id, user_email, action, entity, entity_id, details, ip_address)
+        VALUES (?, ?, 'UPDATE_ACADEMY_LOGO', 'academies', ?, ?, ?)
+      `).run(req.user.userId, req.user.email, String(academyId), `Uploaded logo for academy #${academyId}`, req.ip);
+
+      res.json({
+        success: true,
+        message: 'Academy logo updated successfully!',
+        logo_url: publicUrl,
+        filename: req.file.filename,
+      });
+    } catch (e) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+});
+
+/**
+ * DELETE /api/central/academies/:id/logo
+ * Super Admin: Remove academy logo
+ */
+centralRouter.delete('/academies/:id/logo', (req, res) => {
+  try {
+    const academyId = Number(req.params.id);
+    const centralDb = getCentralDb();
+    centralDb.prepare('UPDATE academies SET logo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(academyId);
+
+    try {
+      const tenantDb = getTenantDbById(academyId);
+      tenantDb.prepare("DELETE FROM tenant_settings WHERE key = 'logo_url'").run();
+    } catch (e) {}
+
+    centralDb.prepare(`
+      INSERT INTO central_audit_logs (user_id, user_email, action, entity, entity_id, details, ip_address)
+      VALUES (?, ?, 'REMOVE_ACADEMY_LOGO', 'academies', ?, 'Removed academy logo', ?)
+    `).run(req.user.userId, req.user.email, String(academyId), req.ip);
+
+    res.json({
+      success: true,
+      message: 'Academy logo removed successfully.',
+      logo_url: null,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
