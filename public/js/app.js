@@ -402,8 +402,23 @@ const app = {
           this.logout();
         }
         let data = {};
-        try { data = await res.json(); } catch (e) {}
+        try { 
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            data = await res.json();
+          }
+        } catch (e) {}
         return { success: false, error: data.error || 'Invalid credentials or session expired' };
+      }
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const textResp = await res.text();
+        console.warn('API returned non-JSON response:', endpoint, textResp.slice(0, 100));
+        return { 
+          success: false, 
+          error: res.ok ? 'Server returned HTML instead of JSON API response.' : `Server error (${res.status}): Please check backend service.`
+        };
       }
 
       return await res.json();
@@ -503,6 +518,19 @@ const app = {
     const loginView = document.getElementById('login-view');
     loginView.style.display = 'flex';
     document.getElementById('app-view').style.display = 'none';
+
+    // Hide demo one-click logins on production host
+    const demoPicker = document.getElementById('demo-login-picker-container');
+    if (demoPicker) {
+      const isLocalHost = window.location.hostname === 'localhost' ||
+                          window.location.hostname === '127.0.0.1' ||
+                          window.location.hostname.endsWith('.test');
+      if (!isLocalHost) {
+        demoPicker.style.display = 'none';
+      } else {
+        demoPicker.style.display = 'block';
+      }
+    }
 
     // If on a tenant subdomain, customize branding
     if (this.tenantAcademy) {
