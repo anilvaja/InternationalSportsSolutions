@@ -2998,6 +2998,7 @@ academyRouter.post('/fees/collect', (req, res) => {
     const db = req.tenantDb;
     const {
       student_id,
+      invoice_id,
       months_count = 1,
       start_date,
       end_date,
@@ -3021,6 +3022,7 @@ academyRouter.post('/fees/collect', (req, res) => {
 
     const result = FeeService.collectFee(db, {
       student_id: Number(student_id),
+      invoice_id: invoice_id ? Number(invoice_id) : null,
       months_count: Number(months_count) || 1,
       start_date,
       end_date: end_date || null,

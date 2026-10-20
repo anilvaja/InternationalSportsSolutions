@@ -195,7 +195,22 @@ export class FeeService {
       throw new Error(`Student ${studentId} not found`);
     }
 
-    const joiningDate = student.enrolled_at || student.created_at.split(' ')[0] || new Date().toISOString().split('T')[0];
+    // 0. Resolve admission / initial batch start date
+    const activeEnrollment = db.prepare(`
+      SELECT sbe.start_date, b.id as batch_id, b.name as batch_name, b.monthly_fee
+      FROM student_batch_enrollments sbe
+      LEFT JOIN batches b ON b.id = sbe.batch_id
+      WHERE sbe.student_id = ? AND sbe.status = 'active'
+      ORDER BY sbe.id ASC LIMIT 1
+    `).get(studentId);
+
+    const admissionStartDate = (activeEnrollment && activeEnrollment.start_date)
+      || student.admission_date
+      || student.enrolled_at
+      || (student.created_at ? student.created_at.split(' ')[0] : null)
+      || new Date().toISOString().split('T')[0];
+
+    const joiningDate = admissionStartDate;
 
     // 1. Check for any outstanding/unpaid fee charges
     const unpaidFees = db.prepare(`
@@ -238,7 +253,7 @@ export class FeeService {
     if (paidThroughDate) {
       nextStartDate = this.addDays(paidThroughDate, 1);
     } else {
-      nextStartDate = joiningDate;
+      nextStartDate = admissionStartDate;
     }
 
     // 3. Reconcile with approved fee pauses
@@ -264,11 +279,14 @@ export class FeeService {
     return {
       studentId,
       joiningDate,
+      admissionDate: admissionStartDate,
+      admissionStartDate,
+      batchStartDate: activeEnrollment ? activeEnrollment.start_date : null,
       paidThroughDate,
       nextStartDate,
       applicableMonthlyFee: feeRate.monthlyFee,
       feeRateSource: feeRate.source,
-      batchName: feeRate.batchName || null,
+      batchName: feeRate.batchName || (activeEnrollment ? activeEnrollment.batch_name : null),
       totalOutstanding: this.round2(totalOutstanding),
       unpaidBalance: this.round2(totalOutstanding),
       unpaidInvoicesCount: unpaidFees.length,
@@ -352,6 +370,7 @@ export class FeeService {
    */
   static collectFee(db, {
     student_id,
+    invoice_id = null,
     months_count = 1,
     start_date,
     end_date = null,
@@ -408,58 +427,114 @@ export class FeeService {
     }
 
     const receiptNumber = `REC-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
-    const invoiceNumber = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+    let invoiceNumber = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
     const feeTitle = title || `${months}-Month Coaching (${periodStart} to ${periodEnd})`;
 
     let resultPayload = null;
 
     // Database transaction
     const tx = db.transaction(() => {
-      // 1. Create invoice in student_fees
+      let feeId = null;
+      let existingInvoice = null;
+      if (invoice_id) {
+        existingInvoice = db.prepare('SELECT * FROM student_fees WHERE id = ?').get(Number(invoice_id));
+      }
+
       const paidAmount = this.round2(payment);
-      const balanceAmount = this.round2(Math.max(0, netAmount - paidAmount));
-      const status = balanceAmount === 0 ? 'paid' : (paidAmount > 0 ? 'partial' : 'pending');
+      let balanceAmount = 0;
+      let status = 'pending';
 
-      const insertFee = db.prepare(`
-        INSERT INTO student_fees (
-          student_id, invoice_number, title, due_date,
-          amount, discount_amount, tax_amount, net_amount,
-          paid_amount, balance_amount, status, notes,
-          period_start, period_end, months_count, base_fee,
-          discount_percentage, discount_type, discount_reason,
-          discount_applied_by, next_installment_date
-        ) VALUES (
-          ?, ?, ?, ?,
-          ?, ?, 0, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?,
-          ?, ?
-        )
-      `).run(
-        student_id,
-        invoiceNumber,
-        feeTitle,
-        periodStart,
-        baseFee,
-        discountCalc.totalDiscountAmount,
-        netAmount,
-        paidAmount,
-        balanceAmount,
-        status,
-        notes,
-        periodStart,
-        periodEnd,
-        months,
-        baseFee,
-        discountCalc.presetPercentage + discountCalc.manualPercentage,
-        discount_type,
-        discount_reason,
-        collected_by,
-        nextInstallmentDate
-      );
+      if (existingInvoice) {
+        feeId = existingInvoice.id;
+        invoiceNumber = existingInvoice.invoice_number;
+        const totalPaidSoFar = this.round2((existingInvoice.paid_amount || 0) + paidAmount);
+        balanceAmount = this.round2(Math.max(0, netAmount - totalPaidSoFar));
+        status = balanceAmount === 0 ? 'paid' : (totalPaidSoFar > 0 ? 'partial' : 'pending');
 
-      const feeId = insertFee.lastInsertRowid;
+        db.prepare(`
+          UPDATE student_fees
+          SET title = ?,
+              amount = ?,
+              discount_amount = ?,
+              net_amount = ?,
+              paid_amount = ?,
+              balance_amount = ?,
+              status = ?,
+              period_start = ?,
+              period_end = ?,
+              months_count = ?,
+              base_fee = ?,
+              discount_percentage = ?,
+              discount_type = ?,
+              discount_reason = ?,
+              discount_applied_by = ?,
+              next_installment_date = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(
+          feeTitle,
+          baseFee,
+          discountCalc.totalDiscountAmount,
+          netAmount,
+          totalPaidSoFar,
+          balanceAmount,
+          status,
+          periodStart,
+          periodEnd,
+          months,
+          baseFee,
+          discountCalc.presetPercentage + discountCalc.manualPercentage,
+          discount_type,
+          discount_reason,
+          collected_by,
+          nextInstallmentDate,
+          feeId
+        );
+      } else {
+        balanceAmount = this.round2(Math.max(0, netAmount - paidAmount));
+        status = balanceAmount === 0 ? 'paid' : (paidAmount > 0 ? 'partial' : 'pending');
+
+        const insertFee = db.prepare(`
+          INSERT INTO student_fees (
+            student_id, invoice_number, title, due_date,
+            amount, discount_amount, tax_amount, net_amount,
+            paid_amount, balance_amount, status, notes,
+            period_start, period_end, months_count, base_fee,
+            discount_percentage, discount_type, discount_reason,
+            discount_applied_by, next_installment_date
+          ) VALUES (
+            ?, ?, ?, ?,
+            ?, ?, 0, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?,
+            ?, ?
+          )
+        `).run(
+          student_id,
+          invoiceNumber,
+          feeTitle,
+          periodStart,
+          baseFee,
+          discountCalc.totalDiscountAmount,
+          netAmount,
+          paidAmount,
+          balanceAmount,
+          status,
+          notes,
+          periodStart,
+          periodEnd,
+          months,
+          baseFee,
+          discountCalc.presetPercentage + discountCalc.manualPercentage,
+          discount_type,
+          discount_reason,
+          collected_by,
+          nextInstallmentDate
+        );
+
+        feeId = insertFee.lastInsertRowid;
+      }
 
       // 2. Record payment in fee_payments if payment > 0
       let paymentId = null;

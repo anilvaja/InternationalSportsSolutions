@@ -8452,37 +8452,65 @@ const app = {
   // COLLECT STUDENT FEES MODAL WITH LIVE PREVIEW
   // ==========================================
 
-  async showCollectStudentFeeModal(preselectedStudentId = null) {
+  async showCollectStudentFeeModal(preselectedStudentId = null, invoiceContext = null) {
+    const modalTitle = invoiceContext ? `Collect Payment — ${invoiceContext.invoiceNumber}` : 'Collect Student Fees';
     this.openModal(
-      'Collect Student Fees',
+      modalTitle,
       '<div style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>'
     );
 
     try {
-      const res = await this.apiRequest('/api/academy/students');
-      const students = (res && res.students) || [];
-      this.feesState.studentsCache = students;
+      let students = this.feesState?.studentsCache || [];
+      if (!students || students.length === 0) {
+        const res = await this.apiRequest('/api/academy/students');
+        students = (res && res.students) || [];
+        this.feesState.studentsCache = students;
+      }
 
-      if (students.length === 0) {
-        this.openModal('Collect Student Fees', '<div class="toast danger">No active students found in academy.</div>');
+      if (students.length === 0 && !preselectedStudentId) {
+        this.openModal(modalTitle, '<div class="toast danger">No active students found in academy.</div>');
         return;
       }
 
-      const activeStudentId = preselectedStudentId || students[0].id;
+      const activeStudentId = preselectedStudentId || (students[0] && students[0].id);
+
+      const studentSelectorHtml = invoiceContext ? `
+        <!-- Invoice & Student Context Header -->
+        <div style="background: rgba(37, 99, 235, 0.05); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Student</span>
+              <div style="font-size: 15px; font-weight: 700; color: var(--text-heading);">${this.escapeHtml(invoiceContext.studentName || 'Student')}</div>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Invoice Reference</span>
+              <div style="font-size: 14px; font-weight: 700; color: #3b82f6;">
+                <code>${this.escapeHtml(invoiceContext.invoiceNumber)}</code>
+                <span style="color: #f59e0b; font-size: 12px; margin-left: 6px;">(Due: ₹${(invoiceContext.balance || 0).toLocaleString()})</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <input type="hidden" id="collect-fee-student" value="${activeStudentId}">
+        <input type="hidden" id="collect-fee-invoice-id" value="${invoiceContext.invoiceId}">
+      ` : `
+        <!-- 1. Student Selection -->
+        <div class="form-group">
+          <label style="font-weight: 600;">Select Student *</label>
+          <select id="collect-fee-student" class="form-select" style="width: 100%; font-size: 14px;" onchange="app.onCollectFeeStudentChange()">
+            ${students.map(s => `
+              <option value="${s.id}" ${s.id === activeStudentId ? 'selected' : ''}>
+                ${this.escapeHtml(s.first_name || '')} ${this.escapeHtml(s.last_name || '')} (${this.escapeHtml(s.student_code || '')}) — ${this.escapeHtml(s.active_batch_name || 'No Batch')}
+              </option>
+            `).join('')}
+          </select>
+          <input type="hidden" id="collect-fee-invoice-id" value="">
+        </div>
+      `;
 
       const bodyHtml = `
         <div style="max-height: 70vh; overflow-y: auto; padding-right: 4px;">
-          <!-- 1. Student Selection -->
-          <div class="form-group">
-            <label style="font-weight: 600;">Select Student *</label>
-            <select id="collect-fee-student" class="form-select" style="width: 100%; font-size: 14px;" onchange="app.onCollectFeeStudentChange()">
-              ${students.map(s => `
-                <option value="${s.id}" ${s.id === activeStudentId ? 'selected' : ''}>
-                  ${s.first_name} ${s.last_name} (${s.student_code}) — ${s.active_batch_name || 'No Batch'}
-                </option>
-              `).join('')}
-            </select>
-          </div>
+          ${studentSelectorHtml}
 
           <!-- Student Info / Timeline Details Banner -->
           <div id="collect-fee-student-info" style="background: rgba(37, 99, 235, 0.05); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 16px;">
@@ -8749,7 +8777,7 @@ const app = {
     this.recalculateFeeLive();
   },
 
-  async onCollectFeeStudentChange() {
+  async onCollectFeeStudentChange(customInitialStart = null) {
     const studentSelect = document.getElementById('collect-fee-student');
     if (!studentSelect) return;
     const studentId = Number(studentSelect.value);
@@ -8760,15 +8788,20 @@ const app = {
         const t = res.timeline;
         this.currentTimelineData = t;
 
-        document.getElementById('collect-info-joining').innerText = t.joiningDate || '-';
-        document.getElementById('collect-info-paidthrough').innerText = t.paidThroughDate || 'None';
-        document.getElementById('collect-info-rate').innerText = `₹${t.monthlyFee.toLocaleString()} / month`;
+        const admissionDate = t.admissionDate || t.admissionStartDate || t.joiningDate || '-';
+        const joinEl = document.getElementById('collect-info-joining');
+        if (joinEl) joinEl.innerText = admissionDate;
+        const ptEl = document.getElementById('collect-info-paidthrough');
+        if (ptEl) ptEl.innerText = t.paidThroughDate || 'None (Initial Fee)';
+        const rateEl = document.getElementById('collect-info-rate');
+        if (rateEl) rateEl.innerText = `₹${(t.monthlyFee || 0).toLocaleString()} / month`;
 
         const startDateInput = document.getElementById('collect-fee-start-date');
         const monthsInput = document.getElementById('collect-fee-months');
         const endDateInput = document.getElementById('collect-fee-end-date');
 
-        const initialStart = t.nextStartDate || new Date().toISOString().split('T')[0];
+        // From date auto-filled based on admission / initial start date of batch or next unpaid date
+        const initialStart = customInitialStart || t.nextStartDate || t.admissionDate || t.admissionStartDate || t.joiningDate || new Date().toISOString().split('T')[0];
         if (startDateInput) {
           startDateInput.value = initialStart;
         }
@@ -8907,10 +8940,15 @@ const app = {
       return;
     }
 
+    const invoiceIdInput = document.getElementById('collect-fee-invoice-id');
+    const invoice_id = invoiceIdInput && invoiceIdInput.value ? Number(invoiceIdInput.value) : null;
+
     const payload = {
       student_id,
+      invoice_id,
       months_count,
       start_date,
+      end_date,
       payment_amount,
       payment_mode,
       transaction_reference,
@@ -8918,6 +8956,7 @@ const app = {
       discount_type,
       discount_value,
       discount_reason,
+      override_ceiling: 'true',
     };
 
     const res = await this.apiRequest('/api/academy/fees/collect', {
@@ -9202,38 +9241,18 @@ const app = {
   // ==========================================
 
   showCollectPaymentModal(invoiceId, invoiceNumber, balance, studentName, studentId = null) {
-    this.openModal(
-      `Collect Payment — ${invoiceNumber}`,
-      `
-        <div>
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
-            Student: <strong>${studentName}</strong> | Outstanding Balance: <strong style="color: #f59e0b;">₹${balance.toLocaleString()}</strong>
-          </p>
-          <div class="form-group">
-            <label>Amount (₹) *</label>
-            <input type="number" id="pay-amt" class="form-input" style="width: 100%; font-weight: 700;" value="${balance}" max="${balance}" min="1" step="any" required>
-          </div>
-          <div class="form-group">
-            <label>Payment Mode *</label>
-            <select id="pay-mode" class="form-select" style="width: 100%;">
-              <option value="upi">UPI (GPay / PhonePe / Paytm)</option>
-              <option value="cash">Cash</option>
-              <option value="bank_transfer">Bank Transfer / NEFT</option>
-              <option value="card">Card / POS</option>
-              <option value="cheque">Cheque</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Transaction Reference / Cheque #</label>
-            <input type="text" id="pay-ref" class="form-input" style="width: 100%;" placeholder="e.g. UPI/20261016/12345">
-          </div>
-        </div>
-      `,
-      `
-        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-        <button class="btn btn-success" onclick="app.submitPayment(${invoiceId})"><i class="fa-solid fa-check"></i> Record Payment</button>
-      `
-    );
+    let resolvedStudentId = studentId;
+    if (!resolvedStudentId && this.currentFeesData) {
+      const inv = this.currentFeesData.find(f => f.id === invoiceId);
+      if (inv) resolvedStudentId = inv.student_id;
+    }
+
+    return this.showCollectStudentFeeModal(resolvedStudentId, {
+      invoiceId,
+      invoiceNumber,
+      balance,
+      studentName
+    });
   },
 
   async submitPayment(invoiceId) {
