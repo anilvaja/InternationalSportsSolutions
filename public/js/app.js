@@ -1262,22 +1262,22 @@ const app = {
                   <td>
                     <span class="badge ${ac.status === 'active' ? 'badge-success' : 'badge-danger'}">${ac.status}</span>
                   </td>
-                  <td>
-                    <div style="display: flex; gap: 6px;">
-                      <button class="btn btn-secondary btn-sm" onclick="app.showManageSubscriptionModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}')" title="Manage Subscription & Limits">
-                        <i class="fa-solid fa-sliders" style="color: #10b981;"></i> Limits
+                  <td style="vertical-align: top;">
+                    <div style="display: flex; flex-direction: column; gap: 5px; width: 110px;">
+                      <button class="btn btn-secondary btn-sm" onclick="app.showManageSubscriptionModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}')" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px;" title="Manage Subscription & Limits">
+                        <i class="fa-solid fa-sliders" style="color: #10b981; width: 14px;"></i> Limits
                       </button>
-                      <button class="btn btn-secondary btn-sm" onclick="app.showManageDomainsModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}')" title="Manage Domains & Subdomains">
-                        <i class="fa-solid fa-globe" style="color: #3b82f6;"></i> Domains
+                      <button class="btn btn-secondary btn-sm" onclick="app.showManageDomainsModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}')" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px;" title="Manage Domains & Subdomains">
+                        <i class="fa-solid fa-globe" style="color: #3b82f6; width: 14px;"></i> Domains
                       </button>
-                      <button class="btn btn-secondary btn-sm" onclick="app.openResetAcademyAdminPasswordModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}', '${(ac.contact_email || '').replace(/'/g, "\\'")}')" title="Reset Academy Admin Password">
-                        <i class="fa-solid fa-key" style="color: #f59e0b;"></i> Password
+                      <button class="btn btn-secondary btn-sm" onclick="app.openResetAcademyAdminPasswordModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}', '${(ac.contact_email || '').replace(/'/g, "\\'")}')" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px;" title="Reset Academy Admin Password">
+                        <i class="fa-solid fa-key" style="color: #f59e0b; width: 14px;"></i> Password
                       </button>
-                      <a href="/api/central/academies/${ac.id}/backup" class="btn btn-secondary btn-sm" title="Download SQLite DB ZIP">
-                        <i class="fa-solid fa-download"></i>
+                      <a href="/api/central/academies/${ac.id}/backup" class="btn btn-secondary btn-sm" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px; text-decoration: none;" title="Download SQLite DB ZIP">
+                        <i class="fa-solid fa-download" style="color: #64748b; width: 14px;"></i> Backup DB
                       </a>
-                      <button class="btn btn-primary btn-sm" onclick="app.switchAcademy(${ac.id}); app.navigate('overview');" title="Open Academy Dashboard">
-                        <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                      <button class="btn btn-primary btn-sm" onclick="app.switchAcademy(${ac.id}); app.navigate('overview');" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px;" title="Open Academy Dashboard">
+                        <i class="fa-solid fa-arrow-up-right-from-square" style="width: 14px;"></i> Open Portal
                       </button>
                     </div>
                   </td>
