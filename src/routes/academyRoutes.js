@@ -3642,6 +3642,17 @@ academyRouter.get('/fees/ledger/:studentId', (req, res) => {
       return res.status(400).json({ success: false, error: 'Valid student ID is required' });
     }
 
+    const student = db.prepare(`
+      SELECT s.*, b.name as branch_name
+      FROM students s
+      LEFT JOIN branches b ON b.id = s.branch_id
+      WHERE s.id = ?
+    `).get(studentId);
+
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' });
+    }
+
     const ledger = db.prepare(`
       SELECT sfl.*, sf.invoice_number, fp.receipt_number, u.name as created_by_name
       FROM student_fee_ledger sfl
@@ -3653,8 +3664,27 @@ academyRouter.get('/fees/ledger/:studentId', (req, res) => {
     `).all(studentId);
 
     const timeline = FeeService.getStudentFeeTimeline(db, studentId);
+    if (!timeline.student) {
+      timeline.student = {
+        id: student.id,
+        first_name: student.first_name,
+        last_name: student.last_name,
+        student_code: student.student_code,
+        admission_number: student.admission_number,
+        phone: student.phone,
+        email: student.email,
+        branch_id: student.branch_id,
+        branch_name: student.branch_name,
+      };
+    }
+    if (timeline.monthlyFee === undefined) {
+      timeline.monthlyFee = timeline.applicableMonthlyFee;
+    }
+    if (timeline.rateSource === undefined) {
+      timeline.rateSource = timeline.feeRateSource;
+    }
 
-    res.json({ success: true, ledger, timeline });
+    res.json({ success: true, ledger, timeline, student });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

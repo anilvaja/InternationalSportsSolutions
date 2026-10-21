@@ -278,6 +278,17 @@ export class FeeService {
 
     return {
       studentId,
+      student: {
+        id: student.id,
+        first_name: student.first_name,
+        last_name: student.last_name,
+        student_code: student.student_code,
+        admission_number: student.admission_number,
+        phone: student.phone,
+        email: student.email,
+        branch_id: student.branch_id,
+        branch_name: activeEnrollment ? activeEnrollment.batch_name : null,
+      },
       joiningDate,
       admissionDate: admissionStartDate,
       admissionStartDate,
@@ -285,7 +296,9 @@ export class FeeService {
       paidThroughDate,
       nextStartDate,
       applicableMonthlyFee: feeRate.monthlyFee,
+      monthlyFee: feeRate.monthlyFee,
       feeRateSource: feeRate.source,
+      rateSource: feeRate.source,
       batchName: feeRate.batchName || (activeEnrollment ? activeEnrollment.batch_name : null),
       totalOutstanding: this.round2(totalOutstanding),
       unpaidBalance: this.round2(totalOutstanding),

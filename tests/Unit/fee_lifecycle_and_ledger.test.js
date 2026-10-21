@@ -46,6 +46,15 @@ describe('Student Fee Lifecycle, Financial Ledger & Flexible Periods', () => {
     testBatchId = batch.id;
     batchDefaultFee = batch.monthly_fee;
 
+    // Ensure standard discount presets exist
+    tenantDb.prepare(`
+      INSERT OR IGNORE INTO fee_discount_presets (months, discount_percentage, is_active) VALUES
+        (1, 0.0, 1),
+        (3, 5.0, 1),
+        (6, 10.0, 1),
+        (12, 15.0, 1)
+    `).run();
+
     // Create a dedicated test student with joining date '2026-08-10'
     const studentRes = tenantDb.prepare(`
       INSERT INTO students (
@@ -379,6 +388,11 @@ describe('Student Fee Lifecycle, Financial Ledger & Flexible Periods', () => {
 
       // Timeline has advanced
       const timeline = ledgerRes.data.timeline;
+      assert.ok(timeline.student);
+      assert.equal(timeline.student.first_name, 'Aarav');
+      assert.equal(timeline.student.last_name, 'Patel');
+      assert.ok(timeline.monthlyFee !== undefined);
+      assert.ok(timeline.rateSource !== undefined);
       assert.equal(timeline.paidThroughDate, '2026-09-09');
       assert.equal(timeline.nextStartDate, '2026-09-10');
       assert.equal(timeline.unpaidBalance, 0);

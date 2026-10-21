@@ -9207,9 +9207,24 @@ const app = {
         return;
       }
 
-      const timeline = res.timeline;
+      const timeline = res.timeline || {};
       const ledger = res.ledger || [];
-      const s = timeline.student;
+      const s = timeline.student || res.student || {};
+
+      const firstName = this.escapeHtml(s.first_name || '');
+      const lastName = this.escapeHtml(s.last_name || '');
+      const studentFullName = `${firstName} ${lastName}`.trim() || 'Student';
+      const studentCode = this.escapeHtml(s.student_code || s.admission_number || `#${studentId}`);
+      const branchName = this.escapeHtml(s.branch_name || 'Main Branch');
+      const batchName = this.escapeHtml(timeline.batchName || 'Unassigned');
+      const joiningDate = this.escapeHtml(timeline.joiningDate || timeline.admissionDate || '-');
+      const monthlyFee = Number(timeline.monthlyFee !== undefined ? timeline.monthlyFee : (timeline.applicableMonthlyFee || 0));
+      const rateSource = timeline.rateSource || timeline.feeRateSource || 'batch_rate';
+      const isCustomOverride = rateSource === 'student_override';
+      const paidThroughDate = timeline.paidThroughDate ? this.escapeHtml(timeline.paidThroughDate) : 'Not yet paid';
+      const nextStartDate = this.escapeHtml(timeline.nextStartDate || '-');
+      const unpaidBalance = Number(timeline.unpaidBalance !== undefined ? timeline.unpaidBalance : (timeline.totalOutstanding || 0));
+      const escapedStudentName = this.escapeJsString(studentFullName);
 
       container.innerHTML = `
         <!-- Student Fee Timeline & Status Banner -->
@@ -9217,13 +9232,13 @@ const app = {
           <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 14px;">
             <div>
               <h4 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 700; color: var(--text-heading);">
-                ${s.first_name} ${s.last_name}
-                <span style="font-size: 12px; font-weight: 500; color: var(--text-muted); margin-left: 6px;">(${s.student_code})</span>
+                ${studentFullName}
+                <span style="font-size: 12px; font-weight: 500; color: var(--text-muted); margin-left: 6px;">(${studentCode})</span>
               </h4>
               <div style="font-size: 12px; color: var(--text-muted); display: flex; gap: 12px; flex-wrap: wrap;">
-                <span><i class="fa-solid fa-building"></i> Branch: <strong>${s.branch_name || 'Main'}</strong></span>
-                <span><i class="fa-solid fa-users"></i> Batch: <strong>${timeline.batchName || 'Unassigned'}</strong></span>
-                <span><i class="fa-solid fa-calendar-day"></i> Joining Date: <strong>${timeline.joiningDate}</strong></span>
+                <span><i class="fa-solid fa-building"></i> Branch: <strong>${branchName}</strong></span>
+                <span><i class="fa-solid fa-users"></i> Batch: <strong>${batchName}</strong></span>
+                <span><i class="fa-solid fa-calendar-day"></i> Joining Date: <strong>${joiningDate}</strong></span>
               </div>
             </div>
 
@@ -9231,7 +9246,7 @@ const app = {
               <button class="btn btn-primary btn-sm" onclick="app.showCollectStudentFeeModal(${studentId})">
                 <i class="fa-solid fa-plus"></i> Collect Fees
               </button>
-              <button class="btn btn-secondary btn-sm" onclick="app.showFeeOverrideModal(${studentId}, '${s.first_name} ${s.last_name}', ${timeline.monthlyFee})">
+              <button class="btn btn-secondary btn-sm" onclick="app.showFeeOverrideModal(${studentId}, '${escapedStudentName}', ${monthlyFee})">
                 <i class="fa-solid fa-sliders"></i> Set Fee Override
               </button>
             </div>
@@ -9241,9 +9256,9 @@ const app = {
             <div>
               <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Monthly Fee Rate</div>
               <div style="font-size: 18px; font-weight: 700; color: var(--text-heading); margin-top: 2px;">
-                ₹${timeline.monthlyFee.toLocaleString()}
-                <span class="badge ${timeline.rateSource === 'student_override' ? 'badge-primary' : 'badge-secondary'}" style="font-size: 10px; margin-left: 4px;">
-                  ${timeline.rateSource === 'student_override' ? 'Custom Override' : 'Batch Rate'}
+                ₹${monthlyFee.toLocaleString()}
+                <span class="badge ${isCustomOverride ? 'badge-primary' : 'badge-secondary'}" style="font-size: 10px; margin-left: 4px;">
+                  ${isCustomOverride ? 'Custom Override' : 'Batch Rate'}
                 </span>
               </div>
             </div>
@@ -9251,21 +9266,21 @@ const app = {
             <div>
               <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Current Paid-Through Date</div>
               <div style="font-size: 18px; font-weight: 700; color: #10b981; margin-top: 2px;">
-                ${timeline.paidThroughDate || 'Not yet paid'}
+                ${paidThroughDate}
               </div>
             </div>
 
             <div>
               <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Next Installment Starts</div>
               <div style="font-size: 18px; font-weight: 700; color: #3b82f6; margin-top: 2px;">
-                ${timeline.nextStartDate}
+                ${nextStartDate}
               </div>
             </div>
 
             <div>
               <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Unpaid Balance Due</div>
-              <div style="font-size: 18px; font-weight: 700; color: ${timeline.unpaidBalance > 0 ? '#ef4444' : '#10b981'}; margin-top: 2px;">
-                ₹${timeline.unpaidBalance.toLocaleString()}
+              <div style="font-size: 18px; font-weight: 700; color: ${unpaidBalance > 0 ? '#ef4444' : '#10b981'}; margin-top: 2px;">
+                ₹${unpaidBalance.toLocaleString()}
               </div>
             </div>
           </div>
