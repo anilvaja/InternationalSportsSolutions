@@ -244,6 +244,22 @@ const app = {
       .replace(/'/g, '&#039;');
   },
 
+  formatDate(val) {
+    if (!val) return '-';
+    const str = String(val).trim();
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return str;
+    const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      return `${match[3]}/${match[2]}/${match[1]}`;
+    }
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return str;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  },
+
   escapeJsString(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -1011,7 +1027,7 @@ const app = {
           <i class="fa-solid fa-graduation-cap"></i> Students
         </a>
         <a href="${this.getPathForTab('batches')}" class="nav-item ${this.currentTab === 'batches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('batches')">
-          <i class="fa-solid fa-calendar-days"></i> Batches
+          <i class="fa-solid fa-layer-group"></i> Batches
         </a>
         <a href="${this.getPathForTab('attendance')}" class="nav-item ${this.currentTab === 'attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('attendance')">
           <i class="fa-solid fa-clipboard-user"></i> Class Attendance
@@ -1060,7 +1076,7 @@ const app = {
           <i class="fa-solid fa-calendar-check"></i> Staff Leaves
         </a>
         <a href="${this.getPathForTab('holidays')}" class="nav-item ${this.currentTab === 'holidays' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('holidays')">
-          <i class="fa-solid fa-calendar-star" style="color: #f59e0b;"></i> Holiday Calendar
+          <i class="fa-solid fa-calendar-days" style="color: #ef4444;"></i> Holiday Calendar
         </a>
         <a href="${this.getPathForTab('approvals')}" class="nav-item ${this.currentTab === 'approvals' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('approvals')">
           <i class="fa-solid fa-check-to-slot"></i> Approvals Inbox
@@ -1069,7 +1085,10 @@ const app = {
         <div class="nav-section-title">System & Settings</div>
         ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
           <a href="${this.getPathForTab('academy-settings')}" class="nav-item ${this.currentTab === 'academy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('academy-settings')">
-            <i class="fa-solid fa-building-columns" style="color: #6366f1;"></i> Academy Profile & Logo
+            <i class="fa-solid fa-building-columns" style="color: #6366f1;"></i> Academy Settings
+          </a>
+          <a href="${this.getPathForTab('policy-settings')}" class="nav-item ${this.currentTab === 'policy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('policy-settings')">
+            <i class="fa-solid fa-sliders"></i> Policy Settings
           </a>
           <a href="${this.getPathForTab('roles-permissions')}" class="nav-item ${this.currentTab === 'roles-permissions' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('roles-permissions')">
             <i class="fa-solid fa-key"></i> Roles & Permissions
@@ -1078,14 +1097,6 @@ const app = {
         <a href="${this.getPathForTab('facilities')}" class="nav-item ${this.currentTab === 'facilities' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('facilities')">
           <i class="fa-solid fa-dumbbell"></i> Facilities & Equipment
         </a>
-        ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
-          <a href="${this.getPathForTab('academy-settings')}" class="nav-item ${this.currentTab === 'academy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('academy-settings')">
-            <i class="fa-solid fa-building-columns"></i> Academy Profile & Logo
-          </a>
-          <a href="${this.getPathForTab('policy-settings')}" class="nav-item ${this.currentTab === 'policy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('policy-settings')">
-            <i class="fa-solid fa-sliders"></i> Policy Settings
-          </a>
-        ` : ''}
         <a href="${this.getPathForTab('audit-logs')}" class="nav-item ${this.currentTab === 'audit-logs' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('audit-logs')">
           <i class="fa-solid fa-shield-halved"></i> Tenant Audit Log
         </a>
@@ -4357,7 +4368,7 @@ const app = {
                       </div>
                     </div>
                     <div style="text-align: right;">
-                      <div style="font-size: 11px; color: #ef4444; font-weight: 600;"><i class="fa-regular fa-calendar-xmark"></i> ${app.escapeHtml(a.attendance_date || '-')}</div>
+                      <div style="font-size: 11px; color: #ef4444; font-weight: 600;"><i class="fa-regular fa-calendar-xmark"></i> ${app.formatDate(a.attendance_date)}</div>
                       <span style="font-size: 11px; color: var(--text-dim);">${app.escapeHtml(a.remarks || 'Absent')}</span>
                     </div>
                   </div>
@@ -6443,7 +6454,7 @@ const app = {
                 <span style="font-weight: 500;">${this.escapeHtml(s.admission_number || '-')}</span>
 
                 <span style="color: var(--text-muted); font-weight: 500;">Date of Birth:</span>
-                <span>${s.date_of_birth || s.dob || '-'} <small style="color: var(--text-muted);">(${ageStr})</small></span>
+                <span>${this.formatDate(s.date_of_birth || s.dob)} <small style="color: var(--text-muted);">(${ageStr})</small></span>
 
                 <span style="color: var(--text-muted); font-weight: 500;">Gender:</span>
                 <span style="text-transform: capitalize;">${this.escapeHtml(s.gender || '-')}</span>
@@ -6670,7 +6681,7 @@ const app = {
                   ${payments.map(p => `
                     <tr>
                       <td><strong style="color: var(--text-heading);">${this.escapeHtml(p.receipt_number || ('REC-' + p.id))}</strong></td>
-                      <td>${p.payment_date}</td>
+                      <td>${this.formatDate(p.payment_date)}</td>
                       <td style="color: #10b981; font-weight: 700;">₹${Number(p.amount || 0).toLocaleString()}</td>
                       <td><span class="badge badge-info">${this.escapeHtml(p.payment_method || 'Cash')}</span></td>
                       <td style="color: var(--text-muted); font-size: 11.5px;">${this.escapeHtml(p.notes || '-')}</td>
@@ -6734,8 +6745,8 @@ const app = {
                     <tr>
                       <td><strong style="color: var(--text-heading);">${this.escapeHtml(e.batch_name)}</strong></td>
                       <td style="color: var(--text-muted);">${e.start_time || '07:00'} - ${e.end_time || '08:30'} (${e.days_of_week || 'Regular'})</td>
-                      <td>${e.start_date || '-'}</td>
-                      <td>${e.end_date || 'Active Present'}</td>
+                      <td>${this.formatDate(e.start_date)}</td>
+                      <td>${e.end_date ? this.formatDate(e.end_date) : 'Active Present'}</td>
                       <td style="text-align: center;"><span class="badge ${e.status === 'active' ? 'badge-success' : 'badge-secondary'}" style="padding: 4px 8px;">${(e.status || 'completed').toUpperCase()}</span></td>
                     </tr>
                   `).join('')}
@@ -7902,7 +7913,7 @@ const app = {
                     Sport: ${h.sport_name || 'General'} | Branch: ${h.branch_name || 'Main Campus'}
                   </div>
                   <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">
-                    Period: <strong>${h.start_date}</strong> to <strong>${h.end_date || 'Present (Active)'}</strong>
+                    Period: <strong>${this.formatDate(h.start_date)}</strong> to <strong>${h.end_date ? this.formatDate(h.end_date) : 'Present (Active)'}</strong>
                   </div>
                   ${h.transfer_reason ? `
                     <div style="font-size: 12px; color: var(--secondary); margin-top: 6px; background: rgba(14,165,233,0.08); padding: 6px 8px; border-radius: 4px;">
@@ -9087,7 +9098,7 @@ const app = {
                         ${periodText}
                       </div>
                     </td>
-                    <td>${this.escapeHtml(f.due_date || '')}</td>
+                    <td>${this.formatDate(f.due_date)}</td>
                     <td>₹${(f.net_amount || 0).toLocaleString()}</td>
                     <td style="color: #10b981; font-weight: 600;">₹${(f.paid_amount || 0).toLocaleString()}</td>
                     <td style="color: ${(f.balance_amount > 0 ? '#f59e0b' : 'var(--text-muted)')}; font-weight: 600;">
@@ -14415,7 +14426,7 @@ const app = {
           <h2 class="card-title"><i class="fa-solid fa-calendar-check"></i> Leave Requests (${totalCount})</h2>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
             <button class="btn btn-secondary btn-sm" onclick="app.navigate('holidays')" style="display: inline-flex; align-items: center; gap: 6px;">
-              <i class="fa-solid fa-calendar-star" style="color: #f59e0b;"></i> Holiday Calendar
+              <i class="fa-solid fa-calendar-days" style="color: #ef4444;"></i> Holidays
             </button>
             <button class="btn btn-primary btn-sm" onclick="app.showApplyLeaveModal()" style="display: inline-flex; align-items: center; gap: 6px;">
               <i class="fa-solid fa-plus"></i> Apply / Record Leave
@@ -14476,7 +14487,7 @@ const app = {
                 <tr>
                   <td><strong>${this.escapeHtml(l.applicant_name)}</strong></td>
                   <td><span class="badge badge-info">${this.escapeHtml(l.applicant_type)}</span></td>
-                  <td>${this.escapeHtml(l.start_date)} to ${this.escapeHtml(l.end_date)}</td>
+                  <td>${this.formatDate(l.start_date)} to ${this.formatDate(l.end_date)}</td>
                   <td>${this.escapeHtml(l.reason)}</td>
                   <td>
                     <span class="badge ${l.status === 'approved' ? 'badge-success' : (l.status === 'rejected' ? 'badge-danger' : 'badge-warning')}">
@@ -14845,8 +14856,8 @@ const app = {
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
           <div>
             <div style="display: flex; align-items: center; gap: 10px;">
-              <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; display: flex; align-items: center; justify-content: center; font-size: 18px;">
-                <i class="fa-solid fa-calendar-star"></i>
+              <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(239, 68, 68, 0.15); color: #ef4444; display: flex; align-items: center; justify-content: center; font-size: 18px;">
+                <i class="fa-solid fa-calendar-days"></i>
               </div>
               <div>
                 <h2 class="card-title" style="margin: 0;">Academy Holiday Calendar (${curYear})</h2>
@@ -15051,7 +15062,7 @@ const app = {
     if (!holidays || holidays.length === 0) {
       return `
         <div style="padding: 40px; text-align: center; color: var(--text-muted);">
-          <i class="fa-solid fa-calendar-star" style="font-size: 32px; color: #94a3b8; margin-bottom: 10px;"></i>
+          <i class="fa-solid fa-calendar-days" style="font-size: 32px; color: #ef4444; margin-bottom: 10px;"></i>
           <p style="font-size: 14px; margin: 0;">No holidays configured for this period.</p>
           <button class="btn btn-primary btn-sm" onclick="app.showAddHolidayModal()" style="margin-top: 12px;">
             <i class="fa-solid fa-plus"></i> Add First Holiday
@@ -15085,7 +15096,7 @@ const app = {
                   <td><span class="badge badge-secondary">${dayName}</span></td>
                   <td>
                     <span style="font-weight: 700; color: var(--text-heading); display: inline-flex; align-items: center; gap: 6px;">
-                      <i class="fa-solid fa-calendar-star" style="color: #f59e0b;"></i> ${this.escapeHtml(h.name)}
+                      <i class="fa-solid fa-calendar-days" style="color: #ef4444;"></i> ${this.escapeHtml(h.name)}
                     </span>
                   </td>
                   <td>${h.branch_name ? `<span class="badge badge-info">${this.escapeHtml(h.branch_name)}</span>` : '<span class="badge badge-primary">All Branches</span>'}</td>
@@ -15156,7 +15167,7 @@ const app = {
     const branches = this.branchesList || [];
 
     this.openModal(
-      `<i class="fa-solid fa-calendar-star" style="color: #f59e0b;"></i> Schedule Academy Holiday`,
+      `<i class="fa-solid fa-calendar-days" style="color: #ef4444;"></i> Schedule Academy Holiday`,
       `
         <form id="add-holiday-form" onsubmit="event.preventDefault(); app.saveHoliday();">
           <!-- Single vs Multi-Day Selection -->
@@ -16909,7 +16920,7 @@ const app = {
                         ${inv.notes ? `<div style="font-size: 11px; color: var(--text-muted);">${inv.notes}</div>` : ''}
                       </td>
                       <td>
-                        <div>${inv.due_date}</div>
+                        <div>${this.formatDate(inv.due_date)}</div>
                         ${inv.is_overdue ? `
                           <span class="badge badge-danger" style="font-size: 10px; margin-top: 2px;">
                             Overdue by ${inv.overdue_days}d
@@ -16975,7 +16986,7 @@ const app = {
                       <tr>
                         <td><code>${inv.invoice_number}</code></td>
                         <td><strong>${inv.title}</strong></td>
-                        <td>${inv.due_date}</td>
+                        <td>${this.formatDate(inv.due_date)}</td>
                         <td style="color: #10b981; font-weight: 700;">₹${inv.paid_amount.toLocaleString()}</td>
                         <td><span class="badge badge-secondary" style="font-family: monospace;">${firstReceipt}</span></td>
                         <td><span class="badge badge-success">paid</span></td>
@@ -18234,7 +18245,7 @@ const app = {
                     <tr>
                       <td><strong>${h.technique_name}</strong></td>
                       <td>Lvl ${h.technique_level} ${h.technique_belt_level ? '• ' + h.technique_belt_level : ''}</td>
-                      <td><code>${h.start_date}</code> to <code>${h.end_date || 'Present'}</code></td>
+                      <td><code>${this.formatDate(h.start_date)}</code> to <code>${h.end_date ? this.formatDate(h.end_date) : 'Present'}</code></td>
                       <td><span class="badge badge-info">${h.sessions_attended}</span></td>
                       <td>
                         <span class="badge ${h.status === 'active' ? 'badge-success' : (h.status === 'downgraded' ? 'badge-warning' : 'badge-secondary')}">
@@ -18269,7 +18280,7 @@ const app = {
                 <tbody>
                   ${snapshots.map(s => `
                     <tr>
-                      <td><code>${s.attendance_date}</code></td>
+                      <td><code>${this.formatDate(s.attendance_date)}</code></td>
                       <td>${s.batch_name}</td>
                       <td><strong>${s.technique_name}</strong> (Lvl ${s.technique_level})</td>
                       <td><span class="badge badge-purple">${s.progression_action}</span></td>
@@ -18294,7 +18305,7 @@ const app = {
                 <tbody>
                   ${attendanceLogs.map(l => `
                     <tr>
-                      <td><code>${l.attendance_date}</code></td>
+                      <td><code>${this.formatDate(l.attendance_date)}</code></td>
                       <td>${l.batch_name}</td>
                       <td><span class="badge ${l.status === 'present' ? 'badge-success' : (l.status === 'late' ? 'badge-warning' : 'badge-danger')}">${l.status}</span></td>
                       <td>${l.technique_name ? `<strong>${l.technique_name}</strong> (Lvl ${l.technique_level})` : '<span style="color:var(--text-dim);">Baseline Practice</span>'}</td>
@@ -19075,7 +19086,7 @@ const app = {
                   ` : `
                     ${payments.map(p => `
                       <tr>
-                        <td><strong>${p.payment_date}</strong></td>
+                        <td><strong>${this.formatDate(p.payment_date)}</strong></td>
                         <td><span class="badge badge-purple">${p.payment_method}</span></td>
                         <td><code>${p.reference_number || 'N/A'}</code></td>
                         <td><strong style="color: #10b981;">₹${Number(p.amount).toLocaleString()}</strong></td>
@@ -21279,7 +21290,7 @@ const app = {
                     <td>
                       <strong>${this.escapeHtml(inq.student_name)}</strong>
                       ${inq.guardian_name ? `<div style="font-size: 11px; color: var(--text-muted);">Gdn: ${this.escapeHtml(inq.guardian_name)}</div>` : ''}
-                      ${inq.dob ? `<div style="font-size: 10px; color: var(--text-dim);">DOB: ${inq.dob}</div>` : ''}
+                      ${inq.dob ? `<div style="font-size: 10px; color: var(--text-dim);">DOB: ${this.formatDate(inq.dob)}</div>` : ''}
                     </td>
                     <td>
                       <div><i class="fa-solid fa-phone" style="font-size: 10px; color: var(--primary);"></i> <strong>${this.escapeHtml(inq.phone || '-')}</strong></div>
