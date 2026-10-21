@@ -278,7 +278,7 @@ const app = {
 
   normalizeDateToIso(val) {
     if (!val) return '';
-    const str = String(val).trim();
+    const str = String(val).trim().split('T')[0];
     const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
     if (ddmmyyyy) {
       const day = ddmmyyyy[1].padStart(2, '0');
@@ -12212,7 +12212,8 @@ const app = {
     const content = document.getElementById('page-content');
 
     const targetBatchId = this._pendingAttendanceBatchId ? String(this._pendingAttendanceBatchId) : (batches[0] ? String(batches[0].id) : '');
-    const targetDate = this._pendingAttendanceDate || today;
+    const rawTargetDate = this._pendingAttendanceDate || today;
+    const targetDate = this.normalizeDateToIso(rawTargetDate) || rawTargetDate;
     const hasExplicitPendingDate = !!this._pendingAttendanceDate;
     this._pendingAttendanceBatchId = null;
     this._pendingAttendanceDate = null;
@@ -12242,9 +12243,14 @@ const app = {
                 ${batches.map(b => `<option value="${b.id}" ${String(b.id) === targetBatchId ? 'selected' : ''}>${b.name} (${b.sport_name})</option>`).join('')}
               </select>
             </div>
-            <div class="form-group" style="margin: 0;">
+            <div class="form-group" style="margin: 0; min-width: 170px;">
               <label>Date (Allowed: Today + past 2 days)</label>
-              <input type="date" id="att-date-input" class="form-input" value="${targetDate}" onchange="app.onAttendanceDateChange()">
+              ${this.renderIndianDateInput({
+                id: 'att-date-input',
+                value: targetDate,
+                className: 'form-input',
+                onchange: 'app.onAttendanceDateChange()'
+              })}
             </div>
             <button class="btn btn-primary" onclick="app.loadAttendanceRoster()">
               <i class="fa-solid fa-magnifying-glass"></i> Load Roster
@@ -12279,7 +12285,8 @@ const app = {
         const s = res.session;
         const dateInput = document.getElementById('att-date-input');
         if (dateInput && s.scheduled_date && !preserveDate) {
-          dateInput.value = s.scheduled_date;
+          dateInput.value = this.formatDateToIndian(s.scheduled_date);
+          dateInput.dataset.iso = s.scheduled_date;
         }
 
         const isCompleted = res.isCompleted || s.attendance_status === 'completed';
@@ -12323,6 +12330,10 @@ const app = {
   },
 
   onAttendanceDateChange() {
+    const dateInput = document.getElementById('att-date-input');
+    if (dateInput) {
+      this.validateIndianDateField(dateInput);
+    }
     this.loadAttendanceRoster();
   },
 
@@ -12332,7 +12343,9 @@ const app = {
     if (!batchSelect || !dateInput) return;
 
     const batchId = batchSelect.value;
-    const date = dateInput.value;
+    const rawDate = dateInput.value;
+    const isoDate = dateInput.dataset.iso || this.normalizeDateToIso(rawDate) || rawDate;
+    const displayDate = this.formatDateToIndian(isoDate);
     const container = document.getElementById('attendance-roster-container');
 
     container.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading roster...';
@@ -12340,7 +12353,7 @@ const app = {
     // Calculate calendar days difference from today
     const today = new Date().toISOString().split('T')[0];
     const todayObj = new Date(today + 'T00:00:00Z');
-    const targetObj = new Date(date + 'T00:00:00Z');
+    const targetObj = new Date(isoDate + 'T00:00:00Z');
     const diffDays = Math.round((todayObj.getTime() - targetObj.getTime()) / (1000 * 60 * 60 * 24));
 
     let bannerHtml = '';
@@ -12362,17 +12375,17 @@ const app = {
           <div style="display: flex; align-items: center; gap: 8px;">
             <i class="fa-solid fa-clock-rotate-left fa-lg"></i>
             <div>
-              <strong>Outside 2-Day Cutoff:</strong> Selected date (${date}) is ${diffDays} calendar days in the past. Saving requires an approved administrative correction.
+              <strong>Outside 2-Day Cutoff:</strong> Selected date (${displayDate}) is ${diffDays} calendar days in the past. Saving requires an approved administrative correction.
             </div>
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="app.showAttendanceCorrectionModal(${batchId}, '${date}')">
+          <button class="btn btn-secondary btn-sm" onclick="app.showAttendanceCorrectionModal(${batchId}, '${isoDate}')">
             <i class="fa-solid fa-paper-plane"></i> Request Approval
           </button>
         </div>
       `;
     }
 
-    const res = await this.apiRequest(`/api/academy/attendance?batch_id=${batchId}&date=${date}`);
+    const res = await this.apiRequest(`/api/academy/attendance?batch_id=${batchId}&date=${isoDate}`);
     if (!res.success) {
       container.innerHTML = `
         ${bannerHtml}
@@ -12394,7 +12407,7 @@ const app = {
     }
 
     this._cachedAttendanceRoster = roster;
-    this._cachedAttendanceDate = date;
+    this._cachedAttendanceDate = isoDate;
     this._cachedAttendanceBatchId = batchId;
 
     const isAlreadyRecorded = !!res.attendanceRecord;
@@ -12403,7 +12416,7 @@ const app = {
       recordedBannerHtml = `
         <div style="background: rgba(16, 185, 129, 0.08); border-left: 3px solid #10b981; border-radius: 4px; padding: 7px 12px; margin-bottom: 14px; color: #047857; font-size: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
           <div>
-            <i class="fa-solid fa-clock-rotate-left"></i> <strong>Saved Records (${date}):</strong> Showing current recorded roster. Saving will update this session.
+            <i class="fa-solid fa-clock-rotate-left"></i> <strong>Saved Records (${displayDate}):</strong> Showing current recorded roster. Saving will update this session.
           </div>
           <span class="badge badge-success" style="font-size: 11px;"><i class="fa-solid fa-check"></i> Recorded</span>
         </div>
@@ -12505,7 +12518,7 @@ const app = {
       </div>
 
       <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px;">
-        <button class="btn ${isAlreadyRecorded ? 'btn-primary' : 'btn-success'}" id="btn-save-attendance" ${disableSaving ? 'disabled' : ''} onclick="app.saveAttendance(${batchId}, '${date}')">
+        <button class="btn ${isAlreadyRecorded ? 'btn-primary' : 'btn-success'}" id="btn-save-attendance" ${disableSaving ? 'disabled' : ''} onclick="app.saveAttendance(${batchId}, '${isoDate}')">
           <i class="fa-solid ${isAlreadyRecorded ? 'fa-pen-to-square' : 'fa-floppy-disk'}"></i> ${isAlreadyRecorded ? 'Update Attendance & Track Technique' : 'Save Attendance & Track Technique'}
         </button>
       </div>
@@ -12574,18 +12587,21 @@ const app = {
       });
     });
 
+    const dateInput = document.getElementById('att-date-input');
+    const resolvedDate = date || (dateInput ? (dateInput.dataset.iso || this.normalizeDateToIso(dateInput.value)) : null);
+    const isoDate = this.normalizeDateToIso(resolvedDate) || resolvedDate;
     const res = await this.apiRequest('/api/academy/attendance', {
       method: 'POST',
-      body: JSON.stringify({ batch_id: batchId, date, entries }),
+      body: JSON.stringify({ batch_id: batchId, date: isoDate, entries }),
     });
 
     if (res.success) {
       this.showToast(res.message, 'success');
-      this.onAttendanceBatchChange();
+      this.onAttendanceBatchChange(true);
     } else {
       if (res.requiresCorrection) {
         this.showToast(res.error, 'danger');
-        this.showAttendanceCorrectionModal(batchId, date);
+        this.showAttendanceCorrectionModal(batchId, isoDate);
       } else {
         this.showToast(res.error || 'Failed to save attendance', 'danger');
       }
@@ -12595,14 +12611,16 @@ const app = {
   // MODAL: Attendance Correction Request
   async showAttendanceCorrectionModal(prefillBatchId = null, prefillDate = null) {
     const batchId = prefillBatchId || (document.getElementById('att-batch-select') ? document.getElementById('att-batch-select').value : 1);
-    const date = prefillDate || (document.getElementById('att-date-input') ? document.getElementById('att-date-input').value : new Date().toISOString().split('T')[0]);
+    const dateInput = document.getElementById('att-date-input');
+    const rawDate = prefillDate || (dateInput ? (dateInput.dataset.iso || this.normalizeDateToIso(dateInput.value) || dateInput.value) : new Date().toISOString().split('T')[0]);
+    const date = this.normalizeDateToIso(rawDate) || rawDate;
 
     this.openModal('Request Attendance Correction', `
       <form id="attendance-correction-form" onsubmit="event.preventDefault(); app.submitAttendanceCorrection();">
         <input type="hidden" id="corr-batch-id" value="${batchId}">
         <div class="form-group">
           <label>Date for Correction</label>
-          <input type="date" id="corr-date" class="form-input" value="${date}" required>
+          <input type="text" id="corr-date" class="form-input indian-date-input" value="${this.formatDateToIndian(date)}" data-iso="${date}" required>
         </div>
         <div class="form-group">
           <label>Mandatory Correction Reason</label>
@@ -12622,7 +12640,8 @@ const app = {
 
   async submitAttendanceCorrection() {
     const batch_id = document.getElementById('corr-batch-id').value;
-    const date = document.getElementById('corr-date').value;
+    const rawDate = document.getElementById('corr-date').value;
+    const date = this.normalizeDateToIso(rawDate) || rawDate;
     const reason = document.getElementById('corr-reason').value.trim();
 
     if (!reason) {
@@ -12829,12 +12848,13 @@ const app = {
   async onQuickAttDateChange(newDate) {
     if (!this._quickAttendanceState || !newDate) return;
     const batchId = this._quickAttendanceState.batchId;
+    const isoDate = this.normalizeDateToIso(newDate) || newDate;
 
-    const res = await this.apiRequest(`/api/academy/attendance?batch_id=${batchId}&date=${newDate}`);
+    const res = await this.apiRequest(`/api/academy/attendance?batch_id=${batchId}&date=${isoDate}`);
     const roster = (res && res.roster) || [];
     const availableTechniques = (res && res.availableTechniques) || this._quickAttendanceState.availableTechniques || [];
 
-    this._quickAttendanceState.date = newDate;
+    this._quickAttendanceState.date = isoDate;
     this._quickAttendanceState.isAlreadyRecorded = !!(res && res.attendanceRecord);
     this._quickAttendanceState.availableTechniques = availableTechniques;
     this._quickAttendanceState.students = roster.map(s => {
@@ -12867,7 +12887,9 @@ const app = {
     // Check calendar window
     const today = new Date().toISOString().split('T')[0];
     const todayObj = new Date(today + 'T00:00:00Z');
-    const targetObj = new Date(state.date + 'T00:00:00Z');
+    const isoDate = this.normalizeDateToIso(state.date) || state.date;
+    const displayDate = this.formatDateToIndian(isoDate);
+    const targetObj = new Date(isoDate + 'T00:00:00Z');
     const diffDays = Math.round((todayObj.getTime() - targetObj.getTime()) / (1000 * 60 * 60 * 24));
 
     let bannerHtml = '';
@@ -12884,14 +12906,14 @@ const app = {
     } else if (diffDays > 2) {
       bannerHtml = `
         <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--radius-md); padding: 8px 12px; margin-bottom: 12px; color: #f59e0b; font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-          <div><i class="fa-solid fa-clock-rotate-left"></i> <strong>Outside 2-Day Cutoff:</strong> Selected date (${state.date}) is ${diffDays} calendar days in the past. Requires administrative correction.</div>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="app.showAttendanceCorrectionModal(${state.batchId}, '${state.date}')">Request Approval</button>
+          <div><i class="fa-solid fa-clock-rotate-left"></i> <strong>Outside 2-Day Cutoff:</strong> Selected date (${displayDate}) is ${diffDays} calendar days in the past. Requires administrative correction.</div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.showAttendanceCorrectionModal(${state.batchId}, '${isoDate}')">Request Approval</button>
         </div>
       `;
     } else if (state.isAlreadyRecorded) {
       bannerHtml = `
         <div style="background: rgba(16, 185, 129, 0.08); border-left: 3px solid #10b981; border-radius: 4px; padding: 7px 12px; margin-bottom: 12px; color: #047857; font-size: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-          <div><i class="fa-solid fa-clock-rotate-left"></i> <strong>Saved Records (${state.date}):</strong> Showing current recorded roster. Saving will update this session.</div>
+          <div><i class="fa-solid fa-clock-rotate-left"></i> <strong>Saved Records (${displayDate}):</strong> Showing current recorded roster. Saving will update this session.</div>
           <span class="badge badge-success" style="font-size: 11px;"><i class="fa-solid fa-check"></i> Recorded</span>
         </div>
       `;
@@ -12921,9 +12943,9 @@ const app = {
           <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             <div style="display: flex; align-items: center; gap: 6px;">
               <label style="font-size: 12px; font-weight: 600; margin: 0; color: var(--text-muted);">Date:</label>
-              <input type="date" class="form-input" style="padding: 4px 8px; font-size: 12px; width: 140px;" value="${state.date}" onchange="app.onQuickAttDateChange(this.value)">
+              <input type="text" class="form-input indian-date-input" style="padding: 4px 8px; font-size: 12px; width: 140px;" value="${displayDate}" data-iso="${isoDate}" onchange="app.onQuickAttDateChange(this.value)">
             </div>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="app.navigateToAttendance(${state.batchId}, '${state.date}')" title="Open full dedicated attendance page for this batch">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.navigateToAttendance(${state.batchId}, '${isoDate}')" title="Open full dedicated attendance page for this batch">
               <i class="fa-solid fa-arrow-up-right-from-square"></i> Full Page
             </button>
           </div>
@@ -13154,7 +13176,7 @@ const app = {
         method: 'POST',
         body: JSON.stringify({
           batch_id: state.batchId,
-          date: state.date,
+          date: this.normalizeDateToIso(state.date) || state.date,
           entries,
         }),
       });

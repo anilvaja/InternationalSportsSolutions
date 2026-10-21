@@ -3311,6 +3311,8 @@ academyRouter.post('/attendance/corrections', (req, res) => {
       return res.status(400).json({ success: false, error: 'batch_id, date, and reason are required' });
     }
 
+    const normalizedDate = normalizeDate(date) || date;
+
     const ins = db.prepare(`
       INSERT INTO attendance_corrections (
         academy_id, session_id, batch_id, date, student_id, original_status, requested_status, reason, requested_by
@@ -3319,7 +3321,7 @@ academyRouter.post('/attendance/corrections', (req, res) => {
       req.academy.id,
       session_id ? Number(session_id) : null,
       Number(batch_id),
-      date,
+      normalizedDate,
       student_id ? Number(student_id) : null,
       original_status || 'absent',
       requested_status || 'present',
@@ -3400,6 +3402,8 @@ academyRouter.get('/attendance', (req, res) => {
       return res.status(400).json({ success: false, error: 'batch_id and date query parameters are required' });
     }
 
+    const normalizedDate = normalizeDate(date) || date;
+
     // Role Security: Coach can only view attendance for their assigned batch
     if (req.user.role === 'coach') {
       const coach = getCoachContext(db, req.user);
@@ -3412,7 +3416,7 @@ academyRouter.get('/attendance', (req, res) => {
       }
     }
 
-    const attendanceRecord = db.prepare('SELECT * FROM attendance WHERE batch_id = ? AND date = ?').get(Number(batch_id), date);
+    const attendanceRecord = db.prepare('SELECT * FROM attendance WHERE batch_id = ? AND date = ?').get(Number(batch_id), normalizedDate);
 
     // List all actively enrolled students in this batch, along with marked attendance & active technique
     const roster = db.prepare(`
@@ -3456,7 +3460,7 @@ academyRouter.get('/attendance', (req, res) => {
     `).all(Number(batch_id), Number(batch_id), attendanceRecord ? attendanceRecord.id : -1);
 
     const availableTechniques = SyllabusService.listTechniques(db, req.academy.id);
-    const dateValidation = AttendanceScheduleService.validateAttendanceDate(db, date);
+    const dateValidation = AttendanceScheduleService.validateAttendanceDate(db, normalizedDate);
 
     res.json({
       success: true,
@@ -3489,6 +3493,8 @@ academyRouter.post('/attendance', (req, res) => {
       return res.status(400).json({ success: false, error: 'batch_id, date, and entries array are required' });
     }
 
+    const normalizedDate = normalizeDate(date) || date;
+
     // Role Security: Coach can only submit attendance for their assigned batch
     if (req.user.role === 'coach') {
       const coach = getCoachContext(db, req.user);
@@ -3502,7 +3508,7 @@ academyRouter.post('/attendance', (req, res) => {
     }
 
     // 1. Backend-Enforced Date Validation
-    const dateCheck = AttendanceScheduleService.validateAttendanceDate(db, date);
+    const dateCheck = AttendanceScheduleService.validateAttendanceDate(db, normalizedDate);
     if (!dateCheck.allowed) {
       if (dateCheck.code === 'FUTURE_DATE_REJECTED') {
         const policy = OvertimeService.getAcademyPolicy(db, req.academy.id);
@@ -3520,7 +3526,7 @@ academyRouter.post('/attendance', (req, res) => {
         const approvedCorrection = db.prepare(`
           SELECT id FROM attendance_corrections
           WHERE batch_id = ? AND date = ? AND status = 'approved'
-        `).get(Number(batch_id), date);
+        `).get(Number(batch_id), normalizedDate);
 
         const isAdmin = req.user.isSuperAdmin || req.user.role === 'academy_admin';
         if (!approvedCorrection && !isAdmin) {
@@ -3538,7 +3544,7 @@ academyRouter.post('/attendance', (req, res) => {
     let isUpdate = false;
     const tx = db.transaction(() => {
       // Find or create attendance header
-      let att = db.prepare('SELECT id FROM attendance WHERE batch_id = ? AND date = ?').get(Number(batch_id), date);
+      let att = db.prepare('SELECT id FROM attendance WHERE batch_id = ? AND date = ?').get(Number(batch_id), normalizedDate);
       isUpdate = !!att;
       let attId;
 
@@ -3547,7 +3553,7 @@ academyRouter.post('/attendance', (req, res) => {
         db.prepare('UPDATE attendance SET notes = COALESCE(?, notes) WHERE id = ?').run(notes || null, attId);
       } else {
         const ins = db.prepare('INSERT INTO attendance (batch_id, date, taken_by_user_id, notes) VALUES (?, ?, ?, ?)');
-        const r = ins.run(Number(batch_id), date, req.user.userId, notes || null);
+        const r = ins.run(Number(batch_id), normalizedDate, req.user.userId, notes || null);
         attId = r.lastInsertRowid;
       }
 
@@ -3558,7 +3564,7 @@ academyRouter.post('/attendance', (req, res) => {
 
       // Sync batch session status
       const batch = db.prepare('SELECT branch_id, coach_id, start_time, end_time FROM batches WHERE id = ?').get(Number(batch_id));
-      let session = db.prepare('SELECT id FROM batch_sessions WHERE batch_id = ? AND scheduled_date = ?').get(Number(batch_id), date);
+      let session = db.prepare('SELECT id FROM batch_sessions WHERE batch_id = ? AND scheduled_date = ?').get(Number(batch_id), normalizedDate);
 
       if (!session && batch) {
         let validCoachId = null;
@@ -3575,7 +3581,7 @@ academyRouter.post('/attendance', (req, res) => {
           INSERT INTO batch_sessions (
             academy_id, branch_id, batch_id, scheduled_date, start_time, end_time, coach_id, status, attendance_status
           ) VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', 'pending')
-        `).run(req.academy.id, batch.branch_id, Number(batch_id), date, batch.start_time || '07:00', batch.end_time || '08:30', validCoachId);
+        `).run(req.academy.id, batch.branch_id, Number(batch_id), normalizedDate, batch.start_time || '07:00', batch.end_time || '08:30', validCoachId);
         session = { id: insSession.lastInsertRowid };
       }
 
@@ -3595,7 +3601,7 @@ academyRouter.post('/attendance', (req, res) => {
       db.prepare(`
         INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, entity_id, details)
         VALUES (?, ?, ?, 'SUBMIT_ATTENDANCE', 'attendance', ?, ?)
-      `).run(req.user.userId, req.user.name || 'User', req.user.role, String(attId), `${isUpdate ? 'Updated' : 'Submitted'} attendance for batch ${batch_id} on ${date} (${entries.length} students)`);
+      `).run(req.user.userId, req.user.name || 'User', req.user.role, String(attId), `${isUpdate ? 'Updated' : 'Submitted'} attendance for batch ${batch_id} on ${normalizedDate} (${entries.length} students)`);
     });
 
     tx();
@@ -3604,9 +3610,9 @@ academyRouter.post('/attendance', (req, res) => {
       success: true,
       isUpdate,
       message: isUpdate
-        ? `Attendance updated successfully for ${entries.length} students on ${date}`
-        : `Attendance marked successfully for ${entries.length} students on ${date}`,
-      date,
+        ? `Attendance updated successfully for ${entries.length} students on ${normalizedDate}`
+        : `Attendance marked successfully for ${entries.length} students on ${normalizedDate}`,
+      date: normalizedDate,
       batchId: Number(batch_id),
     });
   } catch (err) {

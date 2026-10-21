@@ -26,10 +26,32 @@ export class AttendanceScheduleService {
   }
 
   /**
+   * Normalize date string to ISO YYYY-MM-DD
+   */
+  static normalizeDate(val) {
+    if (!val) return null;
+    const str = String(val).trim();
+    if (!str) return null;
+    const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+    if (ddmmyyyy) {
+      const day = ddmmyyyy[1].padStart(2, '0');
+      const month = ddmmyyyy[2].padStart(2, '0');
+      const year = ddmmyyyy[3];
+      return `${year}-${month}-${day}`;
+    }
+    const yyyymmdd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+    if (yyyymmdd) {
+      return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
+    }
+    return str;
+  }
+
+  /**
    * Helper: returns date N calendar days in past (YYYY-MM-DD)
    */
   static getPastDate(baseDateStr, days = 1) {
-    const d = new Date(baseDateStr + 'T00:00:00Z');
+    const normalized = this.normalizeDate(baseDateStr) || baseDateStr;
+    const d = new Date(normalized + 'T00:00:00Z');
     d.setUTCDate(d.getUTCDate() - days);
     return d.toISOString().split('T')[0];
   }
@@ -38,7 +60,8 @@ export class AttendanceScheduleService {
    * Helper: returns date N calendar days in future (YYYY-MM-DD)
    */
   static getFutureDate(baseDateStr, days = 1) {
-    const d = new Date(baseDateStr + 'T00:00:00Z');
+    const normalized = this.normalizeDate(baseDateStr) || baseDateStr;
+    const d = new Date(normalized + 'T00:00:00Z');
     d.setUTCDate(d.getUTCDate() + days);
     return d.toISOString().split('T')[0];
   }
@@ -49,12 +72,13 @@ export class AttendanceScheduleService {
    * Future dates are rejected.
    */
   static validateAttendanceDate(db, dateStr, timezone = 'Asia/Kolkata') {
+    const normalized = this.normalizeDate(dateStr);
     const today = this.getTodayDate(timezone);
     const todayObj = new Date(today + 'T00:00:00Z');
-    const targetObj = new Date(dateStr + 'T00:00:00Z');
+    const targetObj = new Date(normalized + 'T00:00:00Z');
 
-    if (isNaN(targetObj.getTime())) {
-      return { allowed: false, reason: 'Invalid date format. Expected YYYY-MM-DD.' };
+    if (!normalized || isNaN(targetObj.getTime())) {
+      return { allowed: false, reason: 'Invalid date format. Expected YYYY-MM-DD or DD/MM/YYYY.' };
     }
 
     // Configurable allowed past days (default 2)
