@@ -68,20 +68,27 @@ test('fetchUpcomingBirthdays returns structured staff and student birthdays with
 
   db.prepare(`INSERT INTO branches (id, name) VALUES (?, ?)`).run(1, 'Main Branch');
 
-  // Insert staff member whose birthday is today (10-20)
-  db.prepare(`INSERT INTO users (name, role, date_of_birth) VALUES (?, ?, ?)`).run('Sensei Rahul', 'coach', '1990-10-20');
-  // Insert coach whose birthday is in 3 days (10-23)
-  db.prepare(`INSERT INTO coaches (name, branch_id, date_of_birth, is_active) VALUES (?, ?, ?, 1)`).run('Coach Priya', 1, '1992-10-23');
-  // Insert staff member whose birthday is 20 days later (11-15) - should be excluded
-  db.prepare(`INSERT INTO users (name, role, date_of_birth) VALUES (?, ?, ?)`).run('Admin Vikram', 'admin', '1985-11-15');
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const formatDob = (year, offsetDays) => {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays);
+    return `${year}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
 
-  // Insert student whose birthday is tomorrow (10-21)
+  // Insert staff member whose birthday is today
+  db.prepare(`INSERT INTO users (name, role, date_of_birth) VALUES (?, ?, ?)`).run('Sensei Rahul', 'coach', formatDob(1990, 0));
+  // Insert coach whose birthday is in 3 days
+  db.prepare(`INSERT INTO coaches (name, branch_id, date_of_birth, is_active) VALUES (?, ?, ?, 1)`).run('Coach Priya', 1, formatDob(1992, 3));
+  // Insert staff member whose birthday is 20 days later - should be excluded
+  db.prepare(`INSERT INTO users (name, role, date_of_birth) VALUES (?, ?, ?)`).run('Admin Vikram', 'admin', formatDob(1985, 20));
+
+  // Insert student whose birthday is tomorrow
   db.prepare(`INSERT INTO students (first_name, last_name, admission_number, branch_id, date_of_birth, status) VALUES (?, ?, ?, ?, ?, 'active')`).run(
-    'Aarav', 'Patel', 'STU-001', 1, '2012-10-21'
+    'Aarav', 'Patel', 'STU-001', 1, formatDob(2012, 1)
   );
   // Inactive student - should be excluded
   db.prepare(`INSERT INTO students (first_name, last_name, admission_number, branch_id, date_of_birth, status) VALUES (?, ?, ?, ?, ?, 'inactive')`).run(
-    'Inactive', 'Kid', 'STU-002', 1, '2013-10-20'
+    'Inactive', 'Kid', 'STU-002', 1, formatDob(2013, 0)
   );
 
   const { staffBirthdays, studentBirthdays } = fetchUpcomingBirthdays(db, [1], 7);

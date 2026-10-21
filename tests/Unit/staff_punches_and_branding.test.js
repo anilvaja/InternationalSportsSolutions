@@ -28,6 +28,7 @@ describe('Staff Punches, Overtime Tracking & Dynamic Academy Branding', () => {
       SET logo_url = '/uploads/logos/mahavir_crest.png' 
       WHERE id = 1
     `).run();
+    academy1Db.prepare("DELETE FROM tenant_settings WHERE key = 'logo_url'").run();
 
     adminToken = signToken({
       userId: 1,

@@ -26,6 +26,26 @@ describe('Enforce Academy, Branch, Batch, and Student Relationships (Rules 1-16)
     academy1Db.prepare("DELETE FROM branches WHERE name LIKE 'North Satellite Wing%'").run();
     academy1Db.prepare("DELETE FROM students WHERE first_name IN ('Transfer', 'Test', 'Bulk1', 'Concurrent') OR student_code LIKE 'STU-TEST%' OR student_code LIKE 'STU-IMP%'").run();
 
+    // Ensure Batch 1 has at least two active students for test assertions
+    const batch1 = academy1Db.prepare('SELECT id, branch_id FROM batches LIMIT 1').get();
+    if (batch1) {
+      const activeCount = academy1Db.prepare("SELECT COUNT(*) as c FROM student_batch_enrollments WHERE batch_id = ? AND status = 'active'").get(batch1.id).c;
+      if (activeCount < 2) {
+        const needed = 2 - activeCount;
+        const candidates = academy1Db.prepare(`
+          SELECT id FROM students 
+          WHERE id NOT IN (SELECT student_id FROM student_batch_enrollments WHERE status = 'active')
+          LIMIT ?
+        `).all(needed);
+        for (const cand of candidates) {
+          academy1Db.prepare(`
+            INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status)
+            VALUES (?, ?, DATE('now'), 'active')
+          `).run(cand.id, batch1.id);
+        }
+      }
+    }
+
     // Create staff tokens for authentication
     academy1Token = signToken({
       userId: 1,

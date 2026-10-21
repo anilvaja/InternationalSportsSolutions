@@ -34,8 +34,10 @@ scripts/local_ftp_push.ps1
 /storage/uploads/*
 /storage/backups/*
 /storage/logs/*
+/storage/academies/*
 !data/.gitkeep
 !data/academies/.gitkeep
+!storage/academies/.gitkeep
 scratch/
 scratch_inspect.mjs
 /mobile/node_modules

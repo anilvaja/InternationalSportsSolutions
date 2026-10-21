@@ -7,7 +7,7 @@
         "server:dev": "node --watch server.js",
         "seed": "node src/db/seed.js",
         "migrate": "node scripts/run_migrations.js",
-        "test": "node --test --test-concurrency=1 tests/unit/**/*.test.js",
+        "test": "node --test --test-concurrency=1 tests/Unit/**/*.test.js tests/Unit/**/*.test.mjs",
         "mobile:start": "npm --prefix mobile run start",
         "mobile:android": "npm --prefix mobile run android",
         "mobile:web": "npm --prefix mobile run web",
