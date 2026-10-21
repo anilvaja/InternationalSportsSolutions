@@ -260,6 +260,408 @@ const app = {
     return `${day}/${month}/${year}`;
   },
 
+  formatDateToIndian(val) {
+    if (!val) return '';
+    const str = String(val).trim();
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return str;
+    const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      return `${match[3]}/${match[2]}/${match[1]}`;
+    }
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return '';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  },
+
+  normalizeDateToIso(val) {
+    if (!val) return '';
+    const str = String(val).trim();
+    const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+    if (ddmmyyyy) {
+      const day = ddmmyyyy[1].padStart(2, '0');
+      const month = ddmmyyyy[2].padStart(2, '0');
+      const year = ddmmyyyy[3];
+      return `${year}-${month}-${day}`;
+    }
+    const yyyymmdd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+    if (yyyymmdd) {
+      return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
+    }
+    return str;
+  },
+
+  renderIndianDateInput({
+    id,
+    name = '',
+    value = '',
+    required = false,
+    className = 'form-input',
+    placeholder = 'dd/mm/yyyy',
+    style = '',
+    oninput = '',
+    onchange = '',
+    disabled = false
+  } = {}) {
+    const formattedVal = this.formatDateToIndian(value);
+    const isoVal = this.normalizeDateToIso(value);
+    const reqAttr = required ? 'required' : '';
+    const disAttr = disabled ? 'disabled' : '';
+
+    return `
+      <div class="indian-datepicker-container" style="position: relative; width: 100%;">
+        <input type="text"
+               id="${id}"
+               ${name ? `name="${name}"` : ''}
+               class="${className} indian-date-input"
+               placeholder="${placeholder}"
+               maxlength="10"
+               autocomplete="off"
+               value="${this.escapeHtml(formattedVal)}"
+               data-iso="${this.escapeHtml(isoVal)}"
+               ${reqAttr}
+               ${disAttr}
+               style="padding-right: 38px; ${style}"
+               oninput="app.handleIndianDateTyping(this); ${oninput}"
+               onblur="app.validateIndianDateField(this); ${onchange}">
+        <button type="button"
+                class="indian-datepicker-btn"
+                tabindex="-1"
+                onclick="app.toggleIndianCalendar('${id}')"
+                title="Select Date (DD/MM/YYYY)">
+          <i class="fa-solid fa-calendar-days"></i>
+        </button>
+      </div>
+    `;
+  },
+
+  handleIndianDateTyping(input) {
+    if (!input) return;
+    let v = input.value;
+    
+    // If user pasted ISO format YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) {
+      input.value = this.formatDateToIndian(v.trim());
+      input.dataset.iso = v.trim();
+      return;
+    }
+
+    // Keep only numbers and slashes
+    let cleaned = v.replace(/[^\d\/]/g, '');
+    
+    // Auto-mask digits to dd/mm/yyyy
+    const digits = cleaned.replace(/\//g, '');
+    if (digits.length <= 2) {
+      cleaned = digits;
+      if (digits.length === 2 && !v.endsWith('/')) {
+        cleaned = digits + '/';
+      }
+    } else if (digits.length <= 4) {
+      cleaned = digits.slice(0, 2) + '/' + digits.slice(2);
+      if (digits.length === 4 && !v.endsWith('/')) {
+        cleaned = cleaned + '/';
+      }
+    } else {
+      cleaned = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4, 8);
+    }
+    
+    input.value = cleaned;
+    
+    if (cleaned.length === 10) {
+      const iso = this.normalizeDateToIso(cleaned);
+      if (iso && iso.length === 10) {
+        input.dataset.iso = iso;
+        input.classList.remove('is-invalid');
+      }
+    } else {
+      input.dataset.iso = '';
+    }
+  },
+
+  validateIndianDateField(input) {
+    if (!input) return;
+    const v = input.value.trim();
+    if (!v) {
+      input.dataset.iso = '';
+      return;
+    }
+    const match = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!match) {
+      input.classList.add('is-invalid');
+      return;
+    }
+    const day = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const year = parseInt(match[3], 10);
+
+    if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2100) {
+      input.classList.add('is-invalid');
+      return;
+    }
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    if (day > daysInMonth) {
+      input.classList.add('is-invalid');
+      return;
+    }
+
+    const padded = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+    input.value = padded;
+    input.dataset.iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    input.classList.remove('is-invalid');
+  },
+
+  toggleIndianCalendar(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    const existing = document.getElementById('active-indian-calendar-popover');
+    if (existing) {
+      const forInput = existing.dataset.forInput;
+      existing.remove();
+      if (forInput === inputId) return;
+    }
+
+    let selYear, selMonth, selDay;
+    const currentVal = input.value.trim();
+    const ddmmyyyy = currentVal.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmmyyyy) {
+      selDay = parseInt(ddmmyyyy[1], 10);
+      selMonth = parseInt(ddmmyyyy[2], 10) - 1;
+      selYear = parseInt(ddmmyyyy[3], 10);
+    } else {
+      const now = new Date();
+      selDay = now.getDate();
+      selMonth = now.getMonth();
+      selYear = now.getFullYear();
+    }
+
+    let viewYear = selYear;
+    let viewMonth = selMonth;
+
+    const popover = document.createElement('div');
+    popover.id = 'active-indian-calendar-popover';
+    popover.className = 'indian-calendar-popover';
+    popover.dataset.forInput = inputId;
+
+    const rect = input.getBoundingClientRect();
+    const popoverWidth = 290;
+    let left = rect.left;
+    if (left + popoverWidth > window.innerWidth) {
+      left = Math.max(10, window.innerWidth - popoverWidth - 15);
+    }
+    
+    let top = rect.bottom + 6;
+    if (top + 330 > window.innerHeight && rect.top > 340) {
+      top = rect.top - 336;
+    }
+
+    popover.style.left = `${left}px`;
+    popover.style.top = `${top}px`;
+
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    const renderCalendarDays = () => {
+      const firstDayOfMonth = new Date(viewYear, viewMonth, 1).getDay();
+      const startOffset = (firstDayOfMonth + 6) % 7;
+      const daysInCurrentMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+      const daysInPrevMonth = new Date(viewYear, viewMonth, 0).getDate();
+
+      const today = new Date();
+      const isCurrentMonthToday = (today.getFullYear() === viewYear && today.getMonth() === viewMonth);
+
+      let daysHtml = '';
+
+      for (let i = startOffset - 1; i >= 0; i--) {
+        const d = daysInPrevMonth - i;
+        daysHtml += `<button type="button" class="ind-cal-day other-month" tabindex="-1" disabled>${d}</button>`;
+      }
+
+      for (let day = 1; day <= daysInCurrentMonth; day++) {
+        const isToday = isCurrentMonthToday && (today.getDate() === day);
+        const isSelected = (selYear === viewYear && selMonth === viewMonth && selDay === day);
+        const classes = ['ind-cal-day'];
+        if (isToday) classes.push('today');
+        if (isSelected) classes.push('selected');
+
+        daysHtml += `<button type="button" class="${classes.join(' ')}" data-day="${day}" tabindex="-1">${day}</button>`;
+      }
+
+      const totalRendered = startOffset + daysInCurrentMonth;
+      const remaining = (7 - (totalRendered % 7)) % 7;
+      for (let day = 1; day <= remaining; day++) {
+        daysHtml += `<button type="button" class="ind-cal-day other-month" tabindex="-1" disabled>${day}</button>`;
+      }
+
+      return daysHtml;
+    };
+
+    const updateCalendarView = () => {
+      popover.innerHTML = `
+        <div class="ind-cal-header">
+          <button type="button" class="ind-cal-nav-btn" id="ind-cal-prev" title="Previous Month">
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+          <div class="ind-cal-selectors">
+            <select class="ind-cal-select" id="ind-cal-month-sel" style="flex: 1.2;">
+              ${months.map((m, idx) => `<option value="${idx}" ${idx === viewMonth ? 'selected' : ''}>${m}</option>`).join('')}
+            </select>
+            <select class="ind-cal-select" id="ind-cal-year-sel" style="flex: 1;">
+              ${Array.from({ length: 110 }, (_, i) => 2035 - i).map(y => `<option value="${y}" ${y === viewYear ? 'selected' : ''}>${y}</option>`).join('')}
+            </select>
+          </div>
+          <button type="button" class="ind-cal-nav-btn" id="ind-cal-next" title="Next Month">
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </div>
+        <div class="ind-cal-weekdays">
+          <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
+        </div>
+        <div class="ind-cal-days" id="ind-cal-days-grid">
+          ${renderCalendarDays()}
+        </div>
+        <div class="ind-cal-footer">
+          <button type="button" class="ind-cal-footer-btn" id="ind-cal-today-btn">Today</button>
+          <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Format: dd/mm/yyyy</span>
+          <button type="button" class="ind-cal-footer-btn" id="ind-cal-clear-btn" style="color: #ef4444;">Clear</button>
+        </div>
+      `;
+
+      popover.querySelector('#ind-cal-prev').onclick = (e) => {
+        e.stopPropagation();
+        viewMonth--;
+        if (viewMonth < 0) {
+          viewMonth = 11;
+          viewYear--;
+        }
+        updateCalendarView();
+      };
+
+      popover.querySelector('#ind-cal-next').onclick = (e) => {
+        e.stopPropagation();
+        viewMonth++;
+        if (viewMonth > 11) {
+          viewMonth = 0;
+          viewYear++;
+        }
+        updateCalendarView();
+      };
+
+      popover.querySelector('#ind-cal-month-sel').onchange = (e) => {
+        viewMonth = parseInt(e.target.value, 10);
+        updateCalendarView();
+      };
+
+      popover.querySelector('#ind-cal-year-sel').onchange = (e) => {
+        viewYear = parseInt(e.target.value, 10);
+        updateCalendarView();
+      };
+
+      popover.querySelector('#ind-cal-days-grid').onclick = (e) => {
+        const btn = e.target.closest('.ind-cal-day[data-day]');
+        if (!btn) return;
+        const day = parseInt(btn.dataset.day, 10);
+        const dayStr = String(day).padStart(2, '0');
+        const monthStr = String(viewMonth + 1).padStart(2, '0');
+        const dateString = `${dayStr}/${monthStr}/${viewYear}`;
+        const isoString = `${viewYear}-${monthStr}-${dayStr}`;
+
+        input.value = dateString;
+        input.dataset.iso = isoString;
+        input.classList.remove('is-invalid');
+
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+
+        popover.remove();
+      };
+
+      popover.querySelector('#ind-cal-today-btn').onclick = (e) => {
+        e.stopPropagation();
+        const t = new Date();
+        const dayStr = String(t.getDate()).padStart(2, '0');
+        const monthStr = String(t.getMonth() + 1).padStart(2, '0');
+        const dateString = `${dayStr}/${monthStr}/${t.getFullYear()}`;
+        const isoString = `${t.getFullYear()}-${monthStr}-${dayStr}`;
+
+        input.value = dateString;
+        input.dataset.iso = isoString;
+        input.classList.remove('is-invalid');
+
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+
+        popover.remove();
+      };
+
+      popover.querySelector('#ind-cal-clear-btn').onclick = (e) => {
+        e.stopPropagation();
+        input.value = '';
+        input.dataset.iso = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        popover.remove();
+      };
+    };
+
+    updateCalendarView();
+    document.body.appendChild(popover);
+
+    const outsideClickListener = (e) => {
+      if (!popover.contains(e.target) && e.target !== input && !e.target.closest(`.indian-datepicker-btn[onclick*="${inputId}"]`)) {
+        popover.remove();
+        document.removeEventListener('click', outsideClickListener);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('click', outsideClickListener);
+    }, 10);
+  },
+
+  enhanceAllDateInputs(root = document) {
+    if (!root) return;
+    const dateInputs = root.querySelectorAll('input[type="date"]:not(.indian-date-enhanced)');
+    dateInputs.forEach(input => {
+      input.classList.add('indian-date-enhanced');
+      const id = input.id || `date-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const val = input.value || '';
+      const formatted = this.formatDateToIndian(val);
+      const placeholder = input.placeholder || 'dd/mm/yyyy';
+
+      input.type = 'text';
+      input.id = id;
+      input.className = (input.className + ' indian-date-input').trim();
+      input.placeholder = placeholder;
+      input.maxLength = 10;
+      input.autocomplete = 'off';
+      input.value = formatted;
+      input.dataset.iso = this.normalizeDateToIso(val);
+
+      const wrap = document.createElement('div');
+      wrap.className = 'indian-datepicker-container';
+      wrap.style.cssText = 'position: relative; width: 100%;';
+      input.parentNode.insertBefore(wrap, input);
+      wrap.appendChild(input);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'indian-datepicker-btn';
+      btn.tabIndex = -1;
+      btn.title = 'Select Date (DD/MM/YYYY)';
+      btn.innerHTML = '<i class="fa-solid fa-calendar-days"></i>';
+      btn.onclick = () => this.toggleIndianCalendar(id);
+      wrap.appendChild(btn);
+
+      input.addEventListener('input', () => this.handleIndianDateTyping(input));
+      input.addEventListener('blur', () => this.validateIndianDateField(input));
+    });
+  },
+
   escapeJsString(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -373,6 +775,16 @@ const app = {
         dropdown.classList.remove('open');
       }
     });
+
+    // Auto-enhance any dynamically added date inputs into Indian format (dd/mm/yyyy)
+    try {
+      const dateObserver = new MutationObserver(() => {
+        this.enhanceAllDateInputs(document.body);
+      });
+      dateObserver.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {
+      console.warn('MutationObserver initialization skipped:', e);
+    }
   },
 
   quickFill(email, password) {
@@ -7662,8 +8074,11 @@ const app = {
 
           <div class="form-grid">
             <div class="form-group">
-              <label>Date of Birth</label>
-              <input type="date" id="edit-stu-dob" class="form-input" style="width: 100%;" value="${s.date_of_birth || s.dob || ''}">
+              <label>Date of Birth (DD/MM/YYYY)</label>
+              ${this.renderIndianDateInput({
+                id: 'edit-stu-dob',
+                value: s.date_of_birth || s.dob || ''
+              })}
             </div>
             <div class="form-group">
               <label>Gender</label>
@@ -7736,7 +8151,7 @@ const app = {
     const last_name = document.getElementById('edit-stu-last-name')?.value?.trim();
     const phone = document.getElementById('edit-stu-phone')?.value?.trim();
     const email = document.getElementById('edit-stu-email')?.value?.trim();
-    const date_of_birth = document.getElementById('edit-stu-dob')?.value;
+    const date_of_birth = this.normalizeDateToIso(document.getElementById('edit-stu-dob')?.value);
     const gender = document.getElementById('edit-stu-gender')?.value;
     const guardian_name = document.getElementById('edit-stu-guardian')?.value?.trim();
     const branch_id = document.getElementById('edit-stu-branch')?.value;
@@ -7973,8 +8388,11 @@ const app = {
               <input type="text" id="stu-guardian" class="form-input" style="width: 100%;" value="${pending ? pending.guardian_name : ''}">
             </div>
             <div class="form-group">
-              <label>Date of Birth</label>
-              <input type="date" id="stu-dob" class="form-input" style="width: 100%;" value="${pending ? pending.date_of_birth : ''}">
+              <label>Date of Birth (DD/MM/YYYY)</label>
+              ${this.renderIndianDateInput({
+                id: 'stu-dob',
+                value: pending ? pending.date_of_birth : ''
+              })}
             </div>
           </div>
           <div class="form-grid">
@@ -8029,7 +8447,7 @@ const app = {
     const email = document.getElementById('stu-email').value.trim();
     const phone = document.getElementById('stu-phone').value.trim();
     const guardian_name = document.getElementById('stu-guardian').value.trim();
-    const date_of_birth = document.getElementById('stu-dob').value;
+    const date_of_birth = this.normalizeDateToIso(document.getElementById('stu-dob').value);
     const branch_id = document.getElementById('stu-branch') ? document.getElementById('stu-branch').value : null;
     const batch_id = document.getElementById('stu-batch') ? document.getElementById('stu-batch').value : null;
 
@@ -21408,8 +21826,11 @@ const app = {
               <input type="email" id="edit-inq-email" class="form-input" style="width: 100%;" value="${this.escapeHtml(inq.email || '')}">
             </div>
             <div class="form-group">
-              <label>Date of Birth</label>
-              <input type="date" id="edit-inq-dob" class="form-input" style="width: 100%;" value="${inq.date_of_birth || inq.dob || ''}">
+              <label>Date of Birth (DD/MM/YYYY)</label>
+              ${this.renderIndianDateInput({
+                id: 'edit-inq-dob',
+                value: inq.date_of_birth || inq.dob || ''
+              })}
             </div>
             <div class="form-group">
               <label>Status / Lifecycle Stage</label>
@@ -21446,7 +21867,7 @@ const app = {
     const guardian_name = document.getElementById('edit-inq-guardian-name')?.value?.trim();
     const phone = document.getElementById('edit-inq-phone')?.value?.trim();
     const email = document.getElementById('edit-inq-email')?.value?.trim();
-    const date_of_birth = document.getElementById('edit-inq-dob')?.value || null;
+    const date_of_birth = this.normalizeDateToIso(document.getElementById('edit-inq-dob')?.value) || null;
     const status = document.getElementById('edit-inq-status')?.value;
     const next_followup_date = document.getElementById('edit-inq-followup')?.value;
     const notes = document.getElementById('edit-inq-notes')?.value?.trim();
@@ -21542,8 +21963,10 @@ const app = {
             </select>
           </div>
           <div class="form-group">
-            <label>Date of Birth</label>
-            <input type="date" id="inq-dob" class="form-input">
+            <label>Date of Birth (DD/MM/YYYY)</label>
+            ${this.renderIndianDateInput({
+              id: 'inq-dob'
+            })}
           </div>
           <div class="form-group">
             <label>Preferred Time Slot</label>
@@ -21609,8 +22032,8 @@ const app = {
       email: document.getElementById('inq-email')?.value?.trim() || null,
       sport_id: Number(sport_id),
       branch_id: document.getElementById('inq-branch-id')?.value ? Number(document.getElementById('inq-branch-id').value) : null,
-      date_of_birth: document.getElementById('inq-dob')?.value || null,
-      dob: document.getElementById('inq-dob')?.value || null,
+      date_of_birth: this.normalizeDateToIso(document.getElementById('inq-dob')?.value) || null,
+      dob: this.normalizeDateToIso(document.getElementById('inq-dob')?.value) || null,
       preferred_timing: document.getElementById('inq-preferred-timing')?.value?.trim() || null,
       notes: document.getElementById('inq-notes')?.value?.trim() || null,
       source: 'walk-in',
@@ -22141,8 +22564,13 @@ const app = {
                 <span style="font-size: 11px; color: var(--text-muted);"><i class="fa-solid fa-lock"></i> Auto-assigned permanent student registration number</span>
               </div>
               <div class="form-group">
-                <label>Date of Birth *</label>
-                <input type="date" id="wiz-dob" class="form-input" required value="${d.date_of_birth || ''}" oninput="app.clearWizardFieldError('wiz-dob')">
+                <label>Date of Birth * (DD/MM/YYYY)</label>
+                ${this.renderIndianDateInput({
+                  id: 'wiz-dob',
+                  value: d.date_of_birth || '',
+                  required: true,
+                  oninput: "app.clearWizardFieldError('wiz-dob')"
+                })}
               </div>
               <div class="form-group">
                 <label>Gender</label>
@@ -22336,8 +22764,13 @@ const app = {
             </div>
 
             <div class="form-group">
-              <label>Admission / Joining Date *</label>
-              <input type="date" id="wiz-start-date" class="form-input" required value="${d.start_date || new Date().toISOString().split('T')[0]}" oninput="app.clearWizardFieldError('wiz-start-date')">
+              <label>Admission / Joining Date * (DD/MM/YYYY)</label>
+              ${this.renderIndianDateInput({
+                id: 'wiz-start-date',
+                value: d.start_date || new Date().toISOString().split('T')[0],
+                required: true,
+                oninput: "app.clearWizardFieldError('wiz-start-date')"
+              })}
               <span style="font-size: 11px; color: var(--text-muted);">Fee period will be computed from this actual joining date.</span>
             </div>
           </div>
@@ -22447,7 +22880,7 @@ const app = {
     if (document.getElementById('wiz-first-name')) s.formData.first_name = getVal('wiz-first-name');
     if (document.getElementById('wiz-last-name')) s.formData.last_name = getVal('wiz-last-name');
     if (document.getElementById('wiz-admission-number')) s.formData.admission_number = getVal('wiz-admission-number');
-    if (document.getElementById('wiz-dob')) s.formData.date_of_birth = document.getElementById('wiz-dob').value;
+    if (document.getElementById('wiz-dob')) s.formData.date_of_birth = this.normalizeDateToIso(document.getElementById('wiz-dob').value);
     if (document.getElementById('wiz-gender')) s.formData.gender = getVal('wiz-gender');
     if (document.getElementById('wiz-blood-group')) s.formData.blood_group = getVal('wiz-blood-group');
     if (document.getElementById('wiz-nationality')) s.formData.nationality = getVal('wiz-nationality') || 'Indian';
@@ -22496,7 +22929,7 @@ const app = {
       const btVal = getVal('wiz-batch-id');
       s.formData.batch_id = btVal ? Number(btVal) : null;
     }
-    if (document.getElementById('wiz-start-date')) s.formData.start_date = document.getElementById('wiz-start-date').value;
+    if (document.getElementById('wiz-start-date')) s.formData.start_date = this.normalizeDateToIso(document.getElementById('wiz-start-date').value);
 
     // Step 7
     if (document.getElementById('wiz-admission-fee')) s.formData.admission_fee = getNum('wiz-admission-fee', 0);
@@ -22549,8 +22982,9 @@ const app = {
         isValid = false;
         if (!firstInvalidEl) firstInvalidEl = first;
       }
-      if (!dob || !dob.value) {
-        this.setWizardFieldError('wiz-dob', 'Date of birth is required for enrollment age category');
+      const dobVal = this.normalizeDateToIso(dob?.value || '');
+      if (!dob || !dobVal || dobVal.length < 10) {
+        this.setWizardFieldError('wiz-dob', 'Valid Date of Birth in DD/MM/YYYY format is required');
         isValid = false;
         if (!firstInvalidEl) firstInvalidEl = dob;
       }
@@ -22589,8 +23023,9 @@ const app = {
         isValid = false;
         if (!firstInvalidEl) firstInvalidEl = branch;
       }
-      if (!startDate || !startDate.value) {
-        this.setWizardFieldError('wiz-start-date', 'Admission / joining date is required');
+      const startVal = this.normalizeDateToIso(startDate?.value || '');
+      if (!startDate || !startVal || startVal.length < 10) {
+        this.setWizardFieldError('wiz-start-date', 'Valid admission / joining date in DD/MM/YYYY format is required');
         isValid = false;
         if (!firstInvalidEl) firstInvalidEl = startDate;
       }
@@ -23011,6 +23446,10 @@ const app = {
     if (overlay) {
       overlay.classList.add('active');
     }
+
+    setTimeout(() => {
+      this.enhanceAllDateInputs(dialog || bodyEl || document);
+    }, 0);
   },
 
   showModal(title, bodyHtml, footerHtml = '', maxWidth = null) {
@@ -23018,6 +23457,9 @@ const app = {
   },
 
   closeModal() {
+    const activeCal = document.getElementById('active-indian-calendar-popover');
+    if (activeCal) activeCal.remove();
+
     const overlay = document.getElementById('modal-container');
     const wrapper = document.querySelector('.modal-wrapper');
     const dialog = document.getElementById('modal-dialog') || document.querySelector('.modal-container');

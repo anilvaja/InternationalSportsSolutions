@@ -21,6 +21,7 @@ export const academyRouter = express.Router();
 
 // Exported pure helpers for testing and reusability
 export {
+  normalizeDate,
   getDaysUntilBirthday,
   fetchUpcomingBirthdays,
   fetchInquiryPipeline,
@@ -207,6 +208,26 @@ function fetchUpcomingFees(db, branchIds = []) {
   } catch (err) {
     return [];
   }
+}
+
+function normalizeDate(val) {
+  if (!val) return null;
+  const str = String(val).trim();
+  if (!str) return null;
+  // Handle DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if (ddmmyyyy) {
+    const day = ddmmyyyy[1].padStart(2, '0');
+    const month = ddmmyyyy[2].padStart(2, '0');
+    const year = ddmmyyyy[3];
+    return `${year}-${month}-${day}`;
+  }
+  // Handle YYYY-MM-DD
+  const yyyymmdd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+  if (yyyymmdd) {
+    return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
+  }
+  return str;
 }
 
 function getDaysUntilBirthday(dobStr, refDate = new Date()) {
@@ -1338,7 +1359,7 @@ academyRouter.post('/students', (req, res) => {
       email ? email.trim() : null,
       passwordHash,
       phone || null,
-      date_of_birth || null,
+      normalizeDate(date_of_birth) || null,
       gender || null,
       guardian_name || null,
       guardian_phone || null,
@@ -2113,7 +2134,7 @@ academyRouter.put('/students/:id', (req, res) => {
       last_name || null,
       email || null,
       phone || null,
-      date_of_birth || null,
+      (date_of_birth !== undefined ? (normalizeDate(date_of_birth) || null) : null),
       gender || null,
       guardian_name || null,
       guardian_phone || null,
@@ -7985,7 +8006,8 @@ academyRouter.put('/inquiries/:id', (req, res) => {
     const db = req.tenantDb;
     const inquiryId = Number(req.params.id);
     const { student_name, guardian_name, phone, email, date_of_birth, dob, gender, status, lost_reason, notes, next_followup_date, assigned_to_user_id, preferred_batch_id, branch_id, sport_id } = req.body;
-    const resolvedDob = date_of_birth || dob || null;
+    const resolvedDob = (date_of_birth || dob) ? (normalizeDate(date_of_birth || dob) || null) : null;
+    const resolvedFollowup = next_followup_date ? (normalizeDate(next_followup_date) || null) : null;
 
     db.prepare(`
       UPDATE inquiries
@@ -8015,7 +8037,7 @@ academyRouter.put('/inquiries/:id', (req, res) => {
       status || null,
       lost_reason || null,
       notes || null,
-      next_followup_date || null,
+      resolvedFollowup,
       assigned_to_user_id ? Number(assigned_to_user_id) : null,
       preferred_batch_id ? Number(preferred_batch_id) : null,
       branch_id ? Number(branch_id) : null,

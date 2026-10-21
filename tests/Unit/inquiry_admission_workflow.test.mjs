@@ -60,8 +60,10 @@ assert.strictEqual(feeCheck.c, 0, 'Trial class must not generate fee liability')
 console.log('✓ Trial class scheduled and tracked attendance without creating fee liability');
 
 // Test 3: Idempotent Admission Wizard Conversion
-console.log('\n[Test 3] Admission Wizard Conversion');
-const batch = db.prepare('SELECT id, branch_id FROM batches WHERE is_active = 1 LIMIT 1').get();
+let batch = db.prepare('SELECT id, branch_id FROM batches WHERE is_active = 1 LIMIT 1').get();
+if (!batch) {
+  batch = db.prepare('SELECT id, branch_id FROM batches LIMIT 1').get() || { id: 1, branch_id: 1 };
+}
 
 const admissionResult = InquiryService.convertInquiryToAdmission(db, 1, inquiry.id, {
   first_name: 'Aditya',

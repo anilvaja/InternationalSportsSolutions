@@ -11,6 +11,28 @@ export class InquiryService {
   }
 
   /**
+   * Normalize date string to ISO YYYY-MM-DD
+   * Supports DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, and YYYY-MM-DD
+   */
+  static normalizeDate(val) {
+    if (!val) return null;
+    const str = String(val).trim();
+    if (!str) return null;
+    const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+    if (ddmmyyyy) {
+      const day = ddmmyyyy[1].padStart(2, '0');
+      const month = ddmmyyyy[2].padStart(2, '0');
+      const year = ddmmyyyy[3];
+      return `${year}-${month}-${day}`;
+    }
+    const yyyymmdd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+    if (yyyymmdd) {
+      return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
+    }
+    return str;
+  }
+
+  /**
    * Check for potential duplicate inquiries or existing students
    */
   static checkDuplicates(db, { phone, student_name, current_inquiry_id = null }) {
@@ -180,7 +202,8 @@ export class InquiryService {
       throw new Error('Student name and contact phone number are required');
     }
 
-    const resolvedDob = date_of_birth || data.dob || null;
+    const resolvedDob = this.normalizeDate(date_of_birth || data.dob || null);
+    const resolvedFollowup = this.normalizeDate(next_followup_date) || null;
 
     const ins = db.prepare(`
       INSERT INTO inquiries (
@@ -205,7 +228,7 @@ export class InquiryService {
       source,
       notes || null,
       assigned_to_user_id ? Number(assigned_to_user_id) : null,
-      next_followup_date || null,
+      resolvedFollowup,
       currentUserId
     );
 
@@ -427,7 +450,7 @@ export class InquiryService {
     // Check student quota limit
     QuotaService.assertCanCreate(academyId, 'students', 1);
 
-    const resolvedDob = date_of_birth || dob || null;
+    const resolvedDob = this.normalizeDate(date_of_birth || dob || null);
     const resolvedAddress = address || current_address || null;
     const resolvedPostalCode = postal_code || pincode || null;
     const resolvedSchool = school_college_name || school_name || null;
@@ -436,7 +459,7 @@ export class InquiryService {
     const resolvedMedInstructions = emergency_medical_instructions || regular_medications || medical_conditions || null;
     const resolvedMedicalConsent = (medical_consent || emergency_medical_consent) ? 1 : 0;
     const resolvedPhotoPermission = (photo_video_permission || photo_media_consent) ? 1 : 0;
-    const effectiveJoiningDate = joining_date || start_date || new Date().toISOString().split('T')[0];
+    const effectiveJoiningDate = this.normalizeDate(joining_date || start_date) || new Date().toISOString().split('T')[0];
     const resolvedJoiningFee = Number(joining_fee_amount || admission_fee || 0);
     const resolvedDiscount = Number(discount_percent || discount_percentage || 0);
     const resolvedPaymentMethod = payment_method || payment_mode || 'cash';

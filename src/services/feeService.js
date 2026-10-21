@@ -66,7 +66,13 @@ export class FeeService {
       throw new Error('monthsCount must be a positive integer');
     }
 
-    const parts = startDateStr.split('-').map(Number);
+    let normalizedStr = startDateStr.trim();
+    const ddmmyyyy = normalizedStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+    if (ddmmyyyy) {
+      normalizedStr = `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`;
+    }
+
+    const parts = normalizedStr.split('-').map(Number);
     if (parts.length !== 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
       throw new Error(`Invalid date format: ${startDateStr}. Expected YYYY-MM-DD`);
     }
