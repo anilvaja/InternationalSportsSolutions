@@ -16680,43 +16680,112 @@ const app = {
     `;
   },
 
-  buildPermissionsCheckboxMatrix(selectedPermissions = []) {
+  buildPermissionsCheckboxMatrix(selectedPermissions = [], inputName = 'role_perms') {
     const isAll = selectedPermissions.includes('all');
-    return this.currentPermissionsCatalog.map((cat, idx) => {
-      return `
-        <div style="margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; background: var(--bg-surface);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 6px;">
-            <div style="font-weight: 700; font-size: 13px; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
-              <i class="fa-solid ${cat.icon || 'fa-check'}" style="color: var(--primary);"></i>
-              ${cat.category}
-            </div>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" class="btn btn-secondary btn-xs" onclick="app.togglePermissionCategory(${idx}, true)" style="font-size: 10px; padding: 2px 6px;">Select All</button>
-              <button type="button" class="btn btn-secondary btn-xs" onclick="app.togglePermissionCategory(${idx}, false)" style="font-size: 10px; padding: 2px 6px;">Clear</button>
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px;">
-            ${cat.permissions.map(p => {
-              const checked = isAll || selectedPermissions.includes(p.key);
-              return `
-                <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; cursor: pointer; padding: 4px; border-radius: 4px;">
-                  <input type="checkbox" name="role_perms" value="${p.key}" class="perm-cat-${idx}" ${checked ? 'checked' : ''} style="margin-top: 2px;">
-                  <div>
-                    <strong style="color: var(--text-heading);">${p.label}</strong>
-                    <div style="font-size: 11px; color: var(--text-dim);">${p.desc}</div>
-                  </div>
-                </label>
-              `;
-            }).join('')}
-          </div>
+    const catalog = this.currentPermissionsCatalog || [];
+
+    return `
+      <!-- Toolbar with Global Actions & Filter Search -->
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px;">
+        <div style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 320px;">
+          <i class="fa-solid fa-magnifying-glass" style="color: var(--text-dim); font-size: 12px;"></i>
+          <input type="text" class="form-input" placeholder="Search permissions or modules..." 
+            oninput="app.filterPermissionsMatrix(this.value, '${inputName}')" 
+            style="padding: 4px 8px; font-size: 12px; height: 30px; width: 100%;">
         </div>
-      `;
-    }).join('');
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button type="button" class="btn btn-secondary btn-xs" onclick="app.toggleAllPermissionsMatrix('${inputName}', true)">
+            <i class="fa-solid fa-check-double"></i> Select All
+          </button>
+          <button type="button" class="btn btn-secondary btn-xs" onclick="app.toggleAllPermissionsMatrix('${inputName}', false)">
+            <i class="fa-solid fa-xmark"></i> Clear All
+          </button>
+        </div>
+      </div>
+
+      <!-- Grouped Permission Categories Matching Side Menu & Modules -->
+      <div class="permissions-groups-container" style="display: flex; flex-direction: column; gap: 14px;">
+        ${catalog.map((cat, idx) => {
+          return `
+            <div class="perm-category-card" data-cat-idx="${idx}" style="border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-surface); overflow: hidden; transition: border-color 0.15s ease;">
+              <!-- Group Header -->
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: rgba(255, 255, 255, 0.025); border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <div style="width: 28px; height: 28px; border-radius: 6px; background: rgba(59, 130, 246, 0.1); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 13px;">
+                    <i class="fa-solid ${cat.icon || 'fa-folder'}"></i>
+                  </div>
+                  <div>
+                    <strong style="color: var(--text-heading); font-size: 13px;">${cat.category}</strong>
+                    ${cat.description ? `<span style="font-size: 11px; color: var(--text-muted); margin-left: 8px;">&bull; ${cat.description}</span>` : ''}
+                  </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="badge badge-secondary" style="font-size: 10px; font-weight: 600; padding: 2px 7px;">
+                    ${cat.permissions ? cat.permissions.length : 0} actions
+                  </span>
+                  <div style="display: flex; gap: 4px;">
+                    <button type="button" class="btn btn-secondary btn-xs" onclick="app.togglePermissionCategory(${idx}, true, '${inputName}')" style="font-size: 10px; padding: 2px 6px;">Select All</button>
+                    <button type="button" class="btn btn-secondary btn-xs" onclick="app.togglePermissionCategory(${idx}, false, '${inputName}')" style="font-size: 10px; padding: 2px 6px;">Clear</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Group Actions Grid -->
+              <div style="padding: 12px 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;">
+                ${(cat.permissions || []).map(p => {
+                  const checked = isAll || selectedPermissions.includes(p.key);
+                  return `
+                    <label class="perm-item-label" data-perm-key="${p.key}" data-perm-label="${(p.label || '').toLowerCase()}" data-perm-desc="${(p.desc || '').toLowerCase()}"
+                      style="display: flex; align-items: flex-start; gap: 10px; font-size: 12px; cursor: pointer; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: rgba(255,255,255,0.01); transition: background 0.15s ease, border-color 0.15s ease;">
+                      <input type="checkbox" name="${inputName}" value="${p.key}" class="perm-cat-${idx}-${inputName}" ${checked ? 'checked' : ''} style="margin-top: 2px; accent-color: var(--primary);">
+                      <div style="flex: 1; min-width: 0;">
+                        <div style="font-weight: 600; color: var(--text-heading); line-height: 1.3;">${p.label}</div>
+                        <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px; line-height: 1.3;">${p.desc || p.key}</div>
+                      </div>
+                    </label>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
   },
 
-  togglePermissionCategory(categoryIndex, selectAll) {
-    const checkboxes = document.querySelectorAll(`.perm-cat-${categoryIndex}`);
-    checkboxes.forEach(cb => cb.checked = selectAll);
+  togglePermissionCategory(categoryIndex, selectAll, inputName = 'role_perms') {
+    const checkboxes = document.querySelectorAll(`.perm-cat-${categoryIndex}-${inputName}, .perm-cat-${categoryIndex}`);
+    checkboxes.forEach(cb => {
+      cb.checked = selectAll;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  },
+
+  toggleAllPermissionsMatrix(inputName, selectAll) {
+    const checkboxes = document.querySelectorAll(`input[name="${inputName}"]`);
+    checkboxes.forEach(cb => {
+      cb.checked = selectAll;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  },
+
+  filterPermissionsMatrix(searchQuery, inputName) {
+    const q = (searchQuery || '').trim().toLowerCase();
+    const categories = document.querySelectorAll('.perm-category-card');
+
+    categories.forEach(cat => {
+      const items = cat.querySelectorAll('.perm-item-label');
+      let visibleCount = 0;
+      items.forEach(item => {
+        const key = item.getAttribute('data-perm-key') || '';
+        const label = item.getAttribute('data-perm-label') || '';
+        const desc = item.getAttribute('data-perm-desc') || '';
+        const matches = !q || key.includes(q) || label.includes(q) || desc.includes(q);
+        item.style.display = matches ? 'flex' : 'none';
+        if (matches) visibleCount++;
+      });
+      cat.style.display = visibleCount > 0 ? 'block' : 'none';
+    });
   },
 
   showCreateRoleModal() {
@@ -16952,24 +17021,17 @@ const app = {
           </div>
 
           <div style="margin-bottom: 12px;">
-            <label style="font-weight: 700; margin: 0;">Specific Custom Permission Overrides (Optional)</label>
-            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 10px;">
-              Grant specific extra capabilities to this employee beyond their base role's permissions.
+            <label style="font-weight: 700; margin: 0; font-size: 14px; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-shield-halved" style="color: var(--primary);"></i>
+              Specific Custom Permission Overrides (Optional)
+            </label>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 3px 0 10px;">
+              Grant specific extra capabilities to this employee beyond their base role's permissions. Each permission is organized into its accurate resource group matching the system side menu.
             </p>
           </div>
 
-          <div style="max-height: 280px; overflow-y: auto; padding-right: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; background: var(--bg-surface);">
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;">
-              ${this.currentPermissionsCatalog.flatMap(cat => cat.permissions).map(p => {
-                const checked = customPerms.includes(p.key);
-                return `
-                  <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
-                    <input type="checkbox" name="custom_perms" value="${p.key}" ${checked ? 'checked' : ''}>
-                    <span>${p.label}</span>
-                  </label>
-                `;
-              }).join('')}
-            </div>
+          <div style="max-height: 440px; overflow-y: auto; padding-right: 6px;">
+            ${this.buildPermissionsCheckboxMatrix(customPerms, 'custom_perms')}
           </div>
         </form>
       `,
@@ -16979,7 +17041,7 @@ const app = {
           <i class="fa-solid fa-user-check"></i> Save Role Assignment
         </button>
       `,
-      '840px'
+      '960px'
     );
   },
 
