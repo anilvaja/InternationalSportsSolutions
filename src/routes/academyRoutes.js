@@ -6085,13 +6085,15 @@ academyRouter.get('/settings/profile', (req, res) => {
     } catch (e) {}
 
     const logo_url = tenantSettings.logo_url || (academy && academy.logo_url) || null;
+    const profileData = {
+      ...academy,
+      logo_url,
+    };
 
     res.json({
       success: true,
-      academy: {
-        ...academy,
-        logo_url,
-      },
+      profile: profileData,
+      academy: profileData,
       tenantSettings,
     });
   } catch (err) {
@@ -6211,12 +6213,26 @@ academyRouter.put('/settings/profile', (req, res) => {
       contact_phone,
       address,
       city,
+      country,
       legal_business_name,
       gst_number,
       gst_rate,
       hsn_sac_code,
       gst_state_code,
+      is_gst_registered,
     } = req.body;
+
+    const trimmedName = name ? name.trim() : null;
+    const trimmedEmail = contact_email ? contact_email.trim() : null;
+    const trimmedPhone = contact_phone ? contact_phone.trim() : null;
+    const trimmedAddress = address !== undefined ? (address ? address.trim() : '') : null;
+    const trimmedCity = city ? city.trim() : null;
+    const trimmedCountry = country ? country.trim() : 'India';
+    const trimmedLegalName = legal_business_name !== undefined ? (legal_business_name ? legal_business_name.trim() : '') : null;
+    const trimmedGst = gst_number !== undefined ? (gst_number ? gst_number.trim().toUpperCase() : '') : null;
+    const parsedGstRate = gst_rate !== undefined ? Number(gst_rate) : null;
+    const trimmedHsn = hsn_sac_code !== undefined ? (hsn_sac_code ? hsn_sac_code.trim() : '999293') : null;
+    const parsedIsGst = is_gst_registered !== undefined ? (is_gst_registered ? 1 : 0) : (trimmedGst && trimmedGst.length >= 15 ? 1 : 0);
 
     const centralDb = getCentralDb();
     centralDb.prepare(`
@@ -6226,30 +6242,68 @@ academyRouter.put('/settings/profile', (req, res) => {
         contact_phone = COALESCE(?, contact_phone),
         address = COALESCE(?, address),
         city = COALESCE(?, city),
+        country = COALESCE(?, country),
         legal_business_name = COALESCE(?, legal_business_name),
         gst_number = COALESCE(?, gst_number),
         gst_rate = COALESCE(?, gst_rate),
         hsn_sac_code = COALESCE(?, hsn_sac_code),
         gst_state_code = COALESCE(?, gst_state_code),
+        is_gst_registered = COALESCE(?, is_gst_registered),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
-      name ? name.trim() : null,
-      contact_email ? contact_email.trim() : null,
-      contact_phone ? contact_phone.trim() : null,
-      address ? address.trim() : null,
-      city ? city.trim() : null,
-      legal_business_name ? legal_business_name.trim() : null,
-      gst_number ? gst_number.trim().toUpperCase() : null,
-      gst_rate !== undefined ? Number(gst_rate) : null,
-      hsn_sac_code ? hsn_sac_code.trim() : null,
+      trimmedName,
+      trimmedEmail,
+      trimmedPhone,
+      trimmedAddress,
+      trimmedCity,
+      trimmedCountry,
+      trimmedLegalName,
+      trimmedGst,
+      parsedGstRate,
+      trimmedHsn,
       gst_state_code ? gst_state_code.trim() : null,
+      parsedIsGst,
       req.academy.id
     );
+
+    // Sync into tenant_settings for tenant-level queries
+    const tenantDb = req.tenantDb;
+    const settingsToSync = {
+      academy_name: trimmedName,
+      contact_email: trimmedEmail,
+      contact_phone: trimmedPhone,
+      address: trimmedAddress,
+      city: trimmedCity,
+      legal_business_name: trimmedLegalName,
+      gst_number: trimmedGst,
+      gst_rate: parsedGstRate !== null ? String(parsedGstRate) : null,
+      hsn_sac_code: trimmedHsn,
+      is_gst_registered: String(parsedIsGst),
+    };
+    for (const [k, v] of Object.entries(settingsToSync)) {
+      if (v !== null && v !== undefined) {
+        tenantDb.prepare(`
+          INSERT INTO tenant_settings (key, value, updated_at)
+          VALUES (?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+        `).run(k, String(v));
+      }
+    }
+
+    const updatedAcademy = centralDb.prepare(`
+      SELECT id, name, slug, logo_url, contact_email, contact_phone,
+             address, city, country, plan, status, created_at,
+             is_gst_registered, gst_number, gst_rate, legal_business_name,
+             hsn_sac_code, gst_state_code
+      FROM academies WHERE id = ?
+    `).get(req.academy.id);
 
     res.json({
       success: true,
       message: 'Academy profile updated successfully!',
+      profile: updatedAcademy,
+      academy: updatedAcademy,
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

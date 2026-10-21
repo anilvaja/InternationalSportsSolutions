@@ -10731,16 +10731,28 @@ const app = {
     doc.setFillColor(37, 99, 235); // Sapphire Blue
     doc.rect(0, 4, 210, 36, 'F');
 
-    // Circular Logo Emblem Badge
+    // Circular Logo Emblem Badge or Official Logo
     doc.setFillColor(255, 255, 255);
-    doc.roundedRect(14, 10, 24, 24, 4, 4, 'F');
-    doc.setFillColor(37, 99, 235);
-    doc.circle(26, 22, 9, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    const brandInitials = academyName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() || 'ISS';
-    doc.text(brandInitials, 26, 25.5, { align: 'center' });
+    doc.roundedRect(14, 8, 26, 26, 3, 3, 'F');
+    const brandLogoImg = document.querySelector('.brand-logo-img') || document.getElementById('settings-branding-logo-img');
+    let logoDrawn = false;
+    if (brandLogoImg && brandLogoImg.complete && brandLogoImg.naturalWidth > 0) {
+      try {
+        doc.addImage(brandLogoImg, 'PNG', 15, 9, 24, 24);
+        logoDrawn = true;
+      } catch (e) {
+        logoDrawn = false;
+      }
+    }
+    if (!logoDrawn) {
+      doc.setFillColor(37, 99, 235);
+      doc.circle(27, 21, 9, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      const brandInitials = academyName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() || 'ISS';
+      doc.text(brandInitials, 27, 24.5, { align: 'center' });
+    }
 
     // Academy Name & Subheading
     doc.setTextColor(255, 255, 255);
@@ -10949,17 +10961,24 @@ const app = {
   printFeeReceipt(fee) {
     const academyName = (fee.academy && fee.academy.name) || this.user.academyName || 'Sports Solutions Academy';
     const academyCity = (fee.academy && fee.academy.city) || 'Vadodara';
+    const academyAddress = (fee.academy && fee.academy.address) || '';
+    const academyPhone = (fee.academy && fee.academy.contact_phone) || '';
+    const academyEmail = (fee.academy && fee.academy.contact_email) || '';
+    const academyGst = (fee.academy && fee.academy.gst_number) || '';
+    const logoUrl = (fee.academy && fee.academy.logo_url) || this.user.academyLogo || '';
+
     const baseFee = Number(fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || fee.amount || 0));
     const discount = Number(fee.discount_amount || 0);
     const discountPercentage = Number(fee.discount_percentage || 0);
     const discountReason = fee.discount_reason || null;
     const paid = Number(fee.paid_amount || fee.amount || 0);
     const balance = Number(fee.balance_amount !== undefined ? fee.balance_amount : 0);
+    const receiptNumber = fee.receipt_number || fee.invoice_number || ('REC-' + (fee.id || Date.now().toString().slice(-4)));
     const periodText = (fee.period_start && fee.period_end)
       ? `${fee.period_start} to ${fee.period_end} (${fee.months_count || 1} month(s))`
       : 'Standard Cycle';
 
-    const printWindow = window.open('', '_blank', 'width=850,height=750');
+    const printWindow = window.open('', '_blank', 'width=900,height=800');
     if (!printWindow) {
       this.showToast('Popup blocker prevented print window. Please allow popups.', 'warning');
       return;
@@ -10967,123 +10986,351 @@ const app = {
 
     printWindow.document.write(`
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
       <head>
-        <title>Receipt - ${fee.receipt_number || fee.invoice_number || 'fee'}</title>
+        <meta charset="UTF-8">
+        <title>Receipt - ${receiptNumber}</title>
         <style>
-          * { box-sizing: border-box; }
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; background: #fff; margin: 0; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #2563eb; padding-bottom: 20px; margin-bottom: 24px; }
-          .brand-badge { display: inline-block; background: #2563eb; color: #fff; font-weight: 800; font-size: 13px; padding: 4px 8px; border-radius: 4px; margin-bottom: 6px; }
-          .academy-name { font-size: 24px; font-weight: 800; color: #1e293b; margin: 0; letter-spacing: -0.5px; }
-          .receipt-badge { font-size: 13px; font-weight: 700; color: #2563eb; text-transform: uppercase; margin-top: 4px; }
-          .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
-          .meta-box { background: #f8fafc; padding: 16px; border-radius: 8px; font-size: 13px; border: 1px solid #e2e8f0; }
-          .meta-box h4 { margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
-          .table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-          .table th { background: #0f172a; color: #ffffff; padding: 10px 12px; text-align: left; font-size: 12px; text-transform: uppercase; }
-          .table td { padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
-          .totals-box { margin-left: auto; width: 320px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; font-size: 13px; margin-bottom: 24px; }
-          .totals-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
-          .totals-row.paid { font-weight: 700; color: #16a34a; font-size: 15px; border-top: 1px dashed #cbd5e1; padding-top: 8px; }
-          .footer { margin-top: 40px; border-top: 1px dashed #cbd5e1; padding-top: 16px; font-size: 12px; color: #64748b; display: flex; justify-content: space-between; }
+          @page {
+            size: A4 portrait;
+            margin: 12mm 15mm;
+          }
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #0f172a;
+            background: #f8fafc;
+            margin: 0;
+            padding: 32px 20px;
+            -webkit-font-smoothing: antialiased;
+          }
+          .print-controls {
+            max-width: 820px;
+            margin: 0 auto 16px auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .print-btn {
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            padding: 9px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+          }
+          .print-btn:hover {
+            background: #1d4ed8;
+          }
+          .receipt-container {
+            max-width: 820px;
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 38px 44px;
+            box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
+          }
+          .receipt-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #2563eb;
+            padding-bottom: 20px;
+            margin-bottom: 24px;
+            gap: 20px;
+          }
+          .brand-info {
+            flex: 1;
+          }
+          .brand-logo-wrap {
+            margin-bottom: 10px;
+          }
+          .receipt-logo-img {
+            max-height: 72px;
+            max-width: 220px;
+            object-fit: contain;
+            display: block;
+          }
+          .academy-name {
+            font-size: 22px;
+            font-weight: 800;
+            color: #0f172a;
+            letter-spacing: -0.3px;
+            margin: 0;
+            line-height: 1.2;
+          }
+          .academy-meta {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 5px;
+            line-height: 1.5;
+          }
+          .receipt-ref-box {
+            text-align: right;
+            min-width: 220px;
+          }
+          .status-badge {
+            display: inline-block;
+            font-weight: 800;
+            font-size: 11px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+          }
+          .status-paid {
+            background: #dcfce7;
+            color: #15803d;
+            border: 1px solid #bbf7d0;
+          }
+          .status-partial {
+            background: #fef3c7;
+            color: #b45309;
+            border: 1px solid #fde68a;
+          }
+          .meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 24px;
+          }
+          .meta-box {
+            background: #f8fafc;
+            padding: 16px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            border: 1px solid #e2e8f0;
+          }
+          .meta-box-label {
+            font-size: 10.5px;
+            text-transform: uppercase;
+            font-weight: 800;
+            color: #64748b;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+          }
+          .meta-box-title {
+            font-size: 16px;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 4px;
+          }
+          .meta-box-row {
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.6;
+          }
+          .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 24px;
+          }
+          .table th {
+            background: #0f172a;
+            color: #ffffff;
+            padding: 11px 14px;
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+          .table td {
+            padding: 13px 14px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 13px;
+          }
+          .totals-wrapper {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 28px;
+          }
+          .totals-box {
+            width: 330px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px 20px;
+            font-size: 13px;
+          }
+          .totals-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 7px;
+            color: #64748b;
+          }
+          .totals-row.paid-highlight {
+            background: #dcfce7;
+            padding: 9px 12px;
+            border-radius: 6px;
+            color: #15803d;
+            font-weight: 800;
+            font-size: 15px;
+            margin: 8px 0;
+          }
+          .receipt-footer {
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 18px;
+            font-size: 11px;
+            color: #64748b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            line-height: 1.4;
+          }
           @media print {
-            body { padding: 0; }
-            button { display: none; }
+            body {
+              background: #ffffff !important;
+              padding: 0 !important;
+              margin: 0 !important;
+            }
+            .print-controls {
+              display: none !important;
+            }
+            .receipt-container {
+              border: none !important;
+              box-shadow: none !important;
+              padding: 0 !important;
+              max-width: 100% !important;
+            }
           }
         </style>
       </head>
       <body>
-        <div style="margin-bottom: 16px;">
-          <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: 600;">Print / Save PDF</button>
-        </div>
-        <div class="header">
-          <div>
-            <div class="brand-badge">OFFICIAL RECEIPT</div>
-            <div class="academy-name">${academyName.toUpperCase()}</div>
-            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">${academyCity}, India &bull; SAC: 999293 (Sports Coaching Services)</div>
-          </div>
-          <div style="text-align: right; font-size: 13px;">
-            <div><strong>Date:</strong> ${fee.payment_date || new Date().toLocaleDateString()}</div>
-            <div><strong>Receipt #:</strong> <span style="color: #2563eb; font-weight: 700;">${fee.receipt_number || '-'}</span></div>
-            <div><strong>Invoice #:</strong> ${fee.invoice_number || '-'}</div>
-          </div>
+        <div class="print-controls">
+          <span style="font-size: 13px; color: #64748b;">Receipt Preview &bull; Ready to print</span>
+          <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
         </div>
 
-        <div class="meta-grid">
-          <div class="meta-box">
-            <h4>Student Information</h4>
-            <div style="font-size: 15px; font-weight: 700; color: #0f172a;">${fee.first_name || ''} ${fee.last_name || ''}</div>
-            <div style="color: #64748b; margin-top: 4px;">Student Code: <strong>${fee.student_code || '-'}</strong></div>
-            ${fee.admission_number ? `<div style="color: #64748b;">Admission No: <strong>${fee.admission_number}</strong></div>` : ''}
-            <div style="color: #64748b;">Branch / Dojo: <strong>${fee.branch_name || 'Main Campus'}</strong></div>
-          </div>
-          <div class="meta-box">
-            <h4>Receipt & Coaching Coverage</h4>
-            <div style="color: #2563eb; font-weight: 700;">Coverage: ${periodText}</div>
-            <div style="color: #64748b; margin-top: 4px;">Payment Mode: <strong>${(fee.payment_mode || 'Cash').toUpperCase()}</strong></div>
-            ${fee.next_installment_date ? `<div style="color: #64748b;">Next Renewal Due: <strong>${fee.next_installment_date}</strong></div>` : ''}
-            <div style="color: #64748b;">Collected by: <strong>${fee.collector_name || 'Finance Desk'}</strong></div>
-          </div>
-        </div>
-
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th style="text-align: right;">Base Fee</th>
-              <th style="text-align: right;">Concession / Discount</th>
-              <th style="text-align: right;">Net Payable</th>
-              <th style="text-align: right;">Amount Paid</th>
-              <th style="text-align: right;">Balance</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>
-                <strong>${fee.title || fee.fee_title || 'Academy Fee'}</strong>
-                <div style="font-size: 11.5px; color: #64748b;">Period: ${periodText}</div>
-              </td>
-              <td style="text-align: right;">INR ${Number(baseFee).toLocaleString()}</td>
-              <td style="text-align: right; color: ${discount > 0 ? '#dc2626' : '#64748b'};">
-                ${discount > 0 ? `-INR ${Number(discount).toLocaleString()} (${discountPercentage}%${discountReason ? ' - ' + discountReason : ''})` : 'None'}
-              </td>
-              <td style="text-align: right; font-weight: 600;">INR ${Number(fee.net_amount || (baseFee - discount)).toLocaleString()}</td>
-              <td style="text-align: right; font-weight: 700; color: #16a34a;">INR ${Number(paid).toLocaleString()}</td>
-              <td style="text-align: right; color: ${balance > 0 ? '#dc2626' : '#64748b'}; font-weight: 600;">INR ${Number(balance).toLocaleString()}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="totals-box">
-          <div class="totals-row">
-            <span>Base Tuition:</span>
-            <span>INR ${Number(baseFee).toLocaleString()}</span>
-          </div>
-          ${discount > 0 ? `
-            <div class="totals-row" style="color: #dc2626;">
-              <span>Discount (${discountPercentage}%):</span>
-              <span>-INR ${Number(discount).toLocaleString()}</span>
+        <div class="receipt-container">
+          <div class="receipt-header">
+            <div class="brand-info">
+              ${logoUrl ? `
+                <div class="brand-logo-wrap">
+                  <img src="${logoUrl}" alt="${academyName}" class="receipt-logo-img">
+                </div>
+              ` : `
+                <div style="display: inline-block; background: #2563eb; color: #fff; font-weight: 800; font-size: 11px; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px;">OFFICIAL RECEIPT</div>
+              `}
+              <div class="academy-name">${academyName.toUpperCase()}</div>
+              <div class="academy-meta">
+                ${academyAddress ? academyAddress + '<br>' : ''}
+                ${academyCity ? academyCity + ', ' : ''}India
+                ${academyPhone ? ' &bull; Tel: ' + academyPhone : ''}
+                ${academyEmail ? ' &bull; ' + academyEmail : ''}
+                <div style="font-weight: 600; color: #475569; margin-top: 3px;">
+                  ${academyGst ? 'GSTIN: ' + academyGst + '  |  ' : ''}SAC: 999293 (Sports Coaching Services)
+                </div>
+              </div>
             </div>
-          ` : ''}
-          <div class="totals-row" style="font-weight: 600;">
-            <span>Net Payable:</span>
-            <span>INR ${Number(fee.net_amount || (baseFee - discount)).toLocaleString()}</span>
+
+            <div class="receipt-ref-box">
+              <span class="status-badge ${balance <= 0 ? 'status-paid' : 'status-partial'}">
+                ${balance <= 0 ? 'PAID & VERIFIED' : 'PARTIALLY PAID'}
+              </span>
+              <div style="font-size: 13px; color: #475569;">
+                <div>Receipt No: <strong style="color: #2563eb; font-family: monospace; font-size: 14px;">${receiptNumber}</strong></div>
+                <div style="margin-top: 3px;">Invoice Ref: <strong style="color: #0f172a; font-family: monospace;">${fee.invoice_number || '-'}</strong></div>
+                <div style="margin-top: 3px;">Payment Date: <strong style="color: #0f172a;">${fee.payment_date || fee.created_at || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong></div>
+              </div>
+            </div>
           </div>
-          <div class="totals-row paid">
-            <span>Amount Paid:</span>
-            <span>INR ${Number(paid).toLocaleString()}</span>
+
+          <div class="meta-grid">
+            <div class="meta-box">
+              <div class="meta-box-label">STUDENT INFORMATION</div>
+              <div class="meta-box-title">${fee.first_name || ''} ${fee.last_name || ''}</div>
+              <div class="meta-box-row">
+                <div>Student Code: <strong>${fee.student_code || '-'}</strong></div>
+                ${fee.admission_number ? `<div>Admission No: <strong>${fee.admission_number}</strong></div>` : ''}
+                <div>Branch / Dojo: <strong>${fee.branch_name || 'Main Dojo'}</strong></div>
+              </div>
+            </div>
+
+            <div class="meta-box">
+              <div class="meta-box-label">COACHING COVERAGE & PAYMENT</div>
+              <div style="font-size: 14px; font-weight: 700; color: #2563eb; margin-bottom: 4px;">Coverage: ${periodText}</div>
+              <div class="meta-box-row">
+                <div>Payment Mode: <strong>${(fee.payment_mode || fee.payment_method || 'Cash / UPI').toUpperCase()}</strong></div>
+                ${fee.next_installment_date ? `<div>Next Renewal Due: <strong style="color: #dc2626;">${fee.next_installment_date}</strong></div>` : ''}
+                <div>Collected by: <strong>${fee.collector_name || 'Accounts Desk'}</strong></div>
+              </div>
+            </div>
           </div>
-          <div class="totals-row" style="color: ${balance > 0 ? '#dc2626' : '#64748b'};">
-            <span>Balance Due:</span>
-            <span>INR ${Number(balance).toLocaleString()}</span>
+
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="border-radius: 6px 0 0 0;">Description</th>
+                <th style="text-align: right;">Base Fee</th>
+                <th style="text-align: right;">Concession / Discount</th>
+                <th style="text-align: right;">Net Payable</th>
+                <th style="text-align: right;">Amount Paid</th>
+                <th style="text-align: right; border-radius: 0 6px 0 0;">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <strong style="color: #0f172a;">${fee.title || fee.fee_title || 'Sports Curriculum & Coaching'}</strong>
+                  <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Coaching Cycle: ${periodText}</div>
+                </td>
+                <td style="text-align: right;">₹${Number(baseFee).toLocaleString('en-IN')}</td>
+                <td style="text-align: right; color: ${discount > 0 ? '#dc2626' : '#64748b'};">
+                  ${discount > 0 ? `-₹${Number(discount).toLocaleString('en-IN')}` : '—'}
+                </td>
+                <td style="text-align: right; font-weight: 600;">₹${Number(fee.net_amount || (baseFee - discount)).toLocaleString('en-IN')}</td>
+                <td style="text-align: right; font-weight: 700; color: #16a34a; font-size: 14px;">₹${Number(paid).toLocaleString('en-IN')}</td>
+                <td style="text-align: right; font-weight: 700; color: ${balance > 0 ? '#dc2626' : '#64748b'}; font-size: 13px;">₹${Number(balance).toLocaleString('en-IN')}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="totals-wrapper">
+            <div class="totals-box">
+              <div class="totals-row">
+                <span>Base Tuition Fee:</span>
+                <span style="color: #0f172a; font-weight: 600;">₹${Number(baseFee).toLocaleString('en-IN')}</span>
+              </div>
+              ${discount > 0 ? `
+                <div class="totals-row" style="color: #dc2626;">
+                  <span>Concession / Discount:</span>
+                  <span>-₹${Number(discount).toLocaleString('en-IN')}</span>
+                </div>
+              ` : ''}
+              <div class="totals-row" style="font-weight: 600; color: #475569;">
+                <span>Net Total Fee:</span>
+                <span style="color: #0f172a;">₹${Number(fee.net_amount || (baseFee - discount)).toLocaleString('en-IN')}</span>
+              </div>
+              <div class="totals-row paid-highlight">
+                <span>Amount Paid:</span>
+                <span>₹${Number(paid).toLocaleString('en-IN')}</span>
+              </div>
+              <div class="totals-row" style="color: ${balance > 0 ? '#dc2626' : '#64748b'}; font-weight: ${balance > 0 ? '700' : 'normal'};">
+                <span>Balance Due:</span>
+                <span>₹${Number(balance).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="receipt-footer">
+            <div>
+              <strong>Verified electronically by Academy Fee Collection Desk &bull; SAC 999293</strong>
+              <div style="margin-top: 3px;">Thank you for your timely payment! Keep this official receipt for belt grading verification and tax records.</div>
+            </div>
+            <div style="text-align: right; font-weight: 600; color: #0f172a;">
+              Generated: ${new Date().toLocaleString('en-IN')}
+            </div>
           </div>
         </div>
 
-        <div class="footer">
-          <div>Verified electronically by Academy Fee Collection Desk &bull; SAC 999293</div>
-          <div style="font-weight: 700; color: #16a34a;">STATUS: ${(fee.status || 'PAID').toUpperCase()}</div>
-        </div>
         <script>
           setTimeout(() => { window.print(); }, 400);
         </script>
@@ -22367,9 +22614,10 @@ const app = {
         return;
       }
 
-      const p = res.profile || {};
+      const p = res.academy || res.profile || {};
       const logoUrl = p.logo_url || this.user.academyLogo || '';
       const academyName = p.name || this.user.academyName || 'My Academy';
+      const isGstActive = Boolean(p.is_gst_registered || (p.gst_number && p.gst_number.trim().length >= 15));
 
       content.innerHTML = `
         <div class="academy-settings-container">
@@ -22379,7 +22627,7 @@ const app = {
               <div class="branding-logo-uploader-grid">
                 <div class="branding-logo-preview-box">
                   ${logoUrl ? `
-                    <img id="settings-branding-logo-img" src="${logoUrl}" alt="${academyName}" class="branding-logo-preview-img">
+                    <img id="settings-branding-logo-img" src="${logoUrl}" alt="${this.escapeHtml(academyName)}" class="branding-logo-preview-img">
                   ` : `
                     <div id="settings-branding-logo-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--text-muted);">
                       <i class="fa-solid fa-building-columns" style="font-size: 28px; margin-bottom: 4px; color: #818cf8;"></i>
@@ -22451,7 +22699,7 @@ const app = {
 
           <!-- Academy Details & Legal Information Card -->
           <div class="content-card">
-            <div class="card-header" style="margin-bottom: 16px;">
+            <div class="card-header" style="margin-bottom: 20px;">
               <div>
                 <h3 class="card-title" style="font-size: 16px;"><i class="fa-solid fa-id-card" style="color: #6366f1;"></i> Academy Organization & Profile</h3>
                 <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
@@ -22461,57 +22709,76 @@ const app = {
             </div>
 
             <form id="academy-profile-form" onsubmit="event.preventDefault(); app.saveAcademyProfile();">
-              <div class="form-grid">
-                <div class="form-group">
-                  <label>Official Academy Name *</label>
-                  <input type="text" id="setting-acad-name" class="form-input" style="width: 100%; font-weight: 600;" value="${p.name || ''}" required placeholder="e.g. Pratik Karate Academy">
-                  <span style="font-size: 11px; color: var(--text-dim); margin-top: 3px; display: block;">Displays prominently across headers, student portals, and invoices.</span>
+              <!-- Section 1: Academy Identity & Communication -->
+              <div style="margin-bottom: 20px;">
+                <div style="font-size: 12px; font-weight: 700; color: #818cf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">
+                  1. Organization & Contact Channels
                 </div>
-                <div class="form-group">
-                  <label>Contact Email *</label>
-                  <input type="email" id="setting-acad-email" class="form-input" style="width: 100%;" value="${p.contact_email || ''}" required placeholder="contact@academy.com">
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Official Academy Name *</label>
+                    <input type="text" id="setting-acad-name" class="form-input" style="width: 100%; font-weight: 600;" value="${this.escapeHtml(p.name || '')}" required placeholder="e.g. Pratik Karate Academy">
+                    <span style="font-size: 11px; color: var(--text-dim); margin-top: 3px; display: block;">Displays prominently across headers, receipts, and portals.</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Contact Email *</label>
+                    <input type="email" id="setting-acad-email" class="form-input" style="width: 100%;" value="${this.escapeHtml(p.contact_email || '')}" required placeholder="contact@academy.com">
+                    <span style="font-size: 11px; color: var(--text-dim); margin-top: 3px; display: block;">Primary administrative email for billing and announcements.</span>
+                  </div>
+                </div>
+
+                <div class="form-grid" style="margin-top: 12px;">
+                  <div class="form-group">
+                    <label>Contact Phone / Mobile</label>
+                    <input type="tel" id="setting-acad-phone" class="form-input" style="width: 100%;" value="${this.escapeHtml(p.contact_phone || '')}" placeholder="+91 98765 43210">
+                  </div>
+                  <div class="form-group">
+                    <label>City / Dojo Headquarters *</label>
+                    <input type="text" id="setting-acad-city" class="form-input" style="width: 100%;" value="${this.escapeHtml(p.city || '')}" required placeholder="e.g. Vadodara, Ahmedabad">
+                  </div>
                 </div>
               </div>
 
-              <div class="form-grid" style="margin-top: 10px;">
-                <div class="form-group">
-                  <label>Contact Phone / Mobile</label>
-                  <input type="tel" id="setting-acad-phone" class="form-input" style="width: 100%;" value="${p.contact_phone || ''}" placeholder="+91 98765 43210">
+              <!-- Section 2: Physical Premises & Address -->
+              <div style="margin-bottom: 20px; padding-top: 14px; border-top: 1px solid var(--border);">
+                <div style="font-size: 12px; font-weight: 700; color: #818cf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">
+                  2. Premises & Dojo Address
                 </div>
-                <div class="form-group">
-                  <label>City *</label>
-                  <input type="text" id="setting-acad-city" class="form-input" style="width: 100%;" value="${p.city || ''}" required placeholder="e.g. Ahmedabad, Mumbai">
+                <div class="form-grid">
+                  <div class="form-group" style="grid-column: 1 / -1;">
+                    <label>Physical Academy Address</label>
+                    <textarea id="setting-acad-address" class="form-textarea" style="width: 100%; height: 75px;" placeholder="Full street address, dojo campus, area, landmark...">${this.escapeHtml(p.address || '')}</textarea>
+                  </div>
+                  <div class="form-group">
+                    <label>Country</label>
+                    <input type="text" id="setting-acad-country" class="form-input" style="width: 100%;" value="${this.escapeHtml(p.country || 'India')}" placeholder="India">
+                  </div>
                 </div>
               </div>
 
-              <div class="form-group" style="margin-top: 10px;">
-                <label>Physical Academy Address</label>
-                <textarea id="setting-acad-address" class="form-textarea" style="width: 100%; height: 70px;" placeholder="Full street address, campus/dojo suite, landmark...">${p.address || ''}</textarea>
-              </div>
-
-              <!-- GST & Legal Invoicing Section -->
-              <div style="border: 1px solid rgba(16, 185, 129, 0.25); background: rgba(16, 185, 129, 0.03); border-radius: 8px; padding: 14px; margin-top: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <!-- Section 3: GST & Legal Invoicing Compliance -->
+              <div style="border: 1px solid rgba(16, 185, 129, 0.25); background: rgba(16, 185, 129, 0.03); border-radius: 8px; padding: 16px; margin-top: 16px; margin-bottom: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                   <span style="font-size: 13px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 7px;">
-                    <i class="fa-solid fa-receipt" style="color: #10b981;"></i> GST Compliance & Legal Invoicing (India)
+                    <i class="fa-solid fa-receipt" style="color: #10b981;"></i> 3. GST Compliance & Legal Invoicing (India)
                   </span>
-                  <span class="badge ${p.is_gst_registered ? 'badge-success' : 'badge-secondary'}">
-                    ${p.is_gst_registered ? 'GST Active' : 'Unregistered'}
+                  <span class="badge ${isGstActive ? 'badge-success' : 'badge-secondary'}" id="gst-status-badge">
+                    ${isGstActive ? 'GST Active' : 'Unregistered'}
                   </span>
                 </div>
 
                 <div class="form-grid">
                   <div class="form-group">
                     <label>Legal Business / Entity Name</label>
-                    <input type="text" id="setting-acad-legal-name" class="form-input" style="width: 100%;" value="${p.legal_business_name || ''}" placeholder="Registered trade or company name">
+                    <input type="text" id="setting-acad-legal-name" class="form-input" style="width: 100%;" value="${this.escapeHtml(p.legal_business_name || '')}" placeholder="Registered trade or entity name (if different)">
                   </div>
                   <div class="form-group">
                     <label>GSTIN Number (15 Digits)</label>
-                    <input type="text" id="setting-acad-gst" class="form-input" maxlength="15" style="width: 100%; text-transform: uppercase; font-family: monospace;" value="${p.gst_number || ''}" placeholder="24AAAAA0000A1Z5">
+                    <input type="text" id="setting-acad-gst" class="form-input" maxlength="15" style="width: 100%; text-transform: uppercase; font-family: monospace;" value="${this.escapeHtml(p.gst_number || '')}" placeholder="24AAAAA0000A1Z5" oninput="app.onGstNumberInput(this.value)">
                   </div>
                 </div>
 
-                <div class="form-grid" style="margin-top: 10px;">
+                <div class="form-grid" style="margin-top: 12px;">
                   <div class="form-group">
                     <label>Default GST Rate (%)</label>
                     <select id="setting-acad-gst-rate" class="form-select" style="width: 100%;">
@@ -22523,13 +22790,13 @@ const app = {
                   </div>
                   <div class="form-group">
                     <label>HSN / SAC Service Code</label>
-                    <input type="text" id="setting-acad-sac" class="form-input" style="width: 100%;" value="${p.hsn_sac_code || '999293'}" placeholder="999293 (Sports Training)">
+                    <input type="text" id="setting-acad-sac" class="form-input" style="width: 100%;" value="${this.escapeHtml(p.hsn_sac_code || '999293')}" placeholder="999293 (Sports Training)">
                   </div>
                 </div>
               </div>
 
-              <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
-                <button type="submit" class="btn btn-primary">
+              <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="submit" class="btn btn-primary" style="padding: 10px 22px; font-weight: 600;">
                   <i class="fa-solid fa-floppy-disk"></i> Save Academy Profile
                 </button>
               </div>
@@ -22542,6 +22809,18 @@ const app = {
     }
   },
 
+  onGstNumberInput(val) {
+    const badge = document.getElementById('gst-status-badge');
+    if (!badge) return;
+    if (val && val.trim().length >= 15) {
+      badge.className = 'badge badge-success';
+      badge.innerText = 'GST Active';
+    } else {
+      badge.className = 'badge badge-secondary';
+      badge.innerText = 'Unregistered';
+    }
+  },
+
   async openAcademySettingsModal() {
     try {
       const res = await this.apiRequest('/api/academy/settings/profile');
@@ -22549,7 +22828,7 @@ const app = {
         this.showToast(res.error || 'Failed to load academy details', 'danger');
         return;
       }
-      const p = res.profile || {};
+      const p = res.academy || res.profile || {};
       const logoUrl = p.logo_url || this.user.academyLogo || '';
       const academyName = p.name || this.user.academyName || 'My Academy';
 
@@ -22560,7 +22839,7 @@ const app = {
             <div style="display: flex; gap: 14px; align-items: center; background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
               <div style="width: 58px; height: 58px; border-radius: 8px; background: rgba(255,255,255,0.06); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;">
                 ${logoUrl ? `
-                  <img src="${logoUrl}" alt="${academyName}" style="width: 100%; height: 100%; object-fit: contain;">
+                  <img src="${logoUrl}" alt="${this.escapeHtml(academyName)}" style="width: 100%; height: 100%; object-fit: contain;">
                 ` : `
                   <i class="fa-solid fa-building-columns" style="font-size: 22px; color: #818cf8;"></i>
                 `}
@@ -22584,31 +22863,31 @@ const app = {
             <form id="quick-academy-profile-form">
               <div class="form-group">
                 <label>Academy Name *</label>
-                <input type="text" id="quick-acad-name" class="form-input" style="width: 100%; font-weight: 600;" value="${p.name || ''}" required>
+                <input type="text" id="quick-acad-name" class="form-input" style="width: 100%; font-weight: 600;" value="${this.escapeHtml(p.name || '')}" required>
               </div>
               <div class="form-grid">
                 <div class="form-group">
                   <label>Contact Email *</label>
-                  <input type="email" id="quick-acad-email" class="form-input" style="width: 100%;" value="${p.contact_email || ''}" required>
+                  <input type="email" id="quick-acad-email" class="form-input" style="width: 100%;" value="${this.escapeHtml(p.contact_email || '')}" required>
                 </div>
                 <div class="form-group">
                   <label>Contact Phone</label>
-                  <input type="tel" id="quick-acad-phone" class="form-input" style="width: 100%;" value="${p.contact_phone || ''}">
+                  <input type="tel" id="quick-acad-phone" class="form-input" style="width: 100%;" value="${this.escapeHtml(p.contact_phone || '')}">
                 </div>
               </div>
               <div class="form-grid">
                 <div class="form-group">
                   <label>City *</label>
-                  <input type="text" id="quick-acad-city" class="form-input" style="width: 100%;" value="${p.city || ''}" required>
+                  <input type="text" id="quick-acad-city" class="form-input" style="width: 100%;" value="${this.escapeHtml(p.city || '')}" required>
                 </div>
                 <div class="form-group">
                   <label>GSTIN (Optional)</label>
-                  <input type="text" id="quick-acad-gst" class="form-input" style="width: 100%; text-transform: uppercase;" value="${p.gst_number || ''}">
+                  <input type="text" id="quick-acad-gst" class="form-input" style="width: 100%; text-transform: uppercase;" value="${this.escapeHtml(p.gst_number || '')}">
                 </div>
               </div>
               <div class="form-group">
                 <label>Physical Address</label>
-                <textarea id="quick-acad-address" class="form-textarea" style="width: 100%; height: 60px;">${p.address || ''}</textarea>
+                <textarea id="quick-acad-address" class="form-textarea" style="width: 100%; height: 60px;">${this.escapeHtml(p.address || '')}</textarea>
               </div>
             </form>
           </div>
@@ -22696,6 +22975,7 @@ const app = {
     const contact_email = document.getElementById('setting-acad-email')?.value?.trim();
     const contact_phone = document.getElementById('setting-acad-phone')?.value?.trim();
     const city = document.getElementById('setting-acad-city')?.value?.trim();
+    const country = document.getElementById('setting-acad-country')?.value?.trim() || 'India';
     const address = document.getElementById('setting-acad-address')?.value?.trim();
     const legal_business_name = document.getElementById('setting-acad-legal-name')?.value?.trim() || null;
     const gst_number = document.getElementById('setting-acad-gst')?.value?.trim()?.toUpperCase() || null;
@@ -22716,6 +22996,7 @@ const app = {
           contact_email,
           contact_phone,
           city,
+          country,
           address,
           legal_business_name,
           gst_number,
