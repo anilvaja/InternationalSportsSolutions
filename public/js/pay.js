@@ -360,8 +360,11 @@ const payApp = {
     doc.text(`Branch / Dojo: ${branchName}`, 18, admissionNumber ? 88 : 84);
     if (studentPhone) doc.text(`Phone: ${studentPhone}`, 18, admissionNumber ? 93 : 89);
 
-    // Right Box: Transaction & Coverage Period Details
+    // Right Box: Transaction & Coverage Period Details (Explicitly White Fill)
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(226, 232, 240);
     doc.roundedRect(108, 58, 88, 42, 2, 2, 'FD');
+
     doc.setFillColor(241, 245, 249);
     doc.rect(108, 58, 88, 8, 'F');
     doc.setTextColor(71, 85, 105);
@@ -372,7 +375,7 @@ const payApp = {
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
     doc.text('Receipt No:', 112, 71);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(37, 99, 235);
     doc.setFont('helvetica', 'bold');
     doc.text(receiptNumber, 142, 71);
 
@@ -400,22 +403,22 @@ const payApp = {
 
     if (nextInstallmentDate) {
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100, 116, 139);
+      doc.setTextColor(220, 38, 38);
       doc.setFontSize(7.5);
       doc.text(`Next Due: ${nextInstallmentDate}`, 112, 96);
     }
 
-    // 5. Itemized Fee Breakdown Table
+    // 5. Itemized Fee Breakdown Table (Use INR prefix instead of unicode rupee to prevent character corruption in jsPDF)
     const tableBody = [
       [
         '1',
         `Curriculum Coaching & Training Tuition\nCoverage: ${periodStart} to ${periodEnd} (${monthsCount} Month${monthsCount > 1 ? 's' : ''})`,
-        `₹${(baseFee || netAmount || amount).toLocaleString()}`,
+        `INR ${(baseFee || netAmount || amount).toLocaleString('en-IN')}`,
         discountAmount > 0 
-          ? `-₹${discountAmount.toLocaleString()} (${discountPercentage}%${discountReason ? ' - ' + discountReason : ''})` 
+          ? `-INR ${discountAmount.toLocaleString('en-IN')} (${discountPercentage}%${discountReason ? ' - ' + discountReason : ''})` 
           : 'None',
-        taxAmount > 0 ? `₹${taxAmount.toLocaleString()}` : 'Exempt / Incl.',
-        `₹${(netAmount || amount).toLocaleString()}`
+        taxAmount > 0 ? `INR ${taxAmount.toLocaleString('en-IN')}` : 'Exempt / Incl.',
+        `INR ${(netAmount || amount).toLocaleString('en-IN')}`
       ]
     ];
 
@@ -463,18 +466,18 @@ const payApp = {
     doc.setFont('helvetica', 'normal');
     doc.text('Base Tuition Fee:', totalsX + 4, finalY + 7);
     doc.setTextColor(30, 41, 59);
-    doc.text(`₹${(baseFee || netAmount || amount).toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 7, { align: 'right' });
+    doc.text(`INR ${(baseFee || netAmount || amount).toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + 7, { align: 'right' });
 
     if (discountAmount > 0) {
       doc.setTextColor(220, 38, 38);
       doc.text(`Discount (${discountPercentage}%):`, totalsX + 4, finalY + 13);
-      doc.text(`-₹${discountAmount.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 13, { align: 'right' });
+      doc.text(`-INR ${discountAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + 13, { align: 'right' });
     }
 
     doc.setTextColor(100, 116, 139);
     doc.text('Total Net Fee:', totalsX + 4, finalY + (discountAmount > 0 ? 19 : 14));
     doc.setTextColor(30, 41, 59);
-    doc.text(`₹${(netAmount || amount).toLocaleString()}`, totalsX + totalsWidth - 4, finalY + (discountAmount > 0 ? 19 : 14), { align: 'right' });
+    doc.text(`INR ${(netAmount || amount).toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + (discountAmount > 0 ? 19 : 14), { align: 'right' });
 
     // Amount Paid Highlight Row
     doc.setFillColor(240, 253, 244); // Green 50
@@ -482,7 +485,7 @@ const payApp = {
     doc.setTextColor(21, 128, 61); // Green 700
     doc.setFont('helvetica', 'bold');
     doc.text('Amount Paid (This Receipt):', totalsX + 4, finalY + 29);
-    doc.text(`₹${Number(amount).toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 29, { align: 'right' });
+    doc.text(`INR ${Number(amount).toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + 29, { align: 'right' });
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
@@ -490,7 +493,7 @@ const payApp = {
     doc.text('Remaining Balance:', totalsX + 4, finalY + 35);
     doc.setTextColor(balanceAmount > 0 ? 185 : 21, balanceAmount > 0 ? 28 : 128, balanceAmount > 0 ? 28 : 61);
     doc.setFont('helvetica', 'bold');
-    doc.text(balanceAmount > 0 ? `₹${balanceAmount.toLocaleString()}` : '₹0.00 (Fully Paid)', totalsX + totalsWidth - 4, finalY + 35, { align: 'right' });
+    doc.text(balanceAmount > 0 ? `INR ${balanceAmount.toLocaleString('en-IN')}` : 'INR 0.00 (Fully Paid)', totalsX + totalsWidth - 4, finalY + 35, { align: 'right' });
 
     // 7. Security Stamp & Authorized Seal (Bottom Left)
     const sealY = finalY;

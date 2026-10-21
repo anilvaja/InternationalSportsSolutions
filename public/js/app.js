@@ -10695,10 +10695,10 @@ const app = {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF('p', 'mm', 'a4');
 
-    const academyName = (fee.academy && fee.academy.name) || this.user.academyName || 'Sports Solutions Academy';
-    const academyCity = (fee.academy && fee.academy.city) || 'Vadodara';
-    const academyAddress = (fee.academy && fee.academy.address) || '';
-    const academyGst = (fee.academy && fee.academy.gst_number) || '';
+    const academyName = (fee.academy && fee.academy.name) || (this.tenantAcademy && this.tenantAcademy.name) || (this.user && this.user.academyName) || 'Sports Academy';
+    const academyCity = (fee.academy && fee.academy.city) || (this.tenantAcademy && this.tenantAcademy.city) || 'Vadodara';
+    const academyAddress = (fee.academy && fee.academy.address) || (this.tenantAcademy && this.tenantAcademy.address) || '';
+    const academyGst = (fee.academy && fee.academy.gst_number) || (this.tenantAcademy && this.tenantAcademy.gst_number) || '';
     const receiptNumber = fee.receipt_number || ('REC-' + (fee.id || Date.now().toString().slice(-4)));
     const invoiceNumber = fee.invoice_number || ('INV-' + (fee.id || '001'));
     const studentName = `${fee.first_name || ''} ${fee.last_name || ''}`.trim() || 'Student';
@@ -10814,8 +10814,11 @@ const app = {
     doc.text(`Branch / Dojo: ${branchName}`, 18, admissionNumber ? 88 : 84);
     if (studentPhone) doc.text(`Phone: ${studentPhone}`, 18, admissionNumber ? 93 : 89);
 
-    // Right Box: Transaction & Coverage Details
+    // Right Box: Transaction & Coverage Details (Explicitly White Fill to prevent dark overlay)
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(226, 232, 240);
     doc.roundedRect(108, 58, 88, 42, 2, 2, 'FD');
+
     doc.setFillColor(241, 245, 249);
     doc.rect(108, 58, 88, 8, 'F');
     doc.setTextColor(71, 85, 105);
@@ -10826,7 +10829,7 @@ const app = {
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
     doc.text('Receipt No:', 112, 71);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(37, 99, 235);
     doc.setFont('helvetica', 'bold');
     doc.text(receiptNumber, 142, 71);
 
@@ -10854,22 +10857,22 @@ const app = {
 
     if (nextInstallmentDate) {
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100, 116, 139);
+      doc.setTextColor(220, 38, 38);
       doc.setFontSize(7.5);
       doc.text(`Next Renewal Due: ${nextInstallmentDate}`, 112, 96);
     }
 
-    // 5. Itemized Fee Breakdown Table
+    // 5. Itemized Fee Breakdown Table (Use INR prefix instead of unicode rupee to prevent character corruption in jsPDF)
     const tableBody = [
       [
         '1',
         `${fee.title || fee.fee_title || 'Sports Curriculum & Dojo Coaching'}\nCoverage: ${periodStart} to ${periodEnd} (${monthsCount} Month${monthsCount > 1 ? 's' : ''})`,
-        `₹${baseFee.toLocaleString()}`,
+        `INR ${baseFee.toLocaleString('en-IN')}`,
         discountAmount > 0 
-          ? `-₹${discountAmount.toLocaleString()} (${discountPercentage}%${discountReason ? ' - ' + discountReason : ''})` 
+          ? `-INR ${discountAmount.toLocaleString('en-IN')} (${discountPercentage}%${discountReason ? ' - ' + discountReason : ''})` 
           : 'None',
-        taxAmount > 0 ? `₹${taxAmount.toLocaleString()}` : 'Exempt / Incl.',
-        `₹${netAmount.toLocaleString()}`
+        taxAmount > 0 ? `INR ${taxAmount.toLocaleString('en-IN')}` : 'Exempt / Incl.',
+        `INR ${netAmount.toLocaleString('en-IN')}`
       ]
     ];
 
@@ -10917,18 +10920,18 @@ const app = {
     doc.setFont('helvetica', 'normal');
     doc.text('Base Tuition Fee:', totalsX + 4, finalY + 7);
     doc.setTextColor(30, 41, 59);
-    doc.text(`₹${baseFee.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 7, { align: 'right' });
+    doc.text(`INR ${baseFee.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + 7, { align: 'right' });
 
     if (discountAmount > 0) {
       doc.setTextColor(220, 38, 38);
       doc.text(`Discount (${discountPercentage}%):`, totalsX + 4, finalY + 13);
-      doc.text(`-₹${discountAmount.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 13, { align: 'right' });
+      doc.text(`-INR ${discountAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + 13, { align: 'right' });
     }
 
     doc.setTextColor(100, 116, 139);
     doc.text('Total Net Fee:', totalsX + 4, finalY + (discountAmount > 0 ? 19 : 14));
     doc.setTextColor(30, 41, 59);
-    doc.text(`₹${netAmount.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + (discountAmount > 0 ? 19 : 14), { align: 'right' });
+    doc.text(`INR ${netAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + (discountAmount > 0 ? 19 : 14), { align: 'right' });
 
     // Amount Paid Highlight Row
     doc.setFillColor(240, 253, 244); // Green 50
@@ -10936,14 +10939,14 @@ const app = {
     doc.setTextColor(21, 128, 61); // Green 700
     doc.setFont('helvetica', 'bold');
     doc.text('Amount Paid (This Receipt):', totalsX + 4, finalY + 29);
-    doc.text(`₹${paidAmount.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 29, { align: 'right' });
+    doc.text(`INR ${paidAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + 29, { align: 'right' });
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
     doc.setFontSize(8);
     doc.text('Remaining Balance:', totalsX + 4, finalY + 35);
     doc.setTextColor(balanceAmount > 0 ? 220 : 100, balanceAmount > 0 ? 38 : 116, balanceAmount > 0 ? 38 : 139);
-    doc.text(`₹${balanceAmount.toLocaleString()}`, totalsX + totalsWidth - 4, finalY + 35, { align: 'right' });
+    doc.text(`INR ${balanceAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + 35, { align: 'right' });
 
     // 7. Security Notes & Verification Seal
     doc.setFontSize(7.5);
@@ -10959,13 +10962,13 @@ const app = {
   },
 
   printFeeReceipt(fee) {
-    const academyName = (fee.academy && fee.academy.name) || this.user.academyName || 'Sports Solutions Academy';
-    const academyCity = (fee.academy && fee.academy.city) || 'Vadodara';
-    const academyAddress = (fee.academy && fee.academy.address) || '';
-    const academyPhone = (fee.academy && fee.academy.contact_phone) || '';
-    const academyEmail = (fee.academy && fee.academy.contact_email) || '';
-    const academyGst = (fee.academy && fee.academy.gst_number) || '';
-    const logoUrl = (fee.academy && fee.academy.logo_url) || this.user.academyLogo || '';
+    const academyName = (fee.academy && fee.academy.name) || (this.tenantAcademy && this.tenantAcademy.name) || (this.user && this.user.academyName) || 'Sports Academy';
+    const academyCity = (fee.academy && fee.academy.city) || (this.tenantAcademy && this.tenantAcademy.city) || 'Vadodara';
+    const academyAddress = (fee.academy && fee.academy.address) || (this.tenantAcademy && this.tenantAcademy.address) || '';
+    const academyPhone = (fee.academy && fee.academy.contact_phone) || (this.tenantAcademy && this.tenantAcademy.contact_phone) || '';
+    const academyEmail = (fee.academy && fee.academy.contact_email) || (this.tenantAcademy && this.tenantAcademy.contact_email) || '';
+    const academyGst = (fee.academy && fee.academy.gst_number) || (this.tenantAcademy && this.tenantAcademy.gst_number) || '';
+    const logoUrl = (fee.academy && fee.academy.logo_url) || (this.tenantAcademy && this.tenantAcademy.logo_url) || (this.user && this.user.academyLogo) || '';
 
     const baseFee = Number(fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || fee.amount || 0));
     const discount = Number(fee.discount_amount || 0);
