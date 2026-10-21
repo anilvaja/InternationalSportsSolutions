@@ -1005,4 +1005,271 @@ export class FeeService {
       },
     };
   }
+
+  /**
+   * Updates an existing fee invoice (e.g. correcting dates, title, notes, or amounts if unpaid)
+   */
+  static updateFee(db, feeId, updateData = {}, user = {}) {
+    const id = Number(feeId);
+    const fee = db.prepare('SELECT * FROM student_fees WHERE id = ?').get(id);
+    if (!fee) {
+      throw new Error(`Fee invoice ${feeId} not found`);
+    }
+    if (fee.status === 'cancelled') {
+      throw new Error('Cannot edit a cancelled fee invoice');
+    }
+
+    const title = updateData.title !== undefined ? String(updateData.title).trim() : fee.title;
+    const dueDate = updateData.due_date || fee.due_date;
+    const periodStart = updateData.period_start || fee.period_start;
+    const periodEnd = updateData.period_end || fee.period_end;
+    const nextInstallmentDate = updateData.next_installment_date || fee.next_installment_date;
+    const notes = updateData.notes !== undefined ? String(updateData.notes) : fee.notes;
+
+    let baseFee = fee.base_fee !== undefined ? fee.base_fee : fee.amount;
+    let discountAmount = fee.discount_amount || 0;
+    let netAmount = fee.net_amount || fee.amount;
+    let balanceAmount = fee.balance_amount !== undefined ? fee.balance_amount : netAmount;
+    let status = fee.status;
+
+    // If unpaid, allow editing financial amounts directly
+    const paidAmount = Number(fee.paid_amount || 0);
+    if (paidAmount === 0 && (updateData.base_fee !== undefined || updateData.discount_amount !== undefined || updateData.amount !== undefined)) {
+      if (updateData.base_fee !== undefined) {
+        baseFee = this.round2(Math.max(0, Number(updateData.base_fee)));
+      } else if (updateData.amount !== undefined) {
+        baseFee = this.round2(Math.max(0, Number(updateData.amount)));
+      }
+      if (updateData.discount_amount !== undefined) {
+        discountAmount = this.round2(Math.max(0, Number(updateData.discount_amount)));
+      }
+      netAmount = this.round2(Math.max(0, baseFee - discountAmount));
+      balanceAmount = netAmount;
+      status = balanceAmount === 0 ? 'paid' : 'pending';
+
+      // Update student_fee_ledger charge entry
+      db.prepare(`
+        UPDATE student_fee_ledger
+        SET debit = ?, running_balance = ?, period_start = ?, period_end = ?, notes = ?
+        WHERE student_fee_id = ? AND entry_type = 'charge'
+      `).run(baseFee, baseFee, periodStart, periodEnd, title, id);
+
+      // Update or insert discount entry in ledger
+      if (discountAmount > 0) {
+        const existingDiscount = db.prepare(`SELECT id FROM student_fee_ledger WHERE student_fee_id = ? AND entry_type = 'discount'`).get(id);
+        if (existingDiscount) {
+          db.prepare(`
+            UPDATE student_fee_ledger
+            SET credit = ?, running_balance = ?, period_start = ?, period_end = ?
+            WHERE id = ?
+          `).run(discountAmount, netAmount, periodStart, periodEnd, existingDiscount.id);
+        } else {
+          db.prepare(`
+            INSERT INTO student_fee_ledger (
+              student_id, student_fee_id, entry_type, charge_type,
+              period_start, period_end, months_count, debit, credit,
+              running_balance, notes, created_by
+            ) VALUES (?, ?, 'discount', 'tuition', ?, ?, ?, 0, ?, ?, 'Discount adjusted', ?)
+          `).run(fee.student_id, id, periodStart, periodEnd, fee.months_count || 1, discountAmount, netAmount, user.userId || user.id || null);
+        }
+      }
+    } else {
+      // Update dates & title in ledger
+      db.prepare(`
+        UPDATE student_fee_ledger
+        SET period_start = ?, period_end = ?, notes = ?
+        WHERE student_fee_id = ? AND entry_type = 'charge'
+      `).run(periodStart, periodEnd, title, id);
+    }
+
+    db.prepare(`
+      UPDATE student_fees
+      SET title = ?, due_date = ?, period_start = ?, period_end = ?,
+          next_installment_date = ?, notes = ?, base_fee = ?,
+          discount_amount = ?, net_amount = ?, balance_amount = ?, status = ?
+      WHERE id = ?
+    `).run(
+      title, dueDate, periodStart, periodEnd,
+      nextInstallmentDate, notes, baseFee,
+      discountAmount, netAmount, balanceAmount, status,
+      id
+    );
+
+    // Audit log
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, entity_id, details)
+      VALUES (?, ?, ?, 'UPDATE_FEE', 'student_fees', ?, ?)
+    `).run(
+      user.userId || user.id || null,
+      user.name || 'Staff',
+      user.role || 'academy_admin',
+      id,
+      `Updated fee invoice #${id} (${fee.invoice_number})`
+    );
+
+    return db.prepare('SELECT * FROM student_fees WHERE id = ?').get(id);
+  }
+
+  /**
+   * Voids/Cancels an incorrectly generated fee invoice.
+   * If payments were recorded, automatically reverses them with audit entries.
+   */
+  static voidFee(db, feeId, reason = 'Voided by Administrator', user = {}) {
+    const id = Number(feeId);
+    const fee = db.prepare('SELECT * FROM student_fees WHERE id = ?').get(id);
+    if (!fee) {
+      throw new Error(`Fee invoice ${feeId} not found`);
+    }
+    if (fee.status === 'cancelled') {
+      throw new Error('Invoice is already cancelled / voided');
+    }
+
+    const cleanReason = String(reason || 'Voided by Administrator').trim();
+
+    // 1. Reverse any payments associated with this invoice
+    const payments = db.prepare('SELECT * FROM fee_payments WHERE student_fee_id = ? AND status = ?').all(id, 'completed');
+    for (const p of payments) {
+      db.prepare(`
+        UPDATE fee_payments
+        SET status = 'reversed', reversal_reason = ?, reversed_by = ?, reversed_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(cleanReason, user.userId || user.id || null, p.id);
+
+      db.prepare(`
+        INSERT INTO student_fee_ledger (
+          student_id, student_fee_id, fee_payment_id, entry_type, charge_type,
+          debit, credit, running_balance, notes, created_by
+        ) VALUES (?, ?, ?, 'refund', 'tuition', 0, ?, 0, ?, ?)
+      `).run(
+        fee.student_id,
+        id,
+        p.id,
+        p.amount,
+        `Reversal of payment ${p.receipt_number}: ${cleanReason}`,
+        user.userId || user.id || null
+      );
+    }
+
+    // 2. Insert waiver/void adjustment in student_fee_ledger
+    db.prepare(`
+      INSERT INTO student_fee_ledger (
+        student_id, student_fee_id, entry_type, charge_type,
+        period_start, period_end, months_count, debit, credit,
+        running_balance, notes, created_by
+      ) VALUES (?, ?, 'waiver', 'tuition', ?, ?, ?, 0, ?, 0, ?, ?)
+    `).run(
+      fee.student_id,
+      id,
+      fee.period_start,
+      fee.period_end,
+      fee.months_count || 1,
+      fee.net_amount || fee.amount || 0,
+      `Invoice ${fee.invoice_number} cancelled: ${cleanReason}`,
+      user.userId || user.id || null
+    );
+
+    // 3. Mark invoice as cancelled
+    const updatedNotes = (fee.notes ? fee.notes + ' | ' : '') + `CANCELLED: ${cleanReason}`;
+    db.prepare(`
+      UPDATE student_fees
+      SET status = 'cancelled', balance_amount = 0, notes = ?
+      WHERE id = ?
+    `).run(updatedNotes, id);
+
+    // 4. Audit Log
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, entity_id, details)
+      VALUES (?, ?, ?, 'VOID_FEE', 'student_fees', ?, ?)
+    `).run(
+      user.userId || user.id || null,
+      user.name || 'Staff',
+      user.role || 'academy_admin',
+      id,
+      `Voided fee invoice ${fee.invoice_number}. Reason: ${cleanReason}`
+    );
+
+    return {
+      success: true,
+      message: `Invoice ${fee.invoice_number} voided successfully`,
+      feeId: id,
+    };
+  }
+
+  /**
+   * Reverses a recorded payment receipt, reopening the invoice balance.
+   */
+  static reversePayment(db, paymentId, reason = 'Reversed by Administrator', user = {}) {
+    const id = Number(paymentId);
+    const payment = db.prepare('SELECT * FROM fee_payments WHERE id = ?').get(id);
+    if (!payment) {
+      throw new Error(`Payment ${paymentId} not found`);
+    }
+    if (payment.status === 'reversed') {
+      throw new Error('Payment is already reversed');
+    }
+
+    const cleanReason = String(reason || 'Reversed by Administrator').trim();
+
+    // 1. Mark payment as reversed
+    db.prepare(`
+      UPDATE fee_payments
+      SET status = 'reversed', reversal_reason = ?, reversed_by = ?, reversed_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(cleanReason, user.userId || user.id || null, id);
+
+    // 2. Adjust fee invoice balance if student_fee_id is present
+    let fee = null;
+    if (payment.student_fee_id) {
+      fee = db.prepare('SELECT * FROM student_fees WHERE id = ?').get(payment.student_fee_id);
+      if (fee) {
+        const newPaidAmount = this.round2(Math.max(0, (fee.paid_amount || 0) - payment.amount));
+        const newBalanceAmount = this.round2(Math.max(0, (fee.net_amount || fee.amount || 0) - newPaidAmount));
+        const newStatus = newBalanceAmount === 0 ? 'paid' : (newPaidAmount > 0 ? 'partial' : 'pending');
+
+        db.prepare(`
+          UPDATE student_fees
+          SET paid_amount = ?, balance_amount = ?, status = ?
+          WHERE id = ?
+        `).run(newPaidAmount, newBalanceAmount, newStatus, fee.id);
+        fee.paid_amount = newPaidAmount;
+        fee.balance_amount = newBalanceAmount;
+        fee.status = newStatus;
+      }
+    }
+
+    // 3. Add reversal entry to ledger
+    db.prepare(`
+      INSERT INTO student_fee_ledger (
+        student_id, student_fee_id, fee_payment_id, entry_type, charge_type,
+        debit, credit, running_balance, notes, created_by
+      ) VALUES (?, ?, ?, 'refund', 'tuition', 0, ?, ?, ?, ?)
+    `).run(
+      payment.student_id,
+      payment.student_fee_id,
+      id,
+      payment.amount,
+      fee ? fee.balance_amount : 0,
+      `Reversal of receipt ${payment.receipt_number}: ${cleanReason}`,
+      user.userId || user.id || null
+    );
+
+    // 4. Audit Log
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, entity_id, details)
+      VALUES (?, ?, ?, 'REVERSE_PAYMENT', 'fee_payments', ?, ?)
+    `).run(
+      user.userId || user.id || null,
+      user.name || 'Staff',
+      user.role || 'academy_admin',
+      id,
+      `Reversed payment ${payment.receipt_number} (₹${payment.amount}). Reason: ${cleanReason}`
+    );
+
+    return {
+      success: true,
+      message: `Payment ${payment.receipt_number} reversed successfully`,
+      paymentId: id,
+      fee,
+    };
+  }
 }

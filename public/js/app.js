@@ -9096,12 +9096,22 @@ const app = {
                     <td><span class="badge ${statusBadge}">${this.escapeHtml(f.status || '')}</span></td>
                     <td>
                       <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                        ${f.balance_amount > 0 ? `
+                        ${f.status !== 'voided' && f.status !== 'cancelled' && f.balance_amount > 0 ? `
                           <button class="btn btn-primary btn-sm" onclick="app.showCollectPaymentModal(${f.id}, '${this.escapeJsString(f.invoice_number)}', ${f.balance_amount}, '${this.escapeJsString((f.first_name || '') + ' ' + (f.last_name || ''))}', ${f.student_id})">
                             <i class="fa-solid fa-hand-holding-dollar"></i> Collect
                           </button>
                         ` : ''}
-                        ${f.paid_amount > 0 ? `
+                        ${f.status !== 'voided' && f.status !== 'cancelled' ? `
+                          <button class="btn btn-secondary btn-sm" title="Edit Fee Invoice" onclick="app.showEditFeeModal(${JSON.stringify(f).replace(/"/g, '&quot;')})">
+                            <i class="fa-solid fa-pen-to-square"></i> Edit
+                          </button>
+                          <button class="btn btn-outline-danger btn-sm" title="Void / Cancel Wrong Invoice" onclick="app.showVoidFeeModal(${f.id}, '${this.escapeJsString(f.invoice_number || '')}', ${f.paid_amount || 0}, ${f.balance_amount || 0}, '${this.escapeJsString((f.first_name || '') + ' ' + (f.last_name || ''))}')">
+                            <i class="fa-solid fa-ban"></i> Void
+                          </button>
+                        ` : `
+                          <span class="badge badge-danger" style="font-size: 11px;"><i class="fa-solid fa-ban"></i> Cancelled</span>
+                        `}
+                        ${f.status !== 'voided' && f.status !== 'cancelled' && f.paid_amount > 0 ? `
                           <button class="btn btn-secondary btn-sm" title="Download PDF Receipt" onclick="app.generateFeeReceiptPdf(${JSON.stringify(f).replace(/"/g, '&quot;')})">
                             <i class="fa-solid fa-file-pdf" style="color: #ef4444;"></i> PDF
                           </button>
@@ -9319,12 +9329,13 @@ const app = {
                 <th style="text-align: right;">Credit (₹)</th>
                 <th style="text-align: right;">Balance (₹)</th>
                 <th>Recorded By</th>
+                <th style="text-align: center;">Actions</th>
               </tr>
             </thead>
             <tbody>
               ${ledger.length === 0 ? `
                 <tr>
-                  <td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">
+                  <td colspan="9" style="text-align: center; padding: 24px; color: var(--text-muted);">
                     No ledger transactions recorded yet for this student.
                   </td>
                 </tr>
@@ -9336,6 +9347,7 @@ const app = {
                   pause_shift: 'badge-secondary',
                   credit: 'badge-success',
                   waiver: 'badge-danger',
+                  refund: 'badge-danger',
                 };
                 const badge = typeBadges[entry.entry_type] || 'badge-secondary';
                 const period = (entry.period_start && entry.period_end)
@@ -9344,7 +9356,7 @@ const app = {
 
                 return `
                   <tr>
-                    <td>${entry.entry_date}</td>
+                    <td>${entry.entry_date || (entry.created_at ? entry.created_at.split(' ')[0] : '-')}</td>
                     <td><span class="badge ${badge}">${entry.entry_type}</span></td>
                     <td><code>${entry.receipt_number || entry.invoice_number || '-'}</code></td>
                     <td>
@@ -9361,6 +9373,13 @@ const app = {
                       ₹${(entry.balance || 0).toLocaleString()}
                     </td>
                     <td style="font-size: 11px; color: var(--text-muted);">${entry.created_by_name || 'System'}</td>
+                    <td style="text-align: center;">
+                      ${entry.fee_payment_id && entry.payment_status !== 'reversed' && entry.credit_amount > 0 ? `
+                        <button class="btn btn-outline-danger btn-sm" style="font-size: 11px; padding: 2px 7px;" title="Reverse this payment receipt" onclick="app.showReversePaymentModal(${entry.fee_payment_id}, '${this.escapeJsString(entry.receipt_number || '')}', ${entry.credit_amount}, ${studentId})">
+                          <i class="fa-solid fa-rotate-left"></i> Reverse
+                        </button>
+                      ` : (entry.payment_status === 'reversed' ? '<span class="badge badge-danger" style="font-size: 10px;">Reversed</span>' : '-')}
+                    </td>
                   </tr>
                 `;
               }).join('')}
@@ -10419,6 +10438,234 @@ const app = {
       }
     } catch (e) {
       this.showToast('Failed to generate receipt PDF: ' + e.message, 'danger');
+    }
+  },
+
+  showEditFeeModal(fee) {
+    const isUnpaid = Number(fee.paid_amount || 0) === 0;
+    const studentName = `${fee.first_name || ''} ${fee.last_name || ''}`.trim() || 'Student';
+
+    this.openModal(
+      `<i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> Edit Fee Invoice — ${this.escapeHtml(fee.invoice_number || '')}`,
+      `
+        <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+          Student: <strong>${this.escapeHtml(studentName)}</strong> &bull; Current Status: <span class="badge ${fee.status === 'paid' ? 'badge-success' : 'badge-warning'}">${this.escapeHtml(fee.status || '')}</span>
+          ${isUnpaid ? '' : '<div style="margin-top: 6px; color: #f59e0b; background: rgba(245, 158, 11, 0.1); padding: 8px 10px; border-radius: 6px;"><i class="fa-solid fa-triangle-exclamation"></i> This invoice has recorded payments (₹' + (fee.paid_amount || 0).toLocaleString() + '). Financial amounts cannot be directly altered without voiding/reversing payments first. You can edit dates, title, and notes.</div>'}
+        </div>
+
+        <form id="edit-fee-form" onsubmit="event.preventDefault(); app.submitEditFee(${fee.id});">
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label class="form-label">Invoice Title / Description *</label>
+            <input type="text" id="edit-fee-title" class="form-input" style="width: 100%;" value="${this.escapeHtml(fee.title || '')}" required>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div class="form-group">
+              <label class="form-label">Due Date *</label>
+              <input type="date" id="edit-fee-due-date" class="form-input" style="width: 100%;" value="${fee.due_date || ''}" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Next Installment Due</label>
+              <input type="date" id="edit-fee-next-date" class="form-input" style="width: 100%;" value="${fee.next_installment_date || ''}">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div class="form-group">
+              <label class="form-label">Coverage Period Start</label>
+              <input type="date" id="edit-fee-period-start" class="form-input" style="width: 100%;" value="${fee.period_start || ''}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Coverage Period End</label>
+              <input type="date" id="edit-fee-period-end" class="form-input" style="width: 100%;" value="${fee.period_end || ''}">
+            </div>
+          </div>
+
+          ${isUnpaid ? `
+            <div style="background: rgba(37,99,235,0.05); border: 1px solid rgba(37,99,235,0.2); border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+              <div style="font-weight: 700; font-size: 12px; margin-bottom: 8px; color: var(--text-heading);"><i class="fa-solid fa-coins"></i> Unpaid Invoice Fee Amounts</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                  <label class="form-label">Base Fee (₹) *</label>
+                  <input type="number" id="edit-fee-base" class="form-input" style="width: 100%;" value="${fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || fee.amount || 0)}" min="0" step="any" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Discount Amount (₹)</label>
+                  <input type="number" id="edit-fee-discount" class="form-input" style="width: 100%;" value="${fee.discount_amount || 0}" min="0" step="any">
+                </div>
+              </div>
+            </div>
+          ` : ''}
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label class="form-label">Notes / Correction Reason</label>
+            <textarea id="edit-fee-notes" class="form-input" style="width: 100%; height: 60px;">${this.escapeHtml(fee.notes || '')}</textarea>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Save Changes</button>
+          </div>
+        </form>
+      `,
+      null
+    );
+  },
+
+  async submitEditFee(feeId) {
+    const title = document.getElementById('edit-fee-title').value.trim();
+    const due_date = document.getElementById('edit-fee-due-date').value;
+    const next_installment_date = document.getElementById('edit-fee-next-date').value || null;
+    const period_start = document.getElementById('edit-fee-period-start').value || null;
+    const period_end = document.getElementById('edit-fee-period-end').value || null;
+    const notes = document.getElementById('edit-fee-notes').value.trim();
+
+    const payload = { title, due_date, next_installment_date, period_start, period_end, notes };
+
+    const baseEl = document.getElementById('edit-fee-base');
+    if (baseEl) {
+      payload.base_fee = Number(baseEl.value);
+    }
+    const discountEl = document.getElementById('edit-fee-discount');
+    if (discountEl) {
+      payload.discount_amount = Number(discountEl.value);
+    }
+
+    try {
+      const res = await this.apiRequest(`/api/academy/fees/${feeId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      if (res.success) {
+        this.showToast('Fee invoice updated successfully!', 'success');
+        this.closeModal();
+        await this.renderFees();
+      } else {
+        this.showToast(res.error || 'Failed to update fee', 'danger');
+      }
+    } catch (e) {
+      this.showToast('Error: ' + e.message, 'danger');
+    }
+  },
+
+  showVoidFeeModal(feeId, invoiceNumber, paidAmount, balanceAmount, studentName) {
+    const hasPayments = Number(paidAmount || 0) > 0;
+
+    this.openModal(
+      `<i class="fa-solid fa-ban" style="color: #ef4444;"></i> Void / Cancel Fee Invoice — ${this.escapeHtml(invoiceNumber)}`,
+      `
+        <div style="padding: 10px 0;">
+          <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+            <div style="color: #ef4444; font-weight: 700; font-size: 14px; margin-bottom: 6px;">
+              <i class="fa-solid fa-triangle-exclamation"></i> Are you sure you want to void this invoice?
+            </div>
+            <div style="font-size: 13px; color: var(--text-main); line-height: 1.5;">
+              Student: <strong>${this.escapeHtml(studentName)}</strong> &bull; Invoice: <strong>${this.escapeHtml(invoiceNumber)}</strong><br>
+              ${hasPayments 
+                ? `<span style="color: #ef4444; font-weight: 600;">Warning: ₹${paidAmount.toLocaleString()} has been collected on this invoice.</span> Voiding will mark the invoice as <strong>voided</strong>, reverse all associated payment receipts, and record an audited waiver/refund entry in the financial ledger.`
+                : 'This will cancel the unpaid pending invoice and clear the outstanding debit balance from the student ledger.'
+              }
+            </div>
+          </div>
+
+          <form id="void-fee-form" onsubmit="event.preventDefault(); app.submitVoidFee(${feeId});">
+            <div class="form-group" style="margin-bottom: 16px;">
+              <label class="form-label">Mandatory Cancellation / Void Reason *</label>
+              <textarea id="void-fee-reason" class="form-input" style="width: 100%; height: 75px;" placeholder="e.g. Created by mistake / wrong student / duplicate invoice" required></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+              <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Keep Invoice</button>
+              <button type="submit" class="btn btn-danger"><i class="fa-solid fa-ban"></i> Confirm Void Invoice</button>
+            </div>
+          </form>
+        </div>
+      `,
+      null
+    );
+  },
+
+  async submitVoidFee(feeId) {
+    const reason = document.getElementById('void-fee-reason').value.trim();
+    if (!reason) {
+      this.showToast('Please provide a reason for voiding', 'warning');
+      return;
+    }
+
+    try {
+      const res = await this.apiRequest(`/api/academy/fees/${feeId}/void`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      if (res.success) {
+        this.showToast('Invoice voided and financial ledger adjusted!', 'success');
+        this.closeModal();
+        await this.renderFees();
+      } else {
+        this.showToast(res.error || 'Failed to void invoice', 'danger');
+      }
+    } catch (e) {
+      this.showToast('Error: ' + e.message, 'danger');
+    }
+  },
+
+  showReversePaymentModal(paymentId, receiptNumber, amount, studentId) {
+    this.openModal(
+      `<i class="fa-solid fa-rotate-left" style="color: #ef4444;"></i> Reverse Payment Receipt — ${this.escapeHtml(receiptNumber)}`,
+      `
+        <div style="padding: 10px 0;">
+          <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+            <div style="color: #ef4444; font-weight: 700; font-size: 14px; margin-bottom: 6px;">
+              <i class="fa-solid fa-circle-exclamation"></i> Reversing Payment of ₹${Number(amount).toLocaleString()}
+            </div>
+            <div style="font-size: 13px; color: var(--text-main); line-height: 1.5;">
+              Receipt: <strong>${this.escapeHtml(receiptNumber)}</strong><br>
+              Reversing this receipt will mark it as <strong>reversed</strong>, reopen the balance due on the invoice, and log an audited refund/reversal entry in the student fee ledger.
+            </div>
+          </div>
+
+          <form id="reverse-payment-form" onsubmit="event.preventDefault(); app.submitReversePayment(${paymentId}, ${studentId});">
+            <div class="form-group" style="margin-bottom: 16px;">
+              <label class="form-label">Mandatory Reversal Reason *</label>
+              <textarea id="reverse-payment-reason" class="form-input" style="width: 100%; height: 75px;" placeholder="e.g. Wrong payment entry / cheque bounced / cash miscount / duplicate" required></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+              <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+              <button type="submit" class="btn btn-danger"><i class="fa-solid fa-rotate-left"></i> Confirm Reversal</button>
+            </div>
+          </form>
+        </div>
+      `,
+      null
+    );
+  },
+
+  async submitReversePayment(paymentId, studentId) {
+    const reason = document.getElementById('reverse-payment-reason').value.trim();
+    if (!reason) {
+      this.showToast('Please provide a reason for reversing payment', 'warning');
+      return;
+    }
+
+    try {
+      const res = await this.apiRequest(`/api/academy/fees/payments/${paymentId}/reverse`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      if (res.success) {
+        this.showToast('Payment reversed and invoice balance reopened!', 'success');
+        this.closeModal();
+        if (studentId) {
+          await this.loadStudentLedger(studentId);
+        } else {
+          await this.renderFees();
+        }
+      } else {
+        this.showToast(res.error || 'Failed to reverse payment', 'danger');
+      }
+    } catch (e) {
+      this.showToast('Error: ' + e.message, 'danger');
     }
   },
 

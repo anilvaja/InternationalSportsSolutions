@@ -3666,7 +3666,16 @@ academyRouter.get('/fees/ledger/:studentId', (req, res) => {
     }
 
     const ledger = db.prepare(`
-      SELECT sfl.*, sf.invoice_number, fp.receipt_number, u.name as created_by_name
+      SELECT sfl.*,
+             COALESCE(DATE(sfl.created_at), sfl.created_at) as entry_date,
+             sfl.debit as debit_amount,
+             sfl.credit as credit_amount,
+             sfl.running_balance as balance,
+             sf.invoice_number,
+             sf.status as invoice_status,
+             fp.receipt_number,
+             fp.status as payment_status,
+             u.name as created_by_name
       FROM student_fee_ledger sfl
       LEFT JOIN student_fees sf ON sf.id = sfl.student_fee_id
       LEFT JOIN fee_payments fp ON fp.id = sfl.fee_payment_id
@@ -4213,6 +4222,93 @@ academyRouter.post('/fees/pay', (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/fees/:id
+ * Edit existing fee invoice (dates, title, notes, or amounts if unpaid)
+ */
+academyRouter.put('/fees/:id', (req, res) => {
+  try {
+    if (req.user.role === 'coach') {
+      return res.status(403).json({ success: false, error: 'Access denied: Coaches cannot modify fee records' });
+    }
+
+    const db = req.tenantDb;
+    const feeId = Number(req.params.id);
+    const updated = FeeService.updateFee(db, feeId, req.body, req.user);
+
+    res.json({
+      success: true,
+      message: 'Fee invoice updated successfully',
+      fee: updated
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/fees/:id/void
+ * Void / Cancel an incorrectly created fee invoice and reverse associated payments
+ */
+academyRouter.post('/fees/:id/void', (req, res) => {
+  try {
+    if (req.user.role === 'coach') {
+      return res.status(403).json({ success: false, error: 'Access denied: Coaches cannot void fee records' });
+    }
+
+    const db = req.tenantDb;
+    const feeId = Number(req.params.id);
+    const { reason = 'Voided by Administrator' } = req.body;
+    const result = FeeService.voidFee(db, feeId, reason, req.user);
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/fees/:id
+ * REST alias for voiding / removing a mistaken invoice
+ */
+academyRouter.delete('/fees/:id', (req, res) => {
+  try {
+    if (req.user.role === 'coach') {
+      return res.status(403).json({ success: false, error: 'Access denied: Coaches cannot void fee records' });
+    }
+
+    const db = req.tenantDb;
+    const feeId = Number(req.params.id);
+    const reason = req.body && req.body.reason ? req.body.reason : 'Cancelled by Administrator';
+    const result = FeeService.voidFee(db, feeId, reason, req.user);
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/fees/payments/:id/reverse
+ * Reverses a wrongly recorded payment receipt and reopens the balance
+ */
+academyRouter.post('/fees/payments/:id/reverse', (req, res) => {
+  try {
+    if (req.user.role === 'coach') {
+      return res.status(403).json({ success: false, error: 'Access denied: Coaches cannot reverse payments' });
+    }
+
+    const db = req.tenantDb;
+    const paymentId = Number(req.params.id);
+    const { reason = 'Reversed by Administrator' } = req.body;
+    const result = FeeService.reversePayment(db, paymentId, reason, req.user);
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
