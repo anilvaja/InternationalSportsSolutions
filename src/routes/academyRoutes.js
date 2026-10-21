@@ -32,6 +32,42 @@ export {
 // All routes here require valid auth, academy staff access, and tenant DB resolution
 academyRouter.use(requireAuth, requireAcademyStaff, resolveTenant);
 
+// Invalidate/refresh effective permissions on every request directly from database
+academyRouter.use((req, res, next) => {
+  if (req.user && req.tenantDb && req.user.userId) {
+    try {
+      let perms = [];
+      const userRow = req.tenantDb.prepare('SELECT custom_permissions FROM users WHERE id = ?').get(req.user.userId);
+      if (userRow && userRow.custom_permissions) {
+        try { perms = JSON.parse(userRow.custom_permissions); } catch (e) {}
+      }
+      const roleRow = req.tenantDb.prepare('SELECT permissions FROM academy_roles WHERE name = ?').get(req.user.role);
+      if (roleRow && roleRow.permissions) {
+        try {
+          const rolePerms = JSON.parse(roleRow.permissions);
+          perms = Array.from(new Set([...perms, ...rolePerms]));
+        } catch (e) {}
+      }
+      req.user.permissions = perms;
+    } catch (e) {}
+  }
+  next();
+});
+
+/**
+ * Pure helper to verify permission from refreshed user context
+ */
+export function hasPermission(req, perm) {
+  if (!req.user) return false;
+  if (req.user.isSuperAdmin || req.user.role === 'academy_admin') return true;
+  const perms = req.user.permissions || [];
+  if (perms.includes('all')) return true;
+  if (Array.isArray(perm)) {
+    return perm.some(p => perms.includes(p));
+  }
+  return perms.includes(perm);
+}
+
 /**
  * Helper to resolve coach profile for logged-in user
  */
@@ -1086,6 +1122,55 @@ academyRouter.get('/dashboard/today-batches', (req, res) => {
 // ==========================================
 
 /**
+ * GET /api/academy/students/export
+ * Export students roster in CSV format
+ */
+academyRouter.get('/students/export', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!hasPermission(req, ['view_students', 'manage_students'])) {
+      return res.status(403).json({ success: false, error: 'Permission to export student records required' });
+    }
+
+    const students = db.prepare(`
+      SELECT s.id, s.student_code, s.first_name, s.last_name, s.email, s.phone, s.gender, s.date_of_birth,
+             s.status, b.name as branch_name, bt.name as batch_name
+      FROM students s
+      LEFT JOIN branches b ON b.id = s.branch_id
+      LEFT JOIN student_batch_enrollments sbe ON sbe.student_id = s.id AND sbe.status = 'active'
+      LEFT JOIN batches bt ON bt.id = sbe.batch_id
+      ORDER BY s.id ASC
+    `).all();
+
+    const headers = ['ID', 'Student Code', 'First Name', 'Last Name', 'Email', 'Phone', 'Gender', 'DOB', 'Status', 'Branch', 'Batch'];
+    const rows = students.map(s => [
+      s.id,
+      s.student_code || '',
+      s.first_name || '',
+      s.last_name || '',
+      s.email || '',
+      s.phone || '',
+      s.gender || '',
+      s.date_of_birth || '',
+      s.status || '',
+      s.branch_name || '',
+      s.batch_name || ''
+    ]);
+
+    const csvContent = [
+      headers.map(h => `"${h}"`).join(','),
+      ...rows.map(r => r.map(c => `"${String(c || '').replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="students_export_${Date.now()}.csv"`);
+    res.send(csvContent);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/academy/students
  */
 academyRouter.get('/students', (req, res) => {
@@ -1637,27 +1722,44 @@ academyRouter.post('/students/import', (req, res) => {
         }
 
         let branchId = null;
-        if (item.branch_id) {
+        if (item.branch_id !== undefined && item.branch_id !== null && item.branch_id !== '') {
           const bNum = Number(item.branch_id);
           if (!isNaN(bNum)) {
             const br = db.prepare('SELECT id FROM branches WHERE id = ?').get(bNum);
-            if (br) branchId = br.id;
+            if (br) {
+              branchId = br.id;
+            } else {
+              errors.push({ row: i + 1, error: `Branch ID ${item.branch_id} does not exist in this academy` });
+              continue;
+            }
           }
         }
         if (!branchId && (item.branch_name || item.branch)) {
           const bName = String(item.branch_name || item.branch).trim();
           const br = db.prepare('SELECT id FROM branches WHERE name = ? COLLATE NOCASE').get(bName);
-          if (br) branchId = br.id;
+          if (br) {
+            branchId = br.id;
+          } else {
+            errors.push({ row: i + 1, error: `Branch '${bName}' does not exist in this academy` });
+            continue;
+          }
         }
 
         let batchId = null;
-        if (item.batch_id) {
+        if (item.batch_id !== undefined && item.batch_id !== null && item.batch_id !== '') {
           const btNum = Number(item.batch_id);
           if (!isNaN(btNum)) {
             const bt = db.prepare('SELECT id, branch_id FROM batches WHERE id = ?').get(btNum);
             if (bt) {
               batchId = bt.id;
               if (!branchId && bt.branch_id) branchId = bt.branch_id;
+              if (branchId && bt.branch_id && branchId !== bt.branch_id) {
+                errors.push({ row: i + 1, error: 'Batch does not belong to the selected branch' });
+                continue;
+              }
+            } else {
+              errors.push({ row: i + 1, error: `Batch ID ${item.batch_id} does not exist in this academy` });
+              continue;
             }
           }
         }
@@ -1667,6 +1769,13 @@ academyRouter.post('/students/import', (req, res) => {
           if (bt) {
             batchId = bt.id;
             if (!branchId && bt.branch_id) branchId = bt.branch_id;
+            if (branchId && bt.branch_id && branchId !== bt.branch_id) {
+              errors.push({ row: i + 1, error: 'Batch does not belong to the selected branch' });
+              continue;
+            }
+          } else {
+            errors.push({ row: i + 1, error: `Batch '${btName}' does not exist in this academy` });
+            continue;
           }
         }
 
@@ -3347,6 +3456,12 @@ academyRouter.get('/attendance', (req, res) => {
 academyRouter.post('/attendance', (req, res) => {
   try {
     const db = req.tenantDb;
+
+    // Permission check: Must have mark_attendance or manage_attendance permission
+    if (req.user.role !== 'coach' && !hasPermission(req, ['mark_attendance', 'manage_attendance'])) {
+      return res.status(403).json({ success: false, error: 'Access denied: Permission to mark attendance required' });
+    }
+
     const { batch_id, date, entries, notes, override_token } = req.body;
 
     if (!batch_id || !date || !Array.isArray(entries)) {
@@ -3961,8 +4076,8 @@ academyRouter.get('/fees', (req, res) => {
     const db = req.tenantDb;
 
     // Strict Role Scoping: Coaches have zero access to financial ledgers or fees
-    if (req.user.role === 'coach') {
-      return res.status(403).json({ success: false, error: 'Access denied: Coaches do not have permission to access financial fee records' });
+    if (req.user.role === 'coach' || !hasPermission(req, 'view_fees')) {
+      return res.status(403).json({ success: false, error: 'Access denied: Permission to view fee records required' });
     }
 
     const { status, student_id, branch_id, batch_id, search, overdue_only, page, limit } = req.query;
@@ -4754,13 +4869,15 @@ academyRouter.delete('/sports/:id', (req, res) => {
       return res.status(404).json({ success: false, error: 'Sport not found' });
     }
 
-    // Check references in related tables
+    // Check references in related tables (coaches, batches, syllabus categories, techniques, inventory, fees)
     const coachCount = db.prepare('SELECT COUNT(*) as c FROM coaches WHERE sport_id = ?').get(sportId).c;
     const batchCount = db.prepare('SELECT COUNT(*) as c FROM batches WHERE sport_id = ?').get(sportId).c;
+    const catCount = db.prepare('SELECT COUNT(*) as c FROM syllabus_categories WHERE sport_id = ? AND deleted_at IS NULL').get(sportId).c;
+    const techCount = db.prepare('SELECT COUNT(*) as c FROM syllabus_techniques WHERE sport_id = ? AND deleted_at IS NULL').get(sportId).c;
     const equipCount = db.prepare('SELECT COUNT(*) as c FROM equipment_inventory WHERE sport_id = ?').get(sportId).c;
     const feeCount = db.prepare('SELECT COUNT(*) as c FROM fee_structures WHERE sport_id = ?').get(sportId).c;
 
-    const totalRefs = coachCount + batchCount + equipCount + feeCount;
+    const totalRefs = coachCount + batchCount + catCount + techCount + equipCount + feeCount;
 
     if (totalRefs > 0) {
       // Safely deactivate instead of hard delete to preserve referential integrity
@@ -4768,7 +4885,7 @@ academyRouter.delete('/sports/:id', (req, res) => {
       return res.json({
         success: true,
         deactivated: true,
-        message: `Sport '${existing.name}' is referenced by ${coachCount} coaches, ${batchCount} batches, and fees. It has been safely deactivated instead of deleted.`
+        message: `Sport '${existing.name}' is referenced by ${batchCount} batches, ${coachCount} coaches, ${catCount} syllabus categories, and ${techCount} techniques. It has been safely deactivated instead of deleted.`
       });
     }
 

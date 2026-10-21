@@ -63,7 +63,7 @@ export function requireAcademyStaff(req, res, next) {
   if (req.user.isSuperAdmin) {
     return next();
   }
-  if (!['academy_admin', 'academy_staff', 'coach'].includes(req.user.role)) {
+  if (req.user.role === 'student') {
     return res.status(403).json({ success: false, error: 'Access denied: Academy staff credentials required' });
   }
   next();

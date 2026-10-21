@@ -48,6 +48,11 @@ export class SyllabusService {
       if (defaultSport) {
         finalSportId = defaultSport.id;
       }
+    } else {
+      const sportExists = db.prepare('SELECT id FROM sports WHERE id = ? AND is_active = 1').get(finalSportId);
+      if (!sportExists) {
+        throw new Error('Invalid sport discipline: specified sport does not exist');
+      }
     }
 
     const existing = db.prepare(`
@@ -256,6 +261,9 @@ export class SyllabusService {
     }
 
     const finalSportId = sport_id ? Number(sport_id) : (category.sport_id || null);
+    if (sport_id && category.sport_id && Number(sport_id) !== category.sport_id) {
+      throw new Error('Technique cannot be linked to a category from another sports discipline');
+    }
     const trimmedName = name.trim();
     const existing = db.prepare(`
       SELECT id FROM syllabus_techniques
@@ -326,8 +334,12 @@ export class SyllabusService {
       targetSportId = cat.sport_id;
     }
 
-    if (sport_id !== undefined) {
-      targetSportId = sport_id ? Number(sport_id) : null;
+    if (sport_id !== undefined && sport_id !== null) {
+      const parentCat = db.prepare('SELECT sport_id FROM syllabus_categories WHERE id = ?').get(targetCatId);
+      if (parentCat && parentCat.sport_id && Number(sport_id) !== parentCat.sport_id) {
+        throw new Error('Technique cannot be linked to a category from another sports discipline');
+      }
+      targetSportId = Number(sport_id);
     }
 
     if (name && (name.trim().toLowerCase() !== technique.name.toLowerCase() || targetCatId !== technique.category_id)) {

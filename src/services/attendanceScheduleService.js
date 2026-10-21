@@ -61,7 +61,7 @@ export class AttendanceScheduleService {
     let allowedPastDays = 2;
     let allowFuture = false;
     try {
-      const policy = db.prepare('SELECT attendance_cutoff_days, allow_future_attendance FROM academy_policy_settings WHERE academy_id = ?').get(academyId);
+      const policy = db.prepare('SELECT attendance_cutoff_days, allow_future_attendance FROM academy_policy_settings LIMIT 1').get();
       if (policy) {
         if (policy.attendance_cutoff_days !== null && !isNaN(Number(policy.attendance_cutoff_days))) {
           allowedPastDays = Number(policy.attendance_cutoff_days);
