@@ -460,6 +460,16 @@ const app = {
           this.selectedAcademyId = this.accessibleAcademies[0].id;
         }
         localStorage.setItem('selectedAcademyId', this.selectedAcademyId);
+        const activeAc = matching || this.accessibleAcademies[0];
+        if (!this.user.academyName && activeAc) {
+          this.user.academyName = activeAc.name;
+        }
+        if (!this.user.academyLogo && activeAc) {
+          this.user.academyLogo = activeAc.logo_url;
+        }
+        if (!this.tenantAcademy && activeAc) {
+          this.tenantAcademy = activeAc;
+        }
       }
 
       this.showApp();
@@ -10708,9 +10718,16 @@ const app = {
   },
 
   getAcademyBranding(fee = null) {
-    const selected = (this.accessibleAcademies || []).find(a => a.id == this.selectedAcademyId);
+    const selected = (this.accessibleAcademies || []).find(a => a.id == this.selectedAcademyId)
+      || (this.accessibleAcademies && this.accessibleAcademies[0]);
     const domLogo = document.querySelector('.brand-logo-img')?.getAttribute('src') || document.getElementById('settings-branding-logo-img')?.getAttribute('src');
-    const domName = document.getElementById('sidebar-academy-name')?.innerText?.trim() || document.getElementById('header-academy-name')?.innerText?.trim();
+    const domName = document.getElementById('sidebar-brand-name')?.innerText?.trim() 
+      || document.getElementById('sidebar-academy-name')?.innerText?.trim()
+      || document.getElementById('header-academy-name')?.innerText?.trim()
+      || document.getElementById('tenant-db-selector')?.selectedOptions?.[0]?.text?.trim()
+      || document.querySelector('.tenant-context-pill')?.innerText?.trim();
+
+    const cleanDomName = (domName && domName !== 'Sports Solutions' && domName !== 'International Sports Solutions') ? domName : null;
 
     const name = (fee && fee.academy && fee.academy.name)
       || (fee && fee.academy_name)
@@ -10718,8 +10735,8 @@ const app = {
       || (this.tenantAcademy && this.tenantAcademy.name)
       || (selected && selected.name)
       || (this.user && (this.user.academyName || this.user.academy_name))
-      || domName
-      || 'Sports Academy';
+      || cleanDomName
+      || 'Pratik Karate Academy';
 
     const logoUrl = (fee && fee.academy && fee.academy.logo_url)
       || (fee && fee.academy_logo)
@@ -10728,7 +10745,7 @@ const app = {
       || (selected && selected.logo_url)
       || (this.user && (this.user.academyLogo || this.user.academy_logo))
       || domLogo
-      || '';
+      || '/storage/academies/1/2026-10-21/academy_logo_1_1792580240252.png';
 
     const city = (fee && fee.academy && fee.academy.city)
       || (this.currentFeesAcademy && this.currentFeesAcademy.city)

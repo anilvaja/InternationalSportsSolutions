@@ -182,6 +182,28 @@ studentRouter.get('/fees', (req, res) => {
     let pendingCount = 0;
     let nextDueDate = null;
 
+    const academyData = req.academy ? {
+      id: req.academy.id,
+      name: req.academy.name,
+      slug: req.academy.slug,
+      logo_url: req.academy.logo_url,
+      city: req.academy.city || 'Vadodara',
+      address: req.academy.address || '',
+      contact_phone: req.academy.contact_phone || '',
+      contact_email: req.academy.contact_email || '',
+      gst_number: req.academy.gst_number || '',
+    } : {
+      id: 1,
+      name: 'Pratik Karate Academy',
+      slug: 'pratik-karate-academy',
+      logo_url: '/storage/academies/1/2026-10-21/academy_logo_1_1792580240252.png',
+      city: 'Vadodara',
+      address: '',
+      contact_phone: '',
+      contact_email: '',
+      gst_number: '',
+    };
+
     const formatted = invoices.map(inv => {
       const isDue = inv.balance_amount > 0;
       const isOverdue = isDue && inv.due_date && inv.due_date < today;
@@ -209,6 +231,9 @@ studentRouter.get('/fees', (req, res) => {
 
       return {
         ...inv,
+        academy: academyData,
+        academy_name: academyData.name,
+        academy_logo: academyData.logo_url,
         is_due: isDue,
         is_overdue: isOverdue,
         overdue_days: daysDiff > 0 ? daysDiff : 0,
@@ -221,6 +246,7 @@ studentRouter.get('/fees', (req, res) => {
 
     res.json({
       success: true,
+      academy: academyData,
       student: student ? {
         id: student.id,
         code: student.student_code,

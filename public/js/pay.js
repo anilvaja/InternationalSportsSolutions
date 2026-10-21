@@ -215,11 +215,11 @@ const payApp = {
 
   downloadPdfReceipt(inv) {
     this.downloadPdfReceiptDirect({
-      academyName: inv.academy_name || (this.selectedAcademy && this.selectedAcademy.name) || 'International Sports Academy',
-      academyCity: inv.academy_city || 'Vadodara',
-      academyAddress: inv.academy_address || null,
-      academyGst: inv.academy_gst || null,
-      academyLogo: inv.academy_logo || null,
+      academyName: (inv.academy && inv.academy.name) || inv.academy_name || (this.selectedAcademy && this.selectedAcademy.name) || 'Pratik Karate Academy',
+      academyCity: (inv.academy && inv.academy.city) || inv.academy_city || 'Vadodara',
+      academyAddress: (inv.academy && inv.academy.address) || inv.academy_address || null,
+      academyGst: (inv.academy && inv.academy.gst_number) || inv.academy_gst || null,
+      academyLogo: (inv.academy && inv.academy.logo_url) || inv.academy_logo || '/storage/academies/1/2026-10-21/academy_logo_1_1792580240252.png',
       receiptNumber: `REC-${inv.invoice_number ? inv.invoice_number.slice(-4) : Date.now().toString().slice(-4)}`,
       invoiceNumber: inv.invoice_number,
       studentName: `${inv.first_name || ''} ${inv.last_name || ''}`.trim() || 'Student',
@@ -252,10 +252,11 @@ const payApp = {
     }
 
     const {
-      academyName = 'Sports Solutions Academy',
+      academyName = 'Pratik Karate Academy',
       academyCity = 'Vadodara',
       academyAddress = null,
       academyGst = null,
+      academyLogo = '/storage/academies/1/2026-10-21/academy_logo_1_1792580240252.png',
       receiptNumber = `REC-${Date.now().toString().slice(-4)}`,
       invoiceNumber = 'INV-001',
       studentName = 'Student',
@@ -292,13 +293,28 @@ const payApp = {
 
     // Circular Logo Emblem Badge
     doc.setFillColor(255, 255, 255);
-    doc.roundedRect(14, 10, 24, 24, 4, 4, 'F');
-    doc.setFillColor(37, 99, 235);
-    doc.circle(26, 22, 9, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('ISS', 22.5, 25.5);
+    doc.roundedRect(14, 8, 26, 26, 3, 3, 'F');
+
+    let logoDrawn = false;
+    const brandLogoImg = document.querySelector('.brand-logo-img') || document.querySelector('img[src*="logo"]') || document.querySelector('.academy-logo');
+    if (brandLogoImg && brandLogoImg.complete && brandLogoImg.naturalWidth > 0) {
+      try {
+        doc.addImage(brandLogoImg, 'PNG', 15, 9, 24, 24);
+        logoDrawn = true;
+      } catch (e) {
+        logoDrawn = false;
+      }
+    }
+
+    if (!logoDrawn) {
+      doc.setFillColor(37, 99, 235);
+      doc.circle(27, 21, 9, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      const brandInitials = academyName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() || 'PKA';
+      doc.text(brandInitials, 27, 24.5, { align: 'center' });
+    }
 
     // Academy Name & Metadata
     doc.setTextColor(255, 255, 255);
