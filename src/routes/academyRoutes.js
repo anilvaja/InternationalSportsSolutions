@@ -3624,6 +3624,18 @@ academyRouter.post('/fees/collect', (req, res) => {
       allowAdminOverride,
     });
 
+    result.academy = {
+      id: req.academy.id,
+      name: req.academy.name,
+      slug: req.academy.slug,
+      logo_url: req.academy.logo_url,
+      city: req.academy.city,
+      address: req.academy.address,
+      contact_phone: req.academy.contact_phone,
+      contact_email: req.academy.contact_email,
+      gst_number: req.academy.gst_number,
+    };
+
     res.status(201).json(result);
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -3722,24 +3734,28 @@ academyRouter.get('/fees/receipt/:receiptNumber', (req, res) => {
       return res.status(404).json({ success: false, error: 'Receipt not found' });
     }
 
+    const academyData = {
+      id: req.academy.id,
+      name: req.academy.name,
+      slug: req.academy.slug,
+      logo_url: req.academy.logo_url,
+      contact_email: req.academy.contact_email,
+      contact_phone: req.academy.contact_phone,
+      address: req.academy.address,
+      city: req.academy.city,
+      country: req.academy.country || 'India',
+      is_gst_registered: req.academy.is_gst_registered || 0,
+      gst_number: req.academy.gst_number || null,
+      legal_business_name: req.academy.legal_business_name || req.academy.name,
+      hsn_sac_code: req.academy.hsn_sac_code || '999293',
+    };
+
+    payment.academy = academyData;
+
     res.json({
       success: true,
       receipt: payment,
-      academy: {
-        id: req.academy.id,
-        name: req.academy.name,
-        slug: req.academy.slug,
-        logo_url: req.academy.logo_url,
-        contact_email: req.academy.contact_email,
-        contact_phone: req.academy.contact_phone,
-        address: req.academy.address,
-        city: req.academy.city,
-        country: req.academy.country || 'India',
-        is_gst_registered: req.academy.is_gst_registered || 0,
-        gst_number: req.academy.gst_number || null,
-        legal_business_name: req.academy.legal_business_name || req.academy.name,
-        hsn_sac_code: req.academy.hsn_sac_code || '999293',
-      }
+      academy: academyData
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -3999,15 +4015,31 @@ academyRouter.get('/fees', (req, res) => {
       ORDER BY sf.due_date ASC, sf.id DESC
     `;
 
+    const academyData = {
+      id: req.academy.id,
+      name: req.academy.name,
+      slug: req.academy.slug,
+      logo_url: req.academy.logo_url,
+      city: req.academy.city,
+      address: req.academy.address,
+      contact_phone: req.academy.contact_phone,
+      contact_email: req.academy.contact_email,
+      gst_number: req.academy.gst_number,
+    };
+
     if (page || limit) {
       const p = Math.max(1, parseInt(page) || 1);
       const l = Math.max(1, parseInt(limit) || 20);
       const offset = (p - 1) * l;
       selectQuery += ` LIMIT ? OFFSET ?`;
       const fees = db.prepare(selectQuery).all(...params, l, offset);
+      fees.forEach(f => {
+        f.academy = academyData;
+      });
       return res.json({
         success: true,
         fees,
+        academy: academyData,
         total,
         page: p,
         limit: l,
@@ -4015,7 +4047,10 @@ academyRouter.get('/fees', (req, res) => {
       });
     } else {
       const fees = db.prepare(selectQuery).all(...params);
-      return res.json({ success: true, fees, total, page: 1, limit: total, totalPages: 1 });
+      fees.forEach(f => {
+        f.academy = academyData;
+      });
+      return res.json({ success: true, fees, academy: academyData, total, page: 1, limit: total, totalPages: 1 });
     }
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

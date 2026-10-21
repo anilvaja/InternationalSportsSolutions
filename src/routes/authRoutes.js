@@ -184,10 +184,10 @@ authRouter.get('/me', (req, res) => {
   let permissionsList = [];
 
   if (req.user.isSuperAdmin) {
-    academiesList = centralDb.prepare('SELECT id, name, slug, plan, status, logo_url FROM academies ORDER BY name ASC').all();
+    academiesList = centralDb.prepare('SELECT id, name, slug, plan, status, logo_url, city, address, contact_phone, contact_email, gst_number FROM academies ORDER BY name ASC').all();
     permissionsList = ['all'];
   } else if (req.user.academyId) {
-    const ac = centralDb.prepare('SELECT id, name, slug, plan, status, logo_url FROM academies WHERE id = ?').get(req.user.academyId);
+    const ac = centralDb.prepare('SELECT id, name, slug, plan, status, logo_url, city, address, contact_phone, contact_email, gst_number FROM academies WHERE id = ?').get(req.user.academyId);
     if (ac) {
       academiesList = [ac];
       req.user.academyName = ac.name;
@@ -197,6 +197,15 @@ authRouter.get('/me', (req, res) => {
 
     try {
       const tenantDb = getTenantDbById(req.user.academyId);
+      
+      // Sync fresh logo from tenant_settings if configured
+      try {
+        const tenantLogo = tenantDb.prepare("SELECT value FROM tenant_settings WHERE key = 'logo_url'").get();
+        if (tenantLogo && tenantLogo.value) {
+          req.user.academyLogo = tenantLogo.value;
+          if (ac) ac.logo_url = tenantLogo.value;
+        }
+      } catch (e) {}
       
       // Fetch academy policy default theme
       const policy = tenantDb.prepare('SELECT default_color_theme FROM academy_policy_settings WHERE academy_id = ?').get(req.user.academyId);

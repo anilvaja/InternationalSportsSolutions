@@ -153,8 +153,16 @@ export function resolveTenant(req, res, next) {
     }
 
     // Attach DB connection and metadata
-    req.academy = academyRecord;
+    req.academy = { ...academyRecord };
     req.tenantDb = getTenantDbById(academyRecord.id);
+
+    // Prefer fresh branding/logo_url from tenant settings if present
+    try {
+      const tenantLogo = req.tenantDb.prepare("SELECT value FROM tenant_settings WHERE key = 'logo_url'").get();
+      if (tenantLogo && tenantLogo.value) {
+        req.academy.logo_url = tenantLogo.value;
+      }
+    } catch (e) {}
 
     next();
   } catch (err) {

@@ -8814,6 +8814,12 @@ const app = {
       ]);
 
       const fees = (feesRes && feesRes.fees) || [];
+      if (feesRes && feesRes.academy) {
+        this.currentFeesAcademy = feesRes.academy;
+        if (!this.tenantAcademy) {
+          this.tenantAcademy = feesRes.academy;
+        }
+      }
       const dash = (dashRes && dashRes.analytics) || {
         thisMonthCollections: 0,
         allTimeCollections: 0,
@@ -10701,7 +10707,80 @@ const app = {
     }
   },
 
-  generateFeeReceiptPdf(fee) {
+  getAcademyBranding(fee = null) {
+    const selected = (this.accessibleAcademies || []).find(a => a.id == this.selectedAcademyId);
+    const domLogo = document.querySelector('.brand-logo-img')?.getAttribute('src') || document.getElementById('settings-branding-logo-img')?.getAttribute('src');
+    const domName = document.getElementById('sidebar-academy-name')?.innerText?.trim() || document.getElementById('header-academy-name')?.innerText?.trim();
+
+    const name = (fee && fee.academy && fee.academy.name)
+      || (fee && fee.academy_name)
+      || (this.currentFeesAcademy && this.currentFeesAcademy.name)
+      || (this.tenantAcademy && this.tenantAcademy.name)
+      || (selected && selected.name)
+      || (this.user && (this.user.academyName || this.user.academy_name))
+      || domName
+      || 'Sports Academy';
+
+    const logoUrl = (fee && fee.academy && fee.academy.logo_url)
+      || (fee && fee.academy_logo)
+      || (this.currentFeesAcademy && this.currentFeesAcademy.logo_url)
+      || (this.tenantAcademy && this.tenantAcademy.logo_url)
+      || (selected && selected.logo_url)
+      || (this.user && (this.user.academyLogo || this.user.academy_logo))
+      || domLogo
+      || '';
+
+    const city = (fee && fee.academy && fee.academy.city)
+      || (this.currentFeesAcademy && this.currentFeesAcademy.city)
+      || (this.tenantAcademy && this.tenantAcademy.city)
+      || (selected && selected.city)
+      || 'Vadodara';
+
+    const address = (fee && fee.academy && fee.academy.address)
+      || (this.currentFeesAcademy && this.currentFeesAcademy.address)
+      || (this.tenantAcademy && this.tenantAcademy.address)
+      || (selected && selected.address)
+      || '';
+
+    const phone = (fee && fee.academy && fee.academy.contact_phone)
+      || (this.currentFeesAcademy && this.currentFeesAcademy.contact_phone)
+      || (this.tenantAcademy && this.tenantAcademy.contact_phone)
+      || (selected && selected.contact_phone)
+      || '';
+
+    const email = (fee && fee.academy && fee.academy.contact_email)
+      || (this.currentFeesAcademy && this.currentFeesAcademy.contact_email)
+      || (this.tenantAcademy && this.tenantAcademy.contact_email)
+      || (selected && selected.contact_email)
+      || '';
+
+    const gst = (fee && fee.academy && fee.academy.gst_number)
+      || (this.currentFeesAcademy && this.currentFeesAcademy.gst_number)
+      || (this.tenantAcademy && this.tenantAcademy.gst_number)
+      || (selected && selected.gst_number)
+      || '';
+
+    return { name, logoUrl, city, address, phone, email, gst };
+  },
+
+  async getBase64ImageFromUrl(imageUrl) {
+    if (!imageUrl) return null;
+    try {
+      const res = await fetch(imageUrl);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async generateFeeReceiptPdf(fee) {
     if (!window.jspdf || !window.jspdf.jsPDF) {
       this.showToast('PDF generator library is initializing, please try again.', 'warning');
       return;
@@ -10710,10 +10789,15 @@ const app = {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF('p', 'mm', 'a4');
 
-    const academyName = (fee.academy && fee.academy.name) || (this.tenantAcademy && this.tenantAcademy.name) || (this.user && this.user.academyName) || 'Sports Academy';
-    const academyCity = (fee.academy && fee.academy.city) || (this.tenantAcademy && this.tenantAcademy.city) || 'Vadodara';
-    const academyAddress = (fee.academy && fee.academy.address) || (this.tenantAcademy && this.tenantAcademy.address) || '';
-    const academyGst = (fee.academy && fee.academy.gst_number) || (this.tenantAcademy && this.tenantAcademy.gst_number) || '';
+    const branding = this.getAcademyBranding(fee);
+    const academyName = branding.name;
+    const academyCity = branding.city;
+    const academyAddress = branding.address;
+    const academyGst = branding.gst;
+    const academyPhone = branding.phone;
+    const academyEmail = branding.email;
+    const logoUrl = branding.logoUrl;
+
     const receiptNumber = fee.receipt_number || ('REC-' + (fee.id || Date.now().toString().slice(-4)));
     const invoiceNumber = fee.invoice_number || ('INV-' + (fee.id || '001'));
     const studentName = `${fee.first_name || ''} ${fee.last_name || ''}`.trim() || 'Student';
@@ -10749,16 +10833,33 @@ const app = {
     // Circular Logo Emblem Badge or Official Logo
     doc.setFillColor(255, 255, 255);
     doc.roundedRect(14, 8, 26, 26, 3, 3, 'F');
-    const brandLogoImg = document.querySelector('.brand-logo-img') || document.getElementById('settings-branding-logo-img');
+    
     let logoDrawn = false;
-    if (brandLogoImg && brandLogoImg.complete && brandLogoImg.naturalWidth > 0) {
+    if (logoUrl) {
       try {
-        doc.addImage(brandLogoImg, 'PNG', 15, 9, 24, 24);
-        logoDrawn = true;
+        const base64Logo = await this.getBase64ImageFromUrl(logoUrl);
+        if (base64Logo) {
+          const format = base64Logo.includes('image/png') ? 'PNG' : (base64Logo.includes('image/webp') ? 'WEBP' : 'JPEG');
+          doc.addImage(base64Logo, format, 15, 9, 24, 24);
+          logoDrawn = true;
+        }
       } catch (e) {
         logoDrawn = false;
       }
     }
+
+    if (!logoDrawn) {
+      const brandLogoImg = document.querySelector('.brand-logo-img') || document.getElementById('settings-branding-logo-img');
+      if (brandLogoImg && brandLogoImg.complete && brandLogoImg.naturalWidth > 0) {
+        try {
+          doc.addImage(brandLogoImg, 'PNG', 15, 9, 24, 24);
+          logoDrawn = true;
+        } catch (e) {
+          logoDrawn = false;
+        }
+      }
+    }
+
     if (!logoDrawn) {
       doc.setFillColor(37, 99, 235);
       doc.circle(27, 21, 9, 'F');
@@ -10977,13 +11078,14 @@ const app = {
   },
 
   printFeeReceipt(fee) {
-    const academyName = (fee.academy && fee.academy.name) || (this.tenantAcademy && this.tenantAcademy.name) || (this.user && this.user.academyName) || 'Sports Academy';
-    const academyCity = (fee.academy && fee.academy.city) || (this.tenantAcademy && this.tenantAcademy.city) || 'Vadodara';
-    const academyAddress = (fee.academy && fee.academy.address) || (this.tenantAcademy && this.tenantAcademy.address) || '';
-    const academyPhone = (fee.academy && fee.academy.contact_phone) || (this.tenantAcademy && this.tenantAcademy.contact_phone) || '';
-    const academyEmail = (fee.academy && fee.academy.contact_email) || (this.tenantAcademy && this.tenantAcademy.contact_email) || '';
-    const academyGst = (fee.academy && fee.academy.gst_number) || (this.tenantAcademy && this.tenantAcademy.gst_number) || '';
-    const logoUrl = (fee.academy && fee.academy.logo_url) || (this.tenantAcademy && this.tenantAcademy.logo_url) || (this.user && this.user.academyLogo) || '';
+    const branding = this.getAcademyBranding(fee);
+    const academyName = branding.name;
+    const academyCity = branding.city;
+    const academyAddress = branding.address;
+    const academyPhone = branding.phone;
+    const academyEmail = branding.email;
+    const academyGst = branding.gst;
+    const logoUrl = branding.logoUrl;
 
     const baseFee = Number(fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || fee.amount || 0));
     const discount = Number(fee.discount_amount || 0);
@@ -10996,7 +11098,7 @@ const app = {
       ? `${fee.period_start} to ${fee.period_end} (${fee.months_count || 1} month(s))`
       : 'Standard Cycle';
 
-    const printWindow = window.open('', '_blank', 'width=900,height=800');
+    const printWindow = window.open('', '_blank', 'width=920,height=850');
     if (!printWindow) {
       this.showToast('Popup blocker prevented print window. Please allow popups.', 'warning');
       return;
@@ -11007,11 +11109,11 @@ const app = {
       <html lang="en">
       <head>
         <meta charset="UTF-8">
-        <title>Receipt - ${receiptNumber}</title>
+        <title>Receipt - ${this.escapeHtml(receiptNumber)}</title>
         <style>
           @page {
             size: A4 portrait;
-            margin: 12mm 15mm;
+            margin: 12mm 14mm;
           }
           * {
             box-sizing: border-box;
@@ -11021,7 +11123,7 @@ const app = {
           body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             color: #0f172a;
-            background: #f8fafc;
+            background: #f1f5f9;
             margin: 0;
             padding: 32px 20px;
             -webkit-font-smoothing: antialiased;
@@ -11037,9 +11139,9 @@ const app = {
             background: #2563eb;
             color: #ffffff;
             border: none;
-            padding: 9px 20px;
+            padding: 10px 22px;
             border-radius: 6px;
-            font-weight: 600;
+            font-weight: 700;
             font-size: 13px;
             cursor: pointer;
             box-shadow: 0 2px 8px rgba(37,99,235,0.25);
@@ -11053,7 +11155,7 @@ const app = {
             background: #ffffff;
             border: 1px solid #e2e8f0;
             border-radius: 12px;
-            padding: 38px 44px;
+            padding: 40px 48px;
             box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
           }
           .receipt-header {
@@ -11061,19 +11163,19 @@ const app = {
             justify-content: space-between;
             align-items: flex-start;
             border-bottom: 2px solid #2563eb;
-            padding-bottom: 20px;
+            padding-bottom: 22px;
             margin-bottom: 24px;
-            gap: 20px;
+            gap: 24px;
           }
           .brand-info {
             flex: 1;
           }
           .brand-logo-wrap {
-            margin-bottom: 10px;
+            margin-bottom: 12px;
           }
           .receipt-logo-img {
-            max-height: 72px;
-            max-width: 220px;
+            max-height: 80px;
+            max-width: 260px;
             object-fit: contain;
             display: block;
           }
@@ -11082,14 +11184,13 @@ const app = {
             font-weight: 800;
             color: #0f172a;
             letter-spacing: -0.3px;
-            margin: 0;
-            line-height: 1.2;
+            margin: 0 0 6px 0;
+            line-height: 1.25;
           }
           .academy-meta {
             font-size: 12px;
-            color: #64748b;
-            margin-top: 5px;
-            line-height: 1.5;
+            color: #475569;
+            line-height: 1.6;
           }
           .receipt-ref-box {
             text-align: right;
@@ -11099,9 +11200,9 @@ const app = {
             display: inline-block;
             font-weight: 800;
             font-size: 11px;
-            padding: 4px 12px;
+            padding: 5px 14px;
             border-radius: 20px;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             letter-spacing: 0.5px;
           }
           .status-paid {
@@ -11117,12 +11218,12 @@ const app = {
           .meta-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 18px;
+            gap: 20px;
             margin-bottom: 24px;
           }
           .meta-box {
             background: #f8fafc;
-            padding: 16px 20px;
+            padding: 18px 22px;
             border-radius: 8px;
             font-size: 13px;
             border: 1px solid #e2e8f0;
@@ -11139,29 +11240,29 @@ const app = {
             font-size: 16px;
             font-weight: 800;
             color: #0f172a;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
           }
           .meta-box-row {
             color: #475569;
-            font-size: 12px;
-            line-height: 1.6;
+            font-size: 12.5px;
+            line-height: 1.7;
           }
           .table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 24px;
+            margin-bottom: 26px;
           }
           .table th {
             background: #0f172a;
             color: #ffffff;
-            padding: 11px 14px;
+            padding: 12px 16px;
             text-align: left;
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
           }
           .table td {
-            padding: 13px 14px;
+            padding: 14px 16px;
             border-bottom: 1px solid #e2e8f0;
             font-size: 13px;
           }
@@ -11171,22 +11272,22 @@ const app = {
             margin-bottom: 28px;
           }
           .totals-box {
-            width: 330px;
+            width: 340px;
             background: #f8fafc;
             border: 1px solid #e2e8f0;
             border-radius: 8px;
-            padding: 16px 20px;
+            padding: 18px 22px;
             font-size: 13px;
           }
           .totals-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 7px;
+            margin-bottom: 8px;
             color: #64748b;
           }
           .totals-row.paid-highlight {
             background: #dcfce7;
-            padding: 9px 12px;
+            padding: 10px 14px;
             border-radius: 6px;
             color: #15803d;
             font-weight: 800;
@@ -11195,13 +11296,13 @@ const app = {
           }
           .receipt-footer {
             border-top: 1px dashed #cbd5e1;
-            padding-top: 18px;
-            font-size: 11px;
+            padding-top: 20px;
+            font-size: 11.5px;
             color: #64748b;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            line-height: 1.4;
+            line-height: 1.5;
           }
           @media print {
             body {
@@ -11215,7 +11316,7 @@ const app = {
             .receipt-container {
               border: none !important;
               box-shadow: none !important;
-              padding: 0 !important;
+              padding: 16px 20px !important;
               max-width: 100% !important;
             }
           }
@@ -11232,19 +11333,19 @@ const app = {
             <div class="brand-info">
               ${logoUrl ? `
                 <div class="brand-logo-wrap">
-                  <img src="${logoUrl}" alt="${academyName}" class="receipt-logo-img">
+                  <img src="${logoUrl}" alt="${this.escapeHtml(academyName)}" class="receipt-logo-img">
                 </div>
               ` : `
                 <div style="display: inline-block; background: #2563eb; color: #fff; font-weight: 800; font-size: 11px; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px;">OFFICIAL RECEIPT</div>
               `}
-              <div class="academy-name">${academyName.toUpperCase()}</div>
+              <div class="academy-name">${this.escapeHtml(academyName.toUpperCase())}</div>
               <div class="academy-meta">
-                ${academyAddress ? academyAddress + '<br>' : ''}
-                ${academyCity ? academyCity + ', ' : ''}India
-                ${academyPhone ? ' &bull; Tel: ' + academyPhone : ''}
-                ${academyEmail ? ' &bull; ' + academyEmail : ''}
-                <div style="font-weight: 600; color: #475569; margin-top: 3px;">
-                  ${academyGst ? 'GSTIN: ' + academyGst + '  |  ' : ''}SAC: 999293 (Sports Coaching Services)
+                ${academyAddress ? this.escapeHtml(academyAddress) + '<br>' : ''}
+                ${academyCity ? this.escapeHtml(academyCity) + ', ' : ''}India
+                ${academyPhone ? ' &bull; Tel: ' + this.escapeHtml(academyPhone) : ''}
+                ${academyEmail ? ' &bull; ' + this.escapeHtml(academyEmail) : ''}
+                <div style="font-weight: 600; color: #334155; margin-top: 4px;">
+                  ${academyGst ? 'GSTIN: ' + this.escapeHtml(academyGst) + '  |  ' : ''}SAC: 999293 (Sports Coaching Services)
                 </div>
               </div>
             </div>
@@ -11254,9 +11355,9 @@ const app = {
                 ${balance <= 0 ? 'PAID & VERIFIED' : 'PARTIALLY PAID'}
               </span>
               <div style="font-size: 13px; color: #475569;">
-                <div>Receipt No: <strong style="color: #2563eb; font-family: monospace; font-size: 14px;">${receiptNumber}</strong></div>
-                <div style="margin-top: 3px;">Invoice Ref: <strong style="color: #0f172a; font-family: monospace;">${fee.invoice_number || '-'}</strong></div>
-                <div style="margin-top: 3px;">Payment Date: <strong style="color: #0f172a;">${fee.payment_date || fee.created_at || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong></div>
+                <div>Receipt No: <strong style="color: #2563eb; font-family: monospace; font-size: 14px;">${this.escapeHtml(receiptNumber)}</strong></div>
+                <div style="margin-top: 3px;">Invoice Ref: <strong style="color: #0f172a; font-family: monospace;">${this.escapeHtml(fee.invoice_number || '-')}</strong></div>
+                <div style="margin-top: 3px;">Payment Date: <strong style="color: #0f172a;">${this.escapeHtml(fee.payment_date || fee.created_at || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }))}</strong></div>
               </div>
             </div>
           </div>
@@ -11264,21 +11365,21 @@ const app = {
           <div class="meta-grid">
             <div class="meta-box">
               <div class="meta-box-label">STUDENT INFORMATION</div>
-              <div class="meta-box-title">${fee.first_name || ''} ${fee.last_name || ''}</div>
+              <div class="meta-box-title">${this.escapeHtml((fee.first_name || '') + ' ' + (fee.last_name || ''))}</div>
               <div class="meta-box-row">
-                <div>Student Code: <strong>${fee.student_code || '-'}</strong></div>
-                ${fee.admission_number ? `<div>Admission No: <strong>${fee.admission_number}</strong></div>` : ''}
-                <div>Branch / Dojo: <strong>${fee.branch_name || 'Main Dojo'}</strong></div>
+                <div>Student Code: <strong>${this.escapeHtml(fee.student_code || '-')}</strong></div>
+                ${fee.admission_number ? `<div>Admission No: <strong>${this.escapeHtml(fee.admission_number)}</strong></div>` : ''}
+                <div>Branch / Dojo: <strong>${this.escapeHtml(fee.branch_name || 'Main Dojo')}</strong></div>
               </div>
             </div>
 
             <div class="meta-box">
               <div class="meta-box-label">COACHING COVERAGE & PAYMENT</div>
-              <div style="font-size: 14px; font-weight: 700; color: #2563eb; margin-bottom: 4px;">Coverage: ${periodText}</div>
+              <div style="font-size: 14px; font-weight: 700; color: #2563eb; margin-bottom: 4px;">Coverage: ${this.escapeHtml(periodText)}</div>
               <div class="meta-box-row">
-                <div>Payment Mode: <strong>${(fee.payment_mode || fee.payment_method || 'Cash / UPI').toUpperCase()}</strong></div>
-                ${fee.next_installment_date ? `<div>Next Renewal Due: <strong style="color: #dc2626;">${fee.next_installment_date}</strong></div>` : ''}
-                <div>Collected by: <strong>${fee.collector_name || 'Accounts Desk'}</strong></div>
+                <div>Payment Mode: <strong>${this.escapeHtml((fee.payment_mode || fee.payment_method || 'Cash / UPI').toUpperCase())}</strong></div>
+                ${fee.next_installment_date ? `<div>Next Renewal Due: <strong style="color: #dc2626;">${this.escapeHtml(fee.next_installment_date)}</strong></div>` : ''}
+                <div>Collected by: <strong>${this.escapeHtml(fee.collector_name || 'Accounts Desk')}</strong></div>
               </div>
             </div>
           </div>
@@ -11297,8 +11398,8 @@ const app = {
             <tbody>
               <tr>
                 <td>
-                  <strong style="color: #0f172a;">${fee.title || fee.fee_title || 'Sports Curriculum & Coaching'}</strong>
-                  <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Coaching Cycle: ${periodText}</div>
+                  <strong style="color: #0f172a;">${this.escapeHtml(fee.title || fee.fee_title || 'Sports Curriculum & Coaching')}</strong>
+                  <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Coaching Cycle: ${this.escapeHtml(periodText)}</div>
                 </td>
                 <td style="text-align: right;">₹${Number(baseFee).toLocaleString('en-IN')}</td>
                 <td style="text-align: right; color: ${discount > 0 ? '#dc2626' : '#64748b'};">
@@ -11350,7 +11451,23 @@ const app = {
         </div>
 
         <script>
-          setTimeout(() => { window.print(); }, 400);
+          function triggerPrint() {
+            window.print();
+          }
+          const images = Array.from(document.images);
+          if (images.length === 0) {
+            setTimeout(triggerPrint, 350);
+          } else {
+            Promise.all(images.map(img => {
+              if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+              return new Promise(resolve => {
+                img.onload = resolve;
+                img.onerror = resolve;
+              });
+            })).then(() => {
+              setTimeout(triggerPrint, 300);
+            });
+          }
         </script>
       </body>
       </html>
@@ -17674,8 +17791,20 @@ const app = {
       doc.setLineWidth(1);
       doc.rect(12, 12, 273, 186);
 
-      // Academy Header
-      const academyName = (this.currentAcademy && this.currentAcademy.name) ? this.currentAcademy.name.toUpperCase() : 'INTERNATIONAL SPORTS ACADEMY';
+      // Academy Branding
+      const branding = this.getAcademyBranding();
+      const academyName = (branding.name || 'INTERNATIONAL SPORTS ACADEMY').toUpperCase();
+
+      if (branding.logoUrl) {
+        try {
+          const base64Logo = await this.getBase64ImageFromUrl(branding.logoUrl);
+          if (base64Logo) {
+            const format = base64Logo.includes('image/png') ? 'PNG' : (base64Logo.includes('image/webp') ? 'WEBP' : 'JPEG');
+            doc.addImage(base64Logo, format, 20, 18, 20, 20);
+          }
+        } catch (e) {}
+      }
+
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(20);
       doc.setTextColor(30, 41, 59);
@@ -18725,17 +18854,35 @@ const app = {
     this.showToast('Downloaded salary statement via SheetJS Excel', 'success');
   },
 
-  exportSalaryPdf() {
+  async exportSalaryPdf() {
     if (!window._cachedStatementData) return;
     const { statement, user, period } = window._cachedStatementData;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
-    doc.setFontSize(18);
-    doc.text('SPORTS ACADEMY — SALARY STATEMENT', 14, 20);
-    doc.setFontSize(11);
-    doc.text(`Employee: ${user.name} (${user.email})`, 14, 30);
-    doc.text(`Pay Period: ${period.year_month} | Status: ${statement.payment_status.toUpperCase()}`, 14, 37);
+    const branding = this.getAcademyBranding();
+    const academyName = (branding.name || 'SPORTS ACADEMY').toUpperCase();
+    const logoUrl = branding.logoUrl;
+
+    let startX = 14;
+    if (logoUrl) {
+      try {
+        const base64Logo = await this.getBase64ImageFromUrl(logoUrl);
+        if (base64Logo) {
+          const format = base64Logo.includes('image/png') ? 'PNG' : (base64Logo.includes('image/webp') ? 'WEBP' : 'JPEG');
+          doc.addImage(base64Logo, format, 14, 12, 18, 18);
+          startX = 36;
+        }
+      } catch (e) {}
+    }
+
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${academyName} — SALARY STATEMENT`, startX, 20);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Employee: ${user.name} (${user.email})`, startX, 27);
+    doc.text(`Pay Period: ${period.year_month} | Status: ${statement.payment_status.toUpperCase()}`, startX, 33);
 
     const rows = [
       ['Salary Mode', statement.salary_mode],

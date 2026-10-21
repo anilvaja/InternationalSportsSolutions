@@ -406,6 +406,8 @@ describe('Student Fee Lifecycle, Financial Ledger & Flexible Periods', () => {
       assert.equal(res.data.receipt.student_code, tenantDb.prepare('SELECT student_code FROM students WHERE id = ?').get(testStudentId).student_code);
       assert.equal(res.data.receipt.period_start, '2026-08-10');
       assert.equal(res.data.receipt.period_end, '2026-09-09');
+      assert.ok(res.data.receipt.academy);
+      assert.ok(res.data.receipt.academy.name);
     });
 
     it('collects subsequent multi-month fee starting from the previous paid-through date', async () => {
