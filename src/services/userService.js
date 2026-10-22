@@ -4,6 +4,7 @@
  */
 import bcrypt from 'bcryptjs';
 import { QuotaService } from './quotaService.js';
+import { DateUtils } from '../utils/dateUtils.js';
 
 export class UserService {
   /**
@@ -200,7 +201,7 @@ export class UserService {
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim();
     const cleanRole = role || 'coach';
-    const effectiveDate = effective_from || joining_date || new Date().toISOString().split('T')[0];
+    const effectiveDate = DateUtils.parseAndNormalizeDate(effective_from || joining_date, { fieldName: 'Joining date' }) || new Date().toISOString().split('T')[0];
 
     // Check if user already exists
     const existing = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(cleanEmail);
@@ -350,7 +351,7 @@ export class UserService {
       QuotaService.assertCanCreate(academyId, 'coaches', 1);
     }
 
-    const effectiveDate = effectiveFrom || new Date().toISOString().split('T')[0];
+    const effectiveDate = DateUtils.parseAndNormalizeDate(effectiveFrom, { fieldName: 'Effective date' }) || new Date().toISOString().split('T')[0];
 
     // Close previous role in history
     db.prepare(`
@@ -421,7 +422,7 @@ export class UserService {
       throw new Error('Valid compensation amount/rate is required');
     }
 
-    const effectiveDate = effective_from || new Date().toISOString().split('T')[0];
+    const effectiveDate = DateUtils.parseAndNormalizeDate(effective_from, { fieldName: 'Effective date' }) || new Date().toISOString().split('T')[0];
 
     // Find current active compensation
     const currentActive = db.prepare(`
@@ -500,7 +501,7 @@ export class UserService {
     const branch = db.prepare('SELECT id, name FROM branches WHERE id = ?').get(newBranchId);
     if (!branch) throw new Error('Target branch does not exist');
 
-    const effectiveDate = effectiveFrom || new Date().toISOString().split('T')[0];
+    const effectiveDate = DateUtils.parseAndNormalizeDate(effectiveFrom, { fieldName: 'Effective date' }) || new Date().toISOString().split('T')[0];
 
     // Close old branch assignments
     db.prepare(`

@@ -1,4 +1,5 @@
 import { ScheduleService } from './scheduleService.js';
+import { DateUtils } from '../utils/dateUtils.js';
 
 /**
  * PayrollService
@@ -348,9 +349,7 @@ export class PayrollService {
           const effectiveEnd = isMidMonthExit ? scheduleSummary.exitDate : period.end_date;
 
           if (deductionPolicy === 'calendar_days') {
-            const startD = new Date(effectiveStart + 'T00:00:00');
-            const endD = new Date(effectiveEnd + 'T00:00:00');
-            const activeCalendarDays = Math.max(0, Math.round((endD - startD) / (1000 * 60 * 60 * 24)) + 1);
+            const activeCalendarDays = DateUtils.getDateRange(effectiveStart, effectiveEnd).length;
             grossEarnings = this.round(activeCalendarDays * perDayRate);
           } else {
             const fullMonthDays = (scheduleSummary.dayBreakdown || []).filter(d => d.dayType !== 'weekly_off' && !d.isWeeklyOff).length || 26;
@@ -795,7 +794,7 @@ export class PayrollService {
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(
         statementId,
-        paymentDate || new Date().toISOString().split('T')[0],
+        paymentDate ? (DateUtils.parseAndNormalizeDate(paymentDate, { fieldName: 'Payment date' }) || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
         numAmount,
         paymentMethod,
         referenceNumber || null,

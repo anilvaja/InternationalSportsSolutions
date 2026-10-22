@@ -244,13 +244,28 @@ const app = {
       .replace(/'/g, '&#039;');
   },
 
+  isLeapYear(year) {
+    return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+  },
+
+  getDaysInMonth(year, month) {
+    if (month === 2) return this.isLeapYear(year) ? 29 : 28;
+    if ([4, 6, 9, 11].includes(month)) return 30;
+    return 31;
+  },
+
   formatDate(val) {
     if (!val) return '-';
     const str = String(val).trim();
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return str;
-    const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const datePart = str.split('T')[0].split(' ')[0];
+    const match = datePart.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (match) {
       return `${match[3]}/${match[2]}/${match[1]}`;
+    }
+    const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+    if (ddmmyyyy) {
+      return `${ddmmyyyy[1].padStart(2, '0')}/${ddmmyyyy[2].padStart(2, '0')}/${ddmmyyyy[3]}`;
     }
     const d = new Date(val);
     if (isNaN(d.getTime())) return str;
@@ -262,35 +277,40 @@ const app = {
 
   formatDateToIndian(val) {
     if (!val) return '';
-    const str = String(val).trim();
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return str;
-    const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (match) {
-      return `${match[3]}/${match[2]}/${match[1]}`;
-    }
-    const d = new Date(val);
-    if (isNaN(d.getTime())) return '';
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${day}/${month}/${year}`;
+    const res = this.formatDate(val);
+    return res === '-' ? '' : res;
+  },
+
+  getDateInputValue(idOrEl) {
+    const el = typeof idOrEl === 'string' ? document.getElementById(idOrEl) : idOrEl;
+    if (!el) return '';
+    if (el.dataset && el.dataset.iso) return el.dataset.iso;
+    const v = (el.value || '').trim();
+    return this.normalizeDateToIso(v) || v;
   },
 
   normalizeDateToIso(val) {
     if (!val) return '';
-    const str = String(val).trim().split('T')[0];
+    const str = String(val).trim().split('T')[0].split(' ')[0];
     const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
     if (ddmmyyyy) {
-      const day = ddmmyyyy[1].padStart(2, '0');
-      const month = ddmmyyyy[2].padStart(2, '0');
-      const year = ddmmyyyy[3];
-      return `${year}-${month}-${day}`;
+      const day = parseInt(ddmmyyyy[1], 10);
+      const month = parseInt(ddmmyyyy[2], 10);
+      const year = parseInt(ddmmyyyy[3], 10);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+      if (day > this.getDaysInMonth(year, month)) return '';
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
     const yyyymmdd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
     if (yyyymmdd) {
-      return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
+      const year = parseInt(yyyymmdd[1], 10);
+      const month = parseInt(yyyymmdd[2], 10);
+      const day = parseInt(yyyymmdd[3], 10);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+      if (day > this.getDaysInMonth(year, month)) return '';
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
-    return str;
+    return '';
   },
 
   renderIndianDateInput({
@@ -401,9 +421,10 @@ const app = {
       return;
     }
 
-    const daysInMonth = new Date(year, month, 0).getDate();
-    if (day > daysInMonth) {
+    const maxDays = this.getDaysInMonth(year, month);
+    if (day > maxDays) {
       input.classList.add('is-invalid');
+      input.dataset.iso = '';
       return;
     }
 
@@ -9222,6 +9243,7 @@ const app = {
       'Student Code': s.student_code,
       'First Name': s.first_name,
       'Last Name': s.last_name,
+      'Date of Birth': s.date_of_birth ? this.formatDate(s.date_of_birth) : '',
       'Email': s.email || '',
       'Phone': s.phone || '',
       'Guardian Name': s.guardian_name || '',
@@ -9243,11 +9265,12 @@ const app = {
       this.showToast('No students to export', 'info');
       return;
     }
-    const headers = ['Student Code', 'First Name', 'Last Name', 'Email', 'Phone', 'Guardian Name', 'Guardian Phone', 'Branch', 'Enrolled Batches', 'Status'];
+    const headers = ['Student Code', 'First Name', 'Last Name', 'Date of Birth', 'Email', 'Phone', 'Guardian Name', 'Guardian Phone', 'Branch', 'Enrolled Batches', 'Status'];
     const rows = this.currentStudentsData.map(s => [
       `"${(s.student_code || '').replace(/"/g, '""')}"`,
       `"${(s.first_name || '').replace(/"/g, '""')}"`,
       `"${(s.last_name || '').replace(/"/g, '""')}"`,
+      `"${(s.date_of_birth ? this.formatDate(s.date_of_birth) : '').replace(/"/g, '""')}"`,
       `"${(s.email || '').replace(/"/g, '""')}"`,
       `"${(s.phone || '').replace(/"/g, '""')}"`,
       `"${(s.guardian_name || '').replace(/"/g, '""')}"`,
@@ -9279,9 +9302,9 @@ const app = {
     } catch (e) {}
 
     const csvContent = 'first_name,last_name,email,phone,date_of_birth,gender,emergency_contact,branch_id,batch_id\n' +
-      `Aarav,Patel,aarav.patel@example.com,9876543210,2010-05-15,male,9876543211,${branchId},${batchId}\n` +
-      `Diya,Shah,diya.shah@example.com,9876543212,2012-08-20,female,9876543213,${branchId},${batchId}\n` +
-      `Kabir,Mehta,kabir.mehta@example.com,9876543214,2011-11-05,male,9876543215,,\n`;
+      `Aarav,Patel,aarav.patel@example.com,9876543210,15/05/2010,male,9876543211,${branchId},${batchId}\n` +
+      `Diya,Shah,diya.shah@example.com,9876543212,20/08/2012,female,9876543213,${branchId},${batchId}\n` +
+      `Kabir,Mehta,kabir.mehta@example.com,9876543214,05/11/2011,male,9876543215,,\n`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -9314,7 +9337,7 @@ const app = {
         <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: var(--radius-md); padding: 12px; margin-bottom: 16px; font-size: 13px;">
           <div style="font-weight: 600; margin-bottom: 6px;"><i class="fa-solid fa-circle-info"></i> CSV / Excel Format & Guidelines:</div>
           <p style="margin: 0 0 8px 0; color: var(--text-muted);">
-            Column headers supported: <strong>first_name, last_name, email, phone, date_of_birth, gender, emergency_contact, branch_id, batch_id</strong>.
+            Column headers supported: <strong>first_name, last_name, email, phone, date_of_birth (DD/MM/YYYY), gender, emergency_contact, branch_id, batch_id</strong>.
           </p>
           <div style="font-size: 12px; line-height: 1.6; color: var(--text-muted);">
             <div><strong>Active Branches:</strong> ${branchListHtml}</div>
@@ -9335,8 +9358,8 @@ const app = {
         </div>
 
         <div class="form-group">
-          <label style="font-size: 12px; color: var(--text-muted);">Or Paste Raw CSV Data Directly</label>
-          <textarea id="import-student-raw" class="form-textarea" rows="4" style="font-family: monospace; font-size: 12px;" placeholder="first_name,last_name,email,phone,date_of_birth,gender,emergency_contact,branch_id,batch_id&#10;Aarav,Patel,aarav@example.com,9876543210,2010-05-15,male,9876543211,,&#10;Diya,Shah,diya@example.com,9876543212,2012-08-20,female,9876543213,," oninput="app.handleStudentImportRaw(this.value)"></textarea>
+          <label style="font-size: 12px; color: var(--text-muted);">Or Paste Raw CSV Data Directly (date_of_birth: DD/MM/YYYY)</label>
+          <textarea id="import-student-raw" class="form-textarea" rows="4" style="font-family: monospace; font-size: 12px;" placeholder="first_name,last_name,email,phone,date_of_birth,gender,emergency_contact,branch_id,batch_id&#10;Aarav,Patel,aarav@example.com,9876543210,15/05/2010,male,9876543211,,&#10;Diya,Shah,diya@example.com,9876543212,20/08/2012,female,9876543213,," oninput="app.handleStudentImportRaw(this.value)"></textarea>
         </div>
 
         <div id="import-preview-container" style="display: none; margin-top: 14px;">
@@ -9455,19 +9478,8 @@ const app = {
 
   processImportRows(rows) {
     const normalizeDateStr = (val) => {
-      if (!val) return '2010-01-01';
-      const s = String(val).trim();
-      // DD/MM/YYYY or DD-MM-YYYY
-      const ddmmyyyy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-      if (ddmmyyyy) {
-        return `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`;
-      }
-      // YYYY-MM-DD
-      const yyyymmdd = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
-      if (yyyymmdd) {
-        return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
-      }
-      return s;
+      if (!val) return '';
+      return this.normalizeDateToIso(val);
     };
 
     const normalizeGender = (val) => {
@@ -9776,13 +9788,53 @@ const app = {
   // ==========================================
   // BATCHES CSV IMPORT
   // ==========================================
+  // BATCHES CSV IMPORT & TEMPLATES
+  // ==========================================
+  async downloadBatchSampleCsv() {
+    let branchName = 'Main Campus';
+    let sportName = 'Karate';
+    try {
+      const [brRes, spRes] = await Promise.all([
+        this.apiRequest('/api/academy/branches'),
+        this.apiRequest('/api/academy/sports'),
+      ]);
+      if (brRes.branches && brRes.branches.length > 0) branchName = brRes.branches[0].name;
+      if (spRes.sports && spRes.sports.length > 0) sportName = spRes.sports[0].name;
+    } catch (e) {}
+
+    const csvContent = 'Batch Name,Branch,Sport,Coach,Days,Start Time,End Time,Capacity,Fee\n' +
+      `Morning Kumite Elite,${branchName},${sportName},,Mon\\,Wed\\,Fri,06:30,07:30,25,2500\n` +
+      `Evening Beginners Kata,${branchName},${sportName},,Tue\\,Thu\\,Sat,17:00,18:00,30,2000\n` +
+      `Weekend Advanced Dojo,${branchName},${sportName},,Sat\\,Sun,08:00,10:00,20,3000\n`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'training_batches_sample.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    this.showToast('Sample batches CSV downloaded', 'info');
+  },
+
   showImportBatchesModal() {
     this.openModal('Import Training Batches (CSV / Excel)', `
       <div style="padding: 10px 0;">
-        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 14px;">
           Upload a <code>.csv</code>, <code>.xlsx</code>, or <code>.xls</code> file containing training batches.
           Supported columns: <strong>Batch Name, Branch, Sport, Coach, Days (e.g. Mon,Wed,Fri), Start Time (HH:MM), End Time (HH:MM), Capacity, Fee</strong>.
         </p>
+
+        <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); border-radius: 6px; padding: 10px 14px;">
+          <div>
+            <div style="font-size: 13px; font-weight: 600; color: #2563eb;">Download Sample Template</div>
+            <div style="font-size: 11.5px; color: var(--text-muted);">Pre-populated with your academy's current branches & sports.</div>
+          </div>
+          <button type="button" class="btn btn-outline-primary btn-sm" onclick="app.downloadBatchSampleCsv()">
+            <i class="fa-solid fa-download"></i> Sample CSV
+          </button>
+        </div>
 
         <div style="margin-bottom: 16px;">
           <label style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;">Choose File</label>
@@ -12473,7 +12525,7 @@ const app = {
     const discountReason = fee.discount_reason || null;
     const taxAmount = Number(fee.tax_amount || 0);
     const hasDiscount = discount > 0;
-    const hasGst = taxAmount > 0;
+    const hasGst = taxAmount > 0 && Boolean(academyGst);
     const paid = Number(fee.paid_amount || fee.amount || 0);
     const balance = Number(fee.balance_amount !== undefined ? fee.balance_amount : 0);
     const netAmount = Number(fee.net_amount || fee.amount || (baseFee - discount + taxAmount));
@@ -12563,7 +12615,7 @@ const app = {
               ${academyEmail ? ' &bull; ' + this.escapeHtml(academyEmail) : ''}
               ${hasGst ? `
                 <div style="font-weight: 600; color: #334155; margin-top: 4px;">
-                  ${academyGst ? 'GSTIN: ' + this.escapeHtml(academyGst) + '  |  ' : ''}SAC: 999293 (Sports Coaching Services)
+                  GSTIN: ${this.escapeHtml(academyGst)} &bull; SAC: 999293 (Sports Coaching Services)
                 </div>
               ` : ''}
             </div>
@@ -12586,7 +12638,6 @@ const app = {
             </span>
             <div style="font-size: 12.5px; color: #475569;">
               <div>Receipt No: <strong style="color: #2563eb; font-family: monospace; font-size: 13.5px;">${this.escapeHtml(receiptNumber)}</strong></div>
-              <div style="margin-top: 3px;">Invoice Ref: <strong style="color: #0f172a; font-family: monospace;">${this.escapeHtml(invoiceNumber)}</strong></div>
               <div style="margin-top: 3px;">Payment Date: <strong style="color: #0f172a;">${this.escapeHtml(fee.payment_date || fee.created_at || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }))}</strong></div>
             </div>
           </div>
@@ -12928,10 +12979,10 @@ const app = {
       'Student Name': `${f.first_name} ${f.last_name}`,
       'Branch': f.branch_name || 'Main',
       'Fee Title': f.title,
-      'Period Start': f.period_start || '',
-      'Period End': f.period_end || '',
+      'Period Start': f.period_start ? this.formatDate(f.period_start) : '',
+      'Period End': f.period_end ? this.formatDate(f.period_end) : '',
       'Months': f.months_count || 1,
-      'Due Date': f.due_date,
+      'Due Date': f.due_date ? this.formatDate(f.due_date) : '',
       'Base Fee': f.base_fee || f.net_amount,
       'Discount': f.discount_amount || 0,
       'Net Amount': f.net_amount,
@@ -13296,7 +13347,7 @@ const app = {
       const remark = rowElem ? rowElem.querySelector('.att-remark-input')?.value : (r.remarks || '');
       const techRemark = rowElem ? rowElem.querySelector('.att-tech-remarks-input')?.value : (r.marked_technique_remarks || '');
       return {
-        'Date': this._cachedAttendanceDate || new Date().toISOString().split('T')[0],
+        'Date': this.formatDate(this._cachedAttendanceDate || new Date().toISOString().split('T')[0]),
         'Batch ID': this._cachedAttendanceBatchId || '',
         'Student Code': r.student_code,
         'Student Name': `${r.first_name} ${r.last_name}`,
@@ -15236,6 +15287,9 @@ const app = {
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
             ${this.hasPermission(['import_batches', 'manage_batches']) ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.downloadBatchSampleCsv()" title="Download batch import CSV template">
+                <i class="fa-solid fa-file-csv" style="color: #3b82f6;"></i> Sample CSV
+              </button>
               <button class="btn btn-secondary btn-sm" onclick="app.showImportBatchesModal()">
                 <i class="fa-solid fa-file-import"></i> Import CSV
               </button>
@@ -21395,7 +21449,7 @@ const app = {
           <div><strong>Branch:</strong> ${this.escapeHtml(statement.branch_name || 'Main Campus')}</div>
           <div><strong>Salary Mode:</strong> <span class="badge badge-purple">${statement.salary_mode}</span></div>
           <div><strong>Base Rate:</strong> ₹${statement.applicable_rate}</div>
-          <div><strong>Period Dates:</strong> ${statement.period_start_date} to ${statement.period_end_date}</div>
+          <div><strong>Period Dates:</strong> ${this.formatDate(statement.period_start_date)} to ${this.formatDate(statement.period_end_date)}</div>
         </div>
 
         <!-- Attendance & Days Breakdown -->
@@ -21516,7 +21570,7 @@ const app = {
             <tbody>
               ${payments.map(p => `
                 <tr>
-                  <td>${p.payment_date}</td>
+                  <td>${this.formatDate(p.payment_date)}</td>
                   <td><strong style="color: #10b981;">₹${Number(p.amount).toLocaleString()}</strong></td>
                   <td><span class="badge badge-secondary">${p.payment_method}</span></td>
                   <td>${p.reference_number || '-'}</td>
@@ -23398,6 +23452,11 @@ const app = {
       return;
     }
 
+    const [branches, sports] = await Promise.all([
+      this.getCachedBranches().catch(() => []),
+      this.getCachedSports().catch(() => [])
+    ]);
+
     this.openModal(
       `Edit Inquiry — ${inq.student_name}`,
       `
@@ -23418,6 +23477,20 @@ const app = {
             <div class="form-group">
               <label>Email Address</label>
               <input type="email" id="edit-inq-email" class="form-input" style="width: 100%;" value="${this.escapeHtml(inq.email || '')}">
+            </div>
+            <div class="form-group">
+              <label>Branch / Campus</label>
+              <select id="edit-inq-branch-id" class="form-select" style="width: 100%;">
+                <option value="">-- No Branch Assigned --</option>
+                ${branches.map(b => `<option value="${b.id}" ${String(inq.branch_id || '') === String(b.id) ? 'selected' : ''}>${this.escapeHtml(b.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Sport / Discipline</label>
+              <select id="edit-inq-sport-id" class="form-select" style="width: 100%;">
+                <option value="">-- Select Sport --</option>
+                ${sports.map(s => `<option value="${s.id}" ${String(inq.sport_id || '') === String(s.id) ? 'selected' : ''}>${this.escapeHtml(s.name)}</option>`).join('')}
+              </select>
             </div>
             <div class="form-group">
               <label>Date of Birth (DD/MM/YYYY)</label>
@@ -23461,6 +23534,8 @@ const app = {
     const guardian_name = document.getElementById('edit-inq-guardian-name')?.value?.trim();
     const phone = document.getElementById('edit-inq-phone')?.value?.trim();
     const email = document.getElementById('edit-inq-email')?.value?.trim();
+    const branch_id = document.getElementById('edit-inq-branch-id')?.value || null;
+    const sport_id = document.getElementById('edit-inq-sport-id')?.value || null;
     const date_of_birth = this.normalizeDateToIso(document.getElementById('edit-inq-dob')?.value) || null;
     const status = document.getElementById('edit-inq-status')?.value;
     const next_followup_date = document.getElementById('edit-inq-followup')?.value;
@@ -23478,6 +23553,8 @@ const app = {
         guardian_name,
         phone,
         email,
+        branch_id: branch_id ? Number(branch_id) : null,
+        sport_id: sport_id ? Number(sport_id) : null,
         date_of_birth,
         dob: date_of_birth,
         status,

@@ -1,9 +1,5 @@
-/**
- * ScheduleService
- * Manages branch & employee work schedules, weekday shifts, multiple shifts per day,
- * break rules, weekly offs, holidays, half-day leaves, work exceptions (weekly off / holiday work),
- * compensatory off accrual, and expected working hours calculation.
- */
+import { DateUtils } from '../utils/dateUtils.js';
+
 export class ScheduleService {
 
   /**
@@ -264,8 +260,8 @@ export class ScheduleService {
     return db.transaction(() => {
       this.validateShifts(shiftsData);
 
-      const effectiveFrom = scheduleData.effective_from || new Date().toISOString().split('T')[0];
-      const effectiveTo = scheduleData.effective_to || null;
+      const effectiveFrom = DateUtils.parseAndNormalizeDate(scheduleData.effective_from, { fieldName: 'Effective from date' }) || new Date().toISOString().split('T')[0];
+      const effectiveTo = scheduleData.effective_to ? DateUtils.parseAndNormalizeDate(scheduleData.effective_to, { fieldName: 'Effective to date' }) : null;
 
       // Close previous ongoing branch schedule
       if (!effectiveTo) {
@@ -274,7 +270,7 @@ export class ScheduleService {
           WHERE branch_id = ? AND effective_to IS NULL AND effective_from < ?
         `).all(branchId, effectiveFrom);
 
-        const dayBefore = new Date(new Date(effectiveFrom + 'T00:00:00').getTime() - 86400000).toISOString().split('T')[0];
+        const dayBefore = DateUtils.addDays(effectiveFrom, -1);
         for (const p of prev) {
           db.prepare('UPDATE branch_work_schedules SET effective_to = ? WHERE id = ?').run(dayBefore, p.id);
         }
@@ -484,17 +480,14 @@ export class ScheduleService {
       } catch (e) {}
     }
 
-    const start = new Date(startDate + 'T00:00:00');
-    const end = new Date(endDate + 'T00:00:00');
+    const normStart = DateUtils.parseAndNormalizeDate(startDate, { fieldName: 'Start date', required: true });
+    const normEnd = DateUtils.parseAndNormalizeDate(endDate, { fieldName: 'End date', required: true });
 
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const dayNum = String(d.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${dayNum}`;
+    const daysRange = DateUtils.getDateRange(normStart, normEnd);
 
-      const dayDateObj = new Date(dateStr + 'T00:00:00');
-      const jsDay = dayDateObj.getDay();
+    for (const dateStr of daysRange) {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const jsDay = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
       const dayOfWeek = jsDay === 0 ? 7 : jsDay;
 
       // 1. Check if date is prior to employee's official joining date
@@ -583,8 +576,8 @@ export class ScheduleService {
     return db.transaction(() => {
       this.validateShifts(shiftsData);
 
-      const effectiveFrom = scheduleData.effective_from || new Date().toISOString().split('T')[0];
-      const effectiveTo = scheduleData.effective_to || null;
+      const effectiveFrom = DateUtils.parseAndNormalizeDate(scheduleData.effective_from, { fieldName: 'Effective from date' }) || new Date().toISOString().split('T')[0];
+      const effectiveTo = scheduleData.effective_to ? DateUtils.parseAndNormalizeDate(scheduleData.effective_to, { fieldName: 'Effective to date' }) : null;
 
       let workingDaysCount = 0;
       let totalWeeklyHours = 0;
@@ -615,7 +608,7 @@ export class ScheduleService {
           WHERE user_id = ? AND effective_to IS NULL AND effective_from < ?
         `).all(userId, effectiveFrom);
 
-        const dayBefore = new Date(new Date(effectiveFrom + 'T00:00:00').getTime() - 86400000).toISOString().split('T')[0];
+        const dayBefore = DateUtils.addDays(effectiveFrom, -1);
         for (const p of prev) {
           db.prepare('UPDATE employee_work_schedules SET effective_to = ? WHERE id = ?').run(dayBefore, p.id);
         }
@@ -697,6 +690,7 @@ export class ScheduleService {
       throw new Error('User ID and date are required for work exception');
     }
 
+    const normDate = DateUtils.parseAndNormalizeDate(date, { fieldName: 'Work exception date', required: true });
     const branchId = data.branch_id || this.getUserBranchId(db, user_id);
 
     return db.transaction(() => {
@@ -709,7 +703,7 @@ export class ScheduleService {
         academyId,
         branchId,
         user_id,
-        date,
+        normDate,
         exception_type,
         compensation_type,
         Number(hours_worked),
@@ -721,7 +715,7 @@ export class ScheduleService {
 
       // If compensatory off earned, credit to employee leave balance
       if (status === 'approved' && compensation_type === 'comp_off' && exception_type.includes('work')) {
-        const year = new Date(date + 'T00:00:00').getFullYear();
+        const year = Number(normDate.split('-')[0]);
         // Credit earned leave or comp-off
         db.prepare(`
           INSERT INTO employee_leave_balances (

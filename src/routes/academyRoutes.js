@@ -18,6 +18,7 @@ import { StorageService } from '../services/storageService.js';
 import { LeaveService } from '../services/leaveService.js';
 import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
 import bcrypt from 'bcryptjs';
+import { DateUtils } from '../utils/dateUtils.js';
 
 export const academyRouter = express.Router();
 
@@ -262,24 +263,11 @@ function fetchUpcomingFees(db, branchIds = []) {
   }
 }
 
-function normalizeDate(val) {
+function normalizeDate(val, fieldName = 'date') {
   if (!val) return null;
   const str = String(val).trim();
   if (!str) return null;
-  // Handle DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-  const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-  if (ddmmyyyy) {
-    const day = ddmmyyyy[1].padStart(2, '0');
-    const month = ddmmyyyy[2].padStart(2, '0');
-    const year = ddmmyyyy[3];
-    return `${year}-${month}-${day}`;
-  }
-  // Handle YYYY-MM-DD
-  const yyyymmdd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
-  if (yyyymmdd) {
-    return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
-  }
-  return str;
+  return DateUtils.parseAndNormalizeDate(str, { fieldName, allowIso: true });
 }
 
 function getDaysUntilBirthday(dobStr, refDate = new Date()) {
@@ -1224,7 +1212,7 @@ academyRouter.get('/students/export', (req, res) => {
       s.email || '',
       s.phone || '',
       s.gender || '',
-      s.date_of_birth || '',
+      s.date_of_birth ? DateUtils.formatDisplayDate(s.date_of_birth) : '',
       s.status || '',
       s.branch_name || '',
       s.batch_name || ''
@@ -1757,26 +1745,6 @@ academyRouter.post('/students/import', (req, res) => {
     // Enforce student quota for bulk import
     QuotaService.assertCanCreate(req.academy.id, 'students', students.length);
 
-    // Helper date normalizer
-    const normalizeDate = (val) => {
-      if (!val) return '2010-01-01';
-      const str = String(val).trim();
-      // Handle DD/MM/YYYY or DD-MM-YYYY
-      const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-      if (ddmmyyyy) {
-        const day = ddmmyyyy[1].padStart(2, '0');
-        const month = ddmmyyyy[2].padStart(2, '0');
-        const year = ddmmyyyy[3];
-        return `${year}-${month}-${day}`;
-      }
-      // Handle YYYY-MM-DD
-      const yyyymmdd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
-      if (yyyymmdd) {
-        return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
-      }
-      return str;
-    };
-
     const imported = [];
     const errors = [];
 
@@ -1853,7 +1821,16 @@ academyRouter.post('/students/import', (req, res) => {
         }
 
         const studentCode = item.student_code || `STU-IMP-${Date.now()}-${i}-${Math.floor(1000 + Math.random() * 9000)}`;
-        const dob = normalizeDate(item.date_of_birth || item.dob);
+        let dob = null;
+        const rawDob = item.date_of_birth || item.dob;
+        if (rawDob && String(rawDob).trim()) {
+          try {
+            dob = DateUtils.parseAndNormalizeDate(rawDob, { fieldName: 'date_of_birth', allowIso: true });
+          } catch (err) {
+            errors.push({ row: i + 1, error: `Invalid date of birth: ${err.message}` });
+            continue;
+          }
+        }
         const gender = (item.gender && ['male', 'female', 'other'].includes(String(item.gender).toLowerCase().trim()))
           ? String(item.gender).toLowerCase().trim()
           : (String(item.gender || '').toLowerCase().startsWith('m') ? 'male' : (String(item.gender || '').toLowerCase().startsWith('f') ? 'female' : 'other'));
@@ -6483,18 +6460,19 @@ academyRouter.post('/holidays', (req, res) => {
 
     // Support single holiday_date OR start_date & end_date range
     const dates = [];
+    let normEndDate = null;
     if (start_date && end_date) {
-      const cur = new Date(start_date + 'T00:00:00');
-      const end = new Date(end_date + 'T00:00:00');
-      if (cur > end) {
+      const normStart = normalizeDate(start_date, 'start_date');
+      normEndDate = normalizeDate(end_date, 'end_date');
+      if (DateUtils.compareDates(normStart, normEndDate) > 0) {
         return res.status(400).json({ success: false, error: 'End Date cannot be before Start Date' });
       }
-      while (cur <= end) {
-        dates.push(cur.toISOString().split('T')[0]);
-        cur.setDate(cur.getDate() + 1);
-      }
+      dates.push(...DateUtils.getDateRange(normStart, normEndDate));
     } else if (holiday_date) {
-      dates.push(holiday_date);
+      dates.push(normalizeDate(holiday_date, 'holiday_date'));
+      if (end_date) {
+        normEndDate = normalizeDate(end_date, 'end_date');
+      }
     } else {
       return res.status(400).json({ success: false, error: 'holiday_date or start_date & end_date are required' });
     }
@@ -6521,7 +6499,7 @@ academyRouter.post('/holidays', (req, res) => {
             req.academy.id,
             branch_id || null,
             d,
-            end_date || null,
+            normEndDate || null,
             name.trim(),
             category || 'public',
             is_paid ? 1 : 0,
@@ -6723,8 +6701,8 @@ academyRouter.put('/holidays/:id', (req, res) => {
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND academy_id = ?
     `).run(
-      holiday_date || null,
-      end_date || null,
+      holiday_date ? normalizeDate(holiday_date, 'holiday_date') : null,
+      end_date ? normalizeDate(end_date, 'end_date') : null,
       name ? name.trim() : null,
       branch_id !== undefined ? (branch_id || null) : null,
       is_paid !== undefined ? (is_paid ? 1 : 0) : null,

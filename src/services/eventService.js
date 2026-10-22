@@ -1,6 +1,4 @@
-/**
- * EventService — Multi-Tenant Event Creation, Eligibility Snapshotting, Student Responses & Approvals
- */
+import { DateUtils } from '../utils/dateUtils.js';
 
 export class EventService {
   /**
@@ -58,8 +56,16 @@ export class EventService {
       throw new Error('Event start date is required');
     }
 
-    if (requires_rsvp && rsvp_deadline) {
-      if (new Date(rsvp_deadline) > new Date(event_date)) {
+    const normalizedEventDate = DateUtils.parseAndNormalizeDate(event_date, { fieldName: 'Event start date', required: true });
+    const normalizedEndDate = event_end_date ? DateUtils.parseAndNormalizeDate(event_end_date, { fieldName: 'Event end date' }) : null;
+    const normalizedRsvpDeadline = rsvp_deadline ? DateUtils.parseAndNormalizeDate(rsvp_deadline, { fieldName: 'RSVP deadline' }) : null;
+
+    if (normalizedEndDate && DateUtils.compareDates(normalizedEndDate, normalizedEventDate) < 0) {
+      throw new Error('Event end date cannot be before event start date');
+    }
+
+    if (requires_rsvp && normalizedRsvpDeadline) {
+      if (DateUtils.compareDates(normalizedRsvpDeadline, normalizedEventDate) > 0) {
         throw new Error('RSVP deadline must be on or before the event date');
       }
     }
@@ -97,15 +103,15 @@ export class EventService {
       description || null,
       content || null,
       finalType,
-      event_date,
-      event_end_date || null,
+      normalizedEventDate,
+      normalizedEndDate,
       finalLocation,
       venue || null,
       Number(fee) || 0,
       max_participants ? Number(max_participants) : null,
       waitlist_enabled ? 1 : 0,
       requires_rsvp ? 1 : 0,
-      rsvp_deadline || null,
+      normalizedRsvpDeadline,
       registration_approval_required ? 1 : 0,
       eligibility_type,
       eligibility_criteria ? JSON.stringify(eligibility_criteria) : null,
@@ -183,8 +189,12 @@ export class EventService {
     const finalType = event_type || type || existing.type;
     const finalLocation = location || venue || existing.location || existing.venue;
 
-    if (requires_rsvp && rsvp_deadline) {
-      if (new Date(rsvp_deadline) > new Date(event_date)) {
+    const normalizedEventDate = DateUtils.parseAndNormalizeDate(event_date, { fieldName: 'Event start date', required: true });
+    const normalizedEndDate = event_end_date ? DateUtils.parseAndNormalizeDate(event_end_date, { fieldName: 'Event end date' }) : null;
+    const normalizedRsvpDeadline = rsvp_deadline ? DateUtils.parseAndNormalizeDate(rsvp_deadline, { fieldName: 'RSVP deadline' }) : null;
+
+    if (requires_rsvp && normalizedRsvpDeadline) {
+      if (DateUtils.compareDates(normalizedRsvpDeadline, normalizedEventDate) > 0) {
         throw new Error('RSVP deadline must be on or before the event date');
       }
     }
@@ -247,8 +257,8 @@ export class EventService {
       description || null,
       content || null,
       finalType,
-      event_date,
-      event_end_date || null,
+      normalizedEventDate,
+      normalizedEndDate,
       finalLocation,
       venue || null,
       Number(fee) || 0,
@@ -312,16 +322,17 @@ export class EventService {
       errors.push('Venue/location is required before publication according to academy policy');
     }
 
+    const todayIso = new Date().toISOString().split('T')[0];
     if (!event.event_date) {
       errors.push('Event date is required before publishing');
-    } else if (new Date(event.event_date) < new Date(new Date().toDateString())) {
+    } else if (DateUtils.compareDates(event.event_date, todayIso) < 0) {
       errors.push('Cannot publish an event with a date in the past');
     }
 
     if (event.requires_rsvp) {
       if (!event.rsvp_deadline) {
         errors.push('Response deadline is required before publishing');
-      } else if (new Date(event.rsvp_deadline) > new Date(event.event_date)) {
+      } else if (DateUtils.compareDates(event.rsvp_deadline, event.event_date) > 0) {
         errors.push('Response deadline must be on or before the event date');
       }
     }

@@ -6,6 +6,26 @@ const payApp = {
   academies: [],
   selectedAcademy: null,
 
+  formatDate(val) {
+    if (!val) return '-';
+    const str = String(val).trim();
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return str;
+    const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      return `${match[3]}/${match[2]}/${match[1]}`;
+    }
+    const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+    if (ddmmyyyy) {
+      return `${ddmmyyyy[1].padStart(2, '0')}/${ddmmyyyy[2].padStart(2, '0')}/${ddmmyyyy[3]}`;
+    }
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return str;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  },
+
   async init() {
     this.bindEvents();
     await this.loadAcademies();
@@ -123,7 +143,7 @@ const payApp = {
           </div>
 
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 12px; color: var(--text-muted);">Due Date: ${inv.due_date}</span>
+            <span style="font-size: 12px; color: var(--text-muted);">Due Date: ${this.formatDate(inv.due_date)}</span>
             <div>
               ${!isPaid ? `
                 <button class="btn btn-primary btn-sm" onclick="payApp.processPayment(${inv.id}, ${inv.balance_amount}, '${inv.invoice_number}', '${inv.first_name} ${inv.last_name}')">
@@ -202,7 +222,7 @@ const payApp = {
           <p><strong>Invoice Number:</strong> ${info.invoiceNumber}</p>
           <p><strong>Amount Paid:</strong> ₹${info.amount.toLocaleString()}</p>
           <p><strong>Payment Mode:</strong> Instant UPI Online</p>
-          <p><strong>Date:</strong> ${info.date}</p>
+          <p><strong>Date:</strong> ${this.formatDate(info.date)}</p>
         </div>
 
         <button class="btn btn-success" onclick="payApp.downloadPdfReceiptDirect('${info.academyName}', '${info.receiptNumber}', '${info.invoiceNumber}', '${info.studentName}', ${info.amount}, '${info.date}')">
@@ -411,7 +431,7 @@ const payApp = {
     doc.setTextColor(71, 85, 105);
     doc.text('Payment Date:', 112, 81);
     doc.setTextColor(15, 23, 42);
-    doc.text(date, 142, 81);
+    doc.text(this.formatDate(date), 142, 81);
 
     doc.setTextColor(71, 85, 105);
     doc.text('Payment Mode:', 112, 86);
@@ -422,20 +442,20 @@ const payApp = {
     doc.setTextColor(37, 99, 235);
     doc.setFont('helvetica', 'bold');
     doc.text('Coaching Period:', 112, 91);
-    doc.text(`${periodStart} to ${periodEnd}`, 142, 91);
+    doc.text(`${this.formatDate(periodStart)} to ${this.formatDate(periodEnd)}`, 142, 91);
 
     if (nextInstallmentDate) {
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(220, 38, 38);
       doc.setFontSize(7.5);
-      doc.text(`Next Due: ${nextInstallmentDate}`, 112, 96);
+      doc.text(`Next Due: ${this.formatDate(nextInstallmentDate)}`, 112, 96);
     }
 
     // 5. Itemized Fee Breakdown Table (Dynamic headers: only show Discount or GST if applied)
     const tableHeaders = ['#', 'Fee Item & Coverage Period', (hasDiscount || hasGst ? 'Base Fee' : 'Tuition Fee')];
     const tableRow = [
       '1',
-      `Curriculum Coaching & Training Tuition\nCoverage: ${periodStart} to ${periodEnd} (${monthsCount} Month${monthsCount > 1 ? 's' : ''})`,
+      `Curriculum Coaching & Training Tuition\nCoverage: ${this.formatDate(periodStart)} to ${this.formatDate(periodEnd)} (${monthsCount} Month${monthsCount > 1 ? 's' : ''})`,
       `INR ${(baseFee || netAmount || amount).toLocaleString('en-IN')}`
     ];
     const colStyles = {
@@ -569,8 +589,9 @@ const payApp = {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
     doc.text(`Issued by: ${academyName}`, 41, sealY + 17);
-    doc.text('Status: Reconciled in Tenant Ledger', 41, sealY + 21);
-    doc.text(`Generated: ${new Date().toLocaleString('en-US')}`, 41, sealY + 25);
+    const genNow = new Date();
+    const genDateStr = `${String(genNow.getDate()).padStart(2, '0')}/${String(genNow.getMonth() + 1).padStart(2, '0')}/${genNow.getFullYear()} ${String(genNow.getHours()).padStart(2, '0')}:${String(genNow.getMinutes()).padStart(2, '0')}`;
+    doc.text(`Generated: ${genDateStr}`, 41, sealY + 25);
     doc.text('No signature required • Official computer-generated receipt', 18, sealY + 33);
 
     // 8. Footer Legal Note

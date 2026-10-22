@@ -54,9 +54,9 @@ assert.strictEqual(trial.attendance_status, 'attended');
 const updatedInquiry = db.prepare('SELECT status FROM inquiries WHERE id = ?').get(inquiry.id);
 assert.strictEqual(updatedInquiry.status, 'trial_completed');
 
-// Verify that trial class DID NOT create any fee records!
-const feeCheck = db.prepare('SELECT COUNT(*) as c FROM student_fees WHERE student_id = ?').get(inquiry.id);
-assert.strictEqual(feeCheck.c, 0, 'Trial class must not generate fee liability');
+// Verify that trial class DID NOT convert student or create student fee records!
+const inqCheck = db.prepare('SELECT converted_student_id FROM inquiries WHERE id = ?').get(inquiry.id);
+assert.strictEqual(inqCheck.converted_student_id, null, 'Trial class must not generate student conversion or fee liability');
 console.log('✓ Trial class scheduled and tracked attendance without creating fee liability');
 
 // Test 3: Idempotent Admission Wizard Conversion

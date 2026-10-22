@@ -11,6 +11,8 @@
  * 7. Approval-controlled fee pauses & membership holds that safely adjust the fee timeline upon approval.
  */
 
+import { DateUtils } from '../utils/dateUtils.js';
+
 export class FeeService {
   /**
    * Safe decimal rounding to 2 decimal places
@@ -23,29 +25,21 @@ export class FeeService {
    * Helper: check if year is leap year
    */
   static isLeapYear(year) {
-    return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+    return DateUtils.isLeapYear(year);
   }
 
   /**
    * Helper: number of days in a given month (1-indexed month: 1=Jan, 2=Feb, ..., 12=Dec)
    */
   static daysInMonth(year, month) {
-    if (month === 2) {
-      return this.isLeapYear(year) ? 29 : 28;
-    }
-    if ([4, 6, 9, 11].includes(month)) {
-      return 30;
-    }
-    return 31;
+    return DateUtils.getDaysInMonth(year, month);
   }
 
   /**
    * Formats YYYY-MM-DD
    */
   static formatDate(y, m, d) {
-    const mm = String(m).padStart(2, '0');
-    const dd = String(d).padStart(2, '0');
-    return `${y}-${mm}-${dd}`;
+    return DateUtils.formatIsoDate(y, m, d);
   }
 
   /**
@@ -53,7 +47,7 @@ export class FeeService {
    * End date is strictly the day immediately preceding the next installment date.
    * Clamps day of month if target month has fewer days (e.g. 31 Jan -> 28/29 Feb, not March).
    * 
-   * @param {string} startDateStr - 'YYYY-MM-DD'
+   * @param {string} startDateStr - 'YYYY-MM-DD' or 'DD/MM/YYYY'
    * @param {number} monthsCount - Integer (1 to 12)
    * @returns {{ periodStart: string, periodEnd: string, nextInstallmentDate: string }}
    */
@@ -66,17 +60,9 @@ export class FeeService {
       throw new Error('monthsCount must be a positive integer');
     }
 
-    let normalizedStr = startDateStr.trim();
-    const ddmmyyyy = normalizedStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-    if (ddmmyyyy) {
-      normalizedStr = `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`;
-    }
+    const normalizedStr = DateUtils.parseAndNormalizeDate(startDateStr, { fieldName: 'startDate' });
 
     const parts = normalizedStr.split('-').map(Number);
-    if (parts.length !== 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
-      throw new Error(`Invalid date format: ${startDateStr}. Expected YYYY-MM-DD`);
-    }
-
     const startYear = parts[0];
     const startMonth = parts[1]; // 1-12
     const startDay = parts[2];   // 1-31
@@ -91,18 +77,10 @@ export class FeeService {
     const targetDay = Math.min(startDay, maxDays);
 
     const nextInstallmentDate = this.formatDate(targetYear, targetMonth, targetDay);
-
-    // Period end date is exactly 1 day before the next installment date
-    const nextDateObj = new Date(Date.UTC(targetYear, targetMonth - 1, targetDay));
-    nextDateObj.setUTCDate(nextDateObj.getUTCDate() - 1);
-
-    const periodEndYear = nextDateObj.getUTCFullYear();
-    const periodEndMonth = nextDateObj.getUTCMonth() + 1;
-    const periodEndDay = nextDateObj.getUTCDate();
-    const periodEnd = this.formatDate(periodEndYear, periodEndMonth, periodEndDay);
+    const periodEnd = DateUtils.addDays(nextInstallmentDate, -1);
 
     return {
-      periodStart: startDateStr,
+      periodStart: normalizedStr,
       periodEnd,
       nextInstallmentDate,
     };
@@ -112,10 +90,7 @@ export class FeeService {
    * Adds specified number of days to a 'YYYY-MM-DD' date string
    */
   static addDays(dateStr, days) {
-    const parts = dateStr.split('-').map(Number);
-    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
-    d.setUTCDate(d.getUTCDate() + days);
-    return this.formatDate(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+    return DateUtils.addDays(dateStr, days);
   }
 
   /**
@@ -416,12 +391,16 @@ export class FeeService {
 
     // Resolve timeline
     const timeline = this.getStudentFeeTimeline(db, student_id);
-    const periodStart = start_date || timeline.nextStartDate;
+    const periodStart = start_date
+      ? DateUtils.parseAndNormalizeDate(start_date, { fieldName: 'start_date' })
+      : timeline.nextStartDate;
 
     // Calculate dates
     const dateCalc = this.addCalendarMonths(periodStart, months);
-    const periodEnd = end_date || dateCalc.periodEnd;
-    const nextInstallmentDate = end_date ? this.addDays(end_date, 1) : dateCalc.nextInstallmentDate;
+    const periodEnd = end_date
+      ? DateUtils.parseAndNormalizeDate(end_date, { fieldName: 'end_date' })
+      : dateCalc.periodEnd;
+    const nextInstallmentDate = end_date ? this.addDays(periodEnd, 1) : dateCalc.nextInstallmentDate;
 
     // Monthly rate
     const feeInfo = this.getStudentMonthlyFee(db, student_id, periodStart);
@@ -701,7 +680,10 @@ export class FeeService {
       throw new Error('student_id, requested_start_date, requested_end_date, and reason are required');
     }
 
-    if (requested_end_date < requested_start_date) {
+    const normStart = DateUtils.parseAndNormalizeDate(requested_start_date, { fieldName: 'requested_start_date' });
+    const normEnd = DateUtils.parseAndNormalizeDate(requested_end_date, { fieldName: 'requested_end_date' });
+
+    if (normEnd < normStart) {
       throw new Error('Pause end date cannot be earlier than start date');
     }
 
@@ -719,7 +701,7 @@ export class FeeService {
         AND status IN ('pending', 'approved')
         AND NOT (requested_end_date < ? OR requested_start_date > ?)
       LIMIT 1
-    `).get(student_id, requested_start_date, requested_end_date);
+    `).get(student_id, normStart, normEnd);
 
     if (overlap) {
       throw new Error(
@@ -738,8 +720,8 @@ export class FeeService {
       targetBranchId,
       batch_id,
       pause_type,
-      requested_start_date,
-      requested_end_date,
+      normStart,
+      normEnd,
       reason.trim(),
       requested_by
     );
@@ -753,8 +735,8 @@ export class FeeService {
         status: 'pending',
         student_id,
         branch_id: targetBranchId,
-        requested_start_date,
-        requested_end_date,
+        requested_start_date: normStart,
+        requested_end_date: normEnd,
       },
       message: 'Fee pause request submitted successfully and is pending approval',
     };
@@ -788,8 +770,12 @@ export class FeeService {
     }
 
     if (decision === 'approved') {
-      const finalStart = approved_start_date || pause.requested_start_date;
-      const finalEnd = approved_end_date || pause.requested_end_date;
+      const finalStart = approved_start_date
+        ? DateUtils.parseAndNormalizeDate(approved_start_date, { fieldName: 'approved_start_date' })
+        : pause.requested_start_date;
+      const finalEnd = approved_end_date
+        ? DateUtils.parseAndNormalizeDate(approved_end_date, { fieldName: 'approved_end_date' })
+        : pause.requested_end_date;
 
       db.prepare(`
         UPDATE fee_pause_requests
@@ -874,7 +860,12 @@ export class FeeService {
       throw new Error('A detailed reason is required for student fee overrides');
     }
 
-    const startDate = effective_from || new Date().toISOString().split('T')[0];
+    const startDate = effective_from
+      ? DateUtils.parseAndNormalizeDate(effective_from, { fieldName: 'effective_from' })
+      : new Date().toISOString().split('T')[0];
+    const untilDate = effective_until
+      ? DateUtils.parseAndNormalizeDate(effective_until, { fieldName: 'effective_until' })
+      : null;
 
     // Deactivate previous active overrides for this student
     db.prepare(`
@@ -894,7 +885,7 @@ export class FeeService {
       fee,
       reason.trim(),
       startDate,
-      effective_until,
+      untilDate,
       created_by,
       created_by
     );
@@ -909,7 +900,7 @@ export class FeeService {
         custom_monthly_fee: fee,
         reason: reason.trim(),
         effective_from: startDate,
-        effective_until,
+        effective_until: untilDate,
       },
       message: `Student-specific rate of ₹${fee}/month established successfully`,
     };
@@ -1026,10 +1017,18 @@ export class FeeService {
     }
 
     const title = updateData.title !== undefined ? String(updateData.title).trim() : fee.title;
-    const dueDate = updateData.due_date || fee.due_date;
-    const periodStart = updateData.period_start || fee.period_start;
-    const periodEnd = updateData.period_end || fee.period_end;
-    const nextInstallmentDate = updateData.next_installment_date || fee.next_installment_date;
+    const dueDate = updateData.due_date
+      ? DateUtils.parseAndNormalizeDate(updateData.due_date, { fieldName: 'due_date' })
+      : fee.due_date;
+    const periodStart = updateData.period_start
+      ? DateUtils.parseAndNormalizeDate(updateData.period_start, { fieldName: 'period_start' })
+      : fee.period_start;
+    const periodEnd = updateData.period_end
+      ? DateUtils.parseAndNormalizeDate(updateData.period_end, { fieldName: 'period_end' })
+      : fee.period_end;
+    const nextInstallmentDate = updateData.next_installment_date
+      ? DateUtils.parseAndNormalizeDate(updateData.next_installment_date, { fieldName: 'next_installment_date' })
+      : fee.next_installment_date;
     const notes = updateData.notes !== undefined ? String(updateData.notes) : fee.notes;
 
     let baseFee = fee.base_fee !== undefined ? fee.base_fee : fee.amount;

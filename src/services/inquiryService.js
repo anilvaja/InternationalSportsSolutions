@@ -1,5 +1,6 @@
 import { QuotaService } from './quotaService.js';
 import { FeeService } from './feeService.js';
+import { DateUtils } from '../utils/dateUtils.js';
 
 export class InquiryService {
   /**
@@ -11,25 +12,15 @@ export class InquiryService {
   }
 
   /**
-   * Normalize date string to ISO YYYY-MM-DD
+   * Normalize date string to ISO YYYY-MM-DD using strict calendar validation
    * Supports DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, and YYYY-MM-DD
    */
   static normalizeDate(val) {
-    if (!val) return null;
-    const str = String(val).trim();
-    if (!str) return null;
-    const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-    if (ddmmyyyy) {
-      const day = ddmmyyyy[1].padStart(2, '0');
-      const month = ddmmyyyy[2].padStart(2, '0');
-      const year = ddmmyyyy[3];
-      return `${year}-${month}-${day}`;
+    try {
+      return DateUtils.parseAndNormalizeDate(val, { fieldName: 'Inquiry Date' });
+    } catch (e) {
+      return null;
     }
-    const yyyymmdd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
-    if (yyyymmdd) {
-      return `${yyyymmdd[1]}-${yyyymmdd[2].padStart(2, '0')}-${yyyymmdd[3].padStart(2, '0')}`;
-    }
-    return str;
   }
 
   /**

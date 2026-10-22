@@ -1,9 +1,5 @@
-/**
- * LeaveService
- * Manages academy leave policies, employee annual entitlements, monthly accruals,
- * opening/used/remaining balances, leave applications, date-range validations,
- * overlapping checks, half-day leaves, sandwich rules, and approval/cancellation workflows.
- */
+import { DateUtils } from '../utils/dateUtils.js';
+
 export class LeaveService {
 
   /**
@@ -203,7 +199,10 @@ export class LeaveService {
       return 0.5;
     }
 
-    if (startDate === endDate) {
+    const normStart = DateUtils.parseAndNormalizeDate(startDate, { fieldName: 'Start date', required: true });
+    const normEnd = DateUtils.parseAndNormalizeDate(endDate, { fieldName: 'End date', required: true });
+
+    if (normStart === normEnd) {
       return 1.0;
     }
 
@@ -214,24 +213,19 @@ export class LeaveService {
 
     const sandwichRule = policy ? !!policy.sandwich_rule : false;
 
-    // Iterate through all calendar days in range
-    const start = new Date(startDate + 'T00:00:00');
-    const end = new Date(endDate + 'T00:00:00');
+    // Iterate through all calendar days in range using timezone-safe DateUtils
+    const daysRange = DateUtils.getDateRange(normStart, normEnd);
     let chargeableDays = 0;
 
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const dayNum = String(d.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${dayNum}`;
-
+    for (const dateStr of daysRange) {
       if (sandwichRule) {
         // If sandwich rule is ON, every day in range counts
         chargeableDays += 1;
       } else {
-        // Check if Sunday / weekly off
-        const dayOfWeek = d.getDay() === 0 ? 7 : d.getDay();
-        const isWeeklyOff = dayOfWeek === 7;
+        // Check if Sunday / weekly off (UTC day of week: 0 = Sun)
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const dayOfWeek = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+        const isWeeklyOff = dayOfWeek === 0;
 
         // Check if paid holiday
         const holiday = db.prepare(`
@@ -270,8 +264,11 @@ export class LeaveService {
       throw new Error('Start date, end date, and reason are required');
     }
 
-    if (start_date > end_date) {
-      throw new Error(`Start date (${start_date}) cannot be after end date (${end_date})`);
+    const normStart = DateUtils.parseAndNormalizeDate(start_date, { fieldName: 'Start date', required: true });
+    const normEnd = DateUtils.parseAndNormalizeDate(end_date, { fieldName: 'End date', required: true });
+
+    if (DateUtils.compareDates(normStart, normEnd) > 0) {
+      throw new Error(`Start date (${DateUtils.formatDisplayDate(normStart)}) cannot be after end date (${DateUtils.formatDisplayDate(normEnd)})`);
     }
 
     const effectiveUserId = Number(user_id || applicant_id || actorId);
@@ -287,19 +284,19 @@ export class LeaveService {
         AND status IN ('approved', 'pending')
         AND NOT (end_date < ? OR start_date > ?)
       LIMIT 1
-    `).get(effectiveUserId, effectiveUserId, start_date, end_date);
+    `).get(effectiveUserId, effectiveUserId, normStart, normEnd);
 
     if (overlap) {
-      throw new Error(`Overlapping leave request exists (ID #${overlap.id}, ${overlap.start_date} to ${overlap.end_date}, status: ${overlap.status}). Cannot submit duplicate request.`);
+      throw new Error(`Overlapping leave request exists (ID #${overlap.id}, ${DateUtils.formatDisplayDate(overlap.start_date)} to ${DateUtils.formatDisplayDate(overlap.end_date)}, status: ${overlap.status}). Cannot submit duplicate request.`);
     }
 
     // 2. Calculate chargeable days count
     const daysCount = this.calculateLeaveDays(
-      db, effectiveUserId, leave_type, start_date, end_date, day_part, academyId
+      db, effectiveUserId, leave_type, normStart, normEnd, day_part, academyId
     );
 
     // 3. Balance verification for paid leave types
-    const year = new Date(start_date + 'T00:00:00').getFullYear();
+    const year = Number(normStart.split('-')[0]);
     const policy = db.prepare('SELECT is_paid FROM leave_policies WHERE academy_id = ? AND leave_type = ? LIMIT 1').get(academyId, leave_type);
     const isPaid = policy ? policy.is_paid : (leave_type !== 'unpaid' ? 1 : 0);
 
@@ -333,8 +330,8 @@ export class LeaveService {
         effectiveUserId,
         applicant_name || 'Staff Member',
         leave_type,
-        start_date,
-        end_date,
+        normStart,
+        normEnd,
         day_part,
         daysCount,
         isPaid ? 1 : 0,

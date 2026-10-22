@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { resolveTenant } from '../middleware/tenantResolver.js';
 import { SyllabusService } from '../services/syllabusService.js';
 import { EventService } from '../services/eventService.js';
+import { DateUtils } from '../utils/dateUtils.js';
 
 export const studentRouter = express.Router();
 
@@ -334,6 +335,13 @@ studentRouter.post('/leaves', (req, res) => {
       return res.status(400).json({ success: false, error: 'Start date, end date, and reason are required' });
     }
 
+    const normStart = DateUtils.parseAndNormalizeDate(start_date, { fieldName: 'start_date' });
+    const normEnd = DateUtils.parseAndNormalizeDate(end_date, { fieldName: 'end_date' });
+
+    if (DateUtils.compareDates(normStart, normEnd) > 0) {
+      return res.status(400).json({ success: false, error: 'End date cannot be earlier than start date' });
+    }
+
     const student = db.prepare('SELECT first_name, last_name FROM students WHERE id = ?').get(studentId);
     const studentName = student ? `${student.first_name} ${student.last_name}` : req.user.name;
 
@@ -342,11 +350,11 @@ studentRouter.post('/leaves', (req, res) => {
       VALUES ('student', ?, ?, ?, ?, ?, 'pending')
     `);
 
-    insert.run(studentId, studentName, start_date, end_date, reason.trim());
+    insert.run(studentId, studentName, normStart, normEnd, reason.trim());
 
     res.status(201).json({ success: true, message: 'Leave application submitted successfully' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
