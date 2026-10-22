@@ -206,20 +206,44 @@ export class PayrollService {
         : scheduledWorkDays;
       const perDayRate = Number((rate / deductionBasis).toFixed(2));
 
+      // Prorate base salary if employee joined mid-month
+      const isMidMonthJoiner = scheduleSummary.joiningDate && scheduleSummary.joiningDate > period.start_date;
+      let effectiveBaseRate = rate;
+      if (isMidMonthJoiner) {
+        // Calculate full month working days
+        const fullMonthDays = (scheduleSummary.dayBreakdown || []).filter(d => d.dayType !== 'weekly_off' && !d.isWeeklyOff).length || 26;
+        const fullMonthDayRate = Number((rate / fullMonthDays).toFixed(2));
+        effectiveBaseRate = Number((scheduleSummary.scheduledWorkingDays * fullMonthDayRate).toFixed(2));
+      }
+
       // Calculate unpaid leaves
       const unpaidLeaveCount = scheduleSummary.unpaidLeaveDays;
       const unpaidLeaveDeduction = Number((unpaidLeaveCount * perDayRate).toFixed(2));
 
       // Calculate unauthorized absences:
-      // If employee worked fewer days than scheduled (excluding weekly offs, holidays, paid leaves, and unpaid leaves)
+      // Only count PAST scheduled work days (strictly before today) where employee was scheduled and didn't work
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const isPeriodPast = period.end_date < todayStr;
+      const pastScheduledWorkDays = isPeriodPast
+        ? scheduledWorkDays
+        : (scheduleSummary.dayBreakdown || []).filter(d => 
+            !d.isPriorToJoining && 
+            d.dayType !== 'not_employed' && 
+            d.isWorkingDay && 
+            d.date < todayStr && 
+            !d.isLeave && 
+            !d.isHoliday && 
+            !d.isWeeklyOff
+          ).length;
+
       let unauthorizedAbsences = 0;
-      if (actualDaysWorked > 0 && actualDaysWorked < scheduledWorkDays) {
-        unauthorizedAbsences = Math.max(0, scheduledWorkDays - actualDaysWorked - unpaidLeaveCount);
+      if (actualDaysWorked < pastScheduledWorkDays) {
+        unauthorizedAbsences = Math.max(0, pastScheduledWorkDays - actualDaysWorked - unpaidLeaveCount);
       }
       const unauthorizedDeduction = Number((unauthorizedAbsences * perDayRate).toFixed(2));
 
       absenceDeductions = Number((unpaidLeaveDeduction + unauthorizedDeduction).toFixed(2));
-      grossEarnings = Number(Math.max(0, rate - absenceDeductions).toFixed(2));
+      grossEarnings = Number(Math.max(0, effectiveBaseRate - absenceDeductions).toFixed(2));
       payableUnits = 1; // 1 month
 
     } else if (mode === 'per_day') {
@@ -664,7 +688,12 @@ export class PayrollService {
       let badgeClass = 'badge-neutral';
       let financialImpact = 'Scheduled';
 
-      if (hasActivePunch) {
+      if (dayExp.dayType === 'not_employed' || dayExp.isPriorToJoining) {
+        status = 'not_employed';
+        statusLabel = 'Not Employed';
+        badgeClass = 'badge-neutral';
+        financialImpact = 'Prior to Joining';
+      } else if (hasActivePunch) {
         status = 'active_now';
         statusLabel = 'Punched In (Active)';
         badgeClass = 'badge-primary';
@@ -722,6 +751,11 @@ export class PayrollService {
         statusLabel = 'Scheduled';
         badgeClass = 'badge-neutral';
         financialImpact = 'Upcoming';
+      } else if (dateStr === todayStr) {
+        status = 'shift_pending';
+        statusLabel = 'Shift Pending';
+        badgeClass = 'badge-info';
+        financialImpact = 'Shift in Progress';
       } else {
         status = 'absent';
         statusLabel = 'Absent';

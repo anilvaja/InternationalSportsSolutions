@@ -2015,6 +2015,27 @@ select optgroup, .form-select optgroup, .filter-select optgroup, .custom-select 
   color: #94a3b8;
 }
 
+.calendar-day-cell.status-not_employed {
+  border-left: 3px solid #cbd5e1;
+  background: rgba(148, 163, 184, 0.04);
+  opacity: 0.65;
+}
+
+.calendar-day-cell.status-shift_pending {
+  border-left: 3px solid #3b82f6;
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.chip-not_employed {
+  background: rgba(148, 163, 184, 0.15);
+  color: #64748b;
+}
+
+.chip-shift_pending {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+}
+
 .calendar-cell-times {
   font-size: 10px;
   color: var(--text-muted, #64748b);

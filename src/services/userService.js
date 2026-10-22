@@ -303,8 +303,8 @@ export class UserService {
       const coachRes = db.prepare(`
         INSERT INTO coaches (
           user_id, name, email, phone, sport_id, branch_id, specializations,
-          experience_years, salary_type, salary_amount, is_active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+          experience_years, salary_type, salary_amount, joining_date, is_active
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
       `).run(
         userId, cleanName, cleanEmail, phone || null,
         sport_id ? Number(sport_id) : null,
@@ -312,7 +312,8 @@ export class UserService {
         specializations || null,
         Number(experience_years) || 0,
         compensation_mode || 'monthly',
-        Number(salary_amount) || 0
+        Number(salary_amount) || 0,
+        joining_date || effectiveDate
       );
       coachId = coachRes.lastInsertRowid;
     }

@@ -202,7 +202,7 @@ export class ScheduleService {
   /**
    * Calculates total scheduled hours and days across an entire payroll period
    */
-  static calculateExpectedHoursForPeriod(db, userId, startDate, endDate) {
+  static calculateExpectedHoursForPeriod(db, userId, startDate, endDate, joiningDate = null) {
     let totalScheduledHours = 0;
     let scheduledWorkingDays = 0;
     let weeklyOffDays = 0;
@@ -210,6 +210,19 @@ export class ScheduleService {
     let paidLeaveDays = 0;
     let unpaidLeaveDays = 0;
     const dayBreakdown = [];
+
+    let effectiveJoining = joiningDate;
+    if (!effectiveJoining) {
+      try {
+        const emp = db.prepare('SELECT joining_date FROM employment_records WHERE user_id = ? AND effective_to IS NULL ORDER BY effective_from DESC LIMIT 1').get(userId);
+        const coach = db.prepare('SELECT joining_date, created_at FROM coaches WHERE user_id = ?').get(userId);
+        const u = db.prepare('SELECT created_at FROM users WHERE id = ?').get(userId);
+        effectiveJoining = (emp && emp.joining_date)
+          || (coach && coach.joining_date)
+          || (coach && coach.created_at ? coach.created_at.slice(0, 10) : null)
+          || (u && u.created_at ? u.created_at.slice(0, 10) : null);
+      } catch (e) {}
+    }
 
     const start = new Date(startDate + 'T00:00:00');
     const end = new Date(endDate + 'T00:00:00');
@@ -219,6 +232,29 @@ export class ScheduleService {
       const month = String(d.getMonth() + 1).padStart(2, '0');
       const dayNum = String(d.getDate()).padStart(2, '0');
       const dateStr = `${year}-${month}-${dayNum}`;
+
+      const dayDateObj = new Date(dateStr + 'T00:00:00');
+      const jsDay = dayDateObj.getDay();
+      const dayOfWeek = jsDay === 0 ? 7 : jsDay;
+
+      // Check if this date is prior to employee's official joining date
+      if (effectiveJoining && dateStr < effectiveJoining) {
+        dayBreakdown.push({
+          date: dateStr,
+          dayOfWeek,
+          dayType: 'not_employed',
+          isWorkingDay: false,
+          isWeeklyOff: false,
+          isHoliday: false,
+          isLeave: false,
+          isPriorToJoining: true,
+          scheduledHours: 0,
+          shifts: [],
+          scheduleName: 'Not Employed',
+        });
+        continue;
+      }
+
       const dayExp = this.getDayScheduleExpectation(db, userId, dateStr);
       dayBreakdown.push(dayExp);
 
@@ -247,6 +283,7 @@ export class ScheduleService {
       paidLeaveDays,
       unpaidLeaveDays,
       totalCalendarDays: dayBreakdown.length,
+      joiningDate: effectiveJoining || null,
       dayBreakdown,
     };
   }

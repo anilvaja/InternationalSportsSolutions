@@ -14309,6 +14309,9 @@ const app = {
                   <td>
                     <strong>${this.escapeHtml(c.name)}</strong>
                     <div style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(c.email || c.phone || '-')}</div>
+                    <div style="font-size: 11px; color: var(--primary); margin-top: 3px; font-weight: 500;">
+                      <i class="fa-regular fa-calendar-check"></i> Joined: ${c.joining_date ? this.formatDate(c.joining_date) : (c.created_at ? this.formatDate(c.created_at) : '-')}
+                    </div>
                   </td>
                   <td><span class="badge badge-info">${this.escapeHtml(c.sport_name || 'General')}</span></td>
                   <td>${this.escapeHtml(c.branch_name || 'Main Campus')}</td>
@@ -14462,9 +14465,14 @@ const app = {
               <input type="text" id="coach-phone" class="form-input" style="width: 100%;" placeholder="+91 98765 43210" value="${pending ? pending.phone : ''}">
             </div>
             <div class="form-group">
-              <label>Designation / Title</label>
-              <input type="text" id="coach-designation" class="form-input" style="width: 100%;" placeholder="e.g. Senior Martial Arts Instructor" value="${pending ? (pending.designation || '') : ''}">
+              <label>Date of Joining *</label>
+              <input type="date" id="coach-joining-date" class="form-input" style="width: 100%; font-weight: 600;" value="${pending && pending.joining_date ? pending.joining_date : new Date().toISOString().split('T')[0]}" required>
             </div>
+          </div>
+
+          <div class="form-group">
+            <label>Designation / Title</label>
+            <input type="text" id="coach-designation" class="form-input" style="width: 100%;" placeholder="e.g. Senior Martial Arts Instructor" value="${pending ? (pending.designation || '') : ''}">
           </div>
 
           <!-- Section 2: Branch & Sport Assignment -->
@@ -14557,6 +14565,7 @@ const app = {
     const email = document.getElementById('coach-email').value.trim();
     const password = document.getElementById('coach-password').value.trim();
     const phone = document.getElementById('coach-phone').value.trim();
+    const joining_date = document.getElementById('coach-joining-date') ? document.getElementById('coach-joining-date').value : null;
     const designation = document.getElementById('coach-designation').value.trim();
     const branch_id = document.getElementById('coach-branch').value;
     const sport_id = document.getElementById('coach-sport') ? document.getElementById('coach-sport').value : null;
@@ -14586,6 +14595,7 @@ const app = {
         email,
         password: password || 'password123',
         phone: phone || null,
+        joining_date: joining_date || new Date().toISOString().split('T')[0],
         designation: designation || null,
         branch_id: Number(branch_id),
         sport_id: sport_id ? Number(sport_id) : null,
@@ -14648,6 +14658,12 @@ const app = {
               </select>
             </div>
             <div class="form-group">
+              <label>Date of Joining</label>
+              <input type="date" id="edit-coach-joining-date" class="form-input" style="width: 100%; font-weight: 600;" value="${c.joining_date ? c.joining_date.slice(0, 10) : (c.created_at ? c.created_at.slice(0, 10) : '')}">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <label style="margin: 0;">Sport</label>
                 <button type="button" class="btn btn-sm btn-outline" style="padding: 1px 7px; font-size: 0.72rem; line-height: 1.4;" onclick="app.showQuickAddSportModal('edit-coach-sport')">
@@ -14659,16 +14675,14 @@ const app = {
                 ${sports.map(s => `<option value="${s.id}" ${s.id === c.sport_id ? 'selected' : ''}>${s.name}${s.name.toLowerCase() === 'karate' ? ' 🥋' : ''}</option>`).join('')}
               </select>
             </div>
-          </div>
-          <div class="form-grid">
             <div class="form-group">
               <label>Experience (Years)</label>
               <input type="number" id="edit-coach-exp" class="form-input" style="width: 100%;" value="${c.experience_years || 0}" min="0">
             </div>
-            <div class="form-group">
-              <label>Specializations / Certifications</label>
-              <input type="text" id="edit-coach-spec" class="form-input" style="width: 100%;" value="${c.specializations || ''}">
-            </div>
+          </div>
+          <div class="form-group">
+            <label>Specializations / Certifications</label>
+            <input type="text" id="edit-coach-spec" class="form-input" style="width: 100%;" value="${c.specializations || ''}">
           </div>
           <div class="form-grid">
             <div class="form-group">
@@ -14704,6 +14718,7 @@ const app = {
     const name = document.getElementById('edit-coach-name').value.trim();
     const email = document.getElementById('edit-coach-email').value.trim();
     const phone = document.getElementById('edit-coach-phone').value.trim();
+    const joining_date = document.getElementById('edit-coach-joining-date') ? document.getElementById('edit-coach-joining-date').value : null;
     const branch_id = document.getElementById('edit-coach-branch').value;
     const sport_id = document.getElementById('edit-coach-sport').value;
     const experience_years = document.getElementById('edit-coach-exp').value;
@@ -14723,6 +14738,7 @@ const app = {
         name,
         email: email || null,
         phone: phone || null,
+        joining_date: joining_date || null,
         branch_id: branch_id ? Number(branch_id) : null,
         sport_id: sport_id ? Number(sport_id) : null,
         experience_years: Number(experience_years) || 0,
@@ -20512,11 +20528,12 @@ const app = {
             <div class="calendar-legend-bar">
               <span class="legend-item"><span class="legend-dot" style="background: #10b981;"></span> Present</span>
               <span class="legend-item"><span class="legend-dot" style="background: #f59e0b;"></span> Half Day</span>
+              <span class="legend-item"><span class="legend-dot" style="background: #3b82f6;"></span> Shift Pending / Active</span>
               <span class="legend-item"><span class="legend-dot" style="background: #6366f1;"></span> Leave</span>
               <span class="legend-item"><span class="legend-dot" style="background: #a855f7;"></span> Holiday</span>
               <span class="legend-item"><span class="legend-dot" style="background: #94a3b8;"></span> Weekly Off</span>
+              <span class="legend-item"><span class="legend-dot" style="background: #cbd5e1;"></span> Not Employed / Prior</span>
               <span class="legend-item"><span class="legend-dot" style="background: #ef4444;"></span> Absent</span>
-              <span class="legend-item"><span class="legend-dot" style="background: #cbd5e1;"></span> Upcoming</span>
             </div>
 
             <!-- 7-Column Day Headers (Mon - Sun) -->

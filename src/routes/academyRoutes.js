@@ -2603,6 +2603,7 @@ academyRouter.get('/coaches', (req, res) => {
 
     let selectQuery = `
       SELECT c.*, s.name as sport_name, b.name as branch_name,
+             COALESCE(c.joining_date, (SELECT er.joining_date FROM employment_records er WHERE er.user_id = c.user_id LIMIT 1), DATE(c.created_at)) as joining_date,
              (SELECT COUNT(*) FROM batches bt WHERE bt.coach_id = c.id AND bt.is_active = 1) as active_batches
       ${baseQuery}
       ORDER BY c.id DESC
@@ -2764,6 +2765,7 @@ academyRouter.get('/coaches/:id', (req, res) => {
     const coachId = Number(req.params.id);
     const coach = db.prepare(`
       SELECT c.*, s.name as sport_name, b.name as branch_name,
+             COALESCE(c.joining_date, (SELECT er.joining_date FROM employment_records er WHERE er.user_id = c.user_id LIMIT 1), DATE(c.created_at)) as joining_date,
              (SELECT COUNT(*) FROM batches bt WHERE bt.coach_id = c.id AND bt.is_active = 1) as active_batches
       FROM coaches c
       LEFT JOIN sports s ON s.id = c.sport_id
@@ -2798,6 +2800,7 @@ academyRouter.put('/coaches/:id', (req, res) => {
       experience_years,
       salary_type,
       salary_amount,
+      joining_date,
       is_active,
       academy_id,
     } = req.body;
@@ -2843,6 +2846,7 @@ academyRouter.put('/coaches/:id', (req, res) => {
     const updatedExperience = experience_years !== undefined ? Number(experience_years) : current.experience_years;
     const updatedSalaryType = salary_type !== undefined ? salary_type : current.salary_type;
     const updatedSalaryAmount = salary_amount !== undefined ? Number(salary_amount) : current.salary_amount;
+    const updatedJoiningDate = joining_date !== undefined ? (joining_date ? joining_date : null) : current.joining_date;
     const updatedIsActive = is_active !== undefined ? Number(is_active) : current.is_active;
 
     db.prepare(`
@@ -2856,6 +2860,7 @@ academyRouter.put('/coaches/:id', (req, res) => {
           experience_years = ?,
           salary_type = ?,
           salary_amount = ?,
+          joining_date = ?,
           is_active = ?
       WHERE id = ?
     `).run(
@@ -2868,9 +2873,16 @@ academyRouter.put('/coaches/:id', (req, res) => {
       updatedExperience,
       updatedSalaryType,
       updatedSalaryAmount,
+      updatedJoiningDate,
       updatedIsActive,
       coachId
     );
+
+    if (current.user_id && updatedJoiningDate) {
+      try {
+        db.prepare('UPDATE employment_records SET joining_date = ? WHERE user_id = ?').run(updatedJoiningDate, current.user_id);
+      } catch (e) {}
+    }
 
     res.json({ success: true, message: 'Coach updated successfully' });
   } catch (err) {
