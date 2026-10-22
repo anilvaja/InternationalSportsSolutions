@@ -535,7 +535,7 @@ describe('Enforce Academy, Branch, Batch, and Student Relationships (Rules 1-16)
     if (!batch) {
       let branch = academy1Db.prepare('SELECT id FROM branches LIMIT 1').get();
       if (!branch) {
-        const brRes = academy1Db.prepare('INSERT INTO branches (name, city, is_active) VALUES (?, ?, 1)').run('Main Campus', 'Ahmedabad');
+        const brRes = academy1Db.prepare('INSERT INTO branches (name, city, is_active, academy_id) VALUES (?, ?, 1, ?)').run('Main Campus', 'Ahmedabad', ACADEMY_1_ID);
         branch = { id: brRes.lastInsertRowid };
       }
       let sport = academy1Db.prepare('SELECT id FROM sports LIMIT 1').get();
@@ -543,7 +543,7 @@ describe('Enforce Academy, Branch, Batch, and Student Relationships (Rules 1-16)
         const spRes = academy1Db.prepare('INSERT INTO sports (name, is_active) VALUES (?, 1)').run('Karate');
         sport = { id: spRes.lastInsertRowid };
       }
-      const bRes = academy1Db.prepare('INSERT INTO batches (name, branch_id, sport_id, monthly_fee, max_capacity) VALUES (?, ?, ?, ?, ?)').run('Test Batch 16', branch.id, sport.id, 2500, 30);
+      const bRes = academy1Db.prepare('INSERT INTO batches (name, branch_id, sport_id, monthly_fee, max_capacity, academy_id) VALUES (?, ?, ?, ?, ?, ?)').run('Test Batch 16', branch.id, sport.id, 2500, 30, ACADEMY_1_ID);
       batch = { id: bRes.lastInsertRowid };
     }
 

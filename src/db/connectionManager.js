@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import { config } from '../config/index.js';
 import { getCentralDb } from './centralDb.js';
 import { runMigrations } from './migrator.js';
-import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
+import { ALL_ACADEMY_PERMISSIONS, DEFAULT_ACADEMY_ROLES } from '../config/permissions.js';
 import { seedUnitTestFixtures } from './testFixtures.js';
 
 // Cache for open tenant database connections: academyId -> Database
@@ -264,22 +264,24 @@ export function provisionAcademyDb({
     if (logo_url) setTenantSetting.run('logo_url', logo_url);
   } catch (e) {}
 
-  // Seed default roles: ONLY 1 ROLE as Academy Admin with all permissions assigned
+  // Seed default roles: exactly the standard 8 operational roles
   const seedRoles = tenantDb.transaction(() => {
     tenantDb.prepare('DELETE FROM academy_roles').run();
     const insertRole = tenantDb.prepare(`
-      INSERT OR REPLACE INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
+      INSERT INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
-    
-    insertRole.run(
-      'academy_admin',
-      'Academy Admin',
-      'Full administrative access to all academy features and settings',
-      JSON.stringify(ALL_ACADEMY_PERMISSIONS),
-      1,
-      'amber'
-    );
+
+    for (const role of DEFAULT_ACADEMY_ROLES) {
+      insertRole.run(
+        role.name,
+        role.display_name,
+        role.description,
+        JSON.stringify(role.permissions),
+        role.is_system,
+        role.theme_color
+      );
+    }
   });
   seedRoles();
 

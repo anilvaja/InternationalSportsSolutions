@@ -5,7 +5,7 @@ import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById, getAcademyDbPath } from '../db/connectionManager.js';
 import { runMigrations } from '../db/migrator.js';
 import { config } from '../config/index.js';
-import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
+import { ALL_ACADEMY_PERMISSIONS, DEFAULT_ACADEMY_ROLES } from '../config/permissions.js';
 
 export class TenantCleanupService {
   /**
@@ -165,12 +165,22 @@ export class TenantCleanupService {
       if (academy.name) tenantDb.prepare("INSERT OR REPLACE INTO tenant_settings (key, value) VALUES ('academy_name', ?)").run(academy.name);
       if (academy.slug) tenantDb.prepare("INSERT OR REPLACE INTO tenant_settings (key, value) VALUES ('academy_code', ?)").run(academy.slug);
 
-      // Re-seed default academy roles: ONLY 1 role (Academy Admin) with all permissions
+      // Re-seed default academy roles: standard 8 operational roles
       tenantDb.prepare('DELETE FROM academy_roles').run();
-      tenantDb.prepare(`
+      const insertRole = tenantDb.prepare(`
         INSERT INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
-        VALUES ('academy_admin', 'Academy Admin', 'Full administrative access to all academy features and settings', ?, 1, 'amber')
-      `).run(JSON.stringify(ALL_ACADEMY_PERMISSIONS));
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const role of DEFAULT_ACADEMY_ROLES) {
+        insertRole.run(
+          role.name,
+          role.display_name,
+          role.description,
+          JSON.stringify(role.permissions),
+          role.is_system,
+          role.theme_color
+        );
+      }
 
       // Re-seed default branch
       tenantDb.prepare(`

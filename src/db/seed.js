@@ -1,13 +1,13 @@
 import bcrypt from 'bcryptjs';
 import { getCentralDb } from './centralDb.js';
 import { provisionAcademyDb, getTenantDbById } from './connectionManager.js';
-import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
+import { ALL_ACADEMY_PERMISSIONS, DEFAULT_ACADEMY_ROLES } from '../config/permissions.js';
 
 /**
  * Platform Database Seeder
  * - Exactly 1 Super Admin: anilvaja.007@gmail.com
  * - Exactly 1 Academy: Pratik Karate Academy
- * - Exactly 1 Role: Academy Admin (with all permissions from permissions module)
+ * - Standard 8 Operational Roles (Finance & Fee Manager, Front Desk, Head Coach, Receptionist, Academy Admin, Staff, Coach, Student)
  * - Clean state without dummy students, batches, or demo records.
  */
 export function runSeed() {
@@ -162,23 +162,27 @@ export function runSeed() {
     );
   }
 
-  // 5. Ensure tenant DB has ONLY 1 role (Academy Admin) with all permissions accurately assigned
+  // 5. Ensure tenant DB has exactly the standard 8 operational roles
   const tenantDb = getTenantDbById(academyId);
 
-  // Strictly enforce: No other roles exist. Only 'academy_admin' with all permissions.
-  tenantDb.prepare('DELETE FROM academy_roles WHERE name != ?').run('academy_admin');
+  // Strictly enforce: Only the standard 8 operational roles exist in exact display order
+  tenantDb.prepare('DELETE FROM academy_roles').run();
 
-  tenantDb.prepare(`
-    INSERT OR REPLACE INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
+  const insertRole = tenantDb.prepare(`
+    INSERT INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
-    'academy_admin',
-    'Academy Admin',
-    'Full administrative access to all academy features and settings',
-    JSON.stringify(ALL_ACADEMY_PERMISSIONS),
-    1,
-    'amber'
-  );
+  `);
+
+  for (const role of DEFAULT_ACADEMY_ROLES) {
+    insertRole.run(
+      role.name,
+      role.display_name,
+      role.description,
+      JSON.stringify(role.permissions),
+      role.is_system,
+      role.theme_color
+    );
+  }
 
   // Ensure Admin user exists with role academy_admin, and no other users exist
   const adminPassHash = bcrypt.hashSync(pratikAcademyData.admin_password, 10);
@@ -234,7 +238,7 @@ export function runSeed() {
     console.warn('[Seed] Warning registering domains:', err.message);
   }
 
-  console.log(`[Seed] Successfully seeded: Super Admin (${'anilvaja.007@gmail.com'}) & Academy (${pratikAcademyData.name}) with 1 role (Academy Admin - all permissions).`);
+  console.log(`[Seed] Successfully seeded: Super Admin (${'anilvaja.007@gmail.com'}) & Academy (${pratikAcademyData.name}) with standard 8 operational roles.`);
   console.log('--- Database Seed Finished Successfully ---');
 }
 

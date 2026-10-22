@@ -92,6 +92,7 @@ export const ALL_ACADEMY_PERMISSIONS = [
   'edit_fees',
   'delete_fees',
   'override_fees',
+  'manage_discounts',
   'pause_fees',
   'export_fees',
   'download_fee_receipts',
@@ -109,6 +110,7 @@ export const ALL_ACADEMY_PERMISSIONS = [
   // 11. Staff Leaves & Approvals
   'view_leaves',
   'apply_leave',
+  'apply_leaves',
   'edit_leaves',
   'delete_leaves',
   'manage_leaves',
@@ -168,6 +170,143 @@ export const ALL_ACADEMY_PERMISSIONS = [
   'customize_theme',
   'manage_branding',
 
+  // 20. Student Portal Capabilities
+  'view_my_attendance',
+  'view_my_fees',
+  'pay_fees',
+
   // Universal super capability
   'all'
+];
+
+/**
+ * Standard 8 operational roles created during academy setup and provisioning.
+ * Exactly matches the Roles & Permissions Access Matrix.
+ */
+export const DEFAULT_ACADEMY_ROLES = [
+  {
+    name: 'finance_manager',
+    display_name: 'Finance & Fee Manager',
+    description: 'Authorized to manage fee plans, collect payments, manage discounts and generate financial receipts',
+    permissions: [
+      'view_fees',
+      'collect_fees',
+      'override_fees',
+      'manage_discounts',
+      'pause_fees',
+      'view_students',
+      'view_batches'
+    ],
+    is_system: 0,
+    theme_color: 'emerald'
+  },
+  {
+    name: 'front_desk',
+    display_name: 'Front Desk & Receptionist',
+    description: 'Handles student enrollment, attendance marking, and parent communication',
+    permissions: [
+      'view_students',
+      'create_students',
+      'edit_students',
+      'view_batches',
+      'view_attendance',
+      'mark_attendance',
+      'view_fees',
+      'collect_fees'
+    ],
+    is_system: 0,
+    theme_color: 'teal'
+  },
+  {
+    name: 'head_coach',
+    display_name: 'Head Coach',
+    description: 'Senior coaching staff authorized to lead training programs, manage syllabus techniques, oversee batch schedules, and supervise coaches',
+    permissions: [
+      'view_coaches',
+      'create_coaches',
+      'edit_coaches',
+      'view_students',
+      'view_batches',
+      'create_batches',
+      'edit_batches',
+      'view_attendance',
+      'mark_attendance',
+      'view_syllabus',
+      'manage_syllabus',
+      'view_sports',
+      'view_leaves',
+      'apply_leave'
+    ],
+    is_system: 1,
+    theme_color: 'blue'
+  },
+  {
+    name: 'receptionist',
+    display_name: 'Receptionist',
+    description: 'Front desk receptionist authorized for student enrollment, parent communication, attendance check-in, and fee collection',
+    permissions: [
+      'view_students',
+      'create_students',
+      'edit_students',
+      'view_batches',
+      'view_attendance',
+      'mark_attendance',
+      'view_fees',
+      'collect_fees',
+      'view_sports',
+      'apply_leave'
+    ],
+    is_system: 1,
+    theme_color: 'blue'
+  },
+  {
+    name: 'academy_admin',
+    display_name: 'Academy Admin',
+    description: 'Full administrative access to all academy features and settings',
+    permissions: ALL_ACADEMY_PERMISSIONS,
+    is_system: 1,
+    theme_color: 'blue'
+  },
+  {
+    name: 'academy_staff',
+    display_name: 'Academy Staff',
+    description: 'Staff member with operational access to students, attendance, and fees',
+    permissions: [
+      'view_students',
+      'manage_students',
+      'view_attendance',
+      'mark_attendance',
+      'view_fees',
+      'collect_fees',
+      'view_batches'
+    ],
+    is_system: 1,
+    theme_color: 'blue'
+  },
+  {
+    name: 'coach',
+    display_name: 'Coach',
+    description: 'Sports coach with schedule, batch management, and attendance marking',
+    permissions: [
+      'view_batches',
+      'view_students',
+      'mark_attendance',
+      'apply_leaves'
+    ],
+    is_system: 1,
+    theme_color: 'blue'
+  },
+  {
+    name: 'student',
+    display_name: 'Student',
+    description: 'Self-service student portal access',
+    permissions: [
+      'view_my_attendance',
+      'view_my_fees',
+      'pay_fees',
+      'apply_leaves'
+    ],
+    is_system: 1,
+    theme_color: 'blue'
+  }
 ];
