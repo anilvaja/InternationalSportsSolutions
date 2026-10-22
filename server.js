@@ -13,6 +13,7 @@ import { academyRouter } from './src/routes/academyRoutes.js';
 import { studentRouter } from './src/routes/studentRoutes.js';
 import { publicRouter } from './src/routes/publicRoutes.js';
 import { staffRouter } from './src/routes/staffRoutes.js';
+import { runSeed } from './src/db/seed.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,7 +24,19 @@ const app = express();
 app.set('trust proxy', true);
 
 // Initialize Central Database & check migrations
-getCentralDb();
+const centralDb = getCentralDb();
+
+// Self-healing Auto-Seed: If database has no super admin, seed default initial data
+try {
+  const superAdminCount = centralDb.prepare('SELECT COUNT(*) as count FROM super_admins').get()?.count || 0;
+  if (superAdminCount === 0) {
+    console.log('[Auto-Seed] Empty database detected on startup. Initializing default platform data and super admin...');
+    runSeed();
+    console.log('[Auto-Seed] Database successfully initialized.');
+  }
+} catch (seedErr) {
+  console.warn('[Auto-Seed] Automatic seed check warning:', seedErr.message);
+}
 
 // Middlewares
 app.use(cors({ origin: true, credentials: true }));

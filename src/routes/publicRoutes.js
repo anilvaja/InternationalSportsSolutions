@@ -2,6 +2,7 @@ import express from 'express';
 import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById } from '../db/connectionManager.js';
 import { extractSubdomain, extractHost } from '../middleware/tenantResolver.js';
+import { runSeed } from '../db/seed.js';
 
 export const publicRouter = express.Router();
 
@@ -226,3 +227,50 @@ publicRouter.post('/pay', (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+/**
+ * GET & POST /api/public/setup
+ * Public self-service database provisioning endpoint.
+ * Enables zero-touch or 1-click database initialization on new production / preview deployments.
+ */
+publicRouter.all('/setup', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const existingSuperAdmin = centralDb.prepare('SELECT email FROM super_admins LIMIT 1').get();
+    const force = req.query.force === 'true' || req.body?.force === true;
+
+    if (existingSuperAdmin && !force) {
+      return res.json({
+        success: true,
+        message: 'Database is already initialized and active.',
+        initialized: true,
+        superAdminEmail: existingSuperAdmin.email,
+        loginCredentials: {
+          superAdmin: { email: 'anilvaja.007@gmail.com', password: 'password' },
+          academyAdmin: { email: 'john.smith@mahavirsportsacademy.com', password: 'password123' },
+          student: { email: 'aarav.patel@student.com', password: 'password123' },
+        },
+        loginUrl: '/',
+      });
+    }
+
+    // Run the multi-database seeder
+    runSeed();
+
+    return res.json({
+      success: true,
+      message: 'Database successfully initialized and seeded with Super Admin, Subscription Plans, and Demo Academy!',
+      initialized: true,
+      loginCredentials: {
+        superAdmin: { email: 'anilvaja.007@gmail.com', password: 'password' },
+        academyAdmin: { email: 'john.smith@mahavirsportsacademy.com', password: 'password123' },
+        student: { email: 'aarav.patel@student.com', password: 'password123' },
+      },
+      loginUrl: '/',
+    });
+  } catch (err) {
+    console.error('[Public Setup Error]', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+

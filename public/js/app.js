@@ -1003,7 +1003,54 @@ const app = {
       this.showToast('Logged in successfully', 'success');
       await this.checkAuth();
     } else {
-      this.showToast(res.error || 'Login failed', 'danger');
+      if (res.error && res.error.includes('academy not found')) {
+        this.showToast('Login failed: Account or academy not found. If this is a fresh deployment, click "Initialize / Seed Database" below.', 'warning');
+      } else {
+        this.showToast(res.error || 'Login failed', 'danger');
+      }
+    }
+  },
+
+  async initializeDatabase() {
+    const btn = document.getElementById('btn-init-db');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Initializing Database...';
+    }
+
+    try {
+      const res = await fetch('/api/public/setup');
+      const data = await res.json();
+      if (data.success) {
+        this.showToast('Database successfully initialized!', 'success');
+        this.quickFill('anilvaja.007@gmail.com', 'password');
+
+        // Show success alert above form
+        const form = document.getElementById('login-form');
+        let banner = document.getElementById('init-success-banner');
+        if (!banner && form) {
+          banner = document.createElement('div');
+          banner.id = 'init-success-banner';
+          banner.style.cssText = 'background: rgba(16, 185, 129, 0.12); border: 1px solid #10b981; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 13px; color: #10b981;';
+          form.parentNode.insertBefore(banner, form);
+        }
+        if (banner) {
+          banner.innerHTML = `
+            <div style="font-weight: 700; margin-bottom: 4px;"><i class="fa-solid fa-circle-check"></i> Database Ready!</div>
+            <div>Default credentials filled in below:</div>
+            <div style="font-family: monospace; font-size: 12px; margin-top: 4px;">Super Admin: anilvaja.007@gmail.com / password</div>
+          `;
+        }
+      } else {
+        this.showToast(data.error || 'Failed to initialize database', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Setup error: ' + err.message, 'danger');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-database"></i> Initialize / Seed Database (1-Click Setup)';
+      }
     }
   },
 
@@ -1025,17 +1072,15 @@ const app = {
     loginView.style.display = 'flex';
     document.getElementById('app-view').style.display = 'none';
 
-    // Hide demo one-click logins on production host
+    // Show demo pickers on localhost, .test, preview URLs, or if demo mode
     const demoPicker = document.getElementById('demo-login-picker-container');
     if (demoPicker) {
-      const isLocalHost = window.location.hostname === 'localhost' ||
-                          window.location.hostname === '127.0.0.1' ||
-                          window.location.hostname.endsWith('.test');
-      if (!isLocalHost) {
-        demoPicker.style.display = 'none';
-      } else {
-        demoPicker.style.display = 'block';
-      }
+      const isDevOrPreview = window.location.hostname === 'localhost' ||
+                            window.location.hostname === '127.0.0.1' ||
+                            window.location.hostname.endsWith('.test') ||
+                            window.location.hostname.includes('preview') ||
+                            window.location.hostname.includes('airoapp.ai');
+      demoPicker.style.display = isDevOrPreview ? 'block' : 'none';
     }
 
     // If on a tenant subdomain, customize branding
