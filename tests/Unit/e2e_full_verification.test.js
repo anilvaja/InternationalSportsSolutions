@@ -41,6 +41,7 @@ describe('Comprehensive End-to-End System Verification (CRUD, Import, Export, Pr
       db.prepare("DELETE FROM branches WHERE name LIKE 'E2E%'").run();
       db.prepare("DELETE FROM batches WHERE name LIKE 'E2E%'").run();
       db.prepare("DELETE FROM coaches WHERE name LIKE 'Sensei Vikram%'").run();
+      db.prepare("DELETE FROM users WHERE email LIKE 'vikram_%'").run();
       db.prepare("DELETE FROM students WHERE first_name IN ('Aditya', 'Karan', 'Ananya')").run();
       db.prepare("DELETE FROM events WHERE title LIKE 'State Karate Championship%'").run();
     } catch (e) {}

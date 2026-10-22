@@ -60,26 +60,23 @@
         </button>
       </form>
 
-      <!-- Quick Demo Login Pickers -->
+      <!-- One-Click Quick Sign In -->
       <div id="demo-login-picker-container" style="margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border);">
-        <p style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 8px;">Demo One-Click Sign In:</p>
+        <p style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 8px;">Quick Sign In:</p>
         <div style="display: flex; flex-direction: column; gap: 6px;">
           <button type="button" class="btn btn-secondary btn-sm" onclick="app.quickFill('anilvaja.007@gmail.com', 'password')" style="justify-content: flex-start;">
-            <i class="fa-solid fa-shield-halved" style="color: #f59e0b;"></i> Super Admin (Central Admin Panel)
+            <i class="fa-solid fa-shield-halved" style="color: #f59e0b;"></i> Super Admin: anilvaja.007@gmail.com
           </button>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="app.quickFill('john.smith@mahavirsportsacademy.com', 'password123')" style="justify-content: flex-start;">
-            <i class="fa-solid fa-building" style="color: #3b82f6;"></i> Academy Admin (John Smith)
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="app.quickFill('admin@mahavir.com', 'password123')" style="justify-content: flex-start;">
-            <i class="fa-solid fa-user-tie" style="color: #8b5cf6;"></i> Academy Admin (admin@mahavir.com)
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="app.quickFill('aarav.patel@student.com', 'password123')" style="justify-content: flex-start;">
-            <i class="fa-solid fa-user-graduate" style="color: #10b981;"></i> Student Portal (Aarav Patel)
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.quickFill('admin@pratikkarate.com', 'password123')" style="justify-content: flex-start;">
+            <i class="fa-solid fa-building" style="color: #3b82f6;"></i> Pratik Karate Academy Admin: admin@pratikkarate.com
           </button>
         </div>
-        <div id="init-db-container" style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border);">
+        <div id="init-db-container" style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 8px;">
           <button type="button" id="btn-init-db" class="btn btn-warning btn-sm" onclick="app.initializeDatabase()" style="width: 100%; justify-content: center; font-weight: 600;">
-            <i class="fa-solid fa-database"></i> Initialize / Seed Database (1-Click Setup)
+            <i class="fa-solid fa-database"></i> Setup Platform (Super Admin & Pratik Karate Academy)
+          </button>
+          <button type="button" id="btn-reset-everything" class="btn btn-danger btn-sm" onclick="app.resetEverythingFromScratch()" style="width: 100%; justify-content: center; font-weight: 600;">
+            <i class="fa-solid fa-triangle-exclamation"></i> Reset Everything (Wipe & Re-Seed from Scratch)
           </button>
         </div>
       </div>

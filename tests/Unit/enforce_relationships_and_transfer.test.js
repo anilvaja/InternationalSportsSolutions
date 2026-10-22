@@ -558,7 +558,7 @@ describe('Enforce Academy, Branch, Batch, and Student Relationships (Rules 1-16)
     let fee = academy1Db.prepare('SELECT id FROM student_fees LIMIT 1').get();
     if (!fee) {
       const s = academy1Db.prepare('SELECT id FROM students LIMIT 1').get();
-      academy1Db.prepare('INSERT INTO student_fees (student_id, title, net_amount, paid_amount, balance_amount, status, due_date) VALUES (?, ?, ?, ?, ?, ?, ?)').run(s.id, 'Monthly Fee', 2500, 2500, 0, 'paid', '2026-10-15');
+      academy1Db.prepare('INSERT INTO student_fees (student_id, title, amount, net_amount, paid_amount, balance_amount, status, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(s.id, 'Monthly Fee', 2500, 2500, 2500, 0, 'paid', '2026-10-15');
     }
 
     // Verify attendance roster query still works via student_batch_enrollments

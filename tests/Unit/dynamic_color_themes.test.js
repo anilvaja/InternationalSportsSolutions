@@ -26,6 +26,11 @@ describe('Dynamic Color Themes, Permissions & Multi-Tier Hierarchy', () => {
       name: 'John Smith',
     });
 
+    academy1Db.prepare(`
+      INSERT OR REPLACE INTO academy_roles (name, display_name, permissions, is_system, theme_color)
+      VALUES ('academy_staff', 'Staff', '["customize_theme"]', 1, 'blue')
+    `).run();
+
     // Create a dedicated staff test user
     const existing = academy1Db.prepare("SELECT id FROM users WHERE email = 'theme.tester@example.com'").get();
     let staffUserId;

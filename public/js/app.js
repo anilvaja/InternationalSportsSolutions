@@ -1015,14 +1015,14 @@ const app = {
     const btn = document.getElementById('btn-init-db');
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Initializing Database...';
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Setting Up Platform...';
     }
 
     try {
       const res = await fetch('/api/public/setup');
       const data = await res.json();
       if (data.success) {
-        this.showToast('Database successfully initialized!', 'success');
+        this.showToast('Platform initialized successfully!', 'success');
         this.quickFill('anilvaja.007@gmail.com', 'password');
 
         // Show success alert above form
@@ -1036,9 +1036,10 @@ const app = {
         }
         if (banner) {
           banner.innerHTML = `
-            <div style="font-weight: 700; margin-bottom: 4px;"><i class="fa-solid fa-circle-check"></i> Database Ready!</div>
-            <div>Default credentials filled in below:</div>
+            <div style="font-weight: 700; margin-bottom: 4px;"><i class="fa-solid fa-circle-check"></i> Platform Ready!</div>
+            <div>Default credentials:</div>
             <div style="font-family: monospace; font-size: 12px; margin-top: 4px;">Super Admin: anilvaja.007@gmail.com / password</div>
+            <div style="font-family: monospace; font-size: 12px; margin-top: 2px;">Academy Admin: admin@pratikkarate.com / password123 (Pratik Karate Academy)</div>
           `;
         }
       } else {
@@ -1049,7 +1050,57 @@ const app = {
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-database"></i> Initialize / Seed Database (1-Click Setup)';
+        btn.innerHTML = '<i class="fa-solid fa-database"></i> Setup Platform (Super Admin & Pratik Karate Academy)';
+      }
+    }
+  },
+
+  async resetEverythingFromScratch() {
+    if (!confirm("⚠️ DANGER: RESET EVERYTHING FROM SCRATCH\n\nThis will completely wipe ALL databases, demo academies, uploaded files, and tenant accounts.\n\nIt will re-seed ONLY:\n1. Super Admin: anilvaja.007@gmail.com\n2. Pratik Karate Academy (admin@pratikkarate.com)\n3. Academy Admin role (all permissions assigned)\n\nAre you sure you want to proceed?")) {
+      return;
+    }
+
+    const btn = document.getElementById('btn-reset-everything');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Resetting Everything...';
+    }
+
+    try {
+      const res = await fetch('/api/public/reset-everything?confirm=RESET_EVERYTHING', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        this.showToast('Platform reset from scratch successfully!', 'success');
+        this.quickFill('anilvaja.007@gmail.com', 'password');
+
+        const form = document.getElementById('login-form');
+        let banner = document.getElementById('init-success-banner');
+        if (!banner && form) {
+          banner = document.createElement('div');
+          banner.id = 'init-success-banner';
+          banner.style.cssText = 'background: rgba(16, 185, 129, 0.12); border: 1px solid #10b981; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 13px; color: #10b981;';
+          form.parentNode.insertBefore(banner, form);
+        }
+        if (banner) {
+          banner.innerHTML = `
+            <div style="font-weight: 700; margin-bottom: 4px;"><i class="fa-solid fa-circle-check"></i> Platform Reset Cleanly!</div>
+            <div>All previous data wiped. Only Super Admin & Pratik Karate Academy exist:</div>
+            <div style="font-family: monospace; font-size: 12px; margin-top: 4px;">Super Admin: anilvaja.007@gmail.com / password</div>
+            <div style="font-family: monospace; font-size: 12px; margin-top: 2px;">Academy Admin: admin@pratikkarate.com / password123 (Pratik Karate Academy)</div>
+          `;
+        }
+        if (this.user) {
+          await this.checkAuth();
+        }
+      } else {
+        this.showToast(data.error || 'Failed to reset platform', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Reset error: ' + err.message, 'danger');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Reset Everything (Wipe & Re-Seed from Scratch)';
       }
     }
   },
@@ -1808,6 +1859,9 @@ const app = {
             <a href="/api/central/backup" class="btn btn-secondary btn-sm" download>
               <i class="fa-solid fa-file-zipper"></i> Full Platform ZIP
             </a>
+            <button class="btn btn-outline-danger btn-sm" onclick="app.resetEverythingFromScratch()" title="Reset Platform From Scratch (Wipe & Re-Seed)">
+              <i class="fa-solid fa-triangle-exclamation"></i> Reset Everything
+            </button>
             <button class="btn btn-primary btn-sm" onclick="app.showProvisionAcademyModal()">
               <i class="fa-solid fa-plus"></i> Provision New Academy
             </button>
@@ -1898,6 +1952,9 @@ const app = {
                       </a>
                       <button class="btn btn-outline-danger btn-sm" onclick="app.showTenantCleanupModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}', '${ac.slug}')" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px;" title="Reset / Wipe Tenant Database">
                         <i class="fa-solid fa-broom" style="width: 14px;"></i> Reset Data
+                      </button>
+                      <button class="btn btn-outline-danger btn-sm" onclick="app.purgeAcademyCompletelyModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}', '${ac.slug}')" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px; color: #ef4444;" title="Completely Purge Academy, Files & Database">
+                        <i class="fa-solid fa-trash-can" style="width: 14px;"></i> Purge Academy
                       </button>
                       <button class="btn btn-primary btn-sm" onclick="app.switchAcademy(${ac.id}); app.navigate('overview');" style="justify-content: flex-start; padding: 4px 8px; font-size: 11px;" title="Open Academy Dashboard">
                         <i class="fa-solid fa-arrow-up-right-from-square" style="width: 14px;"></i> Open Portal
@@ -2287,9 +2344,78 @@ const app = {
     }
   },
 
-  // ==========================================
-  // SUBSCRIPTION PLANS & QUOTA MANAGEMENT UI
-  // ==========================================
+  purgeAcademyCompletelyModal(academyId, academyName, academySlug) {
+    this.openModal(
+      `<i class="fa-solid fa-trash-can" style="color: #ef4444;"></i> Delete Academy & Purge Database — ${this.escapeHtml(academyName)}`,
+      `
+        <div style="font-size: 13px;">
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 18px;">
+            <div style="display: flex; gap: 10px; align-items: flex-start;">
+              <i class="fa-solid fa-skull-crossbones" style="color: #ef4444; font-size: 22px; margin-top: 2px;"></i>
+              <div>
+                <strong style="color: #ef4444; font-size: 14px; display: block;">PERMANENT IRREVERSIBLE ACTION</strong>
+                <span style="color: var(--text-muted); font-size: 12px; line-height: 1.5; display: block; margin-top: 4px;">
+                  This will permanently delete the entire academy <strong>${this.escapeHtml(academyName)}</strong> (#${academyId}).
+                  <ul style="margin: 6px 0 0 16px; padding: 0; color: #ef4444;">
+                    <li>Physically deletes the dedicated SQLite database file (<code>academy_${academyId}.sqlite</code>).</li>
+                    <li>Deletes all uploaded logos, files, and stored media.</li>
+                    <li>Deletes all associated student accounts, coach profiles, invoices, and attendance logs.</li>
+                    <li>Removes subdomains, domains, and central user lookup records.</li>
+                  </ul>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 14px;">
+            <label style="font-weight: 700; color: #dc2626; margin-bottom: 6px; display: block;">
+              To confirm, type the slug <code>${this.escapeHtml(academySlug)}</code> below:
+            </label>
+            <input type="text" id="purge-confirm-input" class="form-input" placeholder="${this.escapeHtml(academySlug)}" style="width: 100%; border-color: #ef4444;">
+          </div>
+        </div>
+      `,
+      `
+        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="button" class="btn btn-danger" id="purge-submit-btn" onclick="app.submitPurgeAcademy(${academyId}, '${this.escapeHtml(academySlug)}')">
+          <i class="fa-solid fa-trash-can"></i> Permanently Delete & Purge Everything
+        </button>
+      `
+    );
+  },
+
+  async submitPurgeAcademy(academyId, expectedSlug) {
+    const input = document.getElementById('purge-confirm-input');
+    const val = input ? input.value.trim().toLowerCase() : '';
+
+    if (val !== expectedSlug.toLowerCase() && val !== 'confirm') {
+      this.showToast(`Please type '${expectedSlug}' exactly to confirm deletion`, 'warning');
+      return;
+    }
+
+    const btn = document.getElementById('purge-submit-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Purging Database & Assets...';
+    }
+
+    const res = await this.apiRequest(`/api/central/academies/${academyId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Academy completely purged successfully!', 'success');
+      this.closeModal();
+      await this.checkAuth();
+      this.renderCentralAcademies();
+    } else {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-trash-can"></i> Permanently Delete & Purge Everything';
+      }
+      this.showToast(res.error || 'Failed to purge academy', 'danger');
+    }
+  },
 
   async renderCentralPlans() {
     const data = await this.apiRequest('/api/central/plans');

@@ -32,7 +32,7 @@ try {
   if (superAdminCount === 0) {
     console.log('[Auto-Seed] Empty database detected on startup. Initializing default platform data and super admin...');
     runSeed();
-    console.log('[Auto-Seed] Database successfully initialized.');
+    console.log('[Auto-Seed] Database successfully initialized with Super Admin and Pratik Karate Academy.');
   }
 } catch (seedErr) {
   console.warn('[Auto-Seed] Automatic seed check warning:', seedErr.message);

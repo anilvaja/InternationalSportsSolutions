@@ -41,6 +41,14 @@ export function runMigrations(db, type) {
 
       // Execute within transaction
       const applyMigration = db.transaction(() => {
+        if (type === 'tenant' && file.includes('002_enforce_batch_student_relationships')) {
+          try {
+            const obj = db.prepare("SELECT type FROM sqlite_master WHERE name = 'student_batches'").get();
+            if (obj && obj.type === 'view') {
+              db.exec('DROP VIEW IF EXISTS student_batches;');
+            }
+          } catch (_) {}
+        }
         db.exec(sql);
         recordMigration.run(file);
       });

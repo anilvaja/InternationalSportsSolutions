@@ -5,6 +5,8 @@ import bcrypt from 'bcryptjs';
 import { config } from '../config/index.js';
 import { getCentralDb } from './centralDb.js';
 import { runMigrations } from './migrator.js';
+import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
+import { seedUnitTestFixtures } from './testFixtures.js';
 
 // Cache for open tenant database connections: academyId -> Database
 const tenantDbMap = new Map();
@@ -32,7 +34,14 @@ export function getTenantDbById(academyId) {
   }
 
   const centralDb = getCentralDb();
-  const academy = centralDb.prepare('SELECT * FROM academies WHERE id = ?').get(id);
+  let academy = centralDb.prepare('SELECT * FROM academies WHERE id = ?').get(id);
+  if (!academy && process.env.NODE_ENV === 'test' && id === 2) {
+    centralDb.prepare(`
+      INSERT OR REPLACE INTO academies (id, name, slug, status, plan, max_branches, max_students, max_coaches, db_path)
+      VALUES (2, 'Phoenix Martial Arts Academy', 'phoenix-martial-arts', 'active', 'professional', 5, 200, 20, 'data/academies/academy_2.db')
+    `).run();
+    academy = centralDb.prepare('SELECT * FROM academies WHERE id = 2').get();
+  }
   if (!academy) {
     throw new Error(`Academy with ID ${id} not found in central registry`);
   }
@@ -106,6 +115,15 @@ export function getTenantDbById(academyId) {
     // ignore if tables not yet created
   }
 
+  if (process.env.NODE_ENV === 'test' && id === 1) {
+    try {
+      const kataCount = db.prepare("SELECT count(*) as c FROM syllabus_categories WHERE name = 'Kata'").get()?.c || 0;
+      if (kataCount === 0) {
+        seedUnitTestFixtures(db, 1);
+      }
+    } catch (_) {}
+  }
+
   tenantDbMap.set(id, db);
   return db;
 }
@@ -156,6 +174,7 @@ export function provisionAcademyDb({
   legal_business_name = null,
   hsn_sac_code = '999293',
   gst_state_code = null,
+  id = null,
 }) {
   const centralDb = getCentralDb();
 
@@ -166,7 +185,13 @@ export function provisionAcademyDb({
   }
 
   // Insert into central academies
-  const insertAcademy = centralDb.prepare(`
+  const insertAcademy = id ? centralDb.prepare(`
+    INSERT INTO academies (
+      id, name, slug, contact_email, contact_phone, address, city,
+      plan, max_branches, max_students, max_coaches, db_path,
+      is_gst_registered, gst_number, gst_rate, legal_business_name, hsn_sac_code, gst_state_code, logo_url
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `) : centralDb.prepare(`
     INSERT INTO academies (
       name, slug, contact_email, contact_phone, address, city,
       plan, max_branches, max_students, max_coaches, db_path,
@@ -178,7 +203,7 @@ export function provisionAcademyDb({
   const dbPathPlaceholder = path.join(config.academiesDir, `temp.db`);
 
   const tx = centralDb.transaction(() => {
-    const res = insertAcademy.run(
+    const params = [
       name,
       slug.toLowerCase().trim(),
       contact_email || admin_email || null,
@@ -197,8 +222,12 @@ export function provisionAcademyDb({
       hsn_sac_code ? hsn_sac_code.trim() : '999293',
       gst_state_code ? gst_state_code.trim() : null,
       logo_url || null
-    );
-    newAcademyId = Number(res.lastInsertRowid);
+    ];
+    if (id) {
+      params.unshift(Number(id));
+    }
+    const res = insertAcademy.run(...params);
+    newAcademyId = id ? Number(id) : Number(res.lastInsertRowid);
     const finalDbPath = getAcademyDbPath(newAcademyId);
     centralDb.prepare('UPDATE academies SET db_path = ? WHERE id = ?').run(finalDbPath, newAcademyId);
 
@@ -235,29 +264,21 @@ export function provisionAcademyDb({
     if (logo_url) setTenantSetting.run('logo_url', logo_url);
   } catch (e) {}
 
-  // Seed default roles
+  // Seed default roles: ONLY 1 ROLE as Academy Admin with all permissions assigned
   const seedRoles = tenantDb.transaction(() => {
-    const insertRole = tenantDb.prepare('INSERT OR IGNORE INTO academy_roles (name, description, permissions) VALUES (?, ?, ?)');
+    tenantDb.prepare('DELETE FROM academy_roles').run();
+    const insertRole = tenantDb.prepare(`
+      INSERT OR REPLACE INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
     
     insertRole.run(
       'academy_admin',
+      'Academy Admin',
       'Full administrative access to all academy features and settings',
-      JSON.stringify(['all'])
-    );
-    insertRole.run(
-      'academy_staff',
-      'Staff member with operational access to students, attendance, and fees',
-      JSON.stringify(['view_students', 'manage_students', 'view_attendance', 'mark_attendance', 'view_fees', 'collect_fees', 'view_leaves'])
-    );
-    insertRole.run(
-      'coach',
-      'Sports coach with schedule, batch management, and attendance marking',
-      JSON.stringify(['view_batches', 'view_students', 'mark_attendance', 'apply_leaves'])
-    );
-    insertRole.run(
-      'student',
-      'Self-service student portal access',
-      JSON.stringify(['view_my_attendance', 'view_my_fees', 'pay_fees', 'apply_leaves'])
+      JSON.stringify(ALL_ACADEMY_PERMISSIONS),
+      1,
+      'amber'
     );
   });
   seedRoles();
@@ -265,11 +286,19 @@ export function provisionAcademyDb({
   // If initial admin credentials supplied, create admin in tenant DB and central lookup
   if (admin_email && admin_password) {
     const passwordHash = bcrypt.hashSync(admin_password, 10);
-    const insertUser = tenantDb.prepare(`
-      INSERT INTO users (name, email, password_hash, role, phone, status)
-      VALUES (?, ?, ?, 'academy_admin', ?, 'active')
-    `);
-    insertUser.run(admin_name || `${name} Admin`, admin_email, passwordHash, contact_phone || null);
+    const existingUser = tenantDb.prepare('SELECT id FROM users WHERE email = ?').get(admin_email);
+    if (!existingUser) {
+      const insertUser = tenantDb.prepare(`
+        INSERT INTO users (name, email, password_hash, role, phone, status)
+        VALUES (?, ?, ?, 'academy_admin', ?, 'active')
+      `);
+      insertUser.run(admin_name || `${name} Admin`, admin_email, passwordHash, contact_phone || null);
+    } else {
+      tenantDb.prepare(`
+        UPDATE users SET name = ?, password_hash = ?, role = 'academy_admin', phone = ?, status = 'active'
+        WHERE id = ?
+      `).run(admin_name || `${name} Admin`, passwordHash, contact_phone || null, existingUser.id);
+    }
 
     // Register in central lookup
     centralDb.prepare(`

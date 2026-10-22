@@ -9,6 +9,7 @@ import { QuotaService, STANDARD_QUOTA_KEYS, DEFAULT_PLAN_VALUES } from '../servi
 import { DbViewerService } from '../services/dbViewerService.js';
 import { TenantCleanupService } from '../services/tenantCleanupService.js';
 import { StorageService } from '../services/storageService.js';
+import { AcademyLifecycleService } from '../services/academyLifecycleService.js';
 
 export const centralRouter = express.Router();
 const uploadLogoMiddleware = StorageService.getLogoUploadMiddleware().single('logo');
@@ -355,31 +356,27 @@ centralRouter.delete('/academies/:id/logo', (req, res) => {
 
 /**
  * DELETE /api/central/academies/:id
+ * Completely purges an academy, its SQLite database file, storage assets, and central records.
  */
 centralRouter.delete('/academies/:id', (req, res) => {
   try {
     const id = Number(req.params.id);
-    const centralDb = getCentralDb();
-    const academy = centralDb.prepare('SELECT * FROM academies WHERE id = ?').get(id);
-    if (!academy) {
-      return res.status(404).json({ success: false, error: 'Academy not found' });
-    }
+    const result = AcademyLifecycleService.purgeAcademyCompletely(id);
+    res.json(result);
+  } catch (err) {
+    res.status(err.message.includes('not found') ? 404 : 500).json({ success: false, error: err.message });
+  }
+});
 
-    // Close open connection
-    closeTenantDb(id);
-
-    // Delete db file if exists
-    if (academy.db_path && fs.existsSync(academy.db_path)) {
-      try {
-        fs.unlinkSync(academy.db_path);
-      } catch (e) {
-        console.warn(`Could not delete db file ${academy.db_path}:`, e.message);
-      }
-    }
-
-    centralDb.prepare('DELETE FROM academies WHERE id = ?').run(id);
-
-    res.json({ success: true, message: `Academy '${academy.name}' and its database removed` });
+/**
+ * POST /api/central/system/reset-clean-state
+ * Super Admin tool to wipe all demo/existing academies, purge their databases,
+ * and restore the platform to a pristine clean state with only the Super Admin account.
+ */
+centralRouter.post('/system/reset-clean-state', (req, res) => {
+  try {
+    const result = AcademyLifecycleService.resetPlatformToCleanState();
+    res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

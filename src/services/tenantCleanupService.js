@@ -5,6 +5,7 @@ import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById, getAcademyDbPath } from '../db/connectionManager.js';
 import { runMigrations } from '../db/migrator.js';
 import { config } from '../config/index.js';
+import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
 
 export class TenantCleanupService {
   /**
@@ -164,21 +165,12 @@ export class TenantCleanupService {
       if (academy.name) tenantDb.prepare("INSERT OR REPLACE INTO tenant_settings (key, value) VALUES ('academy_name', ?)").run(academy.name);
       if (academy.slug) tenantDb.prepare("INSERT OR REPLACE INTO tenant_settings (key, value) VALUES ('academy_code', ?)").run(academy.slug);
 
-      // Re-seed default academy roles
-      const defaultRoles = [
-        { name: 'academy_admin', display: 'Academy Administrator', perms: ['all'] },
-        { name: 'coach', display: 'Coach / Instructor', perms: ['view_students', 'mark_attendance', 'view_batches', 'view_schedule'] },
-        { name: 'academy_staff', display: 'Academy Staff', perms: ['view_students', 'view_batches', 'view_inquiries'] },
-        { name: 'front_desk', display: 'Front Desk & Receptionist', perms: ['view_students', 'create_students', 'view_inquiries', 'create_inquiries', 'collect_fees'] },
-        { name: 'accountant', display: 'Accounts & Finance Officer', perms: ['view_fees', 'collect_fees', 'manage_payroll', 'view_reports'] }
-      ];
-
-      for (const r of defaultRoles) {
-        tenantDb.prepare(`
-          INSERT OR IGNORE INTO academy_roles (name, display_name, description, permissions)
-          VALUES (?, ?, ?, ?)
-        `).run(r.name, r.display, `${r.display} role`, JSON.stringify(r.perms));
-      }
+      // Re-seed default academy roles: ONLY 1 role (Academy Admin) with all permissions
+      tenantDb.prepare('DELETE FROM academy_roles').run();
+      tenantDb.prepare(`
+        INSERT INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
+        VALUES ('academy_admin', 'Academy Admin', 'Full administrative access to all academy features and settings', ?, 1, 'amber')
+      `).run(JSON.stringify(ALL_ACADEMY_PERMISSIONS));
 
       // Re-seed default branch
       tenantDb.prepare(`

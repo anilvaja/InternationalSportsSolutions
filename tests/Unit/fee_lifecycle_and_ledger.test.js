@@ -527,6 +527,9 @@ describe('Student Fee Lifecycle, Financial Ledger & Flexible Periods', () => {
       assert.ok(ledgerEntry);
       assert.equal(ledgerEntry.period_start, '2026-11-10');
       assert.equal(ledgerEntry.period_end, '2026-11-24');
+
+      // Clean up temporary other branch
+      tenantDb.prepare("DELETE FROM branches WHERE name = 'North City Dojo'").run();
     });
   });
 

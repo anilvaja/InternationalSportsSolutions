@@ -61,6 +61,12 @@ describe('Multi-Academy, Multi-Role & Complete Workflow Verification', () => {
     academy1Db = getTenantDbById(ACADEMY_1_ID);
     academy2Db = getTenantDbById(ACADEMY_2_ID);
 
+    // Clean up test branches so quota limit is not exceeded across test runs
+    try {
+      academy1Db.prepare('DELETE FROM branches WHERE name LIKE "MultiBranch%" OR name LIKE "North City Dojo"').run();
+      academy2Db.prepare('DELETE FROM branches WHERE name LIKE "MultiBranch%"').run();
+    } catch (e) {}
+
     // Setup roles in both academies
     const roles = [
       { name: 'academy_admin', display_name: 'Academy Admin', perms: ['all'] },
