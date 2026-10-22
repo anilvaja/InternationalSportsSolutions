@@ -1453,6 +1453,9 @@ const app = {
         <a href="${this.getPathForTab('syllabus')}" class="nav-item ${this.currentTab === 'syllabus' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('syllabus')">
           <i class="fa-solid fa-book-open-reader"></i> Sports Syllabus
         </a>
+        <a href="${this.getPathForTab('events')}" class="nav-item ${this.currentTab === 'events' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('events')">
+          <i class="fa-solid fa-trophy"></i> Events & Tournaments
+        </a>
         <a href="${this.getPathForTab('inquiries')}" class="nav-item ${this.currentTab === 'inquiries' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('inquiries')">
           <i class="fa-solid fa-address-book"></i> Inquiries & Leads
         </a>
@@ -1461,9 +1464,6 @@ const app = {
         <div class="nav-section-title">Finance</div>
         <a href="${this.getPathForTab('fees')}" class="nav-item ${this.currentTab === 'fees' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('fees')">
           <i class="fa-solid fa-file-invoice-dollar"></i> Fee Collection
-        </a>
-        <a href="${this.getPathForTab('events')}" class="nav-item ${this.currentTab === 'events' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('events')">
-          <i class="fa-solid fa-trophy"></i> Event Fees
         </a>
         ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
           <a href="${this.getPathForTab('payroll')}" class="nav-item ${this.currentTab === 'payroll' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('payroll')">
@@ -4006,12 +4006,19 @@ const app = {
 
   async renderAcademyOverview() {
     try {
-      const data = await this.apiRequest('/api/academy/dashboard');
+      const [data, upcomingRes] = await Promise.all([
+        this.apiRequest('/api/academy/dashboard'),
+        this.apiRequest('/api/academy/dashboard/upcoming-events')
+      ]);
       const content = document.getElementById('page-content');
 
       if (!data || !data.success) {
         if (content) content.innerHTML = `<div class="toast danger">${(data && data.error) || 'Failed to load dashboard data'}</div>`;
         return;
+      }
+
+      if (upcomingRes && upcomingRes.success && Array.isArray(upcomingRes.upcomingEvents)) {
+        data.upcomingEvents = upcomingRes.upcomingEvents;
       }
 
     // Synchronize active academy branding if provided
@@ -6163,7 +6170,14 @@ const app = {
       return;
     }
 
-    const res = await this.apiRequest(`/api/academy/${resource}/bulk`, {
+    const endpointMap = {
+      students: '/api/academy/students/bulk',
+      batches: '/api/academy/batches/bulk',
+      sports: '/api/academy/sports/bulk'
+    };
+    const endpoint = endpointMap[resource] || `/api/academy/${resource}/bulk`;
+
+    const res = await this.apiRequest(endpoint, {
       method: 'POST',
       body: JSON.stringify({ action, ids }),
     });
@@ -6336,6 +6350,9 @@ const app = {
             <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsCsv()">
               <i class="fa-solid fa-file-csv" style="color: #3b82f6;"></i> Export CSV
             </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsServerCsv()">
+              <i class="fa-solid fa-cloud-arrow-down" style="color: #6366f1;"></i> Full DB CSV
+            </button>
             <button class="btn btn-primary btn-sm" onclick="app.openAdmissionWizard()">
               <i class="fa-solid fa-wand-magic-sparkles"></i> Admission Wizard
             </button>
@@ -6398,6 +6415,9 @@ const app = {
             <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Student Bulk Actions:</span>
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-primary btn-sm" onclick="app.showBulkEnrollModal()">
+              <i class="fa-solid fa-user-plus"></i> Bulk Assign Batch
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="app.executeBulkAction('students', 'deactivate')">
               <i class="fa-solid fa-user-xmark" style="color: #ef4444;"></i> Mark Inactive / Archive
             </button>
@@ -13335,6 +13355,9 @@ const app = {
                   </td>
                   <td>
                     <div style="display: flex; gap: 6px;">
+                      <button class="btn btn-outline-primary btn-sm" onclick="app.showStaffCompensationModal(${c.user_id || c.id}, '${this.escapeJsString(c.name)}')" title="Compensation & Shift Hours">
+                        <i class="fa-solid fa-coins"></i> Comp & Shift
+                      </button>
                       <button class="btn btn-secondary btn-sm" onclick="app.showEditCoachModal(${c.id})" title="Edit Coach Details">
                         <i class="fa-solid fa-pen-to-square"></i> Edit
                       </button>
@@ -17150,7 +17173,10 @@ const app = {
   // ==========================================
 
   async renderStudentDashboard() {
-    const data = await this.apiRequest('/api/student/dashboard');
+    const [data, historyRes] = await Promise.all([
+      this.apiRequest('/api/student/dashboard'),
+      this.apiRequest('/api/student/batch-history')
+    ]);
     const content = document.getElementById('page-content');
 
     if (!data.success) {
@@ -17159,6 +17185,7 @@ const app = {
     }
 
     const { student, batches, attendance, fees } = data;
+    const history = (historyRes && historyRes.success && Array.isArray(historyRes.history)) ? historyRes.history : [];
 
     content.innerHTML = `
       <div class="stats-grid">
@@ -17204,6 +17231,44 @@ const app = {
           `).join('')}
         </div>
       </div>
+
+      ${history.length > 0 ? `
+        <div class="content-card" style="margin-top: 24px;">
+          <div class="card-header">
+            <h2 class="card-title"><i class="fa-solid fa-clock-rotate-left"></i> Batch Enrollment & Transfer History</h2>
+          </div>
+          <div class="table-responsive">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th>Training Batch</th>
+                  <th>Sport</th>
+                  <th>Campus / Branch</th>
+                  <th>Enrollment Date</th>
+                  <th>Status</th>
+                  <th>Transfer Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${history.map(h => `
+                  <tr>
+                    <td><strong>${this.escapeHtml(h.batch_name)}</strong></td>
+                    <td>${this.escapeHtml(h.sport_name || '-')}</td>
+                    <td>${this.escapeHtml(h.branch_name || 'Main Campus')}</td>
+                    <td>${h.start_date || (h.created_at ? h.created_at.split('T')[0] : '-')}</td>
+                    <td>
+                      <span class="badge ${h.status === 'active' ? 'badge-success' : 'badge-secondary'}">
+                        ${h.status}
+                      </span>
+                    </td>
+                    <td>${h.transferred_to_batch_name ? `<span style="color: #6366f1;"><i class="fa-solid fa-right-left"></i> Transferred to ${this.escapeHtml(h.transferred_to_batch_name)}</span>` : '-'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : ''}
     `;
   },
 
@@ -17214,8 +17279,11 @@ const app = {
 
     content.innerHTML = `
       <div class="content-card">
-        <div class="card-header">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
           <h2 class="card-title"><i class="fa-solid fa-clipboard-user"></i> My Attendance History</h2>
+          <button class="btn btn-primary btn-sm" onclick="app.showStudentApplyLeaveModal()">
+            <i class="fa-solid fa-calendar-plus"></i> Apply for Leave
+          </button>
         </div>
         <div class="table-responsive">
           <table class="custom-table">
@@ -19915,16 +19983,19 @@ const app = {
               Multi-mode attendance calculations, itemized additions/deductions, explicit period finalization, and disbursements.
             </p>
           </div>
-          ${activePeriod && activePeriod.status !== 'finalized' ? `
-            <div style="display: flex; gap: 8px;">
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-outline-primary btn-sm" onclick="app.showPayrollProfilesModal()">
+              <i class="fa-solid fa-id-card"></i> Staff Salary Profiles
+            </button>
+            ${activePeriod && activePeriod.status !== 'finalized' ? `
               <button class="btn btn-secondary btn-sm" onclick="app.recalculatePayrollPeriod(${activePeriod.id})">
                 <i class="fa-solid fa-arrows-rotate"></i> Recalculate Period
               </button>
               <button class="btn btn-primary btn-sm" onclick="app.finalizePayrollPeriod(${activePeriod.id}, '${activePeriod.year_month}')">
                 <i class="fa-solid fa-lock"></i> Finalize Payroll
               </button>
-            </div>
-          ` : ''}
+            ` : ''}
+          </div>
         </div>
 
         <div style="padding: 24px;">
@@ -23574,7 +23645,10 @@ const app = {
     content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
 
     try {
-      const res = await this.apiRequest('/api/academy/settings/profile');
+      const [res, domainsRes] = await Promise.all([
+        this.apiRequest('/api/academy/settings/profile'),
+        this.apiRequest('/api/academy/domains')
+      ]);
       if (!res.success) {
         content.innerHTML = `<div class="toast danger">${res.error || 'Failed to load academy profile'}</div>`;
         return;
@@ -23660,6 +23734,56 @@ const app = {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- Academy Web Domains & Portal Access Card -->
+          <div class="content-card" style="margin-bottom: 24px;">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <h3 class="card-title" style="font-size: 15px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+                  <i class="fa-solid fa-globe" style="color: #3b82f6;"></i> Academy Web Address & Portal Subdomain
+                </h3>
+                <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">
+                  Your dedicated subdomains and custom domains for students, parents, and coaches to access this academy.
+                </p>
+              </div>
+              <span class="badge badge-success"><i class="fa-solid fa-shield-halved"></i> Multi-Tenant Isolated</span>
+            </div>
+            <div style="padding: 16px 20px;">
+              <div style="background: rgba(59, 130, 246, 0.04); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                  <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-dim); letter-spacing: 0.5px;">Primary System Subdomain</div>
+                  <div style="font-size: 15px; font-weight: 700; color: var(--primary); font-family: monospace; margin-top: 2px;">
+                    ${domainsRes && domainsRes.defaultSubdomain ? domainsRes.defaultSubdomain : (p.slug ? `${p.slug}.internationalsportssolutions.test` : 'academy.internationalsportssolutions.test')}
+                  </div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${domainsRes && domainsRes.defaultSubdomain ? domainsRes.defaultSubdomain : ''}'); app.showToast('Domain copied to clipboard', 'success');">
+                    <i class="fa-solid fa-copy"></i> Copy Address
+                  </button>
+                  <a href="http://${domainsRes && domainsRes.defaultSubdomain ? domainsRes.defaultSubdomain : ''}" target="_blank" class="btn btn-primary btn-sm">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                  </a>
+                </div>
+              </div>
+
+              ${(domainsRes && domainsRes.domains && domainsRes.domains.length > 0) ? `
+                <div style="font-size: 12px; font-weight: 600; color: var(--text-heading); margin-bottom: 8px;">Configured Custom Domains:</div>
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                  ${domainsRes.domains.map(d => `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
+                      <span style="font-family: monospace; font-weight: 600;">${this.escapeHtml(d.domain)}</span>
+                      <span class="badge ${d.is_primary ? 'badge-primary' : 'badge-secondary'}">${d.is_primary ? 'Primary Domain' : (d.status || 'Active')}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : `
+                <div style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
+                  <i class="fa-solid fa-circle-info" style="color: #6366f1;"></i>
+                  <span>Custom domain routing (e.g. <code>academy.yourdomain.com</code>) can be mapped and managed centrally in Platform Admin.</span>
+                </div>
+              `}
             </div>
           </div>
 
@@ -24109,6 +24233,462 @@ const app = {
       }
     } catch (err) {
       this.showToast('Error removing logo: ' + err.message, 'danger');
+    }
+  },
+
+  async exportStudentsServerCsv() {
+    try {
+      this.showToast('Generating server-side full student roster CSV...', 'info');
+      const token = localStorage.getItem('token') || (this.user && this.user.token);
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const res = await fetch('/api/academy/students/export', { headers });
+      if (!res.ok) {
+        throw new Error(`Export failed with status ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Students_Roster_Full_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      this.showToast('Full student roster CSV exported successfully', 'success');
+    } catch (err) {
+      this.showToast('Failed to export students: ' + err.message, 'danger');
+    }
+  },
+
+  async showBulkEnrollModal() {
+    const ids = this.getSelectedRowIds('students');
+    if (!ids.length) {
+      this.showToast('Please select at least one student', 'warning');
+      return;
+    }
+
+    const batches = await this.getCachedBatches();
+    const bodyHtml = `
+      <div style="margin-bottom: 16px;">
+        <p style="font-size: 13.5px; color: var(--text-muted); margin-bottom: 14px;">
+          Assign <strong>${ids.length}</strong> selected student(s) to a training batch.
+        </p>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label style="font-weight: 600; font-size: 13px;">Target Training Batch *</label>
+          <select id="bulk-enroll-batch-id" class="form-select" style="width: 100%;">
+            <option value="">-- Select Active Batch --</option>
+            ${batches.map(b => `<option value="${b.id}">${this.escapeHtml(b.name)} (${this.escapeHtml(b.sport_name || 'General')} - ${this.escapeHtml(b.branch_name || 'Main')})</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+            <input type="checkbox" id="bulk-enroll-force-transfer" value="1">
+            <span>Force transfer students currently enrolled in another batch</span>
+          </label>
+        </div>
+        <div class="form-group" id="bulk-transfer-reason-container" style="display: none; margin-bottom: 14px;">
+          <label style="font-weight: 600; font-size: 13px;">Transfer Reason</label>
+          <input type="text" id="bulk-enroll-transfer-reason" class="form-input" placeholder="e.g. Schedule adjustment or skill advancement">
+        </div>
+      </div>
+    `;
+
+    const footerHtml = `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="app.submitBulkEnroll([${ids.join(',')}])">
+        <i class="fa-solid fa-check"></i> Assign Batch
+      </button>
+    `;
+
+    this.openModal('Bulk Assign Students to Batch', bodyHtml, footerHtml);
+
+    const forceCb = document.getElementById('bulk-enroll-force-transfer');
+    if (forceCb) {
+      forceCb.addEventListener('change', (e) => {
+        const reasonBox = document.getElementById('bulk-transfer-reason-container');
+        if (reasonBox) reasonBox.style.display = e.target.checked ? 'block' : 'none';
+      });
+    }
+  },
+
+  async submitBulkEnroll(studentIds) {
+    const batchId = document.getElementById('bulk-enroll-batch-id')?.value;
+    if (!batchId) {
+      this.showToast('Please select a target training batch', 'warning');
+      return;
+    }
+    const forceTransfer = Boolean(document.getElementById('bulk-enroll-force-transfer')?.checked);
+    const transferReason = document.getElementById('bulk-enroll-transfer-reason')?.value || '';
+
+    const res = await this.apiRequest('/api/academy/students/bulk-enroll', {
+      method: 'POST',
+      body: JSON.stringify({
+        batch_id: Number(batchId),
+        student_ids: studentIds,
+        force_transfer: forceTransfer,
+        transfer_reason: transferReason
+      })
+    });
+
+    if (res.success) {
+      const enrolledCount = res.results?.enrolled?.length || 0;
+      const transferredCount = res.results?.transferred?.length || 0;
+      const rejectedCount = res.results?.rejected?.length || 0;
+      this.showToast(`Batch assigned: ${enrolledCount} new, ${transferredCount} transferred${rejectedCount ? `, ${rejectedCount} skipped` : ''}`, 'success');
+      this.closeModal();
+      this.clearBulkSelection('students');
+      this.renderStudents();
+    } else {
+      this.showToast(res.error || 'Failed to bulk assign students', 'danger');
+    }
+  },
+
+  showStudentApplyLeaveModal() {
+    const today = new Date().toISOString().split('T')[0];
+    const bodyHtml = `
+      <form id="student-leave-form" onsubmit="event.preventDefault(); app.submitStudentLeaveApplication();">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Start Date *</label>
+            <input type="date" id="student-leave-start" class="form-input" min="${today}" value="${today}" required>
+          </div>
+          <div class="form-group">
+            <label>End Date *</label>
+            <input type="date" id="student-leave-end" class="form-input" min="${today}" value="${today}" required>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top: 12px;">
+          <label>Reason for Leave *</label>
+          <textarea id="student-leave-reason" class="form-input" rows="3" placeholder="e.g. Family vacation, school exams, fever..." required></textarea>
+        </div>
+      </form>
+    `;
+
+    const footerHtml = `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="app.submitStudentLeaveApplication()">
+        <i class="fa-solid fa-paper-plane"></i> Submit Leave Request
+      </button>
+    `;
+
+    this.openModal('Apply for Student Training Leave', bodyHtml, footerHtml);
+  },
+
+  async submitStudentLeaveApplication() {
+    const startDate = document.getElementById('student-leave-start')?.value;
+    const endDate = document.getElementById('student-leave-end')?.value;
+    const reason = document.getElementById('student-leave-reason')?.value;
+
+    if (!startDate || !endDate || !reason?.trim()) {
+      this.showToast('Please provide start date, end date, and reason', 'warning');
+      return;
+    }
+
+    const res = await this.apiRequest('/api/student/leaves', {
+      method: 'POST',
+      body: JSON.stringify({
+        start_date: startDate,
+        end_date: endDate,
+        reason: reason.trim()
+      })
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Leave application submitted successfully', 'success');
+      this.closeModal();
+      this.renderStudentAttendance();
+    } else {
+      this.showToast(res.error || 'Failed to submit leave request', 'danger');
+    }
+  },
+
+  async showPayrollProfilesModal() {
+    this.openModal(
+      'Staff Compensation Profiles',
+      `<div style="padding: 24px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>`
+    );
+
+    const res = await this.apiRequest('/api/academy/payroll/profiles');
+    if (!res.success) {
+      this.openModal('Error', `<div class="toast danger">${res.error || 'Failed to load profiles'}</div>`);
+      return;
+    }
+
+    const profiles = res.profiles || [];
+    const bodyHtml = `
+      <div style="margin-bottom: 14px;">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          Configured salary modes, base rates, working schedules, and overtime parameters per employee.
+        </p>
+        <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Staff Member</th>
+                <th>Role</th>
+                <th>Salary Mode</th>
+                <th>Base Rate</th>
+                <th>Daily Hours</th>
+                <th>Days / Wk</th>
+                <th>Overtime</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${profiles.length === 0 ? `
+                <tr><td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">No salary profiles found.</td></tr>
+              ` : profiles.map(p => `
+                <tr>
+                  <td><strong>${this.escapeHtml(p.staff_name || 'Staff')}</strong></td>
+                  <td><span class="badge badge-secondary">${this.escapeHtml(p.staff_role || 'staff')}</span></td>
+                  <td><span class="badge badge-purple">${p.salary_mode}</span></td>
+                  <td><strong>₹${Number(p.base_rate || 0).toLocaleString()}</strong></td>
+                  <td>${p.scheduled_daily_hours || 6} hrs</td>
+                  <td>${p.scheduled_days_per_week || 6} days</td>
+                  <td>${p.overtime_eligible ? `<span class="badge badge-success">${p.overtime_rate_multiplier}x</span>` : '<span class="badge badge-secondary">No</span>'}</td>
+                  <td>
+                    <button class="btn btn-secondary btn-sm" onclick="app.showStaffCompensationModal(${p.user_id}, '${this.escapeJsString(p.staff_name)}')">
+                      <i class="fa-solid fa-pen-to-square"></i> Configure
+                    </button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    const footerHtml = `<button class="btn btn-secondary" onclick="app.closeModal()">Close</button>`;
+    this.openModal('Staff Compensation Profiles', bodyHtml, footerHtml);
+  },
+
+  async showStaffCompensationModal(userId, userName) {
+    this.openModal(
+      `Staff Compensation & Shift Scheduling: ${userName || 'Employee'}`,
+      `<div style="padding: 24px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>`
+    );
+
+    try {
+      const [compRes, schedRes] = await Promise.all([
+        this.apiRequest(`/api/academy/compensation/employee/${userId}`),
+        this.apiRequest(`/api/academy/schedules/employee/${userId}`)
+      ]);
+
+      const comp = compRes.effectiveProfile || {};
+      const sched = schedRes.effectiveSchedule || {};
+      const shift = (sched.shifts && sched.shifts[0]) || {};
+
+      const bodyHtml = `
+        <div style="margin-bottom: 16px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+            <div class="form-group">
+              <label>Salary Mode *</label>
+              <select id="staff-comp-salary-mode" class="form-select" onchange="app.triggerStaffCompPreview()">
+                <option value="monthly" ${comp.salary_mode === 'monthly' ? 'selected' : ''}>Monthly Fixed</option>
+                <option value="hourly" ${comp.salary_mode === 'hourly' ? 'selected' : ''}>Hourly Rate</option>
+                <option value="per_session" ${comp.salary_mode === 'per_session' ? 'selected' : ''}>Per Session</option>
+                <option value="daily" ${comp.salary_mode === 'daily' ? 'selected' : ''}>Daily Rate</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Base Rate (₹) *</label>
+              <input type="number" id="staff-comp-base-rate" class="form-input" value="${comp.base_rate !== undefined ? comp.base_rate : 25000}" min="0" oninput="app.triggerStaffCompPreview()">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+            <div class="form-group">
+              <label>Daily Scheduled Hours</label>
+              <input type="number" id="staff-comp-hours" class="form-input" value="${comp.scheduled_daily_hours || 6}" min="1" max="24" oninput="app.triggerStaffCompPreview()">
+            </div>
+            <div class="form-group">
+              <label>Working Days Per Week</label>
+              <input type="number" id="staff-comp-days" class="form-input" value="${comp.scheduled_days_per_week || 6}" min="1" max="7" oninput="app.triggerStaffCompPreview()">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 24px;">
+                <input type="checkbox" id="staff-comp-overtime" ${comp.overtime_eligible ? 'checked' : ''} onchange="app.triggerStaffCompPreview()">
+                <span>Overtime Eligible</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label>Overtime Multiplier</label>
+              <input type="number" step="0.1" id="staff-comp-multiplier" class="form-input" value="${comp.overtime_rate_multiplier || 1.5}">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label>Deduction & Proration Policy</label>
+            <select id="staff-comp-deduction-policy" class="form-select">
+              <option value="pro_rata_daily" ${comp.deduction_policy === 'pro_rata_daily' ? 'selected' : ''}>Pro-rata Daily (Standard)</option>
+              <option value="pro_rata_hourly" ${comp.deduction_policy === 'pro_rata_hourly' ? 'selected' : ''}>Pro-rata Hourly</option>
+              <option value="no_deduction" ${comp.deduction_policy === 'no_deduction' ? 'selected' : ''}>No Deduction (Fixed Honorarium)</option>
+            </select>
+          </div>
+
+          <div style="border-top: 1px solid var(--border); padding-top: 14px; margin-bottom: 16px;">
+            <h4 style="font-size: 13px; font-weight: 700; color: var(--text-heading); margin-bottom: 10px;">
+              <i class="fa-solid fa-clock"></i> Assigned Shift Timing
+            </h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div class="form-group">
+                <label>Shift Start Time</label>
+                <input type="time" id="staff-shift-start" class="form-input" value="${shift.start_time || '07:00'}">
+              </div>
+              <div class="form-group">
+                <label>Shift End Time</label>
+                <input type="time" id="staff-shift-end" class="form-input" value="${shift.end_time || '13:00'}">
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Interactive Compensation Calculator Preview -->
+          <div style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 12px 16px; margin-top: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #10b981; letter-spacing: 0.5px;">
+                <i class="fa-solid fa-calculator"></i> Live Compensation Preview
+              </span>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 10px; padding: 2px 6px;" onclick="app.triggerStaffCompPreview()">
+                Recalculate
+              </button>
+            </div>
+            <div id="staff-comp-preview-box" style="font-size: 13px; color: var(--text-heading);">
+              Estimated Monthly: <strong style="color: #10b981;">₹${(comp.base_rate || 25000).toLocaleString()}</strong>
+            </div>
+            <div id="staff-comp-preview-desc" style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">
+              Calculated based on scheduled hours and rate mode.
+            </div>
+          </div>
+        </div>
+      `;
+
+      const footerHtml = `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.saveStaffCompensationAndSchedule(${userId})">
+          <i class="fa-solid fa-floppy-disk"></i> Save Compensation & Shift
+        </button>
+      `;
+
+      this.openModal(`Staff Compensation & Shifts: ${userName || 'Employee'}`, bodyHtml, footerHtml);
+      this.triggerStaffCompPreview();
+    } catch (err) {
+      this.openModal(`Error`, `<div class="toast danger">Failed to load staff compensation: ${err.message}</div>`);
+    }
+  },
+
+  async triggerStaffCompPreview() {
+    const mode = document.getElementById('staff-comp-salary-mode')?.value || 'monthly';
+    const rate = Number(document.getElementById('staff-comp-base-rate')?.value) || 0;
+    const hours = Number(document.getElementById('staff-comp-hours')?.value) || 6;
+    const days = Number(document.getElementById('staff-comp-days')?.value) || 6;
+    const overtime = Boolean(document.getElementById('staff-comp-overtime')?.checked);
+
+    try {
+      const res = await this.apiRequest('/api/academy/compensation/preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          compensation_type: mode,
+          rate,
+          scheduled_hours: hours,
+          working_days_per_week: days,
+          allow_overtime: overtime,
+          currency: 'INR'
+        })
+      });
+
+      if (res && res.estimatedMonthly !== undefined) {
+        const box = document.getElementById('staff-comp-preview-box');
+        const desc = document.getElementById('staff-comp-preview-desc');
+        if (box) box.innerHTML = `Estimated Monthly: <strong style="color: #10b981;">₹${Number(res.estimatedMonthly).toLocaleString()}</strong> (${res.monthlyScheduledHours || 0} scheduled hrs/mo)`;
+        if (desc) desc.innerText = res.referenceText || '';
+      }
+    } catch (e) {
+      // ignore
+    }
+  },
+
+  async saveStaffCompensationAndSchedule(userId) {
+    const salaryMode = document.getElementById('staff-comp-salary-mode')?.value || 'monthly';
+    const baseRate = Number(document.getElementById('staff-comp-base-rate')?.value) || 0;
+    const hours = Number(document.getElementById('staff-comp-hours')?.value) || 6;
+    const days = Number(document.getElementById('staff-comp-days')?.value) || 6;
+    const overtime = Boolean(document.getElementById('staff-comp-overtime')?.checked);
+    const multiplier = Number(document.getElementById('staff-comp-multiplier')?.value) || 1.5;
+    const deductionPolicy = document.getElementById('staff-comp-deduction-policy')?.value || 'pro_rata_daily';
+    const shiftStart = document.getElementById('staff-shift-start')?.value || '07:00';
+    const shiftEnd = document.getElementById('staff-shift-end')?.value || '13:00';
+
+    try {
+      const [compRes, schedRes, profileRes] = await Promise.all([
+        this.apiRequest(`/api/academy/compensation/employee/${userId}`, {
+          method: 'POST',
+          body: JSON.stringify({
+            salary_mode: salaryMode,
+            base_rate: baseRate,
+            currency: 'INR',
+            scheduled_daily_hours: hours,
+            scheduled_days_per_week: days,
+            overtime_eligible: overtime,
+            overtime_rate_multiplier: multiplier,
+            deduction_policy: deductionPolicy
+          })
+        }),
+        this.apiRequest(`/api/academy/schedules/employee/${userId}`, {
+          method: 'POST',
+          body: JSON.stringify({
+            schedule_name: 'Standard Weekly Schedule',
+            shifts: [
+              {
+                shift_name: 'Primary Shift',
+                start_time: shiftStart,
+                end_time: shiftEnd,
+                days_of_week: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+              }
+            ]
+          })
+        }),
+        this.apiRequest('/api/academy/payroll/profiles', {
+          method: 'POST',
+          body: JSON.stringify({
+            user_id: userId,
+            salary_mode: salaryMode,
+            base_rate: baseRate,
+            scheduled_daily_hours: hours,
+            scheduled_days_per_week: days,
+            overtime_eligible: overtime,
+            overtime_rate_multiplier: multiplier,
+            deduction_policy: deductionPolicy
+          })
+        })
+      ]);
+
+      if (compRes.success || schedRes.success || profileRes.success) {
+        this.showToast('Compensation policy and shift schedule updated successfully', 'success');
+        this.closeModal();
+        if (this.currentTab === 'coaches') this.renderCoaches();
+        if (this.currentTab === 'payroll') this.renderPayroll();
+      } else {
+        this.showToast(compRes.error || schedRes.error || 'Failed to update compensation', 'danger');
+      }
+    } catch (err) {
+      this.showToast(`Error saving compensation: ${err.message}`, 'danger');
+    }
+  },
+
+  async moderateDashboardParticipant(eventId, participantId, newStatus) {
+    const res = await this.apiRequest(`/api/academy/dashboard/events/${eventId}/participants/${participantId}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ registration_status: newStatus })
+    });
+    if (res.success) {
+      this.showToast(`Participant registration updated to ${newStatus}`, 'success');
+      this.renderAcademyOverview();
+    } else {
+      this.showToast(res.error || 'Failed to moderate participant', 'danger');
     }
   },
 };
