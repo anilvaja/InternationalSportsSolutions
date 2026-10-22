@@ -5,15 +5,24 @@ import { ScheduleService } from './scheduleService.js';
  * Centralized attendance-based staff salary calculation engine.
  * Supports Monthly, Hourly, Per-Day, Per-Minute, and Per-Session salary modes.
  * Implements provisional statements visible from the 25th of each month,
- * explicit payroll finalization snapshots, itemized adjustments, and disbursements.
+ * explicit payroll review, approval, finalization, authorized reopening with audit trail,
+ * itemized additions/deductions, mid-month joining/resignation/salary revision proration,
+ * weekly off & holiday non-deduction, half-day unpaid leave deductions, and disbursements.
  */
 export class PayrollService {
+
+  /**
+   * Helper: decimal-safe rounding to 2 decimal places
+   */
+  static round(val) {
+    return Number((Math.round((Number(val) || 0) * 100) / 100).toFixed(2));
+  }
 
   /**
    * Helper: calculates duration in minutes between two HH:MM time strings
    */
   static getDurationMinutes(startTime, endTime) {
-    if (!startTime || !endTime) return 60; // default 1 hour
+    if (!startTime || !endTime) return 60;
     const [h1, m1] = startTime.split(':').map(Number);
     const [h2, m2] = endTime.split(':').map(Number);
     return Math.max(0, (h2 * 60 + m2) - (h1 * 60 + m1));
@@ -37,7 +46,37 @@ export class PayrollService {
       return profile;
     }
 
-    // Check if user has an assigned work schedule to read expected hours
+    // Check recent compensation history
+    try {
+      const comp = db.prepare(`
+        SELECT * FROM employee_compensation_history
+        WHERE user_id = ?
+          AND effective_from <= ?
+          AND (effective_to IS NULL OR effective_to >= ?)
+          AND (status IS NULL OR status = 'active')
+        ORDER BY effective_from DESC
+        LIMIT 1
+      `).get(userId, dateStr, dateStr);
+
+      if (comp) {
+        return {
+          user_id: userId,
+          salary_mode: comp.compensation_mode || 'monthly',
+          base_rate: Number(comp.new_amount || 30000),
+          currency: comp.currency || 'INR',
+          scheduled_daily_hours: 8.0,
+          scheduled_days_per_week: 6,
+          overtime_eligible: 1,
+          overtime_rate_multiplier: 1.0,
+          deduction_policy: 'working_days',
+          effective_from: comp.effective_from,
+          effective_to: comp.effective_to,
+          payment_frequency: 'monthly',
+          scheduled_payday: 1,
+        };
+      }
+    } catch (_) {}
+
     const sched = ScheduleService.getEffectiveSchedule(db, userId, dateStr);
 
     // Fallback: check coach table
@@ -47,7 +86,7 @@ export class PayrollService {
       return {
         user_id: userId,
         salary_mode: mode,
-        base_rate: coach.salary_amount || (mode === 'monthly' ? 30000 : 500),
+        base_rate: Number(coach.salary_amount || (mode === 'monthly' ? 30000 : 500)),
         currency: 'INR',
         scheduled_daily_hours: sched.expected_daily_hours || 4.0,
         scheduled_days_per_week: sched.working_days_per_week || 6,
@@ -55,6 +94,8 @@ export class PayrollService {
         overtime_rate_multiplier: 1.0,
         deduction_policy: 'working_days',
         effective_from: '2026-01-01',
+        payment_frequency: 'monthly',
+        scheduled_payday: 1,
         is_fallback: true,
       };
     }
@@ -71,6 +112,8 @@ export class PayrollService {
       overtime_rate_multiplier: 1.0,
       deduction_policy: 'working_days',
       effective_from: '2026-01-01',
+      payment_frequency: 'monthly',
+      scheduled_payday: 1,
       is_fallback: true,
     };
   }
@@ -111,19 +154,19 @@ export class PayrollService {
       throw new Error(`Payroll period ${periodId} not found`);
     }
 
-    // If period is finalized, do not silently recalculate - preserve snapshot!
     const existingStatement = db.prepare(`
       SELECT * FROM staff_salary_statements
       WHERE payroll_period_id = ? AND user_id = ?
     `).get(periodId, userId);
 
+    // If period is finalized, preserve immutable calculation snapshot!
     if (period.status === 'finalized' && existingStatement) {
       return existingStatement;
     }
 
     const profile = this.getEffectiveSalaryProfile(db, userId, period.end_date);
     const mode = profile.salary_mode;
-    const rate = profile.base_rate;
+    const rate = this.round(profile.base_rate);
     const currency = profile.currency || 'INR';
 
     // 1. Calculate Expected Hours & Schedule from employee's assigned schedule
@@ -181,54 +224,162 @@ export class PayrollService {
       ? (punchMinutes > 0 ? punchMinutes : sessionMinutes)
       : (scheduleSummary.scheduledWorkingDays > 0 && punches.length === 0 && sessions.length === 0 ? 0 : 0);
 
-    const actualHoursWorked = Number((totalActualMinutes / 60).toFixed(2));
+    const actualHoursWorked = this.round(totalActualMinutes / 60);
 
-    // 4. Compute compensation according to mode (separating schedule from salary!)
+    // 4. Compute compensation according to mode
     let payableUnits = 0;
     let grossEarnings = 0;
     let unitLabel = '';
     let absenceDeductions = 0;
+    let salarySplits = [];
 
     if (mode === 'hourly') {
       unitLabel = 'hours';
-      // Option A: Hourly salary based on approved payable hours and rate
-      payableUnits = actualHoursWorked > 0 ? actualHoursWorked : (punches.length > 0 ? Number((punchMinutes / 60).toFixed(2)) : Number((sessionMinutes / 60).toFixed(2)));
-      grossEarnings = Number((payableUnits * rate).toFixed(2));
+      payableUnits = actualHoursWorked > 0 ? actualHoursWorked : (punches.length > 0 ? this.round(punchMinutes / 60) : this.round(sessionMinutes / 60));
+      grossEarnings = this.round(payableUnits * rate);
 
     } else if (mode === 'monthly') {
       unitLabel = 'month';
-      // Option B & C: Fixed monthly salary (whether 4-hour duty or 8-hour duty)
-      // DO NOT multiply monthly salary by actual hours worked!
-      // The employee receives full monthly salary, deducting only approved unpaid leaves & unauthorized absences.
-      const scheduledWorkDays = Math.max(1, scheduleSummary.scheduledWorkingDays);
-      const deductionBasis = profile.deduction_policy === 'calendar_days' 
-        ? Math.max(1, scheduleSummary.totalCalendarDays) 
-        : scheduledWorkDays;
-      const perDayRate = Number((rate / deductionBasis).toFixed(2));
+      payableUnits = 1;
 
-      // Prorate base salary if employee joined mid-month
-      const isMidMonthJoiner = scheduleSummary.joiningDate && scheduleSummary.joiningDate > period.start_date;
-      let effectiveBaseRate = rate;
-      if (isMidMonthJoiner) {
-        // Calculate full month working days
-        const fullMonthDays = (scheduleSummary.dayBreakdown || []).filter(d => d.dayType !== 'weekly_off' && !d.isWeeklyOff).length || 26;
-        const fullMonthDayRate = Number((rate / fullMonthDays).toFixed(2));
-        effectiveBaseRate = Number((scheduleSummary.scheduledWorkingDays * fullMonthDayRate).toFixed(2));
+      // Deduction basis policy: 'working_days' (default), 'calendar_days', or 'fixed_30'
+      const deductionPolicy = profile.deduction_policy || 'working_days';
+      let deductionBasis = Math.max(1, scheduleSummary.scheduledWorkingDays);
+      if (deductionPolicy === 'calendar_days') {
+        deductionBasis = Math.max(1, scheduleSummary.totalCalendarDays);
+      } else if (deductionPolicy === 'fixed_30') {
+        deductionBasis = 30;
+      }
+      const perDayRate = this.round(rate / deductionBasis);
+
+      // Check for mid-month salary revision
+      let hasMidMonthRevision = false;
+      try {
+        const revisions = db.prepare(`
+          SELECT * FROM employee_compensation_history
+          WHERE user_id = ?
+            AND effective_from > ?
+            AND effective_from <= ?
+            AND (status IS NULL OR status = 'active')
+          ORDER BY effective_from ASC
+        `).all(userId, period.start_date, period.end_date);
+
+        const profileRevisions = db.prepare(`
+          SELECT * FROM staff_salary_profiles
+          WHERE user_id = ?
+            AND effective_from > ?
+            AND effective_from <= ?
+            AND is_active = 1
+          ORDER BY effective_from ASC
+        `).all(userId, period.start_date, period.end_date);
+
+        if (revisions.length > 0 && Number(revisions[0].previous_amount || 0) > 0) {
+          hasMidMonthRevision = true;
+          const rev = revisions[0];
+          const splitDate = rev.effective_from;
+          const oldRate = this.round(rev.previous_amount || rate);
+          const newRate = this.round(rev.new_amount);
+
+          const daysBefore = (scheduleSummary.dayBreakdown || []).filter(d => d.date < splitDate && d.dayType !== 'not_employed').length;
+          const daysAfter = (scheduleSummary.dayBreakdown || []).filter(d => d.date >= splitDate && d.dayType !== 'not_employed').length;
+          const totalEmpDays = Math.max(1, daysBefore + daysAfter);
+
+          const part1 = this.round((oldRate / totalEmpDays) * daysBefore);
+          const part2 = this.round((newRate / totalEmpDays) * daysAfter);
+          grossEarnings = this.round(part1 + part2);
+
+          salarySplits.push({
+            period: `${period.start_date} to ${splitDate}`,
+            rate: oldRate,
+            days: daysBefore,
+            amount: part1
+          });
+          salarySplits.push({
+            period: `${splitDate} to ${period.end_date}`,
+            rate: newRate,
+            days: daysAfter,
+            amount: part2
+          });
+        } else if (profileRevisions.length > 0) {
+          const rev = profileRevisions[0];
+          const splitDate = rev.effective_from;
+          const prevProfile = db.prepare(`
+            SELECT * FROM staff_salary_profiles
+            WHERE user_id = ? AND effective_from < ?
+            ORDER BY effective_from DESC LIMIT 1
+          `).get(userId, splitDate);
+
+          if (prevProfile) {
+            hasMidMonthRevision = true;
+            const oldRate = this.round(prevProfile.base_rate);
+            const newRate = this.round(rev.base_rate);
+
+            const daysBefore = (scheduleSummary.dayBreakdown || []).filter(d => d.date < splitDate && d.dayType !== 'not_employed').length;
+            const daysAfter = (scheduleSummary.dayBreakdown || []).filter(d => d.date >= splitDate && d.dayType !== 'not_employed').length;
+            const totalEmpDays = Math.max(1, scheduleSummary.totalCalendarDays || (daysBefore + daysAfter));
+
+            const part1 = this.round((oldRate / totalEmpDays) * daysBefore);
+            const part2 = this.round((newRate / totalEmpDays) * daysAfter);
+            grossEarnings = this.round(part1 + part2);
+
+            salarySplits.push({
+              period: `${period.start_date} to ${splitDate}`,
+              rate: oldRate,
+              days: daysBefore,
+              amount: part1
+            });
+            salarySplits.push({
+              period: `${splitDate} to ${period.end_date}`,
+              rate: newRate,
+              days: daysAfter,
+              amount: part2
+            });
+          }
+        }
+      } catch (_) {}
+
+      if (!hasMidMonthRevision) {
+        // Prorate base salary if employee joined mid-month or resigned mid-month
+        const isMidMonthJoiner = scheduleSummary.joiningDate && scheduleSummary.joiningDate > period.start_date;
+        const isMidMonthExit = scheduleSummary.exitDate && scheduleSummary.exitDate < period.end_date;
+
+        if (isMidMonthJoiner || isMidMonthExit) {
+          const effectiveStart = isMidMonthJoiner ? scheduleSummary.joiningDate : period.start_date;
+          const effectiveEnd = isMidMonthExit ? scheduleSummary.exitDate : period.end_date;
+
+          if (deductionPolicy === 'calendar_days') {
+            const startD = new Date(effectiveStart + 'T00:00:00');
+            const endD = new Date(effectiveEnd + 'T00:00:00');
+            const activeCalendarDays = Math.max(0, Math.round((endD - startD) / (1000 * 60 * 60 * 24)) + 1);
+            grossEarnings = this.round(activeCalendarDays * perDayRate);
+          } else {
+            const fullMonthDays = (scheduleSummary.dayBreakdown || []).filter(d => d.dayType !== 'weekly_off' && !d.isWeeklyOff).length || 26;
+            const fullMonthDayRate = this.round(rate / fullMonthDays);
+            grossEarnings = this.round(scheduleSummary.scheduledWorkingDays * fullMonthDayRate);
+          }
+        } else {
+          grossEarnings = rate;
+        }
       }
 
-      // Calculate unpaid leaves
-      const unpaidLeaveCount = scheduleSummary.unpaidLeaveDays;
-      const unpaidLeaveDeduction = Number((unpaidLeaveCount * perDayRate).toFixed(2));
+      // Compute unpaid leave deductions (Full day + Half day)
+      const fullUnpaidDays = scheduleSummary.unpaidLeaveDays || 0;
+      const halfUnpaidDays = (scheduleSummary.halfDayLeaveDays || 0) * 0.5;
+      const totalUnpaidDays = fullUnpaidDays + halfUnpaidDays;
+      const unpaidLeaveDeduction = this.round(totalUnpaidDays * perDayRate);
 
-      // Calculate unauthorized absences:
-      // Only count PAST scheduled work days (strictly before today) where employee was scheduled and didn't work
+      // Unauthorized absences calculation
       const todayStr = new Date().toISOString().slice(0, 10);
       const isPeriodPast = period.end_date < todayStr;
+      const scheduledWorkDays = Math.max(1, scheduleSummary.scheduledWorkingDays);
+
       const pastScheduledWorkDays = isPeriodPast
         ? scheduledWorkDays
         : (scheduleSummary.dayBreakdown || []).filter(d => 
             !d.isPriorToJoining && 
+            !d.isPostExit &&
             d.dayType !== 'not_employed' && 
+            d.dayType !== 'resigned' &&
             d.isWorkingDay && 
             d.date < todayStr && 
             !d.isLeave && 
@@ -238,29 +389,27 @@ export class PayrollService {
 
       let unauthorizedAbsences = 0;
       if (actualDaysWorked < pastScheduledWorkDays) {
-        unauthorizedAbsences = Math.max(0, pastScheduledWorkDays - actualDaysWorked - unpaidLeaveCount);
+        unauthorizedAbsences = Math.max(0, pastScheduledWorkDays - actualDaysWorked - fullUnpaidDays);
       }
-      const unauthorizedDeduction = Number((unauthorizedAbsences * perDayRate).toFixed(2));
+      const unauthorizedDeduction = this.round(unauthorizedAbsences * perDayRate);
 
-      absenceDeductions = Number((unpaidLeaveDeduction + unauthorizedDeduction).toFixed(2));
-      grossEarnings = Number(Math.max(0, effectiveBaseRate - absenceDeductions).toFixed(2));
-      payableUnits = 1; // 1 month
+      absenceDeductions = this.round(unpaidLeaveDeduction + unauthorizedDeduction);
 
     } else if (mode === 'per_day') {
       unitLabel = 'days';
-      // Option D: Per working day compensation
+      // Payable units = actual days worked
       payableUnits = actualDaysWorked > 0 ? actualDaysWorked : scheduleSummary.scheduledWorkingDays;
-      grossEarnings = Number((payableUnits * rate).toFixed(2));
+      grossEarnings = this.round(payableUnits * rate);
 
     } else if (mode === 'per_session') {
       unitLabel = 'sessions';
       payableUnits = sessions.length;
-      grossEarnings = Number((payableUnits * rate).toFixed(2));
+      grossEarnings = this.round(payableUnits * rate);
 
     } else if (mode === 'per_minute') {
       unitLabel = 'minutes';
       payableUnits = totalActualMinutes;
-      grossEarnings = Number((payableUnits * rate).toFixed(2));
+      grossEarnings = this.round(payableUnits * rate);
     }
 
     // 5. Query approved overtime
@@ -271,36 +420,76 @@ export class PayrollService {
 
     let approvedOvertimeAmount = 0;
     for (const ot of approvedOvertime) {
-      approvedOvertimeAmount += (ot.payable_amount || 0);
+      approvedOvertimeAmount += Number(ot.payable_amount || 0);
     }
 
-    // Also include punch overtime if overtime_eligible
     if (profile.overtime_eligible && punchOvertimeMinutes > 0 && approvedOvertime.length === 0) {
       const otHours = punchOvertimeMinutes / 60;
-      const otMultiplier = profile.overtime_rate_multiplier || 1.0;
+      const otMultiplier = Number(profile.overtime_rate_multiplier || 1.0);
       const baseHourlyRate = mode === 'hourly' 
         ? rate 
         : (scheduleSummary.totalScheduledHours > 0 ? (rate / scheduleSummary.totalScheduledHours) : 150);
-      approvedOvertimeAmount += Number((otHours * baseHourlyRate * otMultiplier).toFixed(2));
+      approvedOvertimeAmount += this.round(otHours * baseHourlyRate * otMultiplier);
     }
+    approvedOvertimeAmount = this.round(approvedOvertimeAmount);
 
-    // 6. Query manual adjustments
-    let totalAdditions = Number(approvedOvertimeAmount.toFixed(2));
-    let totalDeductions = 0;
+    // 6. Query work exceptions for weekly-off or holiday work with overtime_pay compensation
+    let workExceptionAmount = 0;
+    try {
+      const exceptions = db.prepare(`
+        SELECT * FROM employee_work_exceptions
+        WHERE user_id = ? AND date BETWEEN ? AND ?
+          AND status = 'approved'
+          AND compensation_type = 'overtime_pay'
+      `).all(userId, period.start_date, period.end_date);
+
+      for (const ex of exceptions) {
+        const perDay = mode === 'monthly' ? this.round(rate / Math.max(1, scheduleSummary.scheduledWorkingDays)) : rate;
+        workExceptionAmount += this.round(perDay * Number(ex.comp_off_days || 1.0));
+      }
+    } catch (_) {}
+
+    // 7. Configured Allowances & Deductions from profile
+    let profileAllowances = 0;
+    let profileDeductions = 0;
+    try {
+      if (profile.allowances) {
+        const arr = JSON.parse(profile.allowances);
+        if (Array.isArray(arr)) {
+          for (const item of arr) profileAllowances += Number(item.amount || 0);
+        }
+      }
+      if (profile.deductions) {
+        const arr = JSON.parse(profile.deductions);
+        if (Array.isArray(arr)) {
+          for (const item of arr) profileDeductions += Number(item.amount || 0);
+        }
+      }
+    } catch (_) {}
+
+    profileAllowances = this.round(profileAllowances);
+    profileDeductions = this.round(profileDeductions);
+
+    // 8. Manual additions and deductions
+    let totalAdditions = this.round(approvedOvertimeAmount + workExceptionAmount + profileAllowances);
+    let totalDeductions = this.round(profileDeductions + (absenceDeductions || 0));
 
     let statementId = existingStatement ? existingStatement.id : null;
-    let paidAmount = existingStatement ? (existingStatement.paid_amount || 0) : 0;
+    let paidAmount = existingStatement ? this.round(existingStatement.paid_amount || 0) : 0;
 
     if (statementId) {
       const adjustments = db.prepare('SELECT * FROM staff_salary_adjustments WHERE statement_id = ?').all(statementId);
       for (const adj of adjustments) {
-        if (adj.type === 'addition') totalAdditions += adj.amount;
-        if (adj.type === 'deduction') totalDeductions += adj.amount;
+        if (adj.type === 'addition') totalAdditions += Number(adj.amount || 0);
+        if (adj.type === 'deduction') totalDeductions += Number(adj.amount || 0);
       }
     }
 
-    const netEarnings = Number((grossEarnings + totalAdditions - totalDeductions).toFixed(2));
-    const balanceAmount = Number(Math.max(0, netEarnings - paidAmount).toFixed(2));
+    totalAdditions = this.round(totalAdditions);
+    totalDeductions = this.round(totalDeductions);
+
+    const netEarnings = this.round(Math.max(0, grossEarnings + totalAdditions - totalDeductions));
+    const balanceAmount = this.round(Math.max(0, netEarnings - paidAmount));
     const paymentStatus = balanceAmount === 0 && paidAmount > 0 ? 'paid' : (paidAmount > 0 ? 'partially_paid' : 'unpaid');
 
     const calculationSnapshot = JSON.stringify({
@@ -315,14 +504,20 @@ export class PayrollService {
       paid_holidays: scheduleSummary.holidayDays,
       paid_leaves: scheduleSummary.paidLeaveDays,
       unpaid_leaves: scheduleSummary.unpaidLeaveDays,
+      half_day_leaves: scheduleSummary.halfDayLeaveDays || 0,
       absence_deductions: absenceDeductions,
       actual_hours_worked: actualHoursWorked,
       actual_days_worked: actualDaysWorked,
       verified_sessions_count: sessions.length,
       overtime_amount: approvedOvertimeAmount,
+      work_exception_amount: workExceptionAmount,
+      profile_allowances: profileAllowances,
+      profile_deductions: profileDeductions,
+      salary_splits: salarySplits,
       calculated_at: new Date().toISOString(),
       period_start: period.start_date,
       period_end: period.end_date,
+      deduction_policy: profile.deduction_policy || 'working_days',
     });
 
     if (existingStatement) {
@@ -354,7 +549,7 @@ export class PayrollService {
   }
 
   /**
-   * Calculates provisional statements for all coaches & staff in an academy for a period
+   * Calculates statements for all coaches & staff in an academy for a period
    */
   static calculatePeriod(db, periodId, academyId = 1) {
     const period = db.prepare('SELECT * FROM staff_payroll_periods WHERE id = ?').get(periodId);
@@ -362,7 +557,6 @@ export class PayrollService {
       throw new Error(`Payroll period ${periodId} not found`);
     }
 
-    // Get all coaches and staff
     const staffUsers = db.prepare(`
       SELECT DISTINCT u.id, u.name, u.email, u.role
       FROM users u
@@ -371,15 +565,52 @@ export class PayrollService {
     `).all();
 
     const statements = [];
-    const tx = db.transaction(() => {
+    db.transaction(() => {
       for (const user of staffUsers) {
         const stmt = this.calculateEmployeeStatement(db, periodId, user.id, academyId);
         statements.push(stmt);
       }
-    });
+    })();
 
-    tx();
     return { periodId, statementsCount: statements.length };
+  }
+
+  /**
+   * Approves a payroll period (workflow stage before finalization)
+   */
+  static approvePayrollPeriod(db, periodId, approvedByUserId) {
+    const period = db.prepare('SELECT * FROM staff_payroll_periods WHERE id = ?').get(periodId);
+    if (!period) {
+      throw new Error(`Payroll period ${periodId} not found`);
+    }
+    if (period.status === 'finalized') {
+      throw new Error(`Payroll period ${period.year_month} is already finalized.`);
+    }
+
+    // Auto-calculate any uncalculated statements first
+    this.calculatePeriod(db, periodId, period.academy_id);
+
+    db.prepare(`
+      UPDATE staff_payroll_periods
+      SET status = 'approved',
+          approved_by = ?,
+          approved_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(approvedByUserId || 1, periodId);
+
+    // Audit log
+    db.prepare(`
+      INSERT INTO payroll_audit_logs (academy_id, entity_type, entity_id, action, actor_id, changes_summary, reason)
+      VALUES (?, 'payroll_period', ?, 'approve', ?, ?, ?)
+    `).run(
+      period.academy_id,
+      periodId,
+      approvedByUserId || 1,
+      `Payroll approved for cycle ${period.year_month}`,
+      'Administrative payroll verification passed'
+    );
+
+    return { success: true, periodId, status: 'approved', yearMonth: period.year_month };
   }
 
   /**
@@ -407,9 +638,15 @@ export class PayrollService {
 
     // Audit log
     db.prepare(`
-      INSERT INTO audit_logs (user_id, action, entity, entity_id, details)
-      VALUES (?, 'FINALIZE_PAYROLL', 'staff_payroll_periods', ?, ?)
-    `).run(finalizedByUserId || 1, String(periodId), `Finalized payroll for period ${period.year_month}`);
+      INSERT INTO payroll_audit_logs (academy_id, entity_type, entity_id, action, actor_id, changes_summary, reason)
+      VALUES (?, 'payroll_period', ?, 'finalize', ?, ?, ?)
+    `).run(
+      period.academy_id,
+      periodId,
+      finalizedByUserId || 1,
+      `Locked payroll period ${period.year_month}`,
+      'Monthly payroll finalized; immutable calculation snapshot created'
+    );
 
     return {
       success: true,
@@ -420,13 +657,57 @@ export class PayrollService {
   }
 
   /**
+   * Reopens a finalized payroll period through an authorized correction workflow
+   */
+  static reopenPayrollPeriod(db, periodId, reason, reopenedByUserId) {
+    if (!reason || !reason.trim()) {
+      throw new Error('A detailed reason is mandatory to reopen a finalized payroll period.');
+    }
+
+    const period = db.prepare('SELECT * FROM staff_payroll_periods WHERE id = ?').get(periodId);
+    if (!period) {
+      throw new Error(`Payroll period ${periodId} not found`);
+    }
+
+    db.prepare(`
+      UPDATE staff_payroll_periods
+      SET status = 'reopened',
+          reopened_by = ?,
+          reopened_at = CURRENT_TIMESTAMP,
+          reopen_reason = ?
+      WHERE id = ?
+    `).run(reopenedByUserId || 1, reason.trim(), periodId);
+
+    // Audit log
+    db.prepare(`
+      INSERT INTO payroll_audit_logs (academy_id, entity_type, entity_id, action, actor_id, changes_summary, reason)
+      VALUES (?, 'payroll_period', ?, 'reopen', ?, ?, ?)
+    `).run(
+      period.academy_id,
+      periodId,
+      reopenedByUserId || 1,
+      `Reopened finalized payroll period ${period.year_month}`,
+      reason.trim()
+    );
+
+    return {
+      success: true,
+      periodId,
+      status: 'reopened',
+      yearMonth: period.year_month,
+      reason: reason.trim()
+    };
+  }
+
+  /**
    * Adds an itemized adjustment (bonus, overtime, unpaid leave deduction, penalty)
    */
   static addSalaryAdjustment(db, { statementId, type, category, amount, reason, createdBy = 1 }) {
     if (!statementId || !type || !amount || !reason) {
       throw new Error('Statement ID, type, amount, and reason are required');
     }
-    if (amount <= 0) {
+    const numAmount = this.round(amount);
+    if (numAmount <= 0) {
       throw new Error('Adjustment amount must be greater than zero');
     }
 
@@ -436,11 +717,11 @@ export class PayrollService {
     }
 
     let adjustmentId;
-    const tx = db.transaction(() => {
+    db.transaction(() => {
       const ins = db.prepare(`
         INSERT INTO staff_salary_adjustments (statement_id, type, category, amount, reason, created_by)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).run(statementId, type, category || 'general', amount, reason.trim(), createdBy);
+      `).run(statementId, type, category || 'general', numAmount, reason.trim(), createdBy);
       adjustmentId = ins.lastInsertRowid;
 
       // Recalculate totals
@@ -448,12 +729,15 @@ export class PayrollService {
       let totalAdditions = 0;
       let totalDeductions = 0;
       for (const a of adjustments) {
-        if (a.type === 'addition') totalAdditions += a.amount;
-        if (a.type === 'deduction') totalDeductions += a.amount;
+        if (a.type === 'addition') totalAdditions += Number(a.amount || 0);
+        if (a.type === 'deduction') totalDeductions += Number(a.amount || 0);
       }
 
-      const netEarnings = Number((statement.gross_earnings + totalAdditions - totalDeductions).toFixed(2));
-      const balanceAmount = Number(Math.max(0, netEarnings - statement.paid_amount).toFixed(2));
+      totalAdditions = this.round(totalAdditions);
+      totalDeductions = this.round(totalDeductions);
+
+      const netEarnings = this.round(Math.max(0, statement.gross_earnings + totalAdditions - totalDeductions));
+      const balanceAmount = this.round(Math.max(0, netEarnings - statement.paid_amount));
       const paymentStatus = balanceAmount === 0 && statement.paid_amount > 0 ? 'paid' : (statement.paid_amount > 0 ? 'partially_paid' : 'unpaid');
 
       db.prepare(`
@@ -461,14 +745,25 @@ export class PayrollService {
         SET total_additions = ?, total_deductions = ?, net_earnings = ?, balance_amount = ?, payment_status = ?
         WHERE id = ?
       `).run(totalAdditions, totalDeductions, netEarnings, balanceAmount, paymentStatus, statementId);
-    });
 
-    tx();
+      // Audit log
+      db.prepare(`
+        INSERT INTO payroll_audit_logs (academy_id, entity_type, entity_id, action, actor_id, changes_summary, reason)
+        VALUES (?, 'statement', ?, 'update', ?, ?, ?)
+      `).run(
+        statement.academy_id,
+        statementId,
+        createdBy,
+        `Added ${type} of ₹${numAmount} (${category})`,
+        reason.trim()
+      );
+    })();
+
     return { success: true, adjustmentId };
   }
 
   /**
-   * Records a salary payout / disbursement
+   * Records a salary payout / disbursement (partial or full)
    */
   static recordSalaryPayment(db, {
     statementId,
@@ -479,8 +774,12 @@ export class PayrollService {
     notes,
     createdBy = 1,
   }) {
-    if (!statementId || !amount || amount <= 0 || !paymentMethod) {
+    if (!statementId || !amount || !paymentMethod) {
       throw new Error('Valid Statement ID, positive amount, and payment method are required');
+    }
+    const numAmount = this.round(amount);
+    if (numAmount <= 0) {
+      throw new Error('Payment amount must be greater than zero');
     }
 
     const statement = db.prepare('SELECT * FROM staff_salary_statements WHERE id = ?').get(statementId);
@@ -489,7 +788,7 @@ export class PayrollService {
     }
 
     let paymentId;
-    const tx = db.transaction(() => {
+    db.transaction(() => {
       const ins = db.prepare(`
         INSERT INTO staff_salary_payments (
           statement_id, payment_date, amount, payment_method, reference_number, notes, created_by
@@ -497,7 +796,7 @@ export class PayrollService {
       `).run(
         statementId,
         paymentDate || new Date().toISOString().split('T')[0],
-        amount,
+        numAmount,
         paymentMethod,
         referenceNumber || null,
         notes || null,
@@ -505,8 +804,8 @@ export class PayrollService {
       );
       paymentId = ins.lastInsertRowid;
 
-      const newPaid = Number((statement.paid_amount + amount).toFixed(2));
-      const newBalance = Number(Math.max(0, statement.net_earnings - newPaid).toFixed(2));
+      const newPaid = this.round(statement.paid_amount + numAmount);
+      const newBalance = this.round(Math.max(0, statement.net_earnings - newPaid));
       const newStatus = newBalance <= 0 ? 'paid' : 'partially_paid';
 
       db.prepare(`
@@ -514,9 +813,20 @@ export class PayrollService {
         SET paid_amount = ?, balance_amount = ?, payment_status = ?
         WHERE id = ?
       `).run(newPaid, newBalance, newStatus, statementId);
-    });
 
-    tx();
+      // Audit log
+      db.prepare(`
+        INSERT INTO payroll_audit_logs (academy_id, entity_type, entity_id, action, actor_id, changes_summary, reason)
+        VALUES (?, 'payment', ?, 'disburse', ?, ?, ?)
+      `).run(
+        statement.academy_id,
+        paymentId,
+        createdBy,
+        `Disbursed ₹${numAmount} via ${paymentMethod} (Ref: ${referenceNumber || 'N/A'})`,
+        notes || 'Salary disbursement'
+      );
+    })();
+
     return { success: true, paymentId };
   }
 
@@ -528,7 +838,6 @@ export class PayrollService {
     const currentDay = today.getDate();
     const period = this.getOrCreatePeriod(db, 1, yearMonth);
 
-    // Calculate or fetch statement
     const statement = this.calculateEmployeeStatement(db, period.id, userId, 1);
     const adjustments = db.prepare('SELECT * FROM staff_salary_adjustments WHERE statement_id = ?').all(statement.id);
     const payments = db.prepare('SELECT * FROM staff_salary_payments WHERE statement_id = ?').all(statement.id);
@@ -618,7 +927,7 @@ export class PayrollService {
 
     const scheduledWorkDays = Math.max(1, scheduleSummary.scheduledWorkingDays || 26);
     const perDayDeduction = statement && statement.salary_mode === 'monthly'
-      ? Number(((statement.applicable_rate || 0) / scheduledWorkDays).toFixed(2))
+      ? this.round((statement.applicable_rate || 0) / scheduledWorkDays)
       : 0;
 
     let daysPresent = 0;
@@ -675,14 +984,13 @@ export class PayrollService {
       let otAmount = 0;
       if (dayOt.length > 0) {
         otStatus = dayOt[0].status;
-        otAmount = dayOt.reduce((sum, o) => sum + (o.payable_amount || 0), 0);
+        otAmount = this.round(dayOt.reduce((sum, o) => sum + (o.payable_amount || 0), 0));
         if (dayOt[0].overtime_minutes > dayOtMinutes) {
           dayOtMinutes = dayOt[0].overtime_minutes;
         }
       }
       totalOvertimeAmount += otAmount;
 
-      // Determine day attendance status
       let status = 'upcoming';
       let statusLabel = 'Scheduled';
       let badgeClass = 'badge-neutral';
@@ -693,6 +1001,11 @@ export class PayrollService {
         statusLabel = 'Not Employed';
         badgeClass = 'badge-neutral';
         financialImpact = 'Prior to Joining';
+      } else if (dayExp.dayType === 'resigned' || dayExp.isPostExit) {
+        status = 'resigned';
+        statusLabel = 'Relieved / Resigned';
+        badgeClass = 'badge-neutral';
+        financialImpact = 'Post Resignation';
       } else if (hasActivePunch) {
         status = 'active_now';
         statusLabel = 'Punched In (Active)';
@@ -705,17 +1018,17 @@ export class PayrollService {
           badgeClass = 'badge-warning';
           halfDays++;
           financialImpact = statement?.salary_mode === 'hourly'
-            ? `₹${((workedMinutes / 60) * (statement?.applicable_rate || 0)).toFixed(2)}`
-            : `Half Day (-₹${(perDayDeduction * 0.5).toFixed(2)})`;
+            ? `₹${this.round((workedMinutes / 60) * (statement?.applicable_rate || 0))}`
+            : `Half Day (-₹${this.round(perDayDeduction * 0.5)})`;
         } else {
           status = 'present';
           statusLabel = 'Present';
           badgeClass = 'badge-success';
           daysPresent++;
           if (otAmount > 0) {
-            financialImpact = `Full Day (+₹${otAmount.toFixed(2)} OT)`;
+            financialImpact = `Full Day (+₹${otAmount} OT)`;
           } else if (statement?.salary_mode === 'hourly') {
-            financialImpact = `₹${((workedMinutes / 60) * (statement?.applicable_rate || 0)).toFixed(2)}`;
+            financialImpact = `₹${this.round((workedMinutes / 60) * (statement?.applicable_rate || 0))}`;
           } else {
             financialImpact = 'Full Pay (Present)';
           }
@@ -726,7 +1039,12 @@ export class PayrollService {
           statusLabel = 'Unpaid Leave';
           badgeClass = 'badge-danger';
           unpaidLeaves++;
-          financialImpact = `-₹${perDayDeduction.toFixed(2)} (Leave)`;
+          financialImpact = `-₹${perDayDeduction} (Leave)`;
+        } else if (dayExp.dayType === 'half_day_leave') {
+          status = 'half_day_leave';
+          statusLabel = 'Half-Day Leave';
+          badgeClass = 'badge-warning';
+          financialImpact = 'Half-Day Approved';
         } else {
           status = 'paid_leave';
           statusLabel = 'Paid Leave';
@@ -739,7 +1057,7 @@ export class PayrollService {
         statusLabel = dayExp.holidayName ? `Holiday: ${dayExp.holidayName}` : 'Paid Holiday';
         badgeClass = 'badge-purple';
         holidays++;
-        financialImpact = 'Paid Holiday';
+        financialImpact = dayExp.isHolidayPaid ? 'Paid Holiday' : 'Unpaid Holiday';
       } else if (dayExp.isWeeklyOff) {
         status = 'weekly_off';
         statusLabel = 'Weekly Off';
@@ -761,7 +1079,7 @@ export class PayrollService {
         statusLabel = 'Absent';
         badgeClass = 'badge-danger';
         absentDays++;
-        financialImpact = `-₹${perDayDeduction.toFixed(2)} (Absent)`;
+        financialImpact = `-₹${perDayDeduction} (Absent)`;
       }
 
       return {
@@ -782,7 +1100,7 @@ export class PayrollService {
         firstPunchIn: firstIn,
         lastPunchOut: lastOut,
         durationMinutes: workedMinutes,
-        actualWorkedHours: Number((workedMinutes / 60).toFixed(2)),
+        actualWorkedHours: this.round(workedMinutes / 60),
         scheduledMinutes,
         timeDiffMinutes,
         overtimeMinutes: dayOtMinutes,
@@ -808,9 +1126,9 @@ export class PayrollService {
         unpaidLeaves,
         absentDays,
         totalScheduledHours: scheduleSummary.totalScheduledHours,
-        totalActualWorkedHours: Number((totalActualWorkedMinutes / 60).toFixed(2)),
-        totalOvertimeHours: Number((totalOvertimeMinutes / 60).toFixed(2)),
-        totalOvertimeAmount: Number(totalOvertimeAmount.toFixed(2)),
+        totalActualWorkedHours: this.round(totalActualWorkedMinutes / 60),
+        totalOvertimeHours: this.round(totalOvertimeMinutes / 60),
+        totalOvertimeAmount: this.round(totalOvertimeAmount),
       },
     };
   }

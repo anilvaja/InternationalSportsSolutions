@@ -14649,6 +14649,9 @@ const app = {
                   </td>
                   <td style="text-align: right;">
                     <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                      <button class="btn btn-sm btn-outline-primary" title="Working Schedule & Weekly Offs" onclick="app.showBranchScheduleModal(${b.id}, '${b.name.replace(/'/g, "\\'")}')">
+                        <i class="fa-solid fa-calendar-week"></i> Schedule
+                      </button>
                       <button class="btn btn-sm btn-outline" title="Edit Branch" onclick="app.showEditBranchModal(${b.id})">
                         <i class="fa-solid fa-pen-to-square"></i>
                       </button>
@@ -14669,6 +14672,170 @@ const app = {
     `;
 
     this.currentBranchesData = branches;
+  },
+
+  async showBranchScheduleModal(branchId, branchName) {
+    this.openModal(
+      `Branch Schedule & Weekly Offs: ${branchName}`,
+      '<div style="padding: 24px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>'
+    );
+
+    const res = await this.apiRequest(`/api/academy/schedules/branch/${branchId}`);
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to load branch schedule', 'danger');
+      this.closeModal();
+      return;
+    }
+
+    const sched = res.schedule || {};
+    const days = sched.days || [];
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    const modalBody = `
+      <form id="branch-schedule-form" onsubmit="event.preventDefault(); app.saveBranchSchedule(${branchId});">
+        <div style="margin-bottom: 14px; font-size: 13px; color: var(--text-muted);">
+          Configure working days, weekly offs, shift times, and scheduled hours for this branch. Employees assigned to this branch inherit these rules unless overridden.
+        </div>
+
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div class="form-group">
+            <label style="font-weight: 600;">Schedule Name</label>
+            <input type="text" id="branch-sched-name" class="form-input" value="${this.escapeHtml(sched.schedule_name || 'Standard Working Schedule')}" required>
+          </div>
+          <div class="form-group">
+            <label style="font-weight: 600;">Effective From Date</label>
+            <input type="date" id="branch-sched-from" class="form-input" value="${sched.effective_from || new Date().toISOString().split('T')[0]}" required>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="margin-bottom: 16px;">
+          <table class="custom-table" style="font-size: 12px;">
+            <thead>
+              <tr>
+                <th>Day</th>
+                <th>Working Day?</th>
+                <th>Shift Name</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Hours</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${[0, 1, 2, 3, 4, 5, 6].map(dNum => {
+                const dayRule = days.find(d => Number(d.day_of_week) === dNum) || {
+                  day_of_week: dNum,
+                  is_working_day: dNum !== 0 ? 1 : 0,
+                  shift_name: dNum !== 0 ? 'General Shift' : 'Weekly Off',
+                  start_time: '09:00',
+                  end_time: '17:00',
+                  scheduled_hours: dNum !== 0 ? 8.0 : 0
+                };
+                return `
+                  <tr>
+                    <td><strong>${dayNames[dNum]}</strong></td>
+                    <td>
+                      <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="sched-work-${dNum}" ${dayRule.is_working_day ? 'checked' : ''} onchange="app.toggleBranchDayInputs(${dNum})">
+                        <span>${dayRule.is_working_day ? 'Work Day' : 'Weekly Off'}</span>
+                      </label>
+                    </td>
+                    <td>
+                      <input type="text" id="sched-shift-${dNum}" class="form-input" style="padding: 4px 8px; font-size: 12px;" value="${this.escapeHtml(dayRule.shift_name || '')}">
+                    </td>
+                    <td>
+                      <input type="time" id="sched-start-${dNum}" class="form-input" style="padding: 4px 8px; font-size: 12px;" value="${dayRule.start_time || '09:00'}" ${!dayRule.is_working_day ? 'disabled' : ''}>
+                    </td>
+                    <td>
+                      <input type="time" id="sched-end-${dNum}" class="form-input" style="padding: 4px 8px; font-size: 12px;" value="${dayRule.end_time || '17:00'}" ${!dayRule.is_working_day ? 'disabled' : ''}>
+                    </td>
+                    <td>
+                      <input type="number" id="sched-hours-${dNum}" class="form-input" style="padding: 4px 8px; font-size: 12px; width: 70px;" value="${dayRule.scheduled_hours !== undefined ? dayRule.scheduled_hours : 8}" step="0.5" min="0" max="24" ${!dayRule.is_working_day ? 'disabled' : ''}>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 8px;">
+          <label style="font-weight: 600;">Schedule Remarks / Shift Policy Notes</label>
+          <textarea id="branch-sched-notes" class="form-input" rows="2" placeholder="e.g. Sunday weekly off. Saturday half-day optional.">${this.escapeHtml(sched.notes || '')}</textarea>
+        </div>
+      </form>
+    `;
+
+    const modalFooter = `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="app.saveBranchSchedule(${branchId})">
+        <i class="fa-solid fa-check"></i> Save Branch Schedule
+      </button>
+    `;
+
+    this.openModal(`Branch Schedule & Weekly Offs: ${branchName}`, modalBody, modalFooter);
+  },
+
+  toggleBranchDayInputs(dayNum) {
+    const isChecked = document.getElementById(`sched-work-${dayNum}`)?.checked;
+    const startInput = document.getElementById(`sched-start-${dayNum}`);
+    const endInput = document.getElementById(`sched-end-${dayNum}`);
+    const hoursInput = document.getElementById(`sched-hours-${dayNum}`);
+    const shiftInput = document.getElementById(`sched-shift-${dayNum}`);
+
+    if (startInput) startInput.disabled = !isChecked;
+    if (endInput) endInput.disabled = !isChecked;
+    if (hoursInput) {
+      hoursInput.disabled = !isChecked;
+      if (!isChecked) hoursInput.value = '0';
+      else if (Number(hoursInput.value) === 0) hoursInput.value = '8';
+    }
+    if (shiftInput && !isChecked) {
+      shiftInput.value = 'Weekly Off';
+    } else if (shiftInput && shiftInput.value === 'Weekly Off') {
+      shiftInput.value = 'General Shift';
+    }
+  },
+
+  async saveBranchSchedule(branchId) {
+    const schedule_name = document.getElementById('branch-sched-name')?.value?.trim();
+    const effective_from = document.getElementById('branch-sched-from')?.value;
+    const notes = document.getElementById('branch-sched-notes')?.value?.trim();
+
+    const days = [];
+    for (let d = 0; d < 7; d++) {
+      const is_working_day = document.getElementById(`sched-work-${d}`)?.checked ? 1 : 0;
+      const shift_name = document.getElementById(`sched-shift-${d}`)?.value?.trim() || (is_working_day ? 'General Shift' : 'Weekly Off');
+      const start_time = document.getElementById(`sched-start-${d}`)?.value || '09:00';
+      const end_time = document.getElementById(`sched-end-${d}`)?.value || '17:00';
+      const scheduled_hours = Number(document.getElementById(`sched-hours-${d}`)?.value || 0);
+
+      days.push({
+        day_of_week: d,
+        is_working_day,
+        shift_name,
+        start_time,
+        end_time,
+        scheduled_hours: is_working_day ? scheduled_hours : 0
+      });
+    }
+
+    const res = await this.apiRequest(`/api/academy/schedules/branch/${branchId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        schedule_name,
+        effective_from,
+        notes,
+        days
+      })
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast(res.message || 'Branch working schedule configured successfully', 'success');
+      this.renderBranches();
+    } else {
+      this.showToast(res.error || 'Failed to save branch schedule', 'danger');
+    }
   },
 
   exportBranchesExcel() {
@@ -15660,11 +15827,33 @@ const app = {
     if (this.leaveFilters.status) params.set('status', this.leaveFilters.status);
     if (this.leaveFilters.applicant_type) params.set('applicant_type', this.leaveFilters.applicant_type);
 
-    const data = await this.apiRequest(`/api/academy/leaves?${params.toString()}`);
+    const [data, balancesData] = await Promise.all([
+      this.apiRequest(`/api/academy/leaves?${params.toString()}`),
+      this.apiRequest('/api/academy/leaves/my-balances').catch(() => ({ balances: [] }))
+    ]);
     const leaves = (data && data.leaves) || [];
     const totalCount = data?.total !== undefined ? data.total : leaves.length;
+    const balances = balancesData?.balances || [];
 
     content.innerHTML = `
+      ${balances.length > 0 ? `
+        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px;">
+          ${balances.map(b => `
+            <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
+                ${b.leave_name || b.leave_type.toUpperCase()}
+              </div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--primary); margin-top: 4px;">
+                ${b.remaining} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">/ ${b.opening_balance + (b.accrued || 0)}</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                ${b.used} used • ${b.remaining} remaining
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
       <div class="content-card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <h2 class="card-title"><i class="fa-solid fa-calendar-check"></i> Leave Requests (${totalCount})</h2>
@@ -15692,6 +15881,7 @@ const app = {
               <option value="pending" ${this.leaveFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
               <option value="approved" ${this.leaveFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
               <option value="rejected" ${this.leaveFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
+              <option value="cancelled" ${this.leaveFilters.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
             </select>
           </div>
           <div class="filter-group" style="min-width: 140px;">
@@ -15719,6 +15909,7 @@ const app = {
                 <th>Applicant</th>
                 <th>Type</th>
                 <th>Dates</th>
+                <th>Days</th>
                 <th>Reason</th>
                 <th>Status</th>
                 <th>Action</th>
@@ -15726,15 +15917,19 @@ const app = {
             </thead>
             <tbody>
               ${leaves.length === 0 ? `
-                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 36px;">No leave requests found matching filters.</td></tr>
+                <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 36px;">No leave requests found matching filters.</td></tr>
               ` : leaves.map(l => `
                 <tr>
                   <td><strong>${this.escapeHtml(l.applicant_name)}</strong></td>
-                  <td><span class="badge badge-info">${this.escapeHtml(l.applicant_type)}</span></td>
+                  <td>
+                    <span class="badge badge-info">${this.escapeHtml(l.applicant_type)}</span>
+                    ${l.leave_type ? `<span class="badge badge-purple" style="margin-left: 4px;">${this.escapeHtml(l.leave_type)}</span>` : ''}
+                  </td>
                   <td>${this.formatDate(l.start_date)} to ${this.formatDate(l.end_date)}</td>
+                  <td><strong>${l.days_count !== undefined ? l.days_count : 1}</strong></td>
                   <td>${this.escapeHtml(l.reason)}</td>
                   <td>
-                    <span class="badge ${l.status === 'approved' ? 'badge-success' : (l.status === 'rejected' ? 'badge-danger' : 'badge-warning')}">
+                    <span class="badge ${l.status === 'approved' ? 'badge-success' : (l.status === 'rejected' ? 'badge-danger' : (l.status === 'cancelled' ? 'badge-neutral' : 'badge-warning'))}">
                       ${this.escapeHtml(l.status)}
                     </span>
                   </td>
@@ -15743,7 +15938,11 @@ const app = {
                       ${l.status === 'pending' ? `
                         <button class="btn btn-success btn-sm" onclick="app.updateLeave(${l.id}, 'approved')">Approve</button>
                         <button class="btn btn-danger btn-sm" onclick="app.updateLeave(${l.id}, 'rejected')">Reject</button>
-                      ` : (l.reviewer_comments ? `<span style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(l.reviewer_comments)}</span>` : '-')}
+                      ` : ''}
+                      ${l.status === 'approved' ? `
+                        <button class="btn btn-warning btn-sm" title="Cancel Leave Request" onclick="app.cancelLeaveModal(${l.id})">Cancel</button>
+                      ` : ''}
+                      ${l.reviewer_comments ? `<span style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(l.reviewer_comments)}</span>` : ''}
                       <button class="btn btn-outline-danger btn-sm" onclick="app.deleteLeave(${l.id})" title="Delete Leave Record" style="padding: 2px 6px; font-size: 11px;">
                         <i class="fa-solid fa-trash"></i>
                       </button>
@@ -15759,6 +15958,27 @@ const app = {
         ${this.renderPaginationHtml(data, 'app.onLeavePageChange', 'app.onLeaveLimitChange')}
       </div>
     `;
+  },
+
+  async cancelLeaveModal(id) {
+    const reason = prompt('Please provide a reason for cancelling this approved leave:');
+    if (reason === null) return;
+    if (!reason.trim()) {
+      this.showToast('Cancellation reason is required.', 'warning');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/leaves/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason.trim() })
+    });
+
+    if (res.success) {
+      this.showToast(res.message || 'Leave cancelled and balance restored.', 'success');
+      this.renderLeaves();
+    } else {
+      this.showToast(res.error || 'Failed to cancel leave', 'danger');
+    }
   },
 
   applyLeaveFilters() {
@@ -15884,6 +16104,31 @@ const app = {
             <span>Duration: <strong id="leave-days-count" style="color: var(--primary);">1 day</strong></span>
           </div>
 
+          <!-- Leave Policy & Day Schedule Portion -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+            <div class="form-group">
+              <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+                Leave Quota Policy:
+              </label>
+              <select id="leave-type-policy" class="form-control" style="width: 100%;">
+                <option value="casual" selected>Casual Leave (CL)</option>
+                <option value="sick">Sick / Medical Leave (SL)</option>
+                <option value="earned">Earned / Comp-Off Leave (EL)</option>
+                <option value="unpaid">Loss of Pay / Unpaid (LWP)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+                Day Schedule Portion:
+              </label>
+              <select id="leave-day-part" class="form-control" style="width: 100%;" onchange="app.updateLeaveDaysCount()">
+                <option value="full_day" selected>Full Day</option>
+                <option value="first_half">First Half (0.5 Day)</option>
+                <option value="second_half">Second Half (0.5 Day)</option>
+              </select>
+            </div>
+          </div>
+
           <!-- Reason Category -->
           <div class="form-group" style="margin-bottom: 14px;">
             <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
@@ -15956,6 +16201,7 @@ const app = {
   updateLeaveDaysCount() {
     const sStr = document.getElementById('leave-start-date')?.value;
     const eStr = document.getElementById('leave-end-date')?.value;
+    const part = document.getElementById('leave-day-part')?.value || 'full_day';
     const countEl = document.getElementById('leave-days-count');
     if (!sStr || !eStr || !countEl) return;
 
@@ -15967,7 +16213,11 @@ const app = {
       countEl.textContent = 'Invalid dates (End date must be on or after Start date)';
       countEl.style.color = '#dc2626';
     } else {
-      countEl.textContent = `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+      if (diffDays === 1 && (part === 'first_half' || part === 'second_half')) {
+        countEl.textContent = '0.5 day (Half-day)';
+      } else {
+        countEl.textContent = `${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+      }
       countEl.style.color = 'var(--primary)';
     }
   },
@@ -15976,6 +16226,8 @@ const app = {
     const target = document.querySelector('input[name="leave_for"]:checked')?.value || 'myself';
     const startDate = document.getElementById('leave-start-date')?.value;
     const endDate = document.getElementById('leave-end-date')?.value;
+    const leave_type = document.getElementById('leave-type-policy')?.value || 'casual';
+    const day_part = document.getElementById('leave-day-part')?.value || 'full_day';
     const category = document.getElementById('leave-category')?.value || 'Casual Leave';
     const reasonDetail = document.getElementById('leave-reason-text')?.value?.trim();
     const status = document.getElementById('leave-approval-status')?.value || 'approved';
@@ -16017,6 +16269,8 @@ const app = {
       applicant_type: applicantType,
       applicant_id: applicantId,
       applicant_name: applicantName,
+      leave_type,
+      day_part,
       start_date: startDate,
       end_date: endDate,
       reason: `${category}: ${reasonDetail}`,
@@ -16489,6 +16743,19 @@ const app = {
             </select>
           </div>
 
+          <!-- Holiday Category -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
+              Holiday Category:
+            </label>
+            <select id="holiday-category-input" class="form-control" style="width: 100%;">
+              <option value="festival" selected>Festival / Cultural Occasion</option>
+              <option value="public">National / Public Holiday</option>
+              <option value="closure">Academy Maintenance / Planned Closure</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
           <!-- Paid vs Unpaid Holiday -->
           <div class="form-group" style="margin-bottom: 14px;">
             <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
@@ -16498,6 +16765,18 @@ const app = {
               <option value="1" selected>Paid Holiday (Standard — Coaches & staff receive full pay; student attendance protected)</option>
               <option value="0">Unpaid Holiday / Academy Shutdown (No salary compensation)</option>
             </select>
+          </div>
+
+          <!-- Additional Flags -->
+          <div style="display: flex; gap: 20px; margin-bottom: 14px; flex-wrap: wrap;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" id="holiday-is-closed" checked>
+              <span><strong>Academy Closed</strong> (No batch operations)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" id="holiday-is-recurring">
+              <span><strong>Recurring Yearly</strong> (Auto-populate annually)</span>
+            </label>
           </div>
 
           <!-- Notes / Description -->
@@ -16559,6 +16838,9 @@ const app = {
     const name = document.getElementById('holiday-name-input')?.value?.trim();
     const branchId = document.getElementById('holiday-branch-input')?.value;
     const isPaid = Number(document.getElementById('holiday-is-paid-input')?.value || 1);
+    const category = document.getElementById('holiday-category-input')?.value || 'festival';
+    const isClosed = document.getElementById('holiday-is-closed')?.checked ? 1 : 0;
+    const isRecurring = document.getElementById('holiday-is-recurring')?.checked ? 1 : 0;
     const description = document.getElementById('holiday-desc-input')?.value?.trim();
 
     if (!name) {
@@ -16568,6 +16850,9 @@ const app = {
 
     const payload = {
       name,
+      category,
+      is_closed: isClosed,
+      is_recurring: isRecurring,
       branch_id: branchId ? Number(branchId) : null,
       is_paid: isPaid,
       description: description || null
@@ -20769,13 +21054,25 @@ const app = {
             <button class="btn btn-outline-primary btn-sm" onclick="app.showPayrollProfilesModal()">
               <i class="fa-solid fa-id-card"></i> Staff Salary Profiles
             </button>
-            ${activePeriod && activePeriod.status !== 'finalized' ? `
+            ${activePeriod ? `
               <button class="btn btn-secondary btn-sm" onclick="app.recalculatePayrollPeriod(${activePeriod.id})">
-                <i class="fa-solid fa-arrows-rotate"></i> Recalculate Period
+                <i class="fa-solid fa-arrows-rotate"></i> Recalculate (${activePeriod.year_month})
               </button>
-              <button class="btn btn-primary btn-sm" onclick="app.finalizePayrollPeriod(${activePeriod.id}, '${activePeriod.year_month}')">
-                <i class="fa-solid fa-lock"></i> Finalize Payroll
-              </button>
+              ${activePeriod.status !== 'finalized' && activePeriod.status !== 'approved' ? `
+                <button class="btn btn-info btn-sm" onclick="app.approvePayrollPeriod(${activePeriod.id}, '${activePeriod.year_month}')">
+                  <i class="fa-solid fa-thumbs-up"></i> Approve
+                </button>
+              ` : ''}
+              ${activePeriod.status === 'approved' ? `
+                <button class="btn btn-primary btn-sm" onclick="app.finalizePayrollPeriod(${activePeriod.id}, '${activePeriod.year_month}')">
+                  <i class="fa-solid fa-lock"></i> Finalize Payroll
+                </button>
+              ` : ''}
+              ${activePeriod.status === 'finalized' ? `
+                <button class="btn btn-outline-danger btn-sm" onclick="app.showReopenPayrollModal(${activePeriod.id}, '${activePeriod.year_month}')">
+                  <i class="fa-solid fa-unlock"></i> Reopen for Correction
+                </button>
+              ` : ''}
             ` : ''}
           </div>
         </div>
@@ -20802,7 +21099,7 @@ const app = {
                     <tr>
                       <td><strong>${p.year_month}</strong></td>
                       <td>
-                        <span class="badge ${p.status === 'finalized' ? 'badge-success' : (p.status === 'provisional' ? 'badge-primary' : 'badge-warning')}">
+                        <span class="badge ${p.status === 'finalized' ? 'badge-success' : (p.status === 'approved' ? 'badge-info' : (p.status === 'reopened' ? 'badge-danger' : 'badge-warning'))}">
                           ${p.status.toUpperCase()}
                         </span>
                       </td>
@@ -20811,9 +21108,26 @@ const app = {
                       <td><strong style="color: #10b981;">₹${Number(p.total_paid || 0).toLocaleString()}</strong></td>
                       <td>${p.expected_payment_date || '1st of month'}</td>
                       <td>
-                        <button class="btn btn-secondary btn-sm" onclick="app.loadPayrollPeriodStatements(${p.id})">
-                          <i class="fa-solid fa-list"></i> View
-                        </button>
+                        <div style="display: flex; gap: 4px;">
+                          <button class="btn btn-secondary btn-sm" onclick="app.loadPayrollPeriodStatements(${p.id})">
+                            <i class="fa-solid fa-list"></i> View
+                          </button>
+                          ${p.status !== 'finalized' && p.status !== 'approved' ? `
+                            <button class="btn btn-info btn-sm" title="Approve Period" onclick="app.approvePayrollPeriod(${p.id}, '${p.year_month}')">
+                              <i class="fa-solid fa-check"></i>
+                            </button>
+                          ` : ''}
+                          ${p.status === 'approved' ? `
+                            <button class="btn btn-primary btn-sm" title="Finalize Period" onclick="app.finalizePayrollPeriod(${p.id}, '${p.year_month}')">
+                              <i class="fa-solid fa-lock"></i>
+                            </button>
+                          ` : ''}
+                          ${p.status === 'finalized' ? `
+                            <button class="btn btn-outline-danger btn-sm" title="Reopen Period" onclick="app.showReopenPayrollModal(${p.id}, '${p.year_month}')">
+                              <i class="fa-solid fa-unlock"></i>
+                            </button>
+                          ` : ''}
+                        </div>
                       </td>
                     </tr>
                   `).join('')}
@@ -20867,6 +21181,9 @@ const app = {
                       <td><span class="badge ${s.payment_status === 'paid' ? 'badge-success' : 'badge-warning'}">${s.payment_status}</span></td>
                       <td>
                         <div style="display: flex; gap: 4px;">
+                          <button class="btn btn-outline-info btn-sm" title="Detailed Payslip" onclick="app.showPayslipModal(${s.id})">
+                            <i class="fa-solid fa-file-invoice-dollar"></i> Slip
+                          </button>
                           <button class="btn btn-secondary btn-sm" title="Add Adjustment" onclick="app.showAddAdjustmentModal(${s.id}, '${s.employee_name}')">
                             <i class="fa-solid fa-plus"></i> Adj
                           </button>
@@ -20884,6 +21201,346 @@ const app = {
         </div>
       </div>
     `;
+  },
+
+  async loadPayrollPeriodStatements(periodId) {
+    const res = await this.apiRequest(`/api/academy/payroll/periods/${periodId}/statements`);
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to load period statements', 'danger');
+      return;
+    }
+
+    const { period, statements } = res;
+    const container = document.getElementById('payroll-statements-container');
+    if (!container) return;
+
+    container.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+        <h3 style="font-size: 15px; font-weight: 700; color: var(--text-heading);">
+          Staff Salary Statements (${period.year_month}) — Status: <span class="badge ${period.status === 'finalized' ? 'badge-success' : 'badge-warning'}">${period.status.toUpperCase()}</span>
+        </h3>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn btn-secondary btn-sm" onclick="app.recalculatePayrollPeriod(${period.id})">
+            <i class="fa-solid fa-arrows-rotate"></i> Recalculate
+          </button>
+          ${period.status !== 'finalized' && period.status !== 'approved' ? `
+            <button class="btn btn-info btn-sm" onclick="app.approvePayrollPeriod(${period.id}, '${period.year_month}')">
+              <i class="fa-solid fa-thumbs-up"></i> Approve
+            </button>
+          ` : ''}
+          ${period.status === 'approved' ? `
+            <button class="btn btn-primary btn-sm" onclick="app.finalizePayrollPeriod(${period.id}, '${period.year_month}')">
+              <i class="fa-solid fa-lock"></i> Finalize
+            </button>
+          ` : ''}
+          ${period.status === 'finalized' ? `
+            <button class="btn btn-outline-danger btn-sm" onclick="app.showReopenPayrollModal(${period.id}, '${period.year_month}')">
+              <i class="fa-solid fa-unlock"></i> Reopen
+            </button>
+          ` : ''}
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Salary Mode</th>
+              <th>Rate</th>
+              <th>Payable Units</th>
+              <th>Gross</th>
+              <th>Additions</th>
+              <th>Deductions</th>
+              <th>Net Salary</th>
+              <th>Paid</th>
+              <th>Balance</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${statements.length === 0 ? `
+              <tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 24px;">No statements generated yet for this period. Click Recalculate to generate.</td></tr>
+            ` : statements.map(s => `
+              <tr>
+                <td>
+                  <strong>${s.employee_name}</strong>
+                  <div style="font-size: 11px; color: var(--text-muted);">${s.employee_role}</div>
+                </td>
+                <td><span class="badge badge-purple">${s.salary_mode}</span></td>
+                <td>₹${s.applicable_rate}</td>
+                <td>${s.payable_units}</td>
+                <td>₹${Number(s.gross_earnings).toLocaleString()}</td>
+                <td style="color: #10b981;">+₹${Number(s.total_additions).toLocaleString()}</td>
+                <td style="color: #ef4444;">-₹${Number(s.total_deductions).toLocaleString()}</td>
+                <td><strong>₹${Number(s.net_earnings).toLocaleString()}</strong></td>
+                <td>₹${Number(s.paid_amount).toLocaleString()}</td>
+                <td><strong style="color: ${s.balance_amount > 0 ? '#f59e0b' : '#10b981'};">₹${Number(s.balance_amount).toLocaleString()}</strong></td>
+                <td><span class="badge ${s.payment_status === 'paid' ? 'badge-success' : 'badge-warning'}">${s.payment_status}</span></td>
+                <td>
+                  <div style="display: flex; gap: 4px;">
+                    <button class="btn btn-outline-info btn-sm" title="Detailed Payslip" onclick="app.showPayslipModal(${s.id})">
+                      <i class="fa-solid fa-file-invoice-dollar"></i> Slip
+                    </button>
+                    <button class="btn btn-secondary btn-sm" title="Add Adjustment" onclick="app.showAddAdjustmentModal(${s.id}, '${s.employee_name}')">
+                      <i class="fa-solid fa-plus"></i> Adj
+                    </button>
+                    <button class="btn btn-primary btn-sm" title="Record Payment" onclick="app.showRecordPaymentModal(${s.id}, '${s.employee_name}', ${s.balance_amount})">
+                      <i class="fa-solid fa-money-bill-wave"></i> Pay
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  async approvePayrollPeriod(periodId, yearMonth) {
+    if (!confirm(`Are you sure you want to approve payroll for ${yearMonth}? This certifies the attendance, leave records, and calculation numbers.`)) {
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/payroll/periods/${periodId}/approve`, { method: 'POST' });
+    if (res.success) {
+      this.showToast(res.message, 'success');
+      this.renderPayroll();
+    } else {
+      this.showToast(res.error || 'Failed to approve payroll', 'danger');
+    }
+  },
+
+  showReopenPayrollModal(periodId, yearMonth) {
+    this.openModal(`Reopen Finalized Payroll (${yearMonth})`, `
+      <form id="reopen-payroll-form" onsubmit="event.preventDefault(); app.submitReopenPayroll();">
+        <input type="hidden" id="reopen-period-id" value="${periodId}">
+        <div style="margin-bottom: 12px; font-size: 13px; color: var(--text-muted);">
+          Reopening this payroll period unlocks its statements for recalculations and adjustments. All adjustments and corrections will be logged with an immutable audit trail.
+        </div>
+        <div class="form-group">
+          <label style="font-weight: 600;">Reason for Reopening (Mandatory) <span style="color: #ef4444;">*</span></label>
+          <textarea id="reopen-reason" class="form-input" rows="3" required placeholder="State exact reason e.g., retro-active attendance correction, revised coach salary, pending leave approval..."></textarea>
+        </div>
+      </form>
+    `, `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="app.submitReopenPayroll()">
+        <i class="fa-solid fa-unlock"></i> Confirm & Reopen
+      </button>
+    `);
+  },
+
+  async submitReopenPayroll() {
+    const periodId = document.getElementById('reopen-period-id')?.value;
+    const reason = document.getElementById('reopen-reason')?.value?.trim();
+
+    if (!reason) {
+      this.showToast('Please provide a mandatory reason for reopening payroll.', 'warning');
+      return;
+    }
+
+    const res = await this.apiRequest(`/api/academy/payroll/periods/${periodId}/reopen`, {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast(res.message, 'success');
+      this.renderPayroll();
+    } else {
+      this.showToast(res.error || 'Failed to reopen payroll', 'danger');
+    }
+  },
+
+  async showPayslipModal(statementId) {
+    this.openModal(
+      'Official Employee Payslip',
+      '<div style="padding: 30px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>'
+    );
+
+    const res = await this.apiRequest(`/api/academy/payroll/statements/${statementId}/payslip`);
+    if (!res.success) {
+      this.showToast(res.error || 'Failed to load payslip', 'danger');
+      this.closeModal();
+      return;
+    }
+
+    const { statement, adjustments, payments, snapshot, academy } = res.payslip;
+    const att = snapshot?.attendance_summary || {};
+
+    const payslipHtml = `
+      <div id="printable-payslip" style="background: var(--bg-card); padding: 24px; border-radius: 8px; border: 1px solid var(--border); color: var(--text-main); font-family: 'Inter', sans-serif;">
+        <!-- Header -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid var(--border); padding-bottom: 16px; margin-bottom: 16px;">
+          <div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: var(--primary);">${this.escapeHtml(academy?.name || 'Sports Academy')}</h2>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Employee Salary Slip & Attendance Breakdown</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-heading);">PAYSLIP: ${statement.year_month}</div>
+            <span class="badge ${statement.period_status === 'finalized' ? 'badge-success' : 'badge-warning'}" style="margin-top: 4px;">
+              ${(statement.period_status || 'PROVISIONAL').toUpperCase()}
+            </span>
+          </div>
+        </div>
+
+        <!-- Employee Info Grid -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; background: var(--bg-main); padding: 14px; border-radius: 6px; margin-bottom: 18px; font-size: 13px;">
+          <div><strong>Employee:</strong> ${this.escapeHtml(statement.employee_name)}</div>
+          <div><strong>Role / Designation:</strong> ${this.escapeHtml(statement.employee_role)}</div>
+          <div><strong>Branch:</strong> ${this.escapeHtml(statement.branch_name || 'Main Campus')}</div>
+          <div><strong>Salary Mode:</strong> <span class="badge badge-purple">${statement.salary_mode}</span></div>
+          <div><strong>Base Rate:</strong> ₹${statement.applicable_rate}</div>
+          <div><strong>Period Dates:</strong> ${statement.period_start_date} to ${statement.period_end_date}</div>
+        </div>
+
+        <!-- Attendance & Days Breakdown -->
+        <h4 style="font-size: 13px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; color: var(--text-heading); letter-spacing: 0.5px;">
+          <i class="fa-solid fa-clock"></i> Attendance & Leave Accounting
+        </h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 20px;">
+          <div style="background: var(--bg-card); border: 1px solid var(--border); padding: 10px; border-radius: 6px; text-align: center;">
+            <div style="font-size: 11px; color: var(--text-muted);">Scheduled Days</div>
+            <div style="font-size: 16px; font-weight: 700;">${att.scheduledWorkingDays !== undefined ? att.scheduledWorkingDays : (snapshot?.scheduled_working_days || '-')}</div>
+          </div>
+          <div style="background: var(--bg-card); border: 1px solid var(--border); padding: 10px; border-radius: 6px; text-align: center;">
+            <div style="font-size: 11px; color: var(--text-muted);">Weekly Offs</div>
+            <div style="font-size: 16px; font-weight: 700; color: #64748b;">${att.weeklyOffs !== undefined ? att.weeklyOffs : '-'}</div>
+          </div>
+          <div style="background: var(--bg-card); border: 1px solid var(--border); padding: 10px; border-radius: 6px; text-align: center;">
+            <div style="font-size: 11px; color: var(--text-muted);">Paid Holidays</div>
+            <div style="font-size: 16px; font-weight: 700; color: #8b5cf6;">${att.holidays !== undefined ? att.holidays : '-'}</div>
+          </div>
+          <div style="background: var(--bg-card); border: 1px solid var(--border); padding: 10px; border-radius: 6px; text-align: center;">
+            <div style="font-size: 11px; color: var(--text-muted);">Days Worked</div>
+            <div style="font-size: 16px; font-weight: 700; color: #10b981;">${att.daysPresent !== undefined ? att.daysPresent : (statement.payable_units || '-')}</div>
+          </div>
+          <div style="background: var(--bg-card); border: 1px solid var(--border); padding: 10px; border-radius: 6px; text-align: center;">
+            <div style="font-size: 11px; color: var(--text-muted);">Paid Leave</div>
+            <div style="font-size: 16px; font-weight: 700; color: #0284c7;">${att.paidLeaves !== undefined ? att.paidLeaves : '-'}</div>
+          </div>
+          <div style="background: var(--bg-card); border: 1px solid var(--border); padding: 10px; border-radius: 6px; text-align: center;">
+            <div style="font-size: 11px; color: var(--text-muted);">Unpaid Leave</div>
+            <div style="font-size: 16px; font-weight: 700; color: #ef4444;">${att.unpaidLeaves !== undefined ? att.unpaidLeaves : '-'}</div>
+          </div>
+          <div style="background: var(--bg-card); border: 1px solid var(--border); padding: 10px; border-radius: 6px; text-align: center;">
+            <div style="font-size: 11px; color: var(--text-muted);">Overtime Hrs</div>
+            <div style="font-size: 16px; font-weight: 700; color: #f59e0b;">${att.totalOvertimeHours !== undefined ? att.totalOvertimeHours : (statement.overtime_hours || 0)}h</div>
+          </div>
+        </div>
+
+        <!-- Earnings & Deductions Tables -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+          <!-- Earnings -->
+          <div style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden;">
+            <div style="background: var(--bg-main); padding: 8px 12px; font-weight: 700; font-size: 13px; color: #10b981;">
+              EARNINGS / ADDITIONS
+            </div>
+            <div style="padding: 12px; font-size: 13px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span>Base Gross Earnings:</span>
+                <strong>₹${Number(statement.gross_earnings).toLocaleString()}</strong>
+              </div>
+              ${statement.overtime_pay > 0 ? `
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: #10b981;">
+                  <span>Approved Overtime Pay:</span>
+                  <span>+₹${Number(statement.overtime_pay).toLocaleString()}</span>
+                </div>
+              ` : ''}
+              ${adjustments.filter(a => a.type === 'addition').map(a => `
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: #10b981;">
+                  <span>${this.escapeHtml(a.category)} (${this.escapeHtml(a.reason)}):</span>
+                  <span>+₹${Number(a.amount).toLocaleString()}</span>
+                </div>
+              `).join('')}
+              <div style="display: flex; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; font-weight: 700;">
+                <span>Total Gross:</span>
+                <span style="color: #10b981;">₹${(Number(statement.gross_earnings) + Number(statement.total_additions)).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Deductions -->
+          <div style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden;">
+            <div style="background: var(--bg-main); padding: 8px 12px; font-weight: 700; font-size: 13px; color: #ef4444;">
+              DEDUCTIONS
+            </div>
+            <div style="padding: 12px; font-size: 13px;">
+              ${adjustments.filter(a => a.type === 'deduction').length === 0 ? `
+                <div style="color: var(--text-muted); font-size: 12px; padding: 8px 0;">No deductions recorded for this cycle.</div>
+              ` : adjustments.filter(a => a.type === 'deduction').map(a => `
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: #ef4444;">
+                  <span>${this.escapeHtml(a.category)} (${this.escapeHtml(a.reason)}):</span>
+                  <span>-₹${Number(a.amount).toLocaleString()}</span>
+                </div>
+              `).join('')}
+              <div style="display: flex; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; font-weight: 700;">
+                <span>Total Deductions:</span>
+                <span style="color: #ef4444;">-₹${Number(statement.total_deductions).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Net Payable Summary -->
+        <div style="background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(14,165,233,0.08)); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 15px; font-weight: 700;">Net Salary Payable:</span>
+            <span style="font-size: 20px; font-weight: 800; color: var(--primary);">₹${Number(statement.net_earnings).toLocaleString()}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted);">
+            <span>Disbursed Amount: <strong style="color: #10b981;">₹${Number(statement.paid_amount).toLocaleString()}</strong></span>
+            <span>Outstanding Balance: <strong style="color: ${statement.balance_amount > 0 ? '#f59e0b' : '#10b981'};">₹${Number(statement.balance_amount).toLocaleString()}</strong></span>
+          </div>
+        </div>
+
+        <!-- Payment History Table -->
+        ${payments.length > 0 ? `
+          <h4 style="font-size: 13px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; color: var(--text-heading);">
+            Disbursement Transactions
+          </h4>
+          <table class="custom-table" style="font-size: 12px; margin-bottom: 16px;">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Method</th>
+                <th>Reference #</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${payments.map(p => `
+                <tr>
+                  <td>${p.payment_date}</td>
+                  <td><strong style="color: #10b981;">₹${Number(p.amount).toLocaleString()}</strong></td>
+                  <td><span class="badge badge-secondary">${p.payment_method}</span></td>
+                  <td>${p.reference_number || '-'}</td>
+                  <td>${this.escapeHtml(p.notes || '-')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : ''}
+
+        <div style="text-align: center; margin-top: 20px; font-size: 11px; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 12px;">
+          This is an official computer-generated document from ${this.escapeHtml(academy?.name || 'Sports Solutions')}. No physical signature required.
+        </div>
+      </div>
+    `;
+
+    const footerHtml = `
+      <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+      <button class="btn btn-primary" onclick="window.print()">
+        <i class="fa-solid fa-print"></i> Print / Save PDF
+      </button>
+    `;
+
+    this.openModal(`Employee Payslip — ${statement.employee_name}`, payslipHtml, footerHtml);
   },
 
   async recalculatePayrollPeriod(periodId) {

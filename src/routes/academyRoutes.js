@@ -15,6 +15,7 @@ import { UserService } from '../services/userService.js';
 import { InquiryService } from '../services/inquiryService.js';
 import { AutoApprovalService } from '../services/autoApprovalService.js';
 import { StorageService } from '../services/storageService.js';
+import { LeaveService } from '../services/leaveService.js';
 import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
 import bcrypt from 'bcryptjs';
 
@@ -4564,13 +4565,75 @@ academyRouter.post('/fees/payments/:id/reverse', (req, res) => {
 // LEAVES, BRANCHES, SPORTS, AUDIT, BACKUP
 // ==========================================
 
+// ==========================================
+// LEAVE POLICIES, BALANCES & REQUESTS
+// ==========================================
+
+/**
+ * GET /api/academy/leaves/policies
+ */
+academyRouter.get('/leaves/policies', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const policies = LeaveService.getPolicies(db, req.academy.id, req.query.branch_id || null);
+    res.json({ success: true, policies });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/leaves/policies
+ */
+academyRouter.post('/leaves/policies', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
+    }
+    const result = LeaveService.savePolicy(db, req.academy.id, req.body, req.user.userId);
+    res.json({ success: true, message: 'Leave policy saved successfully', ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/leaves/my-balances
+ */
+academyRouter.get('/leaves/my-balances', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+    const balances = LeaveService.getBalances(db, req.academy.id, req.user.userId, year);
+    res.json({ success: true, balances });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/leaves/balances
+ */
+academyRouter.get('/leaves/balances', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+    const userId = req.query.user_id ? Number(req.query.user_id) : req.user.userId;
+    const balances = LeaveService.getBalances(db, req.academy.id, userId, year);
+    res.json({ success: true, balances });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 /**
  * GET /api/academy/leaves
  */
 academyRouter.get('/leaves', (req, res) => {
   try {
     const db = req.tenantDb;
-    const { status, applicant_type, search, page, limit } = req.query;
+    const { status, applicant_type, leave_type, user_id, search, page, limit } = req.query;
 
     let baseQuery = `FROM leave_requests WHERE 1=1`;
     const params = [];
@@ -4582,6 +4645,14 @@ academyRouter.get('/leaves', (req, res) => {
     if (applicant_type) {
       baseQuery += ` AND applicant_type = ?`;
       params.push(applicant_type);
+    }
+    if (leave_type) {
+      baseQuery += ` AND leave_type = ?`;
+      params.push(leave_type);
+    }
+    if (user_id) {
+      baseQuery += ` AND (user_id = ? OR applicant_id = ?)`;
+      params.push(Number(user_id), Number(user_id));
     }
     if (search) {
       baseQuery += ` AND (applicant_name LIKE ? OR reason LIKE ? OR reviewer_comments LIKE ?)`;
@@ -4619,72 +4690,63 @@ academyRouter.get('/leaves', (req, res) => {
 
 /**
  * POST /api/academy/leaves
- * Apply or record a leave request for self (admin/staff) or on behalf of coach/student
+ * Apply or record a leave request with balance verification and overlapping check
  */
 academyRouter.post('/leaves', (req, res) => {
   try {
     const db = req.tenantDb;
-    const { applicant_type, applicant_id, applicant_name, start_date, end_date, reason, status, reviewer_comments } = req.body;
-
-    if (!start_date || !end_date || !reason) {
-      return res.status(400).json({ success: false, error: 'Start date, end date, and reason are required' });
-    }
-
-    const appType = applicant_type || 'staff';
-    const appId = Number(applicant_id) || req.user.userId;
-    const appName = applicant_name || req.user.name || 'Staff Member';
-    const leaveStatus = status === 'approved' ? 'approved' : 'pending';
-
-    const insertResult = db.prepare(`
-      INSERT INTO leave_requests (
-        applicant_type, applicant_id, applicant_name, start_date, end_date, reason, status,
-        reviewed_by, reviewed_at, reviewer_comments
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      appType,
-      appId,
-      appName,
-      start_date,
-      end_date,
-      reason,
-      leaveStatus,
-      leaveStatus === 'approved' ? req.user.userId : null,
-      leaveStatus === 'approved' ? new Date().toISOString() : null,
-      leaveStatus === 'approved' ? (reviewer_comments || 'Approved by Academy Admin') : null
-    );
-
-    res.json({
+    const result = LeaveService.applyLeave(db, req.academy.id, req.body, req.user.userId);
+    res.status(201).json({
       success: true,
-      message: leaveStatus === 'approved' ? 'Leave request created and approved successfully' : 'Leave request submitted successfully',
-      leaveId: insertResult.lastInsertRowid
+      message: result.status === 'approved' ? 'Leave request created and approved successfully' : 'Leave request submitted successfully',
+      ...result,
+      leaveId: result.leaveId
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
 /**
  * PUT /api/academy/leaves/:id
+ * Review leave (approve/reject)
  */
 academyRouter.put('/leaves/:id', (req, res) => {
   try {
     const db = req.tenantDb;
-    const { status, reviewer_comments } = req.body;
     const id = Number(req.params.id);
+    const { status, reviewer_comments } = req.body;
+
+    if (status === 'approved' || status === 'rejected') {
+      const result = LeaveService.reviewLeave(db, req.academy.id, id, status, reviewer_comments, req.user.userId);
+      return res.json({ success: true, message: `Leave request ${status}`, ...result });
+    }
 
     db.prepare(`
       UPDATE leave_requests
-      SET status = ?,
-          reviewer_comments = ?,
-          reviewed_by = ?,
-          reviewed_at = CURRENT_TIMESTAMP
+      SET reviewer_comments = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(status, reviewer_comments || null, req.user.userId, id);
+    `).run(reviewer_comments || null, req.user.userId, id);
 
-    res.json({ success: true, message: `Leave request ${status}` });
+    res.json({ success: true, message: 'Leave request updated' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/leaves/:id/cancel
+ * Cancel a leave request and restore balance if approved
+ */
+academyRouter.post('/leaves/:id/cancel', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const { reason } = req.body;
+    const result = LeaveService.cancelLeave(db, req.academy.id, id, reason || 'Cancelled by applicant', req.user.userId);
+    res.json({ success: true, message: 'Leave request cancelled successfully', ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
@@ -4695,9 +4757,7 @@ academyRouter.delete('/leaves/:id', (req, res) => {
   try {
     const db = req.tenantDb;
     const id = Number(req.params.id);
-
     db.prepare('DELETE FROM leave_requests WHERE id = ?').run(id);
-
     res.json({ success: true, message: 'Leave request deleted successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -5643,6 +5703,154 @@ academyRouter.post('/payroll/periods/:id/finalize', (req, res) => {
 });
 
 /**
+ * POST /api/academy/payroll/periods/:id/approve
+ * Approves a payroll period before finalization
+ */
+academyRouter.post('/payroll/periods/:id/approve', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required to approve payroll.' });
+    }
+    const periodId = Number(req.params.id);
+    const result = PayrollService.approvePayrollPeriod(db, periodId, req.user.userId);
+    res.json({ success: true, message: `Payroll period ${result.yearMonth} approved successfully`, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/payroll/periods/:id/reopen
+ * Reopens a finalized payroll period through an authorized correction workflow
+ */
+academyRouter.post('/payroll/periods/:id/reopen', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required to reopen payroll.' });
+    }
+    const periodId = Number(req.params.id);
+    const { reason } = req.body;
+    const result = PayrollService.reopenPayrollPeriod(db, periodId, reason, req.user.userId);
+    res.json({ success: true, message: `Payroll period ${result.yearMonth} reopened for authorized correction`, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/payroll/statements/:id/payslip
+ * Printable payslip data with attendance summary, earnings breakdown, deductions & payment history
+ */
+academyRouter.get('/payroll/statements/:id/payslip', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const statementId = Number(req.params.id);
+
+    const statement = db.prepare(`
+      SELECT s.*,
+             u.name as employee_name,
+             u.email as employee_email,
+             u.role as employee_role,
+             b.name as branch_name,
+             p.year_month,
+             p.start_date as period_start_date,
+             p.end_date as period_end_date,
+             p.status as period_status
+      FROM staff_salary_statements s
+      JOIN users u ON s.user_id = u.id
+      JOIN staff_payroll_periods p ON s.payroll_period_id = p.id
+      LEFT JOIN branches b ON u.branch_id = b.id
+      WHERE s.id = ?
+    `).get(statementId);
+
+    if (!statement) {
+      return res.status(404).json({ success: false, error: 'Salary statement not found' });
+    }
+
+    const isSelf = req.user.userId === statement.user_id;
+    const isManager = req.user.isSuperAdmin || req.user.role === 'academy_admin' || (req.user.permissions && req.user.permissions.includes('view_coaches'));
+    if (!isSelf && !isManager) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to view this payslip' });
+    }
+
+    const adjustments = db.prepare(`
+      SELECT * FROM staff_salary_adjustments
+      WHERE statement_id = ?
+      ORDER BY created_at ASC
+    `).all(statementId);
+
+    const payments = db.prepare(`
+      SELECT * FROM staff_salary_payments
+      WHERE statement_id = ?
+      ORDER BY payment_date ASC
+    `).all(statementId);
+
+    let snapshot = null;
+    if (statement.calculation_snapshot) {
+      try {
+        snapshot = JSON.parse(statement.calculation_snapshot);
+      } catch (_) {}
+    }
+
+    res.json({
+      success: true,
+      payslip: {
+        statement,
+        adjustments,
+        payments,
+        snapshot,
+        academy: {
+          name: req.academy.name,
+          slug: req.academy.slug,
+        }
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/payroll/audit-logs
+ * Retrieves payroll audit trail history
+ */
+academyRouter.get('/payroll/audit-logs', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Admin privileges required' });
+    }
+
+    const { period_id, user_id } = req.query;
+    let query = `
+      SELECT al.*, u.name as actor_name, u.email as actor_email
+      FROM payroll_audit_logs al
+      LEFT JOIN users u ON al.actor_id = u.id
+      WHERE al.academy_id = ?
+    `;
+    const params = [req.academy.id];
+
+    if (period_id) {
+      query += ` AND al.entity_type = 'payroll_period' AND al.entity_id = ?`;
+      params.push(Number(period_id));
+    }
+    if (user_id) {
+      query += ` AND al.entity_type = 'salary_statement' AND al.entity_id = ?`;
+      params.push(Number(user_id));
+    }
+
+    query += ` ORDER BY al.created_at DESC LIMIT 100`;
+
+    const logs = db.prepare(query).all(...params);
+    res.json({ success: true, logs });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * POST /api/academy/payroll/statements/:id/adjustments
  * Adds an itemized addition (bonus/overtime) or deduction (unpaid leave/penalty)
  */
@@ -5790,8 +5998,130 @@ academyRouter.post('/payroll/profiles', (req, res) => {
 });
 
 // ==========================================
-// EMPLOYEE-SPECIFIC WORK SCHEDULES & COMPENSATION POLICIES
+// WORK SCHEDULES & COMPENSATION POLICIES
 // ==========================================
+
+/**
+ * GET /api/academy/schedules/branch/:branchId
+ * Returns branch working schedule and weekly off rules
+ */
+academyRouter.get('/schedules/branch/:branchId', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const branchId = Number(req.params.branchId);
+    const dateStr = req.query.date || new Date().toISOString().split('T')[0];
+
+    const schedule = ScheduleService.getBranchSchedule(db, branchId, dateStr);
+    res.json({ success: true, schedule });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/schedules/branch/:branchId
+ * Configures branch working schedule with weekly off rules and shifts
+ */
+academyRouter.post('/schedules/branch/:branchId', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
+    }
+
+    const branchId = Number(req.params.branchId);
+    const { schedule_name, effective_from, effective_to, notes, days } = req.body;
+
+    if (!Array.isArray(days) || days.length === 0) {
+      return res.status(400).json({ success: false, error: 'Day-wise schedule configuration is required.' });
+    }
+
+    const result = ScheduleService.saveBranchSchedule(
+      db,
+      req.academy.id,
+      branchId,
+      { schedule_name, effective_from, effective_to, notes },
+      days,
+      req.user.userId
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Branch working schedule configured successfully',
+      ...result,
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/schedules/work-exceptions
+ * Lists authorized work exceptions (work on weekly off or holiday)
+ */
+academyRouter.get('/schedules/work-exceptions', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { user_id, branch_id, date, month } = req.query;
+
+    let query = `
+      SELECT we.*, u.name as user_name, u.role as user_role, b.name as branch_name,
+             approver.name as approver_name
+      FROM employee_work_exceptions we
+      JOIN users u ON we.user_id = u.id
+      LEFT JOIN branches b ON we.branch_id = b.id
+      LEFT JOIN users approver ON we.approved_by = approver.id
+      WHERE we.academy_id = ?
+    `;
+    const params = [req.academy.id];
+
+    if (user_id) {
+      query += ` AND we.user_id = ?`;
+      params.push(Number(user_id));
+    }
+    if (branch_id) {
+      query += ` AND we.branch_id = ?`;
+      params.push(Number(branch_id));
+    }
+    if (date) {
+      query += ` AND we.date = ?`;
+      params.push(date);
+    }
+    if (month) {
+      query += ` AND strftime('%Y-%m', we.date) = ?`;
+      params.push(month);
+    }
+
+    query += ` ORDER BY we.date DESC`;
+
+    const exceptions = db.prepare(query).all(...params);
+    res.json({ success: true, exceptions });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/schedules/work-exceptions
+ * Records an authorized work exception with comp-off or overtime compensation
+ */
+academyRouter.post('/schedules/work-exceptions', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
+    }
+
+    const result = ScheduleService.recordWorkException(db, req.academy.id, req.body, req.user.userId);
+    res.status(201).json({
+      success: true,
+      message: 'Work exception recorded successfully',
+      ...result,
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
 
 /**
  * GET /api/academy/schedules/employee/:userId
@@ -6134,7 +6464,19 @@ academyRouter.post('/holidays', (req, res) => {
       return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
     }
 
-    const { holiday_date, start_date, end_date, name, branch_id, is_paid = 1, description } = req.body;
+    const {
+      holiday_date,
+      start_date,
+      end_date,
+      name,
+      branch_id,
+      is_paid = 1,
+      category = 'public',
+      is_closed = 1,
+      is_recurring = 0,
+      description,
+    } = req.body;
+
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, error: 'Holiday name is required' });
     }
@@ -6158,15 +6500,39 @@ academyRouter.post('/holidays', (req, res) => {
     }
 
     const ins = db.prepare(`
-      INSERT INTO academy_holidays (academy_id, branch_id, holiday_date, name, is_paid, description)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO academy_holidays (
+        academy_id, branch_id, holiday_date, end_date, name, category,
+        is_paid, is_closed, is_recurring, status, description, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
     `);
 
     let lastId = null;
+    let addedCount = 0;
     const insertMany = db.transaction((dateList) => {
       for (const d of dateList) {
-        const result = ins.run(req.academy.id, branch_id || null, d, name.trim(), is_paid ? 1 : 0, description || null);
-        lastId = result.lastInsertRowid;
+        // Prevent accidental duplicate holidays on the same date for the same branch/academy
+        const exists = db.prepare(`
+          SELECT id FROM academy_holidays
+          WHERE academy_id = ? AND (branch_id = ? OR (branch_id IS NULL AND ? IS NULL)) AND holiday_date = ? AND name = ?
+        `).get(req.academy.id, branch_id || null, branch_id || null, d, name.trim());
+
+        if (!exists) {
+          const result = ins.run(
+            req.academy.id,
+            branch_id || null,
+            d,
+            end_date || null,
+            name.trim(),
+            category || 'public',
+            is_paid ? 1 : 0,
+            is_closed !== undefined ? (is_closed ? 1 : 0) : 1,
+            is_recurring ? 1 : 0,
+            description || null,
+            req.user.userId
+          );
+          lastId = result.lastInsertRowid;
+          addedCount++;
+        }
       }
     });
 
@@ -6174,11 +6540,82 @@ academyRouter.post('/holidays', (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: dates.length > 1
-        ? `Added ${dates.length} holiday days for '${name.trim()}'`
+      message: addedCount > 1
+        ? `Added ${addedCount} holiday days for '${name.trim()}'`
         : `Holiday '${name.trim()}' added successfully`,
       holidayId: lastId,
-      daysCount: dates.length,
+      daysCount: addedCount,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/holidays/populate-recurring
+ * Generates dated holiday records for a target year from configured recurring holidays
+ */
+academyRouter.post('/holidays/populate-recurring', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
+    }
+
+    const targetYear = Number(req.body.target_year || new Date().getFullYear());
+    const recurringHolidays = db.prepare(`
+      SELECT * FROM academy_holidays
+      WHERE academy_id = ? AND is_recurring = 1
+    `).all(req.academy.id);
+
+    let generatedCount = 0;
+    const ins = db.prepare(`
+      INSERT INTO academy_holidays (
+        academy_id, branch_id, holiday_date, end_date, name, category,
+        is_paid, is_closed, is_recurring, status, description, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'approved', ?, ?)
+    `);
+
+    db.transaction(() => {
+      for (const h of recurringHolidays) {
+        const origDate = h.holiday_date;
+        const mmdd = origDate.slice(5);
+        const newDate = `${targetYear}-${mmdd}`;
+
+        let newEndDate = null;
+        if (h.end_date) {
+          const endMmdd = h.end_date.slice(5);
+          newEndDate = `${targetYear}-${endMmdd}`;
+        }
+
+        const exists = db.prepare(`
+          SELECT id FROM academy_holidays
+          WHERE academy_id = ? AND holiday_date = ? AND name = ?
+        `).get(req.academy.id, newDate, h.name);
+
+        if (!exists) {
+          ins.run(
+            req.academy.id,
+            h.branch_id || null,
+            newDate,
+            newEndDate,
+            h.name,
+            h.category || 'public',
+            h.is_paid !== undefined ? h.is_paid : 1,
+            h.is_closed !== undefined ? h.is_closed : 1,
+            h.description || null,
+            req.user.userId
+          );
+          generatedCount++;
+        }
+      }
+    })();
+
+    res.json({
+      success: true,
+      message: `Generated ${generatedCount} recurring holidays for year ${targetYear}`,
+      targetYear,
+      generatedCount
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -6202,8 +6639,10 @@ academyRouter.post('/holidays/batch', (req, res) => {
     }
 
     const ins = db.prepare(`
-      INSERT INTO academy_holidays (academy_id, branch_id, holiday_date, name, is_paid, description)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO academy_holidays (
+        academy_id, branch_id, holiday_date, end_date, name, category,
+        is_paid, is_closed, is_recurring, status, description, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
     `);
 
     let count = 0;
@@ -6221,9 +6660,14 @@ academyRouter.post('/holidays/batch', (req, res) => {
             req.academy.id,
             branchVal,
             h.holiday_date,
+            h.end_date || null,
             h.name.trim(),
+            h.category || 'public',
             h.is_paid !== undefined ? (h.is_paid ? 1 : 0) : 1,
-            h.description || null
+            h.is_closed !== undefined ? (h.is_closed ? 1 : 0) : 1,
+            h.is_recurring ? 1 : 0,
+            h.description || null,
+            req.user.userId
           );
           count++;
         }
@@ -6253,20 +6697,40 @@ academyRouter.put('/holidays/:id', (req, res) => {
       return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
     }
 
-    const { holiday_date, name, branch_id, is_paid = 1, description } = req.body;
+    const {
+      holiday_date,
+      end_date,
+      name,
+      branch_id,
+      is_paid,
+      category,
+      is_closed,
+      is_recurring,
+      description
+    } = req.body;
+
     db.prepare(`
       UPDATE academy_holidays 
       SET holiday_date = COALESCE(?, holiday_date),
+          end_date = COALESCE(?, end_date),
           name = COALESCE(?, name),
           branch_id = ?,
-          is_paid = ?,
-          description = ?
+          is_paid = COALESCE(?, is_paid),
+          category = COALESCE(?, category),
+          is_closed = COALESCE(?, is_closed),
+          is_recurring = COALESCE(?, is_recurring),
+          description = ?,
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND academy_id = ?
     `).run(
       holiday_date || null,
+      end_date || null,
       name ? name.trim() : null,
       branch_id !== undefined ? (branch_id || null) : null,
-      is_paid ? 1 : 0,
+      is_paid !== undefined ? (is_paid ? 1 : 0) : null,
+      category || null,
+      is_closed !== undefined ? (is_closed ? 1 : 0) : null,
+      is_recurring !== undefined ? (is_recurring ? 1 : 0) : null,
       description !== undefined ? description : null,
       Number(req.params.id),
       req.academy.id
