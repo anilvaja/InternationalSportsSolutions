@@ -327,7 +327,14 @@ const payApp = {
     doc.setTextColor(224, 231, 255);
     const addressLine = `${academyAddress ? academyAddress + ', ' : ''}${academyCity}, India`;
     doc.text(addressLine, 44, 26);
-    const subMeta = `${academyGst ? 'GSTIN: ' + academyGst + '  |  ' : ''}SAC: 999293 (Sports Coaching)  |  Official Receipt`;
+    const hasDiscount = discountAmount > 0;
+    const hasGst = taxAmount > 0;
+
+    const subMetaParts = [];
+    if (hasGst && academyGst) subMetaParts.push(`GSTIN: ${academyGst}`);
+    if (hasGst) subMetaParts.push('SAC: 999293 (Sports Coaching)');
+    subMetaParts.push('Official Receipt');
+    const subMeta = subMetaParts.join('  |  ');
     doc.text(subMeta, 44, 32);
 
     // 3. Receipt Sub-Header Banner
@@ -339,7 +346,7 @@ const payApp = {
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
-    doc.text('OFFICIAL FEE PAYMENT RECEIPT & TAX INVOICE', 14, 49);
+    doc.text(hasGst ? 'OFFICIAL FEE PAYMENT RECEIPT & TAX INVOICE' : 'OFFICIAL FEE PAYMENT RECEIPT', 14, 49);
 
     // Paid Stamp Pill
     const isPaid = balanceAmount <= 0;
@@ -424,24 +431,45 @@ const payApp = {
       doc.text(`Next Due: ${nextInstallmentDate}`, 112, 96);
     }
 
-    // 5. Itemized Fee Breakdown Table (Use INR prefix instead of unicode rupee to prevent character corruption in jsPDF)
-    const tableBody = [
-      [
-        '1',
-        `Curriculum Coaching & Training Tuition\nCoverage: ${periodStart} to ${periodEnd} (${monthsCount} Month${monthsCount > 1 ? 's' : ''})`,
-        `INR ${(baseFee || netAmount || amount).toLocaleString('en-IN')}`,
-        discountAmount > 0 
-          ? `-INR ${discountAmount.toLocaleString('en-IN')} (${discountPercentage}%${discountReason ? ' - ' + discountReason : ''})` 
-          : 'None',
-        taxAmount > 0 ? `INR ${taxAmount.toLocaleString('en-IN')}` : 'Exempt / Incl.',
-        `INR ${(netAmount || amount).toLocaleString('en-IN')}`
-      ]
+    // 5. Itemized Fee Breakdown Table (Dynamic headers: only show Discount or GST if applied)
+    const tableHeaders = ['#', 'Fee Item & Coverage Period', (hasDiscount || hasGst ? 'Base Fee' : 'Tuition Fee')];
+    const tableRow = [
+      '1',
+      `Curriculum Coaching & Training Tuition\nCoverage: ${periodStart} to ${periodEnd} (${monthsCount} Month${monthsCount > 1 ? 's' : ''})`,
+      `INR ${(baseFee || netAmount || amount).toLocaleString('en-IN')}`
     ];
+    const colStyles = {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 70 },
+      2: { cellWidth: 28, halign: 'right' }
+    };
+
+    let colIdx = 3;
+    if (hasDiscount) {
+      tableHeaders.push('Concession / Discount');
+      tableRow.push(`-INR ${discountAmount.toLocaleString('en-IN')}${discountPercentage > 0 ? ` (${discountPercentage}%)` : ''}`);
+      colStyles[colIdx] = { cellWidth: 38, halign: 'right', textColor: [185, 28, 28] };
+      colIdx++;
+    }
+
+    if (hasGst) {
+      tableHeaders.push('GST (18%)');
+      tableRow.push(`INR ${taxAmount.toLocaleString('en-IN')}`);
+      colStyles[colIdx] = { cellWidth: 24, halign: 'right', textColor: [37, 99, 235] };
+      colIdx++;
+    }
+
+    tableHeaders.push('Net Payable');
+    tableRow.push(`INR ${(netAmount || amount).toLocaleString('en-IN')}`);
+    colStyles[colIdx] = { cellWidth: 28, halign: 'right', fontStyle: 'bold' };
+
+    const nonDescWidth = Object.keys(colStyles).filter(k => k !== '1').reduce((sum, k) => sum + colStyles[k].cellWidth, 0);
+    colStyles[1].cellWidth = Math.max(50, 182 - nonDescWidth);
 
     doc.autoTable({
       startY: 104,
-      head: [['#', 'Fee Item & Coverage Period', 'Base Fee', 'Concession / Discount', 'GST (18%)', 'Net Payable']],
-      body: tableBody,
+      head: [tableHeaders],
+      body: [tableRow],
       theme: 'grid',
       headStyles: {
         fillColor: [30, 41, 59],
@@ -458,14 +486,7 @@ const payApp = {
         lineColor: [226, 232, 240],
         lineWidth: 0.2
       },
-      columnStyles: {
-        0: { cellWidth: 10, halign: 'center' },
-        1: { cellWidth: 70 },
-        2: { cellWidth: 26, halign: 'right' },
-        3: { cellWidth: 38, halign: 'right', textColor: discountAmount > 0 ? [185, 28, 28] : [100, 116, 139] },
-        4: { cellWidth: 22, halign: 'right' },
-        5: { cellWidth: 26, halign: 'right', fontStyle: 'bold' }
-      }
+      columnStyles: colStyles
     });
 
     const finalY = doc.lastAutoTable.finalY + 4;
@@ -473,43 +494,59 @@ const payApp = {
     // 6. Summary Totals Box (Right Aligned)
     const totalsX = 118;
     const totalsWidth = 78;
-    doc.setFillColor(248, 250, 252);
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(totalsX, finalY, totalsWidth, 38, 2, 2, 'FD');
 
+    let curY = finalY + 6;
     doc.setFontSize(8.5);
     doc.setTextColor(100, 116, 139);
     doc.setFont('helvetica', 'normal');
-    doc.text('Base Tuition Fee:', totalsX + 4, finalY + 7);
+    doc.text((hasDiscount || hasGst) ? 'Base Tuition Fee:' : 'Total Tuition Fee:', totalsX + 4, curY);
     doc.setTextColor(30, 41, 59);
-    doc.text(`INR ${(baseFee || netAmount || amount).toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + 7, { align: 'right' });
+    doc.text(`INR ${(baseFee || netAmount || amount).toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY, { align: 'right' });
 
-    if (discountAmount > 0) {
+    if (hasDiscount) {
+      curY += 6;
       doc.setTextColor(220, 38, 38);
-      doc.text(`Discount (${discountPercentage}%):`, totalsX + 4, finalY + 13);
-      doc.text(`-INR ${discountAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + 13, { align: 'right' });
+      doc.text(`Discount (${discountPercentage}%):`, totalsX + 4, curY);
+      doc.text(`-INR ${discountAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY, { align: 'right' });
     }
 
-    doc.setTextColor(100, 116, 139);
-    doc.text('Total Net Fee:', totalsX + 4, finalY + (discountAmount > 0 ? 19 : 14));
-    doc.setTextColor(30, 41, 59);
-    doc.text(`INR ${(netAmount || amount).toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + (discountAmount > 0 ? 19 : 14), { align: 'right' });
+    if (hasGst) {
+      curY += 6;
+      doc.setTextColor(37, 99, 235);
+      doc.text('GST (18%):', totalsX + 4, curY);
+      doc.text(`+INR ${taxAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY, { align: 'right' });
+    }
+
+    if (hasDiscount || hasGst) {
+      curY += 6;
+      doc.setTextColor(100, 116, 139);
+      doc.text('Total Net Fee:', totalsX + 4, curY);
+      doc.setTextColor(30, 41, 59);
+      doc.text(`INR ${(netAmount || amount).toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY, { align: 'right' });
+    }
 
     // Amount Paid Highlight Row
+    curY += 5;
     doc.setFillColor(240, 253, 244); // Green 50
-    doc.rect(totalsX, finalY + 24, totalsWidth, 7, 'F');
+    doc.rect(totalsX, curY - 3.5, totalsWidth, 7, 'F');
     doc.setTextColor(21, 128, 61); // Green 700
     doc.setFont('helvetica', 'bold');
-    doc.text('Amount Paid (This Receipt):', totalsX + 4, finalY + 29);
-    doc.text(`INR ${Number(amount).toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, finalY + 29, { align: 'right' });
+    doc.text('Amount Paid (This Receipt):', totalsX + 4, curY + 1.2);
+    doc.text(`INR ${Number(amount).toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY + 1.2, { align: 'right' });
 
+    curY += 7.5;
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
     doc.setFontSize(8);
-    doc.text('Remaining Balance:', totalsX + 4, finalY + 35);
+    doc.text('Remaining Balance:', totalsX + 4, curY);
     doc.setTextColor(balanceAmount > 0 ? 185 : 21, balanceAmount > 0 ? 28 : 128, balanceAmount > 0 ? 28 : 61);
     doc.setFont('helvetica', 'bold');
-    doc.text(balanceAmount > 0 ? `INR ${balanceAmount.toLocaleString('en-IN')}` : 'INR 0.00 (Fully Paid)', totalsX + totalsWidth - 4, finalY + 35, { align: 'right' });
+    doc.text(balanceAmount > 0 ? `INR ${balanceAmount.toLocaleString('en-IN')}` : 'INR 0.00 (Fully Paid)', totalsX + totalsWidth - 4, curY, { align: 'right' });
+
+    // Draw outer boundary of totals box
+    const boxHeight = (curY + 4) - finalY;
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(totalsX, finalY, totalsWidth, boxHeight, 2, 2, 'D');
 
     // 7. Security Stamp & Authorized Seal (Bottom Left)
     const sealY = finalY;
