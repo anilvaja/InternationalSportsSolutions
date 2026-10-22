@@ -247,7 +247,7 @@ publicRouter.all('/setup', (req, res) => {
         superAdminEmail: existingSuperAdmin.email,
         loginCredentials: {
           superAdmin: { email: 'anilvaja.007@gmail.com', password: 'password' },
-          academyAdmin: { email: 'john.smith@mahavirsportsacademy.com', password: 'password123' },
+          academyAdmin: { email: 'john.smith@mahavirsportsacademy.com (or admin@mahavir.com)', password: 'password123' },
           student: { email: 'aarav.patel@student.com', password: 'password123' },
         },
         loginUrl: '/',
@@ -263,7 +263,7 @@ publicRouter.all('/setup', (req, res) => {
       initialized: true,
       loginCredentials: {
         superAdmin: { email: 'anilvaja.007@gmail.com', password: 'password' },
-        academyAdmin: { email: 'john.smith@mahavirsportsacademy.com', password: 'password123' },
+        academyAdmin: { email: 'john.smith@mahavirsportsacademy.com (or admin@mahavir.com)', password: 'password123' },
         student: { email: 'aarav.patel@student.com', password: 'password123' },
       },
       loginUrl: '/',

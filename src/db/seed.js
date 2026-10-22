@@ -258,13 +258,15 @@ export function runSeed() {
 function seedMahavirAcademyData(academyId, passwordHash) {
   const db = getTenantDbById(academyId);
 
-  // 1. Additional Staff
+  // 1. Additional Staff & Admins
   const insertUser = db.prepare('INSERT OR IGNORE INTO users (name, email, password_hash, role, phone, status) VALUES (?, ?, ?, ?, ?, ?)');
+  insertUser.run('Mahavir Admin', 'admin@mahavir.com', passwordHash, 'academy_admin', '+91 98250 11111', 'active');
   insertUser.run('Sarah Johnson', 'sarah.johnson@mahavirsportsacademy.com', passwordHash, 'academy_staff', '+91 98250 55555', 'active');
   insertUser.run('Arun Verma', 'arun.verma@mahavirsportsacademy.com', passwordHash, 'coach', '+91 98250 44444', 'active');
 
-  // Register Sarah and Arun in Central lookup
+  // Register staff and admins in Central lookup
   const centralDb = getCentralDb();
+  centralDb.prepare('INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role) VALUES (?, ?, ?)').run('admin@mahavir.com', academyId, 'academy_admin');
   centralDb.prepare('INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role) VALUES (?, ?, ?)').run('sarah.johnson@mahavirsportsacademy.com', academyId, 'academy_staff');
   centralDb.prepare('INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role) VALUES (?, ?, ?)').run('arun.verma@mahavirsportsacademy.com', academyId, 'coach');
 
