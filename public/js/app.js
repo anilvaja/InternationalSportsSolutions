@@ -12491,37 +12491,69 @@ const app = {
 
     return `
       <div class="receipt-container" style="
-        width: 800px;
-        max-width: 800px;
+        width: 100%;
+        max-width: 720px;
         margin: 0 auto;
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 12px;
-        padding: 36px 42px;
+        padding: 28px 32px;
         box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
         box-sizing: border-box;
         color: #0f172a;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         -webkit-font-smoothing: antialiased;
       ">
+        <style>
+          .receipt-container table {
+            width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
+          }
+          .receipt-container table th {
+            background: #0f172a !important;
+            color: #ffffff !important;
+            padding: 10px 10px !important;
+            font-size: 11px !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+            font-weight: 700 !important;
+          }
+          .receipt-container table td {
+            padding: 12px 10px !important;
+            border-bottom: 1px solid #e2e8f0 !important;
+            font-size: 12.5px !important;
+            vertical-align: middle !important;
+          }
+          .receipt-container .col-desc {
+            text-align: left !important;
+          }
+          .receipt-container .col-amount {
+            text-align: right !important;
+            white-space: nowrap !important;
+            word-break: keep-all !important;
+            font-variant-numeric: tabular-nums !important;
+          }
+        </style>
+
         <div class="receipt-header" style="
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
           border-bottom: 2px solid #2563eb;
-          padding-bottom: 20px;
-          margin-bottom: 22px;
-          gap: 24px;
+          padding-bottom: 18px;
+          margin-bottom: 20px;
+          gap: 20px;
         ">
           <div class="brand-info" style="flex: 1;">
             ${logoUrl ? `
               <div class="brand-logo-wrap" style="margin-bottom: 12px;">
-                <img src="${logoUrl}" alt="${this.escapeHtml(academyName)}" class="receipt-logo-img" style="max-height: 75px; max-width: 240px; object-fit: contain; display: block;">
+                <img src="${logoUrl}" alt="${this.escapeHtml(academyName)}" class="receipt-logo-img" style="max-height: 70px; max-width: 220px; object-fit: contain; display: block;">
               </div>
             ` : `
               <div style="display: inline-block; background: #2563eb; color: #fff; font-weight: 800; font-size: 11px; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px;">OFFICIAL RECEIPT</div>
             `}
-            <div class="academy-name" style="font-size: 21px; font-weight: 800; color: #0f172a; letter-spacing: -0.3px; margin: 0 0 6px 0; line-height: 1.25;">
+            <div class="academy-name" style="font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.3px; margin: 0 0 6px 0; line-height: 1.25;">
               ${this.escapeHtml(academyName.toUpperCase())}
             </div>
             <div class="academy-meta" style="font-size: 12px; color: #475569; line-height: 1.6;">
@@ -12537,7 +12569,7 @@ const app = {
             </div>
           </div>
 
-          <div class="receipt-ref-box" style="text-align: right; min-width: 220px;">
+          <div class="receipt-ref-box" style="text-align: right; min-width: 200px;">
             <span class="status-badge" style="
               display: inline-block;
               font-weight: 800;
@@ -12552,19 +12584,19 @@ const app = {
             ">
               ${balance <= 0 ? 'PAID & VERIFIED' : 'PARTIALLY PAID'}
             </span>
-            <div style="font-size: 13px; color: #475569;">
-              <div>Receipt No: <strong style="color: #2563eb; font-family: monospace; font-size: 14px;">${this.escapeHtml(receiptNumber)}</strong></div>
+            <div style="font-size: 12.5px; color: #475569;">
+              <div>Receipt No: <strong style="color: #2563eb; font-family: monospace; font-size: 13.5px;">${this.escapeHtml(receiptNumber)}</strong></div>
               <div style="margin-top: 3px;">Invoice Ref: <strong style="color: #0f172a; font-family: monospace;">${this.escapeHtml(invoiceNumber)}</strong></div>
               <div style="margin-top: 3px;">Payment Date: <strong style="color: #0f172a;">${this.escapeHtml(fee.payment_date || fee.created_at || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }))}</strong></div>
             </div>
           </div>
         </div>
 
-        <div class="meta-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 22px;">
-          <div class="meta-box" style="background: #f8fafc; padding: 16px 20px; border-radius: 8px; font-size: 13px; border: 1px solid #e2e8f0;">
+        <div class="meta-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+          <div class="meta-box" style="background: #f8fafc; padding: 14px 18px; border-radius: 8px; font-size: 12.5px; border: 1px solid #e2e8f0;">
             <div style="font-size: 10.5px; text-transform: uppercase; font-weight: 800; color: #64748b; letter-spacing: 0.5px; margin-bottom: 6px;">STUDENT INFORMATION</div>
-            <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 6px;">${this.escapeHtml(studentName)}</div>
-            <div style="color: #475569; font-size: 12.5px; line-height: 1.7;">
+            <div style="font-size: 15px; font-weight: 800; color: #0f172a; margin-bottom: 6px;">${this.escapeHtml(studentName)}</div>
+            <div style="color: #475569; font-size: 12px; line-height: 1.65;">
               <div>Student Code: <strong>${this.escapeHtml(studentCode)}</strong></div>
               ${admissionNumber ? `<div>Admission No: <strong>${this.escapeHtml(admissionNumber)}</strong></div>` : ''}
               <div>Branch / Dojo: <strong>${this.escapeHtml(branchName)}</strong></div>
@@ -12572,10 +12604,10 @@ const app = {
             </div>
           </div>
 
-          <div class="meta-box" style="background: #f8fafc; padding: 16px 20px; border-radius: 8px; font-size: 13px; border: 1px solid #e2e8f0;">
+          <div class="meta-box" style="background: #f8fafc; padding: 14px 18px; border-radius: 8px; font-size: 12.5px; border: 1px solid #e2e8f0;">
             <div style="font-size: 10.5px; text-transform: uppercase; font-weight: 800; color: #64748b; letter-spacing: 0.5px; margin-bottom: 6px;">COACHING COVERAGE & PAYMENT</div>
-            <div style="font-size: 14px; font-weight: 700; color: #2563eb; margin-bottom: 4px;">Coverage: ${this.escapeHtml(periodText)}</div>
-            <div style="color: #475569; font-size: 12.5px; line-height: 1.7;">
+            <div style="font-size: 13.5px; font-weight: 700; color: #2563eb; margin-bottom: 4px;">Coverage: ${this.escapeHtml(periodText)}</div>
+            <div style="color: #475569; font-size: 12px; line-height: 1.65;">
               <div>Payment Mode: <strong>${this.escapeHtml((fee.payment_mode || fee.payment_method || 'Cash / UPI').toUpperCase())}</strong></div>
               ${fee.next_installment_date ? `<div>Next Renewal Due: <strong style="color: #dc2626;">${this.escapeHtml(fee.next_installment_date)}</strong></div>` : ''}
               <div>Collected by: <strong>${this.escapeHtml(fee.collector_name || 'Accounts Desk')}</strong></div>
@@ -12583,78 +12615,78 @@ const app = {
           </div>
         </div>
 
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+        <table class="receipt-table" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 22px;">
           <thead>
             <tr>
-              <th style="background: #0f172a; color: #ffffff; padding: 11px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 6px 0 0 0;">Description</th>
-              <th style="background: #0f172a; color: #ffffff; padding: 11px 14px; text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">${(hasDiscount || hasGst) ? 'Base Fee' : 'Tuition Fee'}</th>
+              <th class="col-desc" style="width: ${(hasDiscount && hasGst) ? '30%' : (hasDiscount || hasGst) ? '34%' : '40%'}; text-align: left; border-radius: 6px 0 0 0;">Description</th>
+              <th class="col-amount" style="width: ${(hasDiscount && hasGst) ? '11%' : (hasDiscount || hasGst) ? '13%' : '15%'}; text-align: right;">${(hasDiscount || hasGst) ? 'Base Fee' : 'Tuition Fee'}</th>
               ${hasDiscount ? `<th style="text-align: right;">Concession / Discount</th>` : ''}
               ${hasGst ? `<th style="text-align: right;">GST (18%)</th>` : ''}
-              <th style="background: #0f172a; color: #ffffff; padding: 11px 14px; text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Net Payable</th>
-              <th style="background: #0f172a; color: #ffffff; padding: 11px 14px; text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Amount Paid</th>
-              <th style="background: #0f172a; color: #ffffff; padding: 11px 14px; text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 0 6px 0 0;">Balance</th>
+              <th class="col-amount" style="width: ${(hasDiscount && hasGst) ? '11%' : (hasDiscount || hasGst) ? '13%' : '15%'}; text-align: right;">Net Payable</th>
+              <th class="col-amount" style="width: ${(hasDiscount && hasGst) ? '13%' : (hasDiscount || hasGst) ? '13%' : '15%'}; text-align: right;">Amount Paid</th>
+              <th class="col-amount" style="width: ${(hasDiscount && hasGst) ? '13%' : (hasDiscount || hasGst) ? '14%' : '15%'}; text-align: right; border-radius: 0 6px 0 0;">Balance</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">
-                <strong style="color: #0f172a;">${this.escapeHtml(fee.title || fee.fee_title || 'Sports Curriculum & Coaching')}</strong>
+              <td class="col-desc" style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0;">
+                <strong style="color: #0f172a; font-size: 13px;">${this.escapeHtml(fee.title || fee.fee_title || 'Sports Curriculum & Coaching')}</strong>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Coaching Cycle: ${this.escapeHtml(periodText)}</div>
               </td>
-              <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right;">₹${Number(baseFee).toLocaleString('en-IN')}</td>
+              <td class="col-amount" style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12.5px; text-align: right;">₹${Number(baseFee).toLocaleString('en-IN')}</td>
               ${hasDiscount ? `
-                <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right; color: #dc2626;">
+                <td class="col-amount" style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12.5px; text-align: right; color: #dc2626;">
                   -₹${Number(discount).toLocaleString('en-IN')}${discountPercentage > 0 ? ` (${discountPercentage}%)` : ''}
                 </td>
               ` : ''}
               ${hasGst ? `
-                <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right; color: #2563eb;">
+                <td class="col-amount" style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12.5px; text-align: right; color: #2563eb;">
                   +₹${Number(taxAmount).toLocaleString('en-IN')}
                 </td>
               ` : ''}
-              <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right; font-weight: 600;">₹${Number(netAmount).toLocaleString('en-IN')}</td>
-              <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 14px; text-align: right; font-weight: 700; color: #16a34a;">₹${Number(paid).toLocaleString('en-IN')}</td>
-              <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right; font-weight: 700; color: ${balance > 0 ? '#dc2626' : '#64748b'};">₹${Number(balance).toLocaleString('en-IN')}</td>
+              <td class="col-amount" style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12.5px; text-align: right; font-weight: 600;">₹${Number(netAmount).toLocaleString('en-IN')}</td>
+              <td class="col-amount" style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right; font-weight: 700; color: #16a34a;">₹${Number(paid).toLocaleString('en-IN')}</td>
+              <td class="col-amount" style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12.5px; text-align: right; font-weight: 700; color: ${balance > 0 ? '#dc2626' : '#64748b'};">₹${Number(balance).toLocaleString('en-IN')}</td>
             </tr>
           </tbody>
         </table>
 
-        <div style="display: flex; justify-content: flex-end; margin-bottom: 26px;">
-          <div style="width: 340px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 20px; font-size: 13px;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: #64748b;">
+        <div style="width: 100%; margin-bottom: 24px; clear: both; overflow: hidden;">
+          <div style="width: 320px; max-width: 100%; margin-left: auto; margin-right: 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; font-size: 12.5px; box-sizing: border-box;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; color: #64748b;">
               <span>${(hasDiscount || hasGst) ? 'Base Tuition Fee:' : 'Total Tuition Fee:'}</span>
-              <span style="color: #0f172a; font-weight: 600;">₹${Number(baseFee).toLocaleString('en-IN')}</span>
+              <span style="color: #0f172a; font-weight: 600; white-space: nowrap; text-align: right;">₹${Number(baseFee).toLocaleString('en-IN')}</span>
             </div>
             ${hasDiscount ? `
-              <div class="totals-row" style="color: #dc2626; display: flex; justify-content: space-between; margin-bottom: 8px;">
+              <div class="totals-row" style="color: #dc2626; display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px;">
                 <span>Concession / Discount:</span>
-                <span>-₹${Number(discount).toLocaleString('en-IN')}</span>
+                <span style="white-space: nowrap; text-align: right;">-₹${Number(discount).toLocaleString('en-IN')}</span>
               </div>
             ` : ''}
             ${hasGst ? `
-              <div class="totals-row" style="color: #2563eb; display: flex; justify-content: space-between; margin-bottom: 8px;">
+              <div class="totals-row" style="color: #2563eb; display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px;">
                 <span>GST / Tax:</span>
-                <span>+₹${Number(taxAmount).toLocaleString('en-IN')}</span>
+                <span style="white-space: nowrap; text-align: right;">+₹${Number(taxAmount).toLocaleString('en-IN')}</span>
               </div>
             ` : ''}
             ${(hasDiscount || hasGst) ? `
-              <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 600; color: #475569;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; font-weight: 600; color: #475569;">
                 <span>Net Total Fee:</span>
-                <span style="color: #0f172a;">₹${Number(netAmount).toLocaleString('en-IN')}</span>
+                <span style="color: #0f172a; white-space: nowrap; text-align: right;">₹${Number(netAmount).toLocaleString('en-IN')}</span>
               </div>
             ` : ''}
-            <div class="totals-row paid-highlight" style="display: flex; justify-content: space-between; background: #dcfce7; padding: 10px 14px; border-radius: 6px; color: #15803d; font-weight: 800; font-size: 15px; margin: 8px 0;">
+            <div class="totals-row paid-highlight" style="display: flex; justify-content: space-between; align-items: center; background: #dcfce7; padding: 9px 12px; border-radius: 6px; color: #15803d; font-weight: 800; font-size: 14px; margin: 8px 0;">
               <span>Amount Paid:</span>
-              <span>₹${Number(paid).toLocaleString('en-IN')}</span>
+              <span style="white-space: nowrap; text-align: right;">₹${Number(paid).toLocaleString('en-IN')}</span>
             </div>
-            <div style="display: flex; justify-content: space-between; color: ${balance > 0 ? '#dc2626' : '#64748b'}; font-weight: ${balance > 0 ? '700' : 'normal'};">
+            <div style="display: flex; justify-content: space-between; align-items: center; color: ${balance > 0 ? '#dc2626' : '#64748b'}; font-weight: ${balance > 0 ? '700' : 'normal'};">
               <span>Balance Due:</span>
-              <span>₹${Number(balance).toLocaleString('en-IN')}</span>
+              <span style="white-space: nowrap; text-align: right;">₹${Number(balance).toLocaleString('en-IN')}</span>
             </div>
           </div>
         </div>
 
-        <div style="border-top: 1px dashed #cbd5e1; padding-top: 18px; font-size: 11.5px; color: #64748b; display: flex; justify-content: space-between; align-items: center; line-height: 1.5;">
+        <div style="border-top: 1px dashed #cbd5e1; padding-top: 16px; font-size: 11.5px; color: #64748b; display: flex; justify-content: space-between; align-items: center; line-height: 1.5;">
           <div>
             <strong>Verified electronically by Academy Fee Collection Desk${hasGst ? ' &bull; SAC 999293' : ''}</strong>
             <div style="margin-top: 3px;">Thank you for your timely payment! Keep this official receipt for belt grading verification and records.</div>
@@ -12683,12 +12715,19 @@ const app = {
     const filename = `Receipt-${receiptNumber}.pdf`;
 
     if (window.html2pdf) {
-      this.showToast('Generating high-resolution print-fidelity PDF receipt...', 'info');
+      this.showToast('Generating high-resolution vector-accurate PDF receipt...', 'info');
+      // Create visible-context staging sandbox at (0,0) with opacity 0 and negative z-index
+      // to prevent -9999px clipping and font metric distortion
       const container = document.createElement('div');
-      container.style.position = 'fixed';
-      container.style.left = '-9999px';
+      container.id = 'iss-pdf-staging-container';
+      container.style.position = 'absolute';
+      container.style.left = '0';
       container.style.top = '0';
-      container.style.width = '820px';
+      container.style.width = '720px';
+      container.style.maxWidth = '720px';
+      container.style.zIndex = '-9999';
+      container.style.opacity = '0';
+      container.style.pointerEvents = 'none';
       container.style.background = '#ffffff';
       container.innerHTML = receiptHtml;
       document.body.appendChild(container);
@@ -12697,9 +12736,17 @@ const app = {
         const opt = {
           margin: [8, 8, 8, 8],
           filename: filename,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, logging: false },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          image: { type: 'png' }, // Lossless PNG: zero JPEG compression distortion or fuzzy artifacts
+          html2canvas: {
+            scale: 3, // ~300 DPI ultra-sharp print resolution
+            useCORS: true,
+            logging: false,
+            letterRendering: true,
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: 740
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
         };
         const elem = container.firstElementChild || container;
         await window.html2pdf().set(opt).from(elem).save();
@@ -12735,7 +12782,7 @@ const app = {
         <style>
           @page {
             size: A4 portrait;
-            margin: 10mm 12mm;
+            margin: 8mm 10mm;
           }
           * {
             box-sizing: border-box;
@@ -12747,29 +12794,47 @@ const app = {
             color: #0f172a;
             background: #f1f5f9;
             margin: 0;
-            padding: 28px 20px;
+            padding: 24px 16px;
             -webkit-font-smoothing: antialiased;
           }
           .print-controls {
-            max-width: 800px;
+            max-width: 720px;
             margin: 0 auto 16px auto;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 12px;
+          }
+          .print-btn-group {
+            display: flex;
+            gap: 10px;
           }
           .print-btn {
             background: #2563eb;
             color: #ffffff;
             border: none;
-            padding: 10px 22px;
+            padding: 10px 20px;
             border-radius: 6px;
             font-weight: 700;
             font-size: 13px;
             cursor: pointer;
             box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
           }
           .print-btn:hover {
             background: #1d4ed8;
+          }
+          .print-btn-secondary {
+            background: #ffffff;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+          }
+          .print-btn-secondary:hover {
+            background: #f8fafc;
+            color: #0f172a;
           }
           @media print {
             body {
@@ -12783,22 +12848,51 @@ const app = {
             .receipt-container {
               border: none !important;
               box-shadow: none !important;
-              padding: 12px 14px !important;
+              padding: 8px 10px !important;
               max-width: 100% !important;
               width: 100% !important;
             }
           }
         </style>
+        <script src="/js/html2pdf.bundle.min.js"></script>
       </head>
       <body>
         <div class="print-controls">
-          <span style="font-size: 13px; color: #64748b;">Receipt Preview &bull; Ready to print</span>
-          <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+          <div>
+            <strong style="font-size: 14px; color: #0f172a;">Official Fee Receipt</strong>
+            <div style="font-size: 12px; color: #64748b;">Ready to Print or Save as Vector PDF</div>
+          </div>
+          <div class="print-btn-group">
+            <button class="print-btn" onclick="window.print()">
+              Print / Save PDF
+            </button>
+            <button class="print-btn print-btn-secondary" onclick="downloadPdf()">
+              Download PDF File
+            </button>
+            <button class="print-btn print-btn-secondary" onclick="window.close()">
+              ✕ Close
+            </button>
+          </div>
         </div>
 
-        ${receiptHtml}
+        <div id="receipt-printable-area">
+          ${receiptHtml}
+        </div>
 
         <script>
+          function downloadPdf() {
+            const elem = document.querySelector('.receipt-container');
+            if (!elem || !window.html2pdf) return;
+            const opt = {
+              margin: [8, 8, 8, 8],
+              filename: 'Receipt-${this.escapeHtml(receiptNumber)}.pdf',
+              image: { type: 'png' },
+              html2canvas: { scale: 3, useCORS: true, letterRendering: true },
+              jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+            window.html2pdf().set(opt).from(elem).save();
+          }
+
           function triggerPrint() {
             window.print();
           }
