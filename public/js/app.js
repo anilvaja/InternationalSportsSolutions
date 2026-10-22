@@ -12457,342 +12457,7 @@ const app = {
     }
   },
 
-  async generateFeeReceiptPdf(fee) {
-    if (!window.jspdf || !window.jspdf.jsPDF) {
-      this.showToast('PDF generator library is initializing, please try again.', 'warning');
-      return;
-    }
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF('p', 'mm', 'a4');
-
-    const branding = this.getAcademyBranding(fee);
-    const academyName = branding.name;
-    const academyCity = branding.city;
-    const academyAddress = branding.address;
-    const academyGst = branding.gst;
-    const academyPhone = branding.phone;
-    const academyEmail = branding.email;
-    const logoUrl = branding.logoUrl;
-
-    const receiptNumber = fee.receipt_number || ('REC-' + (fee.id || Date.now().toString().slice(-4)));
-    const invoiceNumber = fee.invoice_number || ('INV-' + (fee.id || '001'));
-    const studentName = `${fee.first_name || ''} ${fee.last_name || ''}`.trim() || 'Student';
-    const studentCode = fee.student_code || 'N/A';
-    const admissionNumber = fee.admission_number || null;
-    const branchName = fee.branch_name || 'Main Campus';
-    const studentPhone = fee.phone || null;
-
-    const baseFee = Number(fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || fee.amount || 0));
-    const discountPercentage = Number(fee.discount_percentage || 0);
-    const discountAmount = Number(fee.discount_amount || 0);
-    const discountReason = fee.discount_reason || null;
-    const taxAmount = Number(fee.tax_amount || 0);
-    const netAmount = Number(fee.net_amount || fee.amount || (baseFee - discountAmount));
-    const paidAmount = Number(fee.paid_amount || fee.amount || 0);
-    const balanceAmount = Number(fee.balance_amount !== undefined ? fee.balance_amount : Math.max(0, netAmount - paidAmount));
-
-    const periodStart = fee.period_start || new Date().toISOString().split('T')[0];
-    const periodEnd = fee.period_end || new Date().toISOString().split('T')[0];
-    const monthsCount = fee.months_count || 1;
-    const nextInstallmentDate = fee.next_installment_date || null;
-    const paymentMode = (fee.payment_mode || fee.payment_method || 'Online / Cash').toUpperCase();
-    const date = fee.payment_date || new Date().toISOString().split('T')[0];
-
-    // 1. Top Decorative Brand Bar
-    doc.setFillColor(30, 41, 59); // Dark Slate
-    doc.rect(0, 0, 210, 4, 'F');
-
-    // 2. Academy Header
-    doc.setFillColor(37, 99, 235); // Sapphire Blue
-    doc.rect(0, 4, 210, 36, 'F');
-
-    // Circular Logo Emblem Badge or Official Logo
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(14, 8, 26, 26, 3, 3, 'F');
-    
-    let logoDrawn = false;
-    if (logoUrl) {
-      try {
-        const base64Logo = await this.getBase64ImageFromUrl(logoUrl);
-        if (base64Logo) {
-          const format = base64Logo.includes('image/png') ? 'PNG' : (base64Logo.includes('image/webp') ? 'WEBP' : 'JPEG');
-          doc.addImage(base64Logo, format, 15, 9, 24, 24);
-          logoDrawn = true;
-        }
-      } catch (e) {
-        logoDrawn = false;
-      }
-    }
-
-    if (!logoDrawn) {
-      const brandLogoImg = document.querySelector('.brand-logo-img') || document.getElementById('settings-branding-logo-img');
-      if (brandLogoImg && brandLogoImg.complete && brandLogoImg.naturalWidth > 0) {
-        try {
-          doc.addImage(brandLogoImg, 'PNG', 15, 9, 24, 24);
-          logoDrawn = true;
-        } catch (e) {
-          logoDrawn = false;
-        }
-      }
-    }
-
-    if (!logoDrawn) {
-      doc.setFillColor(37, 99, 235);
-      doc.circle(27, 21, 9, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      const brandInitials = academyName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() || 'ISS';
-      doc.text(brandInitials, 27, 24.5, { align: 'center' });
-    }
-
-    // Academy Name & Subheading
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.text(academyName.toUpperCase(), 44, 19);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(224, 231, 255);
-    const addressLine = `${academyAddress ? academyAddress + ', ' : ''}${academyCity}, India`;
-    doc.text(addressLine, 44, 26);
-    const hasDiscount = discountAmount > 0;
-    const hasGst = taxAmount > 0;
-
-    const subMetaParts = [];
-    if (hasGst && academyGst) subMetaParts.push(`GSTIN: ${academyGst}`);
-    if (hasGst) subMetaParts.push('SAC: 999293 (Sports Coaching)');
-    subMetaParts.push('Official Receipt');
-    const subMeta = subMetaParts.join('  |  ');
-    doc.text(subMeta, 44, 32);
-
-    // 3. Receipt Sub-Header Banner
-    doc.setFillColor(248, 250, 252);
-    doc.rect(0, 40, 210, 14, 'F');
-    doc.setDrawColor(226, 232, 240);
-    doc.line(0, 54, 210, 54);
-
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text(hasGst ? 'OFFICIAL FEE PAYMENT RECEIPT & TAX INVOICE' : 'OFFICIAL FEE PAYMENT RECEIPT', 14, 49);
-
-    // Paid Stamp Pill
-    const isPaid = balanceAmount <= 0;
-    doc.setFillColor(isPaid ? 209 : 254, isPaid ? 250 : 243, isPaid ? 229 : 199);
-    doc.roundedRect(155, 43, 41, 8, 2, 2, 'F');
-    doc.setTextColor(isPaid ? 6 : 146, isPaid ? 95 : 64, isPaid ? 70 : 14);
-    doc.setFontSize(8.5);
-    doc.setFont('helvetica', 'bold');
-    doc.text(isPaid ? 'PAID & VERIFIED' : 'PARTIALLY PAID', 175.5, 48.5, { align: 'center' });
-
-    // 4. Two-Column Metadata Cards
-    // Left Box: Student Details
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(14, 58, 88, 42, 2, 2, 'FD');
-
-    doc.setFillColor(241, 245, 249);
-    doc.rect(14, 58, 88, 8, 'F');
-    doc.setTextColor(71, 85, 105);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text('STUDENT INFORMATION', 18, 63.5);
-
-    doc.setFontSize(9);
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.text(studentName, 18, 72);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(71, 85, 105);
-    doc.setFontSize(8.5);
-    doc.text(`Student Code: ${studentCode}`, 18, 78);
-    if (admissionNumber) doc.text(`Admission No: ${admissionNumber}`, 18, 83);
-    doc.text(`Branch / Dojo: ${branchName}`, 18, admissionNumber ? 88 : 84);
-    if (studentPhone) doc.text(`Phone: ${studentPhone}`, 18, admissionNumber ? 93 : 89);
-
-    // Right Box: Transaction & Coverage Details (Explicitly White Fill to prevent dark overlay)
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(108, 58, 88, 42, 2, 2, 'FD');
-
-    doc.setFillColor(241, 245, 249);
-    doc.rect(108, 58, 88, 8, 'F');
-    doc.setTextColor(71, 85, 105);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text('RECEIPT & COVERAGE DETAILS', 112, 63.5);
-
-    doc.setFontSize(8.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text('Receipt No:', 112, 71);
-    doc.setTextColor(37, 99, 235);
-    doc.setFont('helvetica', 'bold');
-    doc.text(receiptNumber, 142, 71);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(71, 85, 105);
-    doc.text('Invoice Ref:', 112, 76);
-    doc.setTextColor(15, 23, 42);
-    doc.text(invoiceNumber, 142, 76);
-
-    doc.setTextColor(71, 85, 105);
-    doc.text('Payment Date:', 112, 81);
-    doc.setTextColor(15, 23, 42);
-    doc.text(date, 142, 81);
-
-    doc.setTextColor(71, 85, 105);
-    doc.text('Payment Mode:', 112, 86);
-    doc.setTextColor(15, 23, 42);
-    doc.text(paymentMode, 142, 86);
-
-    // Highlighted Coaching Coverage Period
-    doc.setTextColor(37, 99, 235);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Coaching Period:', 112, 91);
-    doc.text(`${periodStart} to ${periodEnd}`, 142, 91);
-
-    if (nextInstallmentDate) {
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(220, 38, 38);
-      doc.setFontSize(7.5);
-      doc.text(`Next Renewal Due: ${nextInstallmentDate}`, 112, 96);
-    }
-
-    // 5. Itemized Fee Breakdown Table (Dynamic headers: only show Discount or GST if applied)
-    const tableHeaders = ['#', 'Fee Item & Coverage Period', (hasDiscount || hasGst ? 'Base Fee' : 'Tuition Fee')];
-    const tableRow = [
-      '1',
-      `${fee.title || fee.fee_title || 'Sports Curriculum & Dojo Coaching'}\nCoverage: ${periodStart} to ${periodEnd} (${monthsCount} Month${monthsCount > 1 ? 's' : ''})`,
-      `INR ${baseFee.toLocaleString('en-IN')}`
-    ];
-    const colStyles = {
-      0: { cellWidth: 10, halign: 'center' },
-      1: { cellWidth: 70 },
-      2: { cellWidth: 28, halign: 'right' }
-    };
-
-    let colIdx = 3;
-    if (hasDiscount) {
-      tableHeaders.push('Concession / Discount');
-      tableRow.push(`-INR ${discountAmount.toLocaleString('en-IN')}${discountPercentage > 0 ? ` (${discountPercentage}%)` : ''}`);
-      colStyles[colIdx] = { cellWidth: 38, halign: 'right', textColor: [185, 28, 28] };
-      colIdx++;
-    }
-
-    if (hasGst) {
-      tableHeaders.push('GST (18%)');
-      tableRow.push(`INR ${taxAmount.toLocaleString('en-IN')}`);
-      colStyles[colIdx] = { cellWidth: 24, halign: 'right', textColor: [37, 99, 235] };
-      colIdx++;
-    }
-
-    tableHeaders.push('Net Payable');
-    tableRow.push(`INR ${netAmount.toLocaleString('en-IN')}`);
-    colStyles[colIdx] = { cellWidth: 28, halign: 'right', fontStyle: 'bold' };
-
-    // Dynamically calculate column 1 width to span exactly 182mm
-    const nonDescWidth = Object.keys(colStyles).filter(k => k !== '1').reduce((sum, k) => sum + colStyles[k].cellWidth, 0);
-    colStyles[1].cellWidth = Math.max(50, 182 - nonDescWidth);
-
-    doc.autoTable({
-      startY: 104,
-      head: [tableHeaders],
-      body: [tableRow],
-      theme: 'grid',
-      headStyles: {
-        fillColor: [30, 41, 59],
-        textColor: 255,
-        fontSize: 8.5,
-        fontStyle: 'bold',
-        halign: 'left',
-        cellPadding: 3
-      },
-      styles: {
-        fontSize: 8.5,
-        cellPadding: 4,
-        textColor: [30, 41, 59],
-        lineColor: [226, 232, 240],
-        lineWidth: 0.2
-      },
-      columnStyles: colStyles
-    });
-
-    const finalY = doc.lastAutoTable.finalY + 4;
-
-    // 6. Summary Totals Box (Right Aligned)
-    const totalsX = 118;
-    const totalsWidth = 78;
-
-    let curY = finalY + 6;
-    doc.setFontSize(8.5);
-    doc.setTextColor(100, 116, 139);
-    doc.setFont('helvetica', 'normal');
-    doc.text((hasDiscount || hasGst) ? 'Base Tuition Fee:' : 'Total Tuition Fee:', totalsX + 4, curY);
-    doc.setTextColor(30, 41, 59);
-    doc.text(`INR ${baseFee.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY, { align: 'right' });
-
-    if (hasDiscount) {
-      curY += 6;
-      doc.setTextColor(220, 38, 38);
-      doc.text(`Discount (${discountPercentage}%):`, totalsX + 4, curY);
-      doc.text(`-INR ${discountAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY, { align: 'right' });
-    }
-
-    if (hasGst) {
-      curY += 6;
-      doc.setTextColor(37, 99, 235);
-      doc.text('GST (18%):', totalsX + 4, curY);
-      doc.text(`+INR ${taxAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY, { align: 'right' });
-    }
-
-    if (hasDiscount || hasGst) {
-      curY += 6;
-      doc.setTextColor(100, 116, 139);
-      doc.text('Total Net Fee:', totalsX + 4, curY);
-      doc.setTextColor(30, 41, 59);
-      doc.text(`INR ${netAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY, { align: 'right' });
-    }
-
-    // Amount Paid Highlight Row
-    curY += 5;
-    doc.setFillColor(240, 253, 244); // Green 50
-    doc.rect(totalsX, curY - 3.5, totalsWidth, 7, 'F');
-    doc.setTextColor(21, 128, 61); // Green 700
-    doc.setFont('helvetica', 'bold');
-    doc.text('Amount Paid (This Receipt):', totalsX + 4, curY + 1.2);
-    doc.text(`INR ${paidAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY + 1.2, { align: 'right' });
-
-    curY += 7.5;
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 116, 139);
-    doc.setFontSize(8);
-    doc.text('Remaining Balance:', totalsX + 4, curY);
-    doc.setTextColor(balanceAmount > 0 ? 220 : 100, balanceAmount > 0 ? 38 : 116, balanceAmount > 0 ? 38 : 139);
-    doc.text(`INR ${balanceAmount.toLocaleString('en-IN')}`, totalsX + totalsWidth - 4, curY, { align: 'right' });
-
-    // Draw outer boundary of totals box
-    const boxHeight = (curY + 4) - finalY;
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(totalsX, finalY, totalsWidth, boxHeight, 2, 2, 'D');
-
-    // 7. Security Notes & Verification Seal
-    doc.setFontSize(7.5);
-    doc.setTextColor(148, 163, 184);
-    doc.setFont('helvetica', 'normal');
-    doc.text('This is a computer generated official fee receipt and does not require physical signature.', 14, finalY + 16);
-    doc.text('All sports coaching fees are subject to academy enrollment bylaws and conditions.', 14, finalY + 21);
-    doc.text(`Generated on ${new Date().toLocaleString()} | ISS SaaS Platform`, 14, finalY + 26);
-
-    const filename = `Receipt-${receiptNumber}.pdf`;
-    doc.save(filename);
-    this.showToast(`PDF Receipt downloaded: ${filename}`, 'success');
-  },
-
-  printFeeReceipt(fee) {
+  getFeeReceiptHtml(fee, options = {}) {
     const branding = this.getAcademyBranding(fee);
     const academyName = branding.name;
     const academyCity = branding.city;
@@ -12800,7 +12465,7 @@ const app = {
     const academyPhone = branding.phone;
     const academyEmail = branding.email;
     const academyGst = branding.gst;
-    const logoUrl = branding.logoUrl;
+    const logoUrl = options.logoBase64 || branding.logoUrl;
 
     const baseFee = Number(fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || fee.amount || 0));
     const discount = Number(fee.discount_amount || 0);
@@ -12813,9 +12478,247 @@ const app = {
     const balance = Number(fee.balance_amount !== undefined ? fee.balance_amount : 0);
     const netAmount = Number(fee.net_amount || fee.amount || (baseFee - discount + taxAmount));
     const receiptNumber = fee.receipt_number || fee.invoice_number || ('REC-' + (fee.id || Date.now().toString().slice(-4)));
+    const invoiceNumber = fee.invoice_number || ('INV-' + (fee.id || '001'));
+    const studentName = `${fee.first_name || ''} ${fee.last_name || ''}`.trim() || 'Student';
+    const studentCode = fee.student_code || 'N/A';
+    const admissionNumber = fee.admission_number || null;
+    const branchName = fee.branch_name || 'Main Campus';
+    const studentPhone = fee.phone || null;
+
     const periodText = (fee.period_start && fee.period_end)
       ? `${fee.period_start} to ${fee.period_end} (${fee.months_count || 1} month(s))`
       : 'Standard Cycle';
+
+    return `
+      <div class="receipt-container" style="
+        width: 800px;
+        max-width: 800px;
+        margin: 0 auto;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 36px 42px;
+        box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
+        box-sizing: border-box;
+        color: #0f172a;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      ">
+        <div class="receipt-header" style="
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          border-bottom: 2px solid #2563eb;
+          padding-bottom: 20px;
+          margin-bottom: 22px;
+          gap: 24px;
+        ">
+          <div class="brand-info" style="flex: 1;">
+            ${logoUrl ? `
+              <div class="brand-logo-wrap" style="margin-bottom: 12px;">
+                <img src="${logoUrl}" alt="${this.escapeHtml(academyName)}" class="receipt-logo-img" style="max-height: 75px; max-width: 240px; object-fit: contain; display: block;">
+              </div>
+            ` : `
+              <div style="display: inline-block; background: #2563eb; color: #fff; font-weight: 800; font-size: 11px; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px;">OFFICIAL RECEIPT</div>
+            `}
+            <div class="academy-name" style="font-size: 21px; font-weight: 800; color: #0f172a; letter-spacing: -0.3px; margin: 0 0 6px 0; line-height: 1.25;">
+              ${this.escapeHtml(academyName.toUpperCase())}
+            </div>
+            <div class="academy-meta" style="font-size: 12px; color: #475569; line-height: 1.6;">
+              ${academyAddress ? this.escapeHtml(academyAddress) + '<br>' : ''}
+              ${academyCity ? this.escapeHtml(academyCity) + ', ' : ''}India
+              ${academyPhone ? ' &bull; Tel: ' + this.escapeHtml(academyPhone) : ''}
+              ${academyEmail ? ' &bull; ' + this.escapeHtml(academyEmail) : ''}
+              ${hasGst ? `
+                <div style="font-weight: 600; color: #334155; margin-top: 4px;">
+                  ${academyGst ? 'GSTIN: ' + this.escapeHtml(academyGst) + '  |  ' : ''}SAC: 999293 (Sports Coaching Services)
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <div class="receipt-ref-box" style="text-align: right; min-width: 220px;">
+            <span class="status-badge" style="
+              display: inline-block;
+              font-weight: 800;
+              font-size: 11px;
+              padding: 5px 14px;
+              border-radius: 20px;
+              margin-bottom: 10px;
+              letter-spacing: 0.5px;
+              background: ${balance <= 0 ? '#dcfce7' : '#fef3c7'};
+              color: ${balance <= 0 ? '#15803d' : '#b45309'};
+              border: 1px solid ${balance <= 0 ? '#bbf7d0' : '#fde68a'};
+            ">
+              ${balance <= 0 ? 'PAID & VERIFIED' : 'PARTIALLY PAID'}
+            </span>
+            <div style="font-size: 13px; color: #475569;">
+              <div>Receipt No: <strong style="color: #2563eb; font-family: monospace; font-size: 14px;">${this.escapeHtml(receiptNumber)}</strong></div>
+              <div style="margin-top: 3px;">Invoice Ref: <strong style="color: #0f172a; font-family: monospace;">${this.escapeHtml(invoiceNumber)}</strong></div>
+              <div style="margin-top: 3px;">Payment Date: <strong style="color: #0f172a;">${this.escapeHtml(fee.payment_date || fee.created_at || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }))}</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="meta-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 22px;">
+          <div class="meta-box" style="background: #f8fafc; padding: 16px 20px; border-radius: 8px; font-size: 13px; border: 1px solid #e2e8f0;">
+            <div style="font-size: 10.5px; text-transform: uppercase; font-weight: 800; color: #64748b; letter-spacing: 0.5px; margin-bottom: 6px;">STUDENT INFORMATION</div>
+            <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 6px;">${this.escapeHtml(studentName)}</div>
+            <div style="color: #475569; font-size: 12.5px; line-height: 1.7;">
+              <div>Student Code: <strong>${this.escapeHtml(studentCode)}</strong></div>
+              ${admissionNumber ? `<div>Admission No: <strong>${this.escapeHtml(admissionNumber)}</strong></div>` : ''}
+              <div>Branch / Dojo: <strong>${this.escapeHtml(branchName)}</strong></div>
+              ${studentPhone ? `<div>Contact: <strong>${this.escapeHtml(studentPhone)}</strong></div>` : ''}
+            </div>
+          </div>
+
+          <div class="meta-box" style="background: #f8fafc; padding: 16px 20px; border-radius: 8px; font-size: 13px; border: 1px solid #e2e8f0;">
+            <div style="font-size: 10.5px; text-transform: uppercase; font-weight: 800; color: #64748b; letter-spacing: 0.5px; margin-bottom: 6px;">COACHING COVERAGE & PAYMENT</div>
+            <div style="font-size: 14px; font-weight: 700; color: #2563eb; margin-bottom: 4px;">Coverage: ${this.escapeHtml(periodText)}</div>
+            <div style="color: #475569; font-size: 12.5px; line-height: 1.7;">
+              <div>Payment Mode: <strong>${this.escapeHtml((fee.payment_mode || fee.payment_method || 'Cash / UPI').toUpperCase())}</strong></div>
+              ${fee.next_installment_date ? `<div>Next Renewal Due: <strong style="color: #dc2626;">${this.escapeHtml(fee.next_installment_date)}</strong></div>` : ''}
+              <div>Collected by: <strong>${this.escapeHtml(fee.collector_name || 'Accounts Desk')}</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+          <thead>
+            <tr>
+              <th style="background: #0f172a; color: #ffffff; padding: 11px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 6px 0 0 0;">Description</th>
+              <th style="background: #0f172a; color: #ffffff; padding: 11px 14px; text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">${(hasDiscount || hasGst) ? 'Base Fee' : 'Tuition Fee'}</th>
+              ${hasDiscount ? `<th style="text-align: right;">Concession / Discount</th>` : ''}
+              ${hasGst ? `<th style="text-align: right;">GST (18%)</th>` : ''}
+              <th style="background: #0f172a; color: #ffffff; padding: 11px 14px; text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Net Payable</th>
+              <th style="background: #0f172a; color: #ffffff; padding: 11px 14px; text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Amount Paid</th>
+              <th style="background: #0f172a; color: #ffffff; padding: 11px 14px; text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 0 6px 0 0;">Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">
+                <strong style="color: #0f172a;">${this.escapeHtml(fee.title || fee.fee_title || 'Sports Curriculum & Coaching')}</strong>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Coaching Cycle: ${this.escapeHtml(periodText)}</div>
+              </td>
+              <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right;">₹${Number(baseFee).toLocaleString('en-IN')}</td>
+              ${hasDiscount ? `
+                <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right; color: #dc2626;">
+                  -₹${Number(discount).toLocaleString('en-IN')}${discountPercentage > 0 ? ` (${discountPercentage}%)` : ''}
+                </td>
+              ` : ''}
+              ${hasGst ? `
+                <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right; color: #2563eb;">
+                  +₹${Number(taxAmount).toLocaleString('en-IN')}
+                </td>
+              ` : ''}
+              <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right; font-weight: 600;">₹${Number(netAmount).toLocaleString('en-IN')}</td>
+              <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 14px; text-align: right; font-weight: 700; color: #16a34a;">₹${Number(paid).toLocaleString('en-IN')}</td>
+              <td style="padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; text-align: right; font-weight: 700; color: ${balance > 0 ? '#dc2626' : '#64748b'};">₹${Number(balance).toLocaleString('en-IN')}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 26px;">
+          <div style="width: 340px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 20px; font-size: 13px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: #64748b;">
+              <span>${(hasDiscount || hasGst) ? 'Base Tuition Fee:' : 'Total Tuition Fee:'}</span>
+              <span style="color: #0f172a; font-weight: 600;">₹${Number(baseFee).toLocaleString('en-IN')}</span>
+            </div>
+            ${hasDiscount ? `
+              <div class="totals-row" style="color: #dc2626; display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span>Concession / Discount:</span>
+                <span>-₹${Number(discount).toLocaleString('en-IN')}</span>
+              </div>
+            ` : ''}
+            ${hasGst ? `
+              <div class="totals-row" style="color: #2563eb; display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span>GST / Tax:</span>
+                <span>+₹${Number(taxAmount).toLocaleString('en-IN')}</span>
+              </div>
+            ` : ''}
+            ${(hasDiscount || hasGst) ? `
+              <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 600; color: #475569;">
+                <span>Net Total Fee:</span>
+                <span style="color: #0f172a;">₹${Number(netAmount).toLocaleString('en-IN')}</span>
+              </div>
+            ` : ''}
+            <div class="totals-row paid-highlight" style="display: flex; justify-content: space-between; background: #dcfce7; padding: 10px 14px; border-radius: 6px; color: #15803d; font-weight: 800; font-size: 15px; margin: 8px 0;">
+              <span>Amount Paid:</span>
+              <span>₹${Number(paid).toLocaleString('en-IN')}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; color: ${balance > 0 ? '#dc2626' : '#64748b'}; font-weight: ${balance > 0 ? '700' : 'normal'};">
+              <span>Balance Due:</span>
+              <span>₹${Number(balance).toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="border-top: 1px dashed #cbd5e1; padding-top: 18px; font-size: 11.5px; color: #64748b; display: flex; justify-content: space-between; align-items: center; line-height: 1.5;">
+          <div>
+            <strong>Verified electronically by Academy Fee Collection Desk${hasGst ? ' &bull; SAC 999293' : ''}</strong>
+            <div style="margin-top: 3px;">Thank you for your timely payment! Keep this official receipt for belt grading verification and records.</div>
+          </div>
+          <div style="text-align: right; font-weight: 600; color: #0f172a;">
+            Generated: ${new Date().toLocaleString('en-IN')}
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  async generateFeeReceiptPdf(fee) {
+    const branding = this.getAcademyBranding(fee);
+    let logoBase64 = null;
+    if (branding.logoUrl) {
+      try {
+        logoBase64 = await this.getBase64ImageFromUrl(branding.logoUrl);
+      } catch (e) {
+        logoBase64 = null;
+      }
+    }
+
+    const receiptHtml = this.getFeeReceiptHtml(fee, { logoBase64 });
+    const receiptNumber = fee.receipt_number || fee.invoice_number || ('REC-' + (fee.id || Date.now().toString().slice(-4)));
+    const filename = `Receipt-${receiptNumber}.pdf`;
+
+    if (window.html2pdf) {
+      this.showToast('Generating high-resolution print-fidelity PDF receipt...', 'info');
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '820px';
+      container.style.background = '#ffffff';
+      container.innerHTML = receiptHtml;
+      document.body.appendChild(container);
+
+      try {
+        const opt = {
+          margin: [8, 8, 8, 8],
+          filename: filename,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        const elem = container.firstElementChild || container;
+        await window.html2pdf().set(opt).from(elem).save();
+        this.showToast(`PDF Receipt downloaded: ${filename}`, 'success');
+      } catch (err) {
+        console.error('html2pdf generation error, opening direct print preview:', err);
+        this.printFeeReceipt(fee);
+      } finally {
+        if (container.parentNode) container.parentNode.removeChild(container);
+      }
+    } else {
+      this.printFeeReceipt(fee);
+    }
+  },
+
+  printFeeReceipt(fee) {
+    const branding = this.getAcademyBranding(fee);
+    const receiptHtml = this.getFeeReceiptHtml(fee);
+    const receiptNumber = fee.receipt_number || fee.invoice_number || ('REC-' + (fee.id || Date.now().toString().slice(-4)));
 
     const printWindow = window.open('', '_blank', 'width=920,height=850');
     if (!printWindow) {
@@ -12832,7 +12735,7 @@ const app = {
         <style>
           @page {
             size: A4 portrait;
-            margin: 12mm 14mm;
+            margin: 10mm 12mm;
           }
           * {
             box-sizing: border-box;
@@ -12844,11 +12747,11 @@ const app = {
             color: #0f172a;
             background: #f1f5f9;
             margin: 0;
-            padding: 32px 20px;
+            padding: 28px 20px;
             -webkit-font-smoothing: antialiased;
           }
           .print-controls {
-            max-width: 820px;
+            max-width: 800px;
             margin: 0 auto 16px auto;
             display: flex;
             justify-content: space-between;
@@ -12868,161 +12771,6 @@ const app = {
           .print-btn:hover {
             background: #1d4ed8;
           }
-          .receipt-container {
-            max-width: 820px;
-            margin: 0 auto;
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 40px 48px;
-            box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
-          }
-          .receipt-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            border-bottom: 2px solid #2563eb;
-            padding-bottom: 22px;
-            margin-bottom: 24px;
-            gap: 24px;
-          }
-          .brand-info {
-            flex: 1;
-          }
-          .brand-logo-wrap {
-            margin-bottom: 12px;
-          }
-          .receipt-logo-img {
-            max-height: 80px;
-            max-width: 260px;
-            object-fit: contain;
-            display: block;
-          }
-          .academy-name {
-            font-size: 22px;
-            font-weight: 800;
-            color: #0f172a;
-            letter-spacing: -0.3px;
-            margin: 0 0 6px 0;
-            line-height: 1.25;
-          }
-          .academy-meta {
-            font-size: 12px;
-            color: #475569;
-            line-height: 1.6;
-          }
-          .receipt-ref-box {
-            text-align: right;
-            min-width: 220px;
-          }
-          .status-badge {
-            display: inline-block;
-            font-weight: 800;
-            font-size: 11px;
-            padding: 5px 14px;
-            border-radius: 20px;
-            margin-bottom: 10px;
-            letter-spacing: 0.5px;
-          }
-          .status-paid {
-            background: #dcfce7;
-            color: #15803d;
-            border: 1px solid #bbf7d0;
-          }
-          .status-partial {
-            background: #fef3c7;
-            color: #b45309;
-            border: 1px solid #fde68a;
-          }
-          .meta-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 24px;
-          }
-          .meta-box {
-            background: #f8fafc;
-            padding: 18px 22px;
-            border-radius: 8px;
-            font-size: 13px;
-            border: 1px solid #e2e8f0;
-          }
-          .meta-box-label {
-            font-size: 10.5px;
-            text-transform: uppercase;
-            font-weight: 800;
-            color: #64748b;
-            letter-spacing: 0.5px;
-            margin-bottom: 6px;
-          }
-          .meta-box-title {
-            font-size: 16px;
-            font-weight: 800;
-            color: #0f172a;
-            margin-bottom: 6px;
-          }
-          .meta-box-row {
-            color: #475569;
-            font-size: 12.5px;
-            line-height: 1.7;
-          }
-          .table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 26px;
-          }
-          .table th {
-            background: #0f172a;
-            color: #ffffff;
-            padding: 12px 16px;
-            text-align: left;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-          .table td {
-            padding: 14px 16px;
-            border-bottom: 1px solid #e2e8f0;
-            font-size: 13px;
-          }
-          .totals-wrapper {
-            display: flex;
-            justify-content: flex-end;
-            margin-bottom: 28px;
-          }
-          .totals-box {
-            width: 340px;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 18px 22px;
-            font-size: 13px;
-          }
-          .totals-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            color: #64748b;
-          }
-          .totals-row.paid-highlight {
-            background: #dcfce7;
-            padding: 10px 14px;
-            border-radius: 6px;
-            color: #15803d;
-            font-weight: 800;
-            font-size: 15px;
-            margin: 8px 0;
-          }
-          .receipt-footer {
-            border-top: 1px dashed #cbd5e1;
-            padding-top: 20px;
-            font-size: 11.5px;
-            color: #64748b;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            line-height: 1.5;
-          }
           @media print {
             body {
               background: #ffffff !important;
@@ -13035,8 +12783,9 @@ const app = {
             .receipt-container {
               border: none !important;
               box-shadow: none !important;
-              padding: 16px 20px !important;
+              padding: 12px 14px !important;
               max-width: 100% !important;
+              width: 100% !important;
             }
           }
         </style>
@@ -13047,145 +12796,7 @@ const app = {
           <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
         </div>
 
-        <div class="receipt-container">
-          <div class="receipt-header">
-            <div class="brand-info">
-              ${logoUrl ? `
-                <div class="brand-logo-wrap">
-                  <img src="${logoUrl}" alt="${this.escapeHtml(academyName)}" class="receipt-logo-img">
-                </div>
-              ` : `
-                <div style="display: inline-block; background: #2563eb; color: #fff; font-weight: 800; font-size: 11px; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px;">OFFICIAL RECEIPT</div>
-              `}
-              <div class="academy-name">${this.escapeHtml(academyName.toUpperCase())}</div>
-              <div class="academy-meta">
-                ${academyAddress ? this.escapeHtml(academyAddress) + '<br>' : ''}
-                ${academyCity ? this.escapeHtml(academyCity) + ', ' : ''}India
-                ${academyPhone ? ' &bull; Tel: ' + this.escapeHtml(academyPhone) : ''}
-                ${academyEmail ? ' &bull; ' + this.escapeHtml(academyEmail) : ''}
-                ${hasGst ? `
-                  <div style="font-weight: 600; color: #334155; margin-top: 4px;">
-                    ${academyGst ? 'GSTIN: ' + this.escapeHtml(academyGst) + '  |  ' : ''}SAC: 999293 (Sports Coaching Services)
-                  </div>
-                ` : ''}
-              </div>
-            </div>
-
-            <div class="receipt-ref-box">
-              <span class="status-badge ${balance <= 0 ? 'status-paid' : 'status-partial'}">
-                ${balance <= 0 ? 'PAID & VERIFIED' : 'PARTIALLY PAID'}
-              </span>
-              <div style="font-size: 13px; color: #475569;">
-                <div>Receipt No: <strong style="color: #2563eb; font-family: monospace; font-size: 14px;">${this.escapeHtml(receiptNumber)}</strong></div>
-                <div style="margin-top: 3px;">Invoice Ref: <strong style="color: #0f172a; font-family: monospace;">${this.escapeHtml(fee.invoice_number || '-')}</strong></div>
-                <div style="margin-top: 3px;">Payment Date: <strong style="color: #0f172a;">${this.escapeHtml(fee.payment_date || fee.created_at || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }))}</strong></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="meta-grid">
-            <div class="meta-box">
-              <div class="meta-box-label">STUDENT INFORMATION</div>
-              <div class="meta-box-title">${this.escapeHtml((fee.first_name || '') + ' ' + (fee.last_name || ''))}</div>
-              <div class="meta-box-row">
-                <div>Student Code: <strong>${this.escapeHtml(fee.student_code || '-')}</strong></div>
-                ${fee.admission_number ? `<div>Admission No: <strong>${this.escapeHtml(fee.admission_number)}</strong></div>` : ''}
-                <div>Branch / Dojo: <strong>${this.escapeHtml(fee.branch_name || 'Main Dojo')}</strong></div>
-              </div>
-            </div>
-
-            <div class="meta-box">
-              <div class="meta-box-label">COACHING COVERAGE & PAYMENT</div>
-              <div style="font-size: 14px; font-weight: 700; color: #2563eb; margin-bottom: 4px;">Coverage: ${this.escapeHtml(periodText)}</div>
-              <div class="meta-box-row">
-                <div>Payment Mode: <strong>${this.escapeHtml((fee.payment_mode || fee.payment_method || 'Cash / UPI').toUpperCase())}</strong></div>
-                ${fee.next_installment_date ? `<div>Next Renewal Due: <strong style="color: #dc2626;">${this.escapeHtml(fee.next_installment_date)}</strong></div>` : ''}
-                <div>Collected by: <strong>${this.escapeHtml(fee.collector_name || 'Accounts Desk')}</strong></div>
-              </div>
-            </div>
-          </div>
-
-          <table class="table">
-            <thead>
-              <tr>
-                <th style="border-radius: 6px 0 0 0;">Description</th>
-                <th style="text-align: right;">${(hasDiscount || hasGst) ? 'Base Fee' : 'Tuition Fee'}</th>
-                ${hasDiscount ? `<th style="text-align: right;">Concession / Discount</th>` : ''}
-                ${hasGst ? `<th style="text-align: right;">GST (18%)</th>` : ''}
-                <th style="text-align: right;">Net Payable</th>
-                <th style="text-align: right;">Amount Paid</th>
-                <th style="text-align: right; border-radius: 0 6px 0 0;">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>
-                  <strong style="color: #0f172a;">${this.escapeHtml(fee.title || fee.fee_title || 'Sports Curriculum & Coaching')}</strong>
-                  <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Coaching Cycle: ${this.escapeHtml(periodText)}</div>
-                </td>
-                <td style="text-align: right;">₹${Number(baseFee).toLocaleString('en-IN')}</td>
-                ${hasDiscount ? `
-                  <td style="text-align: right; color: #dc2626;">
-                    -₹${Number(discount).toLocaleString('en-IN')}${discountPercentage > 0 ? ` (${discountPercentage}%)` : ''}
-                  </td>
-                ` : ''}
-                ${hasGst ? `
-                  <td style="text-align: right; color: #2563eb;">
-                    +₹${Number(taxAmount).toLocaleString('en-IN')}
-                  </td>
-                ` : ''}
-                <td style="text-align: right; font-weight: 600;">₹${Number(netAmount).toLocaleString('en-IN')}</td>
-                <td style="text-align: right; font-weight: 700; color: #16a34a; font-size: 14px;">₹${Number(paid).toLocaleString('en-IN')}</td>
-                <td style="text-align: right; font-weight: 700; color: ${balance > 0 ? '#dc2626' : '#64748b'}; font-size: 13px;">₹${Number(balance).toLocaleString('en-IN')}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div class="totals-wrapper">
-            <div class="totals-box">
-              <div class="totals-row">
-                <span>${(hasDiscount || hasGst) ? 'Base Tuition Fee:' : 'Total Tuition Fee:'}</span>
-                <span style="color: #0f172a; font-weight: 600;">₹${Number(baseFee).toLocaleString('en-IN')}</span>
-              </div>
-              ${hasDiscount ? `
-                <div class="totals-row" style="color: #dc2626;">
-                  <span>Concession / Discount:</span>
-                  <span>-₹${Number(discount).toLocaleString('en-IN')}</span>
-                </div>
-              ` : ''}
-              ${hasGst ? `
-                <div class="totals-row" style="color: #2563eb;">
-                  <span>GST / Tax:</span>
-                  <span>+₹${Number(taxAmount).toLocaleString('en-IN')}</span>
-                </div>
-              ` : ''}
-              ${(hasDiscount || hasGst) ? `
-                <div class="totals-row" style="font-weight: 600; color: #475569;">
-                  <span>Net Total Fee:</span>
-                  <span style="color: #0f172a;">₹${Number(netAmount).toLocaleString('en-IN')}</span>
-                </div>
-              ` : ''}
-              <div class="totals-row paid-highlight">
-                <span>Amount Paid:</span>
-                <span>₹${Number(paid).toLocaleString('en-IN')}</span>
-              </div>
-              <div class="totals-row" style="color: ${balance > 0 ? '#dc2626' : '#64748b'}; font-weight: ${balance > 0 ? '700' : 'normal'};">
-                <span>Balance Due:</span>
-                <span>₹${Number(balance).toLocaleString('en-IN')}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="receipt-footer">
-            <div>
-              <strong>Verified electronically by Academy Fee Collection Desk${hasGst ? ' &bull; SAC 999293' : ''}</strong>
-              <div style="margin-top: 3px;">Thank you for your timely payment! Keep this official receipt for belt grading verification and records.</div>
-            </div>
-            <div style="text-align: right; font-weight: 600; color: #0f172a;">
-              Generated: ${new Date().toLocaleString('en-IN')}
-            </div>
-          </div>
-        </div>
+        ${receiptHtml}
 
         <script>
           function triggerPrint() {
