@@ -662,6 +662,37 @@ const app = {
     });
   },
 
+  enhanceAllNumberInputs(root = document) {
+    if (!root || !root.querySelectorAll) return;
+    const numberInputs = root.querySelectorAll('input[type="number"]');
+    numberInputs.forEach(input => {
+      // 1. Never allow negative values
+      if (!input.hasAttribute('min') || parseFloat(input.min) < 0) {
+        input.setAttribute('min', '0');
+      }
+      if (input.value !== '' && parseFloat(input.value) < 0) {
+        input.value = Math.max(0, parseFloat(input.min) || 0);
+      }
+
+      // 2. On fees portal, increase only by 50 directly instead of 1
+      const isFeeInput = input.id.startsWith('collect-fee-pay') ||
+                         input.id.startsWith('collect-fee-discount-val') ||
+                         input.id.startsWith('edit-fee-') ||
+                         input.id.startsWith('override-fee-') ||
+                         input.id.startsWith('batch-fee') ||
+                         input.id.startsWith('edit-batch-fee') ||
+                         input.id === 'adj-amount' ||
+                         input.id === 'pay-amount' ||
+                         input.classList.contains('fee-amount-input') ||
+                         Boolean(input.closest('#fees-content, [data-tab="fees"], .fee-modal'));
+
+      const isPercentage = input.id.includes('pct') || input.id.includes('percentage');
+      if (isFeeInput && !isPercentage) {
+        input.step = '50';
+      }
+    });
+  },
+
   escapeJsString(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -776,12 +807,49 @@ const app = {
       }
     });
 
-    // Auto-enhance any dynamically added date inputs into Indian format (dd/mm/yyyy)
+    // Global protection: Any input type number must NOT allow negative values
+    document.addEventListener('keydown', (e) => {
+      if (e.target && e.target.type === 'number') {
+        // Disallow typing minus / subtract
+        if (e.key === '-' || e.key === 'Subtract') {
+          e.preventDefault();
+        }
+      }
+    }, true);
+
+    document.addEventListener('input', (e) => {
+      if (e.target && e.target.type === 'number') {
+        if (!e.target.hasAttribute('min') || parseFloat(e.target.min) < 0) {
+          e.target.setAttribute('min', '0');
+        }
+        if (e.target.value !== '' && parseFloat(e.target.value) < 0) {
+          e.target.value = Math.max(0, parseFloat(e.target.min) || 0);
+        }
+      }
+    }, true);
+
+    document.addEventListener('paste', (e) => {
+      if (e.target && e.target.type === 'number') {
+        const text = (e.clipboardData || window.clipboardData)?.getData('text');
+        if (text && text.includes('-')) {
+          e.preventDefault();
+          const clean = text.replace(/-/g, '');
+          const val = parseFloat(clean);
+          e.target.value = isNaN(val) || val < 0 ? '0' : clean;
+          e.target.dispatchEvent(new Event('input', { bubbles: true }));
+          e.target.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+    }, true);
+
+    // Auto-enhance any dynamically added date inputs and enforce non-negative number input rules
     try {
-      const dateObserver = new MutationObserver(() => {
+      const domObserver = new MutationObserver(() => {
         this.enhanceAllDateInputs(document.body);
+        this.enhanceAllNumberInputs(document.body);
       });
-      dateObserver.observe(document.body, { childList: true, subtree: true });
+      domObserver.observe(document.body, { childList: true, subtree: true });
+      this.enhanceAllNumberInputs(document.body);
     } catch (e) {
       console.warn('MutationObserver initialization skipped:', e);
     }
@@ -10395,21 +10463,13 @@ const app = {
               <span id="collect-duration-tag" class="badge badge-primary" style="font-size: 11px;">1 Month Coverage</span>
             </div>
 
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 10px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
               <!-- Fee Period Starts (Date From) -->
               <div class="form-group" style="margin: 0;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-heading); display: block; margin-bottom: 4px;">
                   Date From (Starts) *
                 </label>
                 <input type="date" id="collect-fee-start-date" class="form-input" style="width: 100%; font-weight: 600;" required onchange="app.onFeeDateOrMonthsChange()">
-              </div>
-
-              <!-- Number of Months -->
-              <div class="form-group" style="margin: 0;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-heading); display: block; margin-bottom: 4px;">
-                  Duration (Months) *
-                </label>
-                <input type="number" id="collect-fee-months" class="form-input" min="1" max="36" value="1" style="width: 100%; font-weight: 700; text-align: center;" required oninput="app.onFeeDateOrMonthsChange()">
               </div>
 
               <!-- Fee Period Ends (Date To) -->
@@ -10421,15 +10481,46 @@ const app = {
               </div>
             </div>
 
+            <!-- Duration (Months) Slider / Scroll Bar (1 to max 12) -->
+            <div class="form-group" style="margin: 0 0 12px 0; background: var(--bg-card, #ffffff); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <label style="font-size: 12px; font-weight: 700; color: var(--text-heading); margin: 0; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-sliders" style="color: var(--primary);"></i> Duration (Months) *
+                </label>
+                <span id="collect-fee-months-badge" class="badge badge-primary" style="font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 20px;">
+                  1 Month
+                </span>
+              </div>
+              <div style="padding: 2px 0;">
+                <input type="range" id="collect-fee-months" class="form-range" min="1" max="12" step="1" value="1" 
+                  style="width: 100%; height: 8px; cursor: pointer; accent-color: var(--primary); display: block; margin: 0;" 
+                  required oninput="app.onFeeDateOrMonthsChange()">
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); margin-top: 5px; padding: 0 2px; font-weight: 600;">
+                  <span>1 mo</span>
+                  <span>2</span>
+                  <span>3 mo</span>
+                  <span>4</span>
+                  <span>5</span>
+                  <span>6 mo</span>
+                  <span>7</span>
+                  <span>8</span>
+                  <span>9 mo</span>
+                  <span>10</span>
+                  <span>11</span>
+                  <span>12 mo (Max)</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Quick Month Selection Pills -->
             <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
-              <span style="font-size: 11px; color: var(--text-dim); margin-right: 2px;">Quick Months:</span>
+              <span style="font-size: 11px; color: var(--text-dim); margin-right: 2px;">Quick Select:</span>
               <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(1)">1 mo</button>
               <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(2)">2 mo</button>
               <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(3)">3 mo (Quarterly)</button>
               <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(4)">4 mo</button>
-              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(5)">5 mo</button>
               <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(6)">6 mo (Half-Yr)</button>
+              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(9)">9 mo</button>
               <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(12)">12 mo (Annual)</button>
             </div>
 
@@ -10485,8 +10576,14 @@ const app = {
             <div id="fee-disc-inputs" style="display: none;">
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
                 <div class="form-group" style="margin: 0;">
-                  <label id="fee-disc-val-label" style="font-size: 12px; font-weight: 600;">Discount Value (₹ or %)</label>
-                  <input type="number" id="collect-fee-discount-val" class="form-input" style="width: 100%; font-weight: 700; color: #10b981;" min="0" step="any" value="0" oninput="app.recalculateFeeLive()">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <label id="fee-disc-val-label" style="font-size: 12px; font-weight: 600; margin: 0;">Discount Value (₹ or %)</label>
+                    <div style="display: flex; gap: 4px;">
+                      <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 7px; font-size: 11px; font-weight: 700;" onclick="app.adjustFeeInput('collect-fee-discount-val', -50, true)" title="Decrease by ₹50">&minus;50</button>
+                      <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 7px; font-size: 11px; font-weight: 700;" onclick="app.adjustFeeInput('collect-fee-discount-val', 50, true)" title="Increase by ₹50">+50</button>
+                    </div>
+                  </div>
+                  <input type="number" id="collect-fee-discount-val" class="form-input fee-amount-input" style="width: 100%; font-weight: 700; color: #10b981;" min="0" step="50" value="0" oninput="app.recalculateFeeLive()">
                 </div>
                 <div class="form-group" style="margin: 0;">
                   <label style="font-size: 12px; font-weight: 600;">Discount Reason / Remarks</label>
@@ -10508,9 +10605,15 @@ const app = {
           <!-- 4. Payment Collection Details -->
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
             <div class="form-group" style="margin: 0;">
-              <label style="font-weight: 600;">Amount Paying Now (₹) *</label>
-              <input type="number" id="collect-fee-pay-now" class="form-input" style="width: 100%; font-weight: 700;" min="0" step="any" required>
-              <small style="color: var(--text-muted); font-size: 11px;">Allows partial or full payment</small>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="font-weight: 600; margin: 0;">Amount Paying Now (₹) *</label>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 7px; font-size: 11px; font-weight: 700;" onclick="app.adjustFeeInput('collect-fee-pay-now', -50)" title="Decrease by ₹50">&minus;50</button>
+                  <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 7px; font-size: 11px; font-weight: 700;" onclick="app.adjustFeeInput('collect-fee-pay-now', 50)" title="Increase by ₹50">+50</button>
+                </div>
+              </div>
+              <input type="number" id="collect-fee-pay-now" class="form-input fee-amount-input" style="width: 100%; font-weight: 700;" min="0" step="50" required>
+              <small style="color: var(--text-muted); font-size: 11px;">Increases/decreases by ₹50 &bull; Allows partial or full payment</small>
             </div>
 
             <div class="form-group" style="margin: 0;">
@@ -10586,10 +10689,26 @@ const app = {
     };
   },
 
+  adjustFeeInput(inputId, delta, triggerRecalc = false) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    const current = parseFloat(el.value) || 0;
+    const minVal = el.hasAttribute('min') ? parseFloat(el.min) : 0;
+    const stepVal = parseFloat(el.step) || 50;
+    const effectiveDelta = delta !== undefined ? delta : stepVal;
+    const newVal = Math.max(minVal, current + effectiveDelta);
+    el.value = newVal;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    if (triggerRecalc && typeof this.recalculateFeeLive === 'function') {
+      this.recalculateFeeLive();
+    }
+  },
+
   setFeeMonths(months) {
     const input = document.getElementById('collect-fee-months');
     if (input) {
-      input.value = months;
+      input.value = Math.min(12, Math.max(1, parseInt(months, 10) || 1));
       this.onFeeDateOrMonthsChange();
     }
   },
@@ -10607,11 +10726,18 @@ const app = {
     const eInput = document.getElementById('collect-fee-end-date');
     const nextInstEl = document.getElementById('calc-next-inst');
     const durTag = document.getElementById('collect-duration-tag');
+    const monthsBadge = document.getElementById('collect-fee-months-badge');
 
     if (!sInput || !mInput) return;
 
     const startDate = sInput.value;
-    const months = Math.max(1, parseInt(mInput.value, 10) || 1);
+    const months = Math.min(12, Math.max(1, parseInt(mInput.value, 10) || 1));
+    mInput.value = months;
+
+    if (monthsBadge) {
+      const monthLabel = months === 1 ? '1 Month' : (months === 3 ? '3 Months (Quarterly)' : (months === 6 ? '6 Months (Half-Yr)' : (months === 12 ? '12 Months (Annual)' : `${months} Months`)));
+      monthsBadge.innerText = monthLabel;
+    }
 
     if (durTag) {
       durTag.innerText = `${months} ${months === 1 ? 'Month' : 'Months'} Coverage`;
@@ -10935,12 +11061,24 @@ const app = {
               <div style="font-weight: 700; font-size: 12px; margin-bottom: 8px; color: var(--text-heading);"><i class="fa-solid fa-coins"></i> Unpaid Invoice Fee Amounts</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                 <div class="form-group">
-                  <label class="form-label">Base Fee (₹) *</label>
-                  <input type="number" id="edit-fee-base" class="form-input" style="width: 100%;" value="${fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || fee.amount || 0)}" min="0" step="any" required>
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <label class="form-label" style="margin: 0;">Base Fee (₹) *</label>
+                    <div style="display: flex; gap: 4px;">
+                      <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 6px; font-size: 10px; font-weight: 700;" onclick="app.adjustFeeInput('edit-fee-base', -50)">&minus;50</button>
+                      <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 6px; font-size: 10px; font-weight: 700;" onclick="app.adjustFeeInput('edit-fee-base', 50)">+50</button>
+                    </div>
+                  </div>
+                  <input type="number" id="edit-fee-base" class="form-input fee-amount-input" style="width: 100%;" value="${fee.base_fee !== undefined ? fee.base_fee : (fee.net_amount || fee.amount || 0)}" min="0" step="50" required>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Discount Amount (₹)</label>
-                  <input type="number" id="edit-fee-discount" class="form-input" style="width: 100%;" value="${fee.discount_amount || 0}" min="0" step="any">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <label class="form-label" style="margin: 0;">Discount Amount (₹)</label>
+                    <div style="display: flex; gap: 4px;">
+                      <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 6px; font-size: 10px; font-weight: 700;" onclick="app.adjustFeeInput('edit-fee-discount', -50)">&minus;50</button>
+                      <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 6px; font-size: 10px; font-weight: 700;" onclick="app.adjustFeeInput('edit-fee-discount', 50)">+50</button>
+                    </div>
+                  </div>
+                  <input type="number" id="edit-fee-discount" class="form-input fee-amount-input" style="width: 100%;" value="${fee.discount_amount || 0}" min="0" step="50">
                 </div>
               </div>
             </div>
@@ -11287,8 +11425,14 @@ const app = {
           </p>
 
           <div class="form-group">
-            <label>Custom Monthly Fee (₹) *</label>
-            <input type="number" id="override-fee-amt" class="form-input" style="width: 100%; font-weight: 700;" value="${currentMonthlyFee}" min="0" step="any" required>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label style="font-weight: 600; font-size: 13px; margin: 0;">Custom Monthly Fee (₹) *</label>
+              <div style="display: flex; gap: 4px;">
+                <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 6px; font-size: 10px; font-weight: 700;" onclick="app.adjustFeeInput('override-fee-amt', -50)">&minus;50</button>
+                <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 6px; font-size: 10px; font-weight: 700;" onclick="app.adjustFeeInput('override-fee-amt', 50)">+50</button>
+              </div>
+            </div>
+            <input type="number" id="override-fee-amt" class="form-input fee-amount-input" style="width: 100%; font-weight: 700;" value="${currentMonthlyFee}" min="0" step="50" required>
           </div>
 
           <div class="form-group">
@@ -14595,8 +14739,14 @@ const app = {
               </select>
             </div>
             <div class="form-group">
-              <label>Monthly Fee (₹)</label>
-              <input type="number" id="batch-fee" class="form-input" style="width: 100%;" value="${defaultFee}" min="0">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="margin: 0;">Monthly Fee (₹)</label>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 6px; font-size: 10px; font-weight: 700;" onclick="app.adjustFeeInput('batch-fee', -50)">&minus;50</button>
+                  <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 6px; font-size: 10px; font-weight: 700;" onclick="app.adjustFeeInput('batch-fee', 50)">+50</button>
+                </div>
+              </div>
+              <input type="number" id="batch-fee" class="form-input fee-amount-input" style="width: 100%;" value="${defaultFee}" min="0" step="50">
             </div>
           </div>
           <div class="form-grid">
@@ -14749,8 +14899,14 @@ const app = {
               </select>
             </div>
             <div class="form-group">
-              <label>Monthly Fee (₹)</label>
-              <input type="number" id="edit-batch-fee" class="form-input" style="width: 100%;" value="${batch.monthly_fee !== undefined ? batch.monthly_fee : 2500}" min="0">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="margin: 0;">Monthly Fee (₹)</label>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 6px; font-size: 10px; font-weight: 700;" onclick="app.adjustFeeInput('edit-batch-fee', -50)">&minus;50</button>
+                  <button type="button" class="btn btn-secondary btn-xs" style="padding: 2px 6px; font-size: 10px; font-weight: 700;" onclick="app.adjustFeeInput('edit-batch-fee', 50)">+50</button>
+                </div>
+              </div>
+              <input type="number" id="edit-batch-fee" class="form-input fee-amount-input" style="width: 100%;" value="${batch.monthly_fee !== undefined ? batch.monthly_fee : 2500}" min="0" step="50">
             </div>
           </div>
           <div class="form-grid">
@@ -23604,6 +23760,7 @@ const app = {
 
     setTimeout(() => {
       this.enhanceAllDateInputs(dialog || bodyEl || document);
+      this.enhanceAllNumberInputs(dialog || bodyEl || document);
     }, 0);
   },
 

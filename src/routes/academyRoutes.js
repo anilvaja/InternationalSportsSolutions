@@ -63,10 +63,36 @@ export function hasPermission(req, perm) {
   if (req.user.isSuperAdmin || req.user.role === 'academy_admin') return true;
   const perms = req.user.permissions || [];
   if (perms.includes('all')) return true;
+
+  const checkSingle = (target) => {
+    if (perms.includes(target)) return true;
+
+    // Granular target check against legacy bundled permission
+    // e.g. target is 'create_students', 'edit_students', 'delete_students', 'import_students', etc.
+    // and user has 'manage_students'
+    const parts = target.split('_');
+    const action = parts[0];
+    const moduleName = parts.slice(1).join('_');
+    if (['view', 'create', 'edit', 'delete', 'import', 'export', 'download', 'mark', 'collect'].includes(action)) {
+      if (perms.includes(`manage_${moduleName}`)) return true;
+    }
+
+    // Bundled target check against granular permissions
+    // e.g. target is 'manage_sports' and user has 'create_sports' or 'edit_sports'
+    if (target.startsWith('manage_')) {
+      const mod = target.substring(7);
+      if (perms.some(k => k === `create_${mod}` || k === `edit_${mod}` || k === `delete_${mod}` || k === `view_${mod}`)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   if (Array.isArray(perm)) {
-    return perm.some(p => perms.includes(p));
+    return perm.some(p => checkSingle(p));
   }
-  return perms.includes(perm);
+  return checkSingle(perm);
 }
 
 /**
@@ -6985,19 +7011,24 @@ academyRouter.get('/permissions', (req, res) => {
           { key: 'create_batches', label: 'Create Batches', desc: 'Schedule new training batches for branches' },
           { key: 'edit_batches', label: 'Edit Batches', desc: 'Modify batch times, capacities, and assigned coaches' },
           { key: 'delete_batches', label: 'Delete Batches', desc: 'Remove empty training batches' },
-          { key: 'export_batches', label: 'Export & Download Batches', desc: 'Download batch schedules and enrolled student rosters' },
+          { key: 'export_batches', label: 'Export Batches', desc: 'Download batch schedules and enrolled student rosters' },
+          { key: 'import_batches', label: 'Import Batches', desc: 'Bulk upload batch schedules via CSV or Excel' },
+          { key: 'download_batches_sample', label: 'Download Batch Sample CSV', desc: 'Download pre-formatted batch sample import template' },
         ],
       },
       {
-        category: 'Branches & Facilities',
+        category: 'Branches & Locations',
         icon: 'fa-code-branch',
-        description: 'Branch locations, dojos, facilities and physical sports equipment',
+        description: 'Branch locations, dojos, training facilities and geofences',
         permissions: [
           { key: 'view_branches', label: 'View Branches', desc: 'Access list of branch locations and training facilities' },
-          { key: 'manage_branches', label: 'Create & Edit Branches', desc: 'Add or modify branch facilities and contact info' },
+          { key: 'create_branches', label: 'Create Branches', desc: 'Register new training branches and dojos' },
+          { key: 'edit_branches', label: 'Edit Branches', desc: 'Modify branch facilities, GPS geofences, and contact info' },
           { key: 'delete_branches', label: 'Delete Branches', desc: 'Deactivate or remove branch locations' },
-          { key: 'manage_facilities', label: 'Facilities & Equipment', desc: 'Track sports courts, inventory, and equipment' },
-          { key: 'export_branches', label: 'Export & Download Branches', desc: 'Export branch directories and asset inventory' },
+          { key: 'export_branches', label: 'Export Branches', desc: 'Download branch directory and operational data' },
+          { key: 'import_branches', label: 'Import Branches', desc: 'Bulk import branches via CSV spreadsheet' },
+          { key: 'download_branches_sample', label: 'Download Branch Sample CSV', desc: 'Download branch sample import template' },
+          { key: 'manage_branches', label: 'Manage Branches [Legacy Alias]', desc: 'Full branch creation, update, and deletion capability' },
         ],
       },
       {
@@ -7009,9 +7040,11 @@ academyRouter.get('/permissions', (req, res) => {
           { key: 'create_students', label: 'Enroll New Students', desc: 'Add new student profiles to the academy' },
           { key: 'edit_students', label: 'Edit Student Details', desc: 'Update contact info, guardians, and medical notes' },
           { key: 'delete_students', label: 'Delete / Archive Students', desc: 'Remove or deactivate student records from the roster' },
-          { key: 'transfer_students', label: 'Batch Transfers', desc: 'Transfer students between batches and branches' },
+          { key: 'transfer_students', label: 'Batch Transfers', desc: 'Transfer students between training batches and branches' },
+          { key: 'export_students', label: 'Export Students', desc: 'Download full student directories and CSV/Excel rosters' },
           { key: 'import_students', label: 'Bulk Import Students', desc: 'Import student rosters via CSV or Excel spreadsheets' },
-          { key: 'export_students', label: 'Export & Download Students', desc: 'Download full student directories and CSV/Excel rosters' },
+          { key: 'download_students_sample', label: 'Download Student Sample CSV', desc: 'Download student import template with branch/batch references' },
+          { key: 'manage_students', label: 'Manage Students [Legacy Alias]', desc: 'Full student registration, update, and lifecycle management' },
         ],
       },
       {
@@ -7021,11 +7054,14 @@ academyRouter.get('/permissions', (req, res) => {
         permissions: [
           { key: 'view_coaches', label: 'View Coaches & Staff', desc: 'View coach directories, assignments, and sports' },
           { key: 'create_coaches', label: 'Register New Staff', desc: 'Onboard coaches, instructors, and office staff' },
-          { key: 'manage_coaches', label: 'Edit Staff Profiles', desc: 'Update coach specializations, bios, and profiles' },
+          { key: 'edit_coaches', label: 'Edit Staff Details', desc: 'Update coach specializations, bios, and staff profiles' },
           { key: 'delete_staff', label: 'Delete / Deactivate Staff', desc: 'Deactivate employee access and archive staff records' },
+          { key: 'export_staff', label: 'Export Coaches & Staff', desc: 'Download staff directories and employee contact rosters' },
+          { key: 'import_staff', label: 'Bulk Import Staff', desc: 'Import coach and staff records via CSV spreadsheet' },
+          { key: 'download_staff_sample', label: 'Download Staff Sample CSV', desc: 'Download staff import template' },
           { key: 'assign_user_roles', label: 'Assign Staff Roles', desc: 'Change employee roles and custom permission overrides' },
           { key: 'manage_staff_payroll', label: 'Staff Compensation & Schedules', desc: 'Set employee salary schemes and work schedules' },
-          { key: 'export_staff', label: 'Export & Download Staff', desc: 'Download staff directories and employee contact rosters' },
+          { key: 'manage_coaches', label: 'Manage Coaches [Legacy Alias]', desc: 'Full coach and staff profile administration' },
         ],
       },
       {
@@ -7034,9 +7070,12 @@ academyRouter.get('/permissions', (req, res) => {
         description: 'Daily class roll call, syllabus technique tracking, and late approvals',
         permissions: [
           { key: 'view_attendance', label: 'View Attendance', desc: 'Access daily and historical attendance registers' },
-          { key: 'mark_attendance', label: 'Mark Attendance & Techniques', desc: 'Take roll call and tag practiced syllabus techniques' },
+          { key: 'mark_attendance', label: 'Take Attendance / Roll Call', desc: 'Take roll call and tag practiced syllabus techniques' },
+          { key: 'edit_attendance', label: 'Edit Past Attendance', desc: 'Update or correct past session attendance records' },
+          { key: 'delete_attendance', label: 'Delete Attendance Sessions', desc: 'Remove erroneous attendance session logs' },
+          { key: 'export_attendance', label: 'Export Attendance', desc: 'Export session attendance records to Excel via SheetJS' },
+          { key: 'download_attendance_report', label: 'Download Attendance Reports', desc: 'Download monthly attendance summary reports' },
           { key: 'approve_late_attendance', label: 'Approve Beyond 2-Day Cutoff', desc: 'Authorize retroactive attendance correction requests' },
-          { key: 'export_attendance', label: 'Export & Download Attendance', desc: 'Export session attendance records to Excel via SheetJS' },
         ],
       },
       {
@@ -7045,8 +7084,13 @@ academyRouter.get('/permissions', (req, res) => {
         description: 'Athletic disciplines, karate programs, and sports configurations',
         permissions: [
           { key: 'view_sports', label: 'View Sports & Disciplines', desc: 'Browse available athletic sports programs' },
-          { key: 'manage_sports', label: 'Create, Edit & Delete Sports', desc: 'Add or modify dynamic sports disciplines and rules' },
-          { key: 'export_sports', label: 'Export & Download Sports', desc: 'Download sports catalog and configuration reports' },
+          { key: 'create_sports', label: 'Create Sports Disciplines', desc: 'Add new sports disciplines e.g. Karate, Taekwondo' },
+          { key: 'edit_sports', label: 'Edit Sports Disciplines', desc: 'Modify sports descriptions, rules, and default categories' },
+          { key: 'delete_sports', label: 'Delete Sports Disciplines', desc: 'Deactivate or delete unreferenced sports disciplines' },
+          { key: 'export_sports', label: 'Export Sports Catalog', desc: 'Download sports catalog and configuration reports' },
+          { key: 'import_sports', label: 'Bulk Import Sports', desc: 'Import multiple sports disciplines via CSV' },
+          { key: 'download_sports_sample', label: 'Download Sports Sample CSV', desc: 'Download sports import template' },
+          { key: 'manage_sports', label: 'Manage Sports [Legacy Alias]', desc: 'Full sports disciplines creation, edit, and deletion' },
         ],
       },
       {
@@ -7055,9 +7099,14 @@ academyRouter.get('/permissions', (req, res) => {
         description: 'Curriculum categories, technique progression, and belt evaluations',
         permissions: [
           { key: 'view_syllabus', label: 'View Curriculum', desc: 'Browse syllabus categories, techniques, and belts' },
-          { key: 'manage_syllabus', label: 'Manage Syllabus & Techniques', desc: 'Create, reorder, or edit techniques and levels' },
+          { key: 'create_syllabus', label: 'Create Syllabus Techniques', desc: 'Add new techniques, kata, kumite, and belt requirements' },
+          { key: 'edit_syllabus', label: 'Edit Syllabus & Techniques', desc: 'Modify techniques, grading criteria, and descriptions' },
+          { key: 'delete_syllabus', label: 'Delete Syllabus Items', desc: 'Remove syllabus categories or unassigned techniques' },
           { key: 'evaluate_progression', label: 'Belt Evaluations & Grading', desc: 'Promote students and issue belt level rank certificates' },
-          { key: 'export_syllabus', label: 'Export & Download Syllabus', desc: 'Download syllabus curriculum guides and technique lists' },
+          { key: 'export_syllabus', label: 'Export Syllabus', desc: 'Download syllabus curriculum guides and technique lists' },
+          { key: 'import_syllabus', label: 'Bulk Import Syllabus', desc: 'Import curriculum techniques via CSV/Excel' },
+          { key: 'download_syllabus_sample', label: 'Download Syllabus Sample CSV', desc: 'Download syllabus curriculum import template' },
+          { key: 'manage_syllabus', label: 'Manage Syllabus [Legacy Alias]', desc: 'Full syllabus and technique progression management' },
         ],
       },
       {
@@ -7066,9 +7115,14 @@ academyRouter.get('/permissions', (req, res) => {
         description: 'Prospective students, trial class bookings, and admission conversion',
         permissions: [
           { key: 'view_inquiries', label: 'View Inquiries', desc: 'Browse prospective students and admission leads' },
-          { key: 'manage_inquiries', label: 'Create & Edit Inquiries', desc: 'Track trial sessions, inquiries, and follow-ups' },
+          { key: 'create_inquiries', label: 'Create Inquiries', desc: 'Log new prospective leads, inquiries, and follow-ups' },
+          { key: 'edit_inquiries', label: 'Edit Inquiries', desc: 'Update lead status, follow-up notes, and guardian details' },
+          { key: 'delete_inquiries', label: 'Delete / Archive Inquiries', desc: 'Remove invalid or spam inquiry records' },
           { key: 'convert_inquiries', label: 'Convert Inquiry to Admission', desc: 'Directly admit inquiry lead into student roster' },
-          { key: 'export_inquiries', label: 'Export & Download Inquiries', desc: 'Download lead pipeline reports to CSV/Excel' },
+          { key: 'export_inquiries', label: 'Export Inquiries', desc: 'Download lead pipeline reports to CSV/Excel' },
+          { key: 'import_inquiries', label: 'Bulk Import Leads', desc: 'Import leads pipeline from marketing campaigns' },
+          { key: 'download_inquiries_sample', label: 'Download Inquiries Sample CSV', desc: 'Download leads import template' },
+          { key: 'manage_inquiries', label: 'Manage Inquiries [Legacy Alias]', desc: 'Full inquiry and leads pipeline management' },
         ],
       },
       {
@@ -7077,10 +7131,13 @@ academyRouter.get('/permissions', (req, res) => {
         description: 'Fee structures, invoices, payment collection, receipts, and overrides',
         permissions: [
           { key: 'view_fees', label: 'View Fees & Invoices', desc: 'Inspect fee ledgers, balances, and collection history' },
-          { key: 'collect_fees', label: 'Collect Fees & Receipts', desc: 'Process payments, generate invoices, and print receipts' },
+          { key: 'collect_fees', label: 'Collect Fees & Payments', desc: 'Record payments, generate invoices, and print receipts' },
+          { key: 'edit_fees', label: 'Edit Invoices & Structures', desc: 'Modify fee plans, invoices, and payment records' },
+          { key: 'delete_fees', label: 'Void / Cancel Invoices', desc: 'Void unpaid invoices or reverse erroneous transactions' },
           { key: 'override_fees', label: 'Fee Overrides & Discounts', desc: 'Apply student-specific rate overrides and discount caps' },
           { key: 'pause_fees', label: 'Fee Pause Management', desc: 'Request or approve fee billing pauses' },
-          { key: 'export_fees', label: 'Export & Download Fees Ledger', desc: 'Export financial ledgers, balances, and collection reports' },
+          { key: 'export_fees', label: 'Export Fees Ledger', desc: 'Export financial ledgers, balances, and collection reports' },
+          { key: 'download_fee_receipts', label: 'Download Invoices & Receipts', desc: 'Download printable PDF tax invoices and receipts' },
         ],
       },
       {
@@ -7088,11 +7145,14 @@ academyRouter.get('/permissions', (req, res) => {
         icon: 'fa-money-check-dollar',
         description: 'Staff payroll dashboards, salary slips, overtime approvals, and payouts',
         permissions: [
-          { key: 'view_my_salary', label: 'View Personal Salary', desc: 'Access personal monthly salary statements and payouts' },
           { key: 'view_payroll', label: 'Staff Payroll Dashboard', desc: 'View academy-wide payroll records and statements' },
-          { key: 'approve_overtime', label: 'Approve Overtime (>30m)', desc: 'Review and approve coach overtime requests' },
+          { key: 'view_my_salary', label: 'View Personal Salary', desc: 'Access personal monthly salary statements and payouts' },
+          { key: 'calculate_payroll', label: 'Calculate Monthly Payroll', desc: 'Run attendance-backed multi-mode payroll calculations' },
           { key: 'finalize_payroll', label: 'Finalize Monthly Payroll', desc: 'Lock payroll periods and process disbursements' },
-          { key: 'export_payroll', label: 'Export & Download Payroll', desc: 'Download monthly payroll registers and salary slips' },
+          { key: 'record_payroll_payment', label: 'Record Salary Disbursements', desc: 'Record employee payout transactions' },
+          { key: 'approve_overtime', label: 'Approve Overtime (>30m)', desc: 'Review and approve coach overtime requests' },
+          { key: 'export_payroll', label: 'Export Payroll Register', desc: 'Download monthly payroll registers and bank payout sheets' },
+          { key: 'download_salary_slip', label: 'Download Salary Slips', desc: 'Download individual staff monthly pay slips' },
         ],
       },
       {
@@ -7102,8 +7162,10 @@ academyRouter.get('/permissions', (req, res) => {
         permissions: [
           { key: 'view_leaves', label: 'View Leaves', desc: 'View coach and staff leave applications' },
           { key: 'apply_leave', label: 'Apply Personal Leave', desc: 'Submit leave requests for personal absence' },
+          { key: 'edit_leaves', label: 'Edit Leave Requests', desc: 'Update leave dates, categories, or reasons' },
+          { key: 'delete_leaves', label: 'Delete Leave Requests', desc: 'Cancel or remove personal/staff leave applications' },
           { key: 'manage_leaves', label: 'Approve / Reject Leaves', desc: 'Authorize or reject staff leave requests' },
-          { key: 'export_leaves', label: 'Export & Download Leaves', desc: 'Download leave summaries and absence tracking logs' },
+          { key: 'export_leaves', label: 'Export Leaves Log', desc: 'Download leave summaries and absence tracking logs' },
         ],
       },
       {
@@ -7114,7 +7176,8 @@ academyRouter.get('/permissions', (req, res) => {
           { key: 'punch_attendance', label: 'GPS Geofenced Punch In/Out', desc: 'Record duty shifts via mobile GPS location' },
           { key: 'view_my_punches', label: 'View Personal Punch Logs', desc: 'Inspect personal shift punch history' },
           { key: 'view_staff_punches', label: 'View All Staff Punches', desc: 'Supervise academy-wide staff duty timestamps' },
-          { key: 'export_punches', label: 'Export & Download Punches', desc: 'Export time card reports and GPS location logs' },
+          { key: 'edit_punches', label: 'Manual Punch Corrections', desc: 'Adjust staff duty punch-in or punch-out times' },
+          { key: 'export_punches', label: 'Export Punch Logs', desc: 'Export time card reports and GPS location logs' },
         ],
       },
       {
@@ -7123,9 +7186,13 @@ academyRouter.get('/permissions', (req, res) => {
         description: 'Tournaments, seminars, camps, registrations, and competitor rosters',
         permissions: [
           { key: 'view_events', label: 'View Events', desc: 'Browse upcoming tournaments, seminars, and camps' },
-          { key: 'manage_events', label: 'Create & Edit Events', desc: 'Create, edit, or publish academy events and fees' },
-          { key: 'approve_event_registrations', label: 'Approve Registrations', desc: 'Manage participant confirmations and waivers' },
-          { key: 'export_events', label: 'Export & Download Event Rosters', desc: 'Export attendee rosters and tournament brackets' },
+          { key: 'create_events', label: 'Create Events', desc: 'Create new tournaments, workshops, and belt tests' },
+          { key: 'edit_events', label: 'Edit Events', desc: 'Update event schedules, eligibility rules, and venues' },
+          { key: 'delete_events', label: 'Cancel / Delete Events', desc: 'Cancel upcoming events and notify attendees' },
+          { key: 'approve_event_registrations', label: 'Moderate Participant Registrations', desc: 'Confirm, waitlist, or reject registrations' },
+          { key: 'export_events', label: 'Export Event Rosters', desc: 'Export attendee rosters and tournament brackets' },
+          { key: 'download_event_roster', label: 'Download Event Roster PDF/CSV', desc: 'Download attendance sheets for tournament day' },
+          { key: 'manage_events', label: 'Manage Events [Legacy Alias]', desc: 'Full event creation, editing, and roster administration' },
         ],
       },
       {
@@ -7134,20 +7201,56 @@ academyRouter.get('/permissions', (req, res) => {
         description: 'Scheduled academy holidays, closures, and seasonal breaks',
         permissions: [
           { key: 'view_holidays', label: 'View Holidays', desc: 'Inspect academy scheduled holiday calendar' },
-          { key: 'manage_holidays', label: 'Create, Edit & Delete Holidays', desc: 'Schedule or modify holiday dates and closures' },
-          { key: 'export_holidays', label: 'Export & Download Holidays', desc: 'Export annual holiday schedule to Excel or PDF' },
+          { key: 'create_holidays', label: 'Add New Holidays', desc: 'Schedule holiday dates, festivals, and academy closures' },
+          { key: 'edit_holidays', label: 'Edit Holidays', desc: 'Modify holiday dates, descriptions, and branch scopes' },
+          { key: 'delete_holidays', label: 'Delete Holidays', desc: 'Remove scheduled holiday dates' },
+          { key: 'export_holidays', label: 'Export Holiday Calendar', desc: 'Export annual holiday schedule to Excel or PDF' },
+          { key: 'manage_holidays', label: 'Manage Holidays [Legacy Alias]', desc: 'Full holiday scheduling, editing, and deletion' },
         ],
       },
       {
-        category: 'Roles & Security Administration',
+        category: 'Facilities & Equipment',
+        icon: 'fa-dumbbell',
+        description: 'Sports courts, dojo training mats, athletic gear, and physical inventory',
+        permissions: [
+          { key: 'view_facilities', label: 'View Facilities & Equipment', desc: 'Inspect court schedules, dojo halls, and inventory' },
+          { key: 'create_facilities', label: 'Add Facilities & Equipment', desc: 'Register sports courts, mats, pads, and gear' },
+          { key: 'edit_facilities', label: 'Edit Facilities & Equipment', desc: 'Update equipment condition, counts, and maintenance' },
+          { key: 'delete_facilities', label: 'Delete Facilities & Equipment', desc: 'Decommission sports gear or remove facility records' },
+          { key: 'export_facilities', label: 'Export Asset Inventory', desc: 'Export facilities inventory and equipment lists' },
+          { key: 'manage_facilities', label: 'Manage Facilities [Legacy Alias]', desc: 'Full physical facility and inventory administration' },
+        ],
+      },
+      {
+        category: 'Roles & Access Control',
         icon: 'fa-shield-halved',
-        description: 'Operational roles, access control, audit trail, and policies',
+        description: 'Operational roles, staff capabilities, and access control matrices',
         permissions: [
           { key: 'view_roles', label: 'View Roles & Access Control', desc: 'Inspect role matrix and staff assignments' },
-          { key: 'manage_roles', label: 'Create & Edit Roles', desc: 'Configure custom roles and assign capability sets' },
+          { key: 'create_roles', label: 'Create Custom Roles', desc: 'Define new operational roles with tailored capability sets' },
+          { key: 'edit_roles', label: 'Edit Roles & Capabilities', desc: 'Update permissions, display names, and theme colors' },
+          { key: 'delete_roles', label: 'Delete Custom Roles', desc: 'Remove unassigned custom roles' },
+          { key: 'export_roles', label: 'Export Roles Matrix', desc: 'Download role and capability mapping documentation' },
+          { key: 'manage_roles', label: 'Manage Roles [Legacy Alias]', desc: 'Full role creation and permission matrix management' },
+        ],
+      },
+      {
+        category: 'Tenant Audit Log & Security',
+        icon: 'fa-fingerprint',
+        description: 'Chronological activity trail, security stamps, and compliance logs',
+        permissions: [
           { key: 'view_audit_logs', label: 'View Audit Logs', desc: 'Inspect chronological tenant audit trail' },
+          { key: 'export_audit_logs', label: 'Export Audit Logs', desc: 'Export audit trail records for compliance and audits' },
+        ],
+      },
+      {
+        category: 'Academy Settings & Policies',
+        icon: 'fa-building-columns',
+        description: 'Academy registration profile, tax info, and operational policy rules',
+        permissions: [
+          { key: 'view_academy_settings', label: 'View Academy Settings', desc: 'View academy registration, GST, and contact info' },
+          { key: 'edit_academy_settings', label: 'Edit Academy Settings', desc: 'Update academy name, logo crest, GSTIN, and contacts' },
           { key: 'manage_policies', label: 'Manage Policy Settings', desc: 'Configure cutoff thresholds, paydays, and rules' },
-          { key: 'export_audit_logs', label: 'Export & Download Audit Logs', desc: 'Export audit trail records for compliance' },
         ],
       },
       {
