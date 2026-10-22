@@ -1569,27 +1569,107 @@ const app = {
     return aliases[clean] || null;
   },
 
+  hasPermission(perm) {
+    if (!this.user) return false;
+    if (this.user.isSuperAdmin || this.user.role === 'academy_admin') return true;
+    const perms = Array.isArray(this.user.permissions) ? this.user.permissions : [];
+    if (perms.includes('all')) return true;
+
+    const checkSingle = (target) => {
+      if (perms.includes(target)) return true;
+
+      // Granular target check against legacy bundled permission
+      const parts = target.split('_');
+      const action = parts[0];
+      const moduleName = parts.slice(1).join('_');
+      if (['view', 'create', 'edit', 'delete', 'import', 'export', 'download', 'mark', 'collect'].includes(action)) {
+        if (perms.includes(`manage_${moduleName}`)) return true;
+      }
+
+      // Bundled target check against granular permissions
+      if (target.startsWith('manage_')) {
+        const mod = target.substring(7);
+        if (perms.some(k => k === `create_${mod}` || k === `edit_${mod}` || k === `delete_${mod}` || k === `view_${mod}`)) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    if (Array.isArray(perm)) {
+      return perm.some(p => checkSingle(p));
+    }
+    return checkSingle(perm);
+  },
+
   isTabAllowed(tab) {
     if (!this.user) return false;
     if (this.user.role === 'student') {
       return ['student-dashboard', 'student-technique', 'student-attendance', 'student-fees', 'student-events'].includes(tab);
     }
-    const academyTabs = [
-      'overview', 'inquiries', 'branches', 'students', 'coaches', 'batches', 'attendance', 
-      'sports', 'syllabus', 'fees', 'leaves', 'holidays', 'facilities', 'audit-logs', 
-      'payroll', 'my-salary', 'approvals', 'employee-map', 'academy-settings', 'policy-settings', 'events', 'roles-permissions'
-    ];
-    if (academyTabs.includes(tab)) return true;
-    if (this.user.isSuperAdmin) {
-      return ['central-academies', 'central-plans', 'central-stats', 'central-audit', 'central-db-viewer'].includes(tab);
+    if (this.user.isSuperAdmin) return true;
+    if (this.user.role === 'academy_admin') return true;
+
+    switch (tab) {
+      case 'overview':
+        return true;
+      case 'students':
+        return this.hasPermission(['view_students', 'manage_students', 'create_students']);
+      case 'batches':
+        return this.hasPermission(['view_batches', 'manage_batches', 'create_batches']);
+      case 'attendance':
+        return this.hasPermission(['view_attendance', 'mark_attendance', 'manage_attendance']);
+      case 'branches':
+        return this.hasPermission(['view_branches', 'manage_branches']);
+      case 'sports':
+        return this.hasPermission(['view_sports', 'manage_sports']);
+      case 'syllabus':
+        return this.hasPermission(['view_syllabus', 'manage_syllabus']);
+      case 'events':
+        return this.hasPermission(['view_events', 'manage_events']);
+      case 'inquiries':
+        return this.hasPermission(['view_inquiries', 'manage_inquiries', 'create_inquiries']);
+      case 'fees':
+        return this.hasPermission(['view_fees', 'collect_fees', 'manage_fees']);
+      case 'payroll':
+        return this.hasPermission(['view_payroll', 'manage_staff_payroll']);
+      case 'my-salary':
+        return this.hasPermission('view_my_salary') || this.user.role === 'coach';
+      case 'coaches':
+        return this.hasPermission(['view_coaches', 'manage_coaches']);
+      case 'employee-map':
+        return this.hasPermission(['punch_attendance', 'view_my_punches', 'view_staff_punches']) || true;
+      case 'leaves':
+        return this.hasPermission(['view_leaves', 'apply_leave', 'apply_leaves', 'manage_leaves']);
+      case 'holidays':
+        return this.hasPermission(['view_holidays', 'manage_holidays']);
+      case 'approvals':
+        return this.hasPermission(['approve_overtime', 'approve_late_attendance', 'approve_event_registrations', 'manage_leaves']);
+      case 'academy-settings':
+        return this.hasPermission(['view_academy_settings', 'edit_academy_settings']);
+      case 'policy-settings':
+        return this.hasPermission(['manage_policies']);
+      case 'roles-permissions':
+        return this.hasPermission(['view_roles', 'create_roles', 'edit_roles', 'manage_roles', 'assign_user_roles']);
+      case 'facilities':
+        return this.hasPermission(['view_facilities', 'manage_facilities']);
+      case 'audit-logs':
+        return this.hasPermission(['view_audit_logs']);
+      default:
+        return false;
     }
-    return false;
   },
 
   getDefaultTab() {
     if (!this.user) return 'overview';
     if (this.user.role === 'student') return 'student-dashboard';
     if (this.user.isSuperAdmin && !this.tenantAcademy) return 'central-academies';
+    if (this.isTabAllowed('overview')) return 'overview';
+    const fallbacks = ['students', 'batches', 'attendance', 'fees', 'my-salary', 'employee-map', 'inquiries', 'coaches'];
+    for (const t of fallbacks) {
+      if (this.isTabAllowed(t)) return t;
+    }
     return 'overview';
   },
 
@@ -1650,86 +1730,176 @@ const app = {
         <a href="${this.getPathForTab('overview')}" class="nav-item ${this.currentTab === 'overview' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('overview')">
           <i class="fa-solid fa-house-chimney"></i> Dashboard
         </a>
+      `;
 
-        <div class="nav-section-title">Academy</div>
-        <a href="${this.getPathForTab('students')}" class="nav-item ${this.currentTab === 'students' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('students')">
-          <i class="fa-solid fa-graduation-cap"></i> Students
-        </a>
-        <a href="${this.getPathForTab('batches')}" class="nav-item ${this.currentTab === 'batches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('batches')">
-          <i class="fa-solid fa-layer-group"></i> Batches
-        </a>
-        <a href="${this.getPathForTab('attendance')}" class="nav-item ${this.currentTab === 'attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('attendance')">
-          <i class="fa-solid fa-clipboard-user"></i> Class Attendance
-        </a>
-        <a href="${this.getPathForTab('branches')}" class="nav-item ${this.currentTab === 'branches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('branches')">
-          <i class="fa-solid fa-code-branch"></i> Branches
-        </a>
-        <a href="${this.getPathForTab('sports')}" class="nav-item ${this.currentTab === 'sports' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('sports')">
-          <i class="fa-solid fa-medal"></i> Sports & Disciplines
-        </a>
-        <a href="${this.getPathForTab('syllabus')}" class="nav-item ${this.currentTab === 'syllabus' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('syllabus')">
-          <i class="fa-solid fa-book-open-reader"></i> Sports Syllabus
-        </a>
-        <a href="${this.getPathForTab('events')}" class="nav-item ${this.currentTab === 'events' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('events')">
-          <i class="fa-solid fa-trophy"></i> Events & Tournaments
-        </a>
-        <a href="${this.getPathForTab('inquiries')}" class="nav-item ${this.currentTab === 'inquiries' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('inquiries')">
-          <i class="fa-solid fa-address-book"></i> Inquiries & Leads
-        </a>
+      // 1. Academy Section
+      let academyItemsHtml = '';
+      if (this.hasPermission(['view_students', 'manage_students', 'create_students'])) {
+        academyItemsHtml += `
+          <a href="${this.getPathForTab('students')}" class="nav-item ${this.currentTab === 'students' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('students')">
+            <i class="fa-solid fa-graduation-cap"></i> Students
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_batches', 'manage_batches', 'create_batches'])) {
+        academyItemsHtml += `
+          <a href="${this.getPathForTab('batches')}" class="nav-item ${this.currentTab === 'batches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('batches')">
+            <i class="fa-solid fa-layer-group"></i> Batches
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_attendance', 'mark_attendance', 'manage_attendance'])) {
+        academyItemsHtml += `
+          <a href="${this.getPathForTab('attendance')}" class="nav-item ${this.currentTab === 'attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('attendance')">
+            <i class="fa-solid fa-clipboard-user"></i> Class Attendance
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_branches', 'manage_branches'])) {
+        academyItemsHtml += `
+          <a href="${this.getPathForTab('branches')}" class="nav-item ${this.currentTab === 'branches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('branches')">
+            <i class="fa-solid fa-code-branch"></i> Branches
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_sports', 'manage_sports'])) {
+        academyItemsHtml += `
+          <a href="${this.getPathForTab('sports')}" class="nav-item ${this.currentTab === 'sports' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('sports')">
+            <i class="fa-solid fa-medal"></i> Sports & Disciplines
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_syllabus', 'manage_syllabus'])) {
+        academyItemsHtml += `
+          <a href="${this.getPathForTab('syllabus')}" class="nav-item ${this.currentTab === 'syllabus' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('syllabus')">
+            <i class="fa-solid fa-book-open-reader"></i> Sports Syllabus
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_events', 'manage_events'])) {
+        academyItemsHtml += `
+          <a href="${this.getPathForTab('events')}" class="nav-item ${this.currentTab === 'events' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('events')">
+            <i class="fa-solid fa-trophy"></i> Events & Tournaments
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_inquiries', 'manage_inquiries', 'create_inquiries'])) {
+        academyItemsHtml += `
+          <a href="${this.getPathForTab('inquiries')}" class="nav-item ${this.currentTab === 'inquiries' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('inquiries')">
+            <i class="fa-solid fa-address-book"></i> Inquiries & Leads
+          </a>
+        `;
+      }
+      if (academyItemsHtml) {
+        html += `<div class="nav-section-title">Academy</div>${academyItemsHtml}`;
+      }
 
-        ${this.user.role !== 'coach' ? `
-        <div class="nav-section-title">Finance</div>
-        <a href="${this.getPathForTab('fees')}" class="nav-item ${this.currentTab === 'fees' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('fees')">
-          <i class="fa-solid fa-file-invoice-dollar"></i> Fee Collection
-        </a>
-        ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
+      // 2. Finance Section
+      let financeItemsHtml = '';
+      if (this.hasPermission(['view_fees', 'collect_fees', 'manage_fees'])) {
+        financeItemsHtml += `
+          <a href="${this.getPathForTab('fees')}" class="nav-item ${this.currentTab === 'fees' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('fees')">
+            <i class="fa-solid fa-file-invoice-dollar"></i> Fee Collection
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_payroll', 'manage_staff_payroll'])) {
+        financeItemsHtml += `
           <a href="${this.getPathForTab('payroll')}" class="nav-item ${this.currentTab === 'payroll' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('payroll')">
             <i class="fa-solid fa-money-check-dollar"></i> Staff Payroll
           </a>
-        ` : ''}
-        ` : `
-        <div class="nav-section-title">Finance</div>
-        <a href="${this.getPathForTab('my-salary')}" class="nav-item ${this.currentTab === 'my-salary' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('my-salary')">
-          <i class="fa-solid fa-wallet"></i> My Salary Statement
-        </a>
-        `}
+        `;
+      }
+      if (this.hasPermission('view_my_salary') || this.user.role === 'coach') {
+        financeItemsHtml += `
+          <a href="${this.getPathForTab('my-salary')}" class="nav-item ${this.currentTab === 'my-salary' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('my-salary')">
+            <i class="fa-solid fa-wallet"></i> My Salary Statement
+          </a>
+        `;
+      }
+      if (financeItemsHtml) {
+        html += `<div class="nav-section-title">Finance</div>${financeItemsHtml}`;
+      }
 
-        <div class="nav-section-title">Staff & Operations</div>
-        <a href="${this.getPathForTab('coaches')}" class="nav-item ${this.currentTab === 'coaches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('coaches')">
-          <i class="fa-solid fa-user-ninja"></i> Coaches & Staff
-        </a>
+      // 3. Staff & Operations Section
+      let staffItemsHtml = '';
+      if (this.hasPermission(['view_coaches', 'manage_coaches'])) {
+        staffItemsHtml += `
+          <a href="${this.getPathForTab('coaches')}" class="nav-item ${this.currentTab === 'coaches' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('coaches')">
+            <i class="fa-solid fa-user-ninja"></i> Coaches & Staff
+          </a>
+        `;
+      }
+      staffItemsHtml += `
         <a href="${this.getPathForTab('employee-map')}" class="nav-item ${this.currentTab === 'employee-map' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('employee-map')">
           <i class="fa-solid fa-map-location-dot" style="color: #10b981;"></i> Self Attendance / Map
         </a>
-        <a href="${this.getPathForTab('leaves')}" class="nav-item ${this.currentTab === 'leaves' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('leaves')">
-          <i class="fa-solid fa-calendar-check"></i> Staff Leaves
-        </a>
-        <a href="${this.getPathForTab('holidays')}" class="nav-item ${this.currentTab === 'holidays' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('holidays')">
-          <i class="fa-solid fa-calendar-days" style="color: #ef4444;"></i> Holiday Calendar
-        </a>
-        <a href="${this.getPathForTab('approvals')}" class="nav-item ${this.currentTab === 'approvals' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('approvals')">
-          <i class="fa-solid fa-check-to-slot"></i> Approvals Inbox
-        </a>
+      `;
+      if (this.hasPermission(['view_leaves', 'apply_leave', 'apply_leaves', 'manage_leaves'])) {
+        staffItemsHtml += `
+          <a href="${this.getPathForTab('leaves')}" class="nav-item ${this.currentTab === 'leaves' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('leaves')">
+            <i class="fa-solid fa-calendar-check"></i> Staff Leaves
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_holidays', 'manage_holidays'])) {
+        staffItemsHtml += `
+          <a href="${this.getPathForTab('holidays')}" class="nav-item ${this.currentTab === 'holidays' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('holidays')">
+            <i class="fa-solid fa-calendar-days" style="color: #ef4444;"></i> Holiday Calendar
+          </a>
+        `;
+      }
+      if (this.hasPermission(['approve_overtime', 'approve_late_attendance', 'approve_event_registrations', 'manage_leaves'])) {
+        staffItemsHtml += `
+          <a href="${this.getPathForTab('approvals')}" class="nav-item ${this.currentTab === 'approvals' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('approvals')">
+            <i class="fa-solid fa-check-to-slot"></i> Approvals Inbox
+          </a>
+        `;
+      }
+      if (staffItemsHtml) {
+        html += `<div class="nav-section-title">Staff & Operations</div>${staffItemsHtml}`;
+      }
 
-        <div class="nav-section-title">System & Settings</div>
-        ${(this.user.role === 'academy_admin' || this.user.isSuperAdmin) ? `
+      // 4. System & Settings Section
+      let settingsItemsHtml = '';
+      if (this.hasPermission(['view_academy_settings', 'edit_academy_settings'])) {
+        settingsItemsHtml += `
           <a href="${this.getPathForTab('academy-settings')}" class="nav-item ${this.currentTab === 'academy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('academy-settings')">
             <i class="fa-solid fa-building-columns" style="color: #6366f1;"></i> Academy Settings
           </a>
+        `;
+      }
+      if (this.hasPermission(['manage_policies'])) {
+        settingsItemsHtml += `
           <a href="${this.getPathForTab('policy-settings')}" class="nav-item ${this.currentTab === 'policy-settings' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('policy-settings')">
             <i class="fa-solid fa-sliders"></i> Policy Settings
           </a>
+        `;
+      }
+      if (this.hasPermission(['view_roles', 'create_roles', 'edit_roles', 'manage_roles', 'assign_user_roles'])) {
+        settingsItemsHtml += `
           <a href="${this.getPathForTab('roles-permissions')}" class="nav-item ${this.currentTab === 'roles-permissions' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('roles-permissions')">
             <i class="fa-solid fa-key"></i> Roles & Permissions
           </a>
-        ` : ''}
-        <a href="${this.getPathForTab('facilities')}" class="nav-item ${this.currentTab === 'facilities' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('facilities')">
-          <i class="fa-solid fa-dumbbell"></i> Facilities & Equipment
-        </a>
-        <a href="${this.getPathForTab('audit-logs')}" class="nav-item ${this.currentTab === 'audit-logs' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('audit-logs')">
-          <i class="fa-solid fa-shield-halved"></i> Tenant Audit Log
-        </a>
-      `;
+        `;
+      }
+      if (this.hasPermission(['view_facilities', 'manage_facilities'])) {
+        settingsItemsHtml += `
+          <a href="${this.getPathForTab('facilities')}" class="nav-item ${this.currentTab === 'facilities' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('facilities')">
+            <i class="fa-solid fa-dumbbell"></i> Facilities & Equipment
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_audit_logs'])) {
+        settingsItemsHtml += `
+          <a href="${this.getPathForTab('audit-logs')}" class="nav-item ${this.currentTab === 'audit-logs' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('audit-logs')">
+            <i class="fa-solid fa-shield-halved"></i> Tenant Audit Log
+          </a>
+        `;
+      }
+      if (settingsItemsHtml) {
+        html += `<div class="nav-section-title">System & Settings</div>${settingsItemsHtml}`;
+      }
     } else {
       // Student view
       html += `
@@ -6637,27 +6807,33 @@ const app = {
             <h2 class="card-title"><i class="fa-solid fa-users"></i> Student Roster (${totalCount})</h2>
           </div>
           <div class="card-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button class="btn btn-secondary btn-sm" onclick="app.downloadStudentSampleCsv()">
-              <i class="fa-solid fa-download"></i> Sample CSV
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.showImportStudentsModal()">
-              <i class="fa-solid fa-file-import"></i> Import CSV/Excel
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsExcel()">
-              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Excel
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsCsv()">
-              <i class="fa-solid fa-file-csv" style="color: #3b82f6;"></i> Export CSV
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsServerCsv()">
-              <i class="fa-solid fa-cloud-arrow-down" style="color: #6366f1;"></i> Full DB CSV
-            </button>
-            <button class="btn btn-primary btn-sm" onclick="app.openAdmissionWizard()">
-              <i class="fa-solid fa-wand-magic-sparkles"></i> Admission Wizard
-            </button>
-            <button class="btn btn-outline-primary btn-sm" onclick="app.showAddStudentModal()">
-              <i class="fa-solid fa-plus"></i> Quick Enroll
-            </button>
+            ${this.hasPermission(['import_students', 'manage_students']) ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.downloadStudentSampleCsv()">
+                <i class="fa-solid fa-download"></i> Sample CSV
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="app.showImportStudentsModal()">
+                <i class="fa-solid fa-file-import"></i> Import CSV/Excel
+              </button>
+            ` : ''}
+            ${this.hasPermission(['export_students', 'manage_students']) ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsExcel()">
+                <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Excel
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsCsv()">
+                <i class="fa-solid fa-file-csv" style="color: #3b82f6;"></i> Export CSV
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="app.exportStudentsServerCsv()">
+                <i class="fa-solid fa-cloud-arrow-down" style="color: #6366f1;"></i> Full DB CSV
+              </button>
+            ` : ''}
+            ${this.hasPermission(['create_students', 'manage_students']) ? `
+              <button class="btn btn-primary btn-sm" onclick="app.openAdmissionWizard()">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Admission Wizard
+              </button>
+              <button class="btn btn-outline-primary btn-sm" onclick="app.showAddStudentModal()">
+                <i class="fa-solid fa-plus"></i> Quick Enroll
+              </button>
+            ` : ''}
           </div>
         </div>
 
@@ -6808,27 +6984,33 @@ const app = {
                       <button class="btn btn-secondary btn-sm" onclick="app.showStudentDetailsModal(${s.id})" title="View Complete Profile & Financial Ledger">
                         <i class="fa-solid fa-eye" style="color: #3b82f6;"></i> View
                       </button>
-                      <button class="btn btn-secondary btn-sm" onclick="app.showEditStudentModal(${s.id})" title="Edit Student Profile">
-                        <i class="fa-solid fa-pencil" style="color: #f59e0b;"></i> Edit
-                      </button>
-                      <button class="btn btn-secondary btn-sm" onclick="app.openSetStudentPasswordModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.email || '')}', '${this.escapeJsString(s.student_code || '')}')" title="Set Student Portal Password">
-                        <i class="fa-solid fa-key" style="color: #10b981;"></i> Password
-                      </button>
-                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentTechniqueModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Syllabus Technique Progression">
-                        <i class="fa-solid fa-graduation-cap" style="color: #a855f7;"></i> Syllabus
-                      </button>
-                      <button class="btn ${s.active_batch_name ? 'btn-primary' : 'btn-outline-primary'} btn-sm" onclick="app.showTransferBatchModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.active_batch_name || 'Unassigned')}')" title="${s.active_batch_name ? 'Transfer to New Batch' : 'Assign Training Batch'}">
-                        <i class="fa-solid ${s.active_batch_name ? 'fa-right-left' : 'fa-plus'}"></i> ${s.active_batch_name ? 'Transfer' : 'Assign'}
-                      </button>
-                      ${s.active_batch_name ? `
-                        <button class="btn btn-secondary btn-sm" onclick="app.unassignStudentBatch(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.active_batch_name)}')" title="Remove from batch (keep student unassigned)">
-                          <i class="fa-solid fa-user-xmark" style="color: #ef4444;"></i> Unassign
+                      ${this.hasPermission(['edit_students', 'manage_students']) ? `
+                        <button class="btn btn-secondary btn-sm" onclick="app.showEditStudentModal(${s.id})" title="Edit Student Profile">
+                          <i class="fa-solid fa-pencil" style="color: #f59e0b;"></i> Edit
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="app.openSetStudentPasswordModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.email || '')}', '${this.escapeJsString(s.student_code || '')}')" title="Set Student Portal Password">
+                          <i class="fa-solid fa-key" style="color: #10b981;"></i> Password
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="app.showStudentChecklistModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Admission Checklist & Documents">
+                          <i class="fa-solid fa-list-check"></i> Checklist
                         </button>
                       ` : ''}
-                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentChecklistModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Admission Checklist & Documents">
-                        <i class="fa-solid fa-list-check"></i> Checklist
-                      </button>
-                      ${s.status !== 'active' ? `
+                      ${this.hasPermission(['view_syllabus', 'manage_syllabus']) ? `
+                        <button class="btn btn-secondary btn-sm" onclick="app.showStudentTechniqueModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Syllabus Technique Progression">
+                          <i class="fa-solid fa-graduation-cap" style="color: #a855f7;"></i> Syllabus
+                        </button>
+                      ` : ''}
+                      ${this.hasPermission(['transfer_students', 'edit_students', 'manage_students']) ? `
+                        <button class="btn ${s.active_batch_name ? 'btn-primary' : 'btn-outline-primary'} btn-sm" onclick="app.showTransferBatchModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.active_batch_name || 'Unassigned')}')" title="${s.active_batch_name ? 'Transfer to New Batch' : 'Assign Training Batch'}">
+                          <i class="fa-solid ${s.active_batch_name ? 'fa-right-left' : 'fa-plus'}"></i> ${s.active_batch_name ? 'Transfer' : 'Assign'}
+                        </button>
+                        ${s.active_batch_name ? `
+                          <button class="btn btn-secondary btn-sm" onclick="app.unassignStudentBatch(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}', '${this.escapeJsString(s.active_batch_name)}')" title="Remove from batch (keep student unassigned)">
+                            <i class="fa-solid fa-user-xmark" style="color: #ef4444;"></i> Unassign
+                          </button>
+                        ` : ''}
+                      ` : ''}
+                      ${s.status !== 'active' && this.hasPermission(['create_students', 'edit_students', 'manage_students']) ? `
                         <button class="btn btn-success btn-sm" onclick="app.openRejoinModal(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Reactivate Student">
                           <i class="fa-solid fa-user-plus"></i> Rejoin
                         </button>
@@ -6836,9 +7018,11 @@ const app = {
                       <button class="btn btn-secondary btn-sm" onclick="app.showStudentBatchHistory(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="View Batch History">
                         <i class="fa-solid fa-clock-rotate-left"></i>
                       </button>
-                      <button class="btn btn-danger btn-sm" onclick="app.deleteStudent(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Archive Student">
-                        <i class="fa-solid fa-trash"></i>
-                      </button>
+                      ${this.hasPermission(['delete_students', 'manage_students']) ? `
+                        <button class="btn btn-danger btn-sm" onclick="app.deleteStudent(${s.id}, '${this.escapeJsString(s.first_name + ' ' + s.last_name)}')" title="Archive Student">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      ` : ''}
                     </div>
                   </td>
                 </tr>
@@ -9609,18 +9793,26 @@ const app = {
             </p>
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button class="btn btn-primary btn-sm" onclick="app.showCollectStudentFeeModal()">
-              <i class="fa-solid fa-hand-holding-dollar"></i> Collect Student Fees
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.showFeeDiscountPresetsModal()">
-              <i class="fa-solid fa-percent" style="color: #f59e0b;"></i> Multi-Month Discounts
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.showFeePauseRequestModal()">
-              <i class="fa-solid fa-pause"></i> Request Fee Pause
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.exportFeesExcel()">
-              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Excel
-            </button>
+            ${this.hasPermission(['collect_fees', 'manage_fees']) ? `
+              <button class="btn btn-primary btn-sm" onclick="app.showCollectStudentFeeModal()">
+                <i class="fa-solid fa-hand-holding-dollar"></i> Collect Student Fees
+              </button>
+            ` : ''}
+            ${this.hasPermission(['manage_fees', 'edit_academy_settings']) ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.showFeeDiscountPresetsModal()">
+                <i class="fa-solid fa-percent" style="color: #f59e0b;"></i> Multi-Month Discounts
+              </button>
+            ` : ''}
+            ${this.hasPermission(['collect_fees', 'manage_fees']) ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.showFeePauseRequestModal()">
+                <i class="fa-solid fa-pause"></i> Request Fee Pause
+              </button>
+            ` : ''}
+            ${this.hasPermission(['export_fees', 'manage_fees']) ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.exportFeesExcel()">
+                <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Excel
+              </button>
+            ` : ''}
           </div>
         </div>
 
@@ -13802,15 +13994,21 @@ const app = {
             <button class="btn btn-secondary btn-sm" onclick="app.navigate('employee-map')">
               <i class="fa-solid fa-map-location-dot" style="color: #10b981;"></i> Sign-In / Out Map
             </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.showImportCoachesModal()">
-              <i class="fa-solid fa-file-import"></i> Import CSV
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.exportCoachesExcel()">
-              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Coaches
-            </button>
-            <button class="btn btn-primary btn-sm" onclick="app.showAddCoachModal()">
-              <i class="fa-solid fa-plus"></i> New Coach / Staff
-            </button>
+            ${this.hasPermission(['import_staff', 'manage_coaches']) ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.showImportCoachesModal()">
+                <i class="fa-solid fa-file-import"></i> Import CSV
+              </button>
+            ` : ''}
+            ${this.hasPermission(['export_staff', 'manage_coaches']) ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.exportCoachesExcel()">
+                <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Coaches
+              </button>
+            ` : ''}
+            ${this.hasPermission(['create_coaches', 'manage_coaches']) ? `
+              <button class="btn btn-primary btn-sm" onclick="app.showAddCoachModal()">
+                <i class="fa-solid fa-plus"></i> New Coach / Staff
+              </button>
+            ` : ''}
           </div>
         </div>
 
@@ -13897,15 +14095,21 @@ const app = {
                   </td>
                   <td>
                     <div style="display: flex; gap: 6px;">
-                      <button class="btn btn-outline-primary btn-sm" onclick="app.showStaffCompensationModal(${c.user_id || c.id}, '${this.escapeJsString(c.name)}')" title="Compensation & Shift Hours">
-                        <i class="fa-solid fa-coins"></i> Comp & Shift
-                      </button>
-                      <button class="btn btn-secondary btn-sm" onclick="app.showEditCoachModal(${c.id})" title="Edit Coach Details">
-                        <i class="fa-solid fa-pen-to-square"></i> Edit
-                      </button>
-                      <button class="btn btn-danger btn-sm" onclick="app.deleteCoach(${c.id}, '${this.escapeJsString(c.name)}')" title="Delete Coach">
-                        <i class="fa-solid fa-trash"></i>
-                      </button>
+                      ${this.hasPermission(['manage_staff_payroll', 'manage_coaches']) ? `
+                        <button class="btn btn-outline-primary btn-sm" onclick="app.showStaffCompensationModal(${c.user_id || c.id}, '${this.escapeJsString(c.name)}')" title="Compensation & Shift Hours">
+                          <i class="fa-solid fa-coins"></i> Comp & Shift
+                        </button>
+                      ` : ''}
+                      ${this.hasPermission(['edit_coaches', 'manage_coaches']) ? `
+                        <button class="btn btn-secondary btn-sm" onclick="app.showEditCoachModal(${c.id})" title="Edit Coach Details">
+                          <i class="fa-solid fa-pen-to-square"></i> Edit
+                        </button>
+                      ` : ''}
+                      ${this.hasPermission(['delete_staff', 'manage_coaches']) ? `
+                        <button class="btn btn-danger btn-sm" onclick="app.deleteCoach(${c.id}, '${this.escapeJsString(c.name)}')" title="Delete Coach">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      ` : ''}
                     </div>
                   </td>
                 </tr>
@@ -14853,18 +15057,26 @@ const app = {
             </p>
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button class="btn btn-secondary btn-sm" onclick="app.showImportBatchesModal()">
-              <i class="fa-solid fa-file-import"></i> Import CSV
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.exportBatchesExcel()">
-              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Batches
-            </button>
-            <button class="btn btn-outline-primary btn-sm" onclick="app.showAddBranchModal()">
-              <i class="fa-solid fa-code-branch"></i> + New Branch
-            </button>
-            <button class="btn btn-primary btn-sm" onclick="app.showAddBatchModal()">
-              <i class="fa-solid fa-plus"></i> New Training Batch
-            </button>
+            ${this.hasPermission(['import_batches', 'manage_batches']) ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.showImportBatchesModal()">
+                <i class="fa-solid fa-file-import"></i> Import CSV
+              </button>
+            ` : ''}
+            ${this.hasPermission(['export_batches', 'manage_batches']) ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.exportBatchesExcel()">
+                <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Batches
+              </button>
+            ` : ''}
+            ${this.hasPermission(['create_branches', 'manage_branches']) ? `
+              <button class="btn btn-outline-primary btn-sm" onclick="app.showAddBranchModal()">
+                <i class="fa-solid fa-code-branch"></i> + New Branch
+              </button>
+            ` : ''}
+            ${this.hasPermission(['create_batches', 'manage_batches']) ? `
+              <button class="btn btn-primary btn-sm" onclick="app.showAddBatchModal()">
+                <i class="fa-solid fa-plus"></i> New Training Batch
+              </button>
+            ` : ''}
           </div>
         </div>
 
@@ -14995,12 +15207,16 @@ const app = {
                     <td>₹${(b.monthly_fee || 0).toLocaleString()}</td>
                     <td style="text-align: right;">
                       <div style="display: flex; gap: 6px; justify-content: flex-end;">
-                        <button class="btn btn-secondary btn-sm" onclick="app.showEditBatchModal(${b.id})" title="Edit Training Batch">
-                          <i class="fa-solid fa-pen-to-square"></i> Edit
-                        </button>
-                        <button class="btn btn-danger btn-sm" onclick="app.deleteBatch(${b.id}, '${this.escapeJsString(b.name)}')" title="Delete Training Batch">
-                          <i class="fa-solid fa-trash"></i>
-                        </button>
+                        ${this.hasPermission(['edit_batches', 'manage_batches']) ? `
+                          <button class="btn btn-secondary btn-sm" onclick="app.showEditBatchModal(${b.id})" title="Edit Training Batch">
+                            <i class="fa-solid fa-pen-to-square"></i> Edit
+                          </button>
+                        ` : ''}
+                        ${this.hasPermission(['delete_batches', 'manage_batches']) ? `
+                          <button class="btn btn-danger btn-sm" onclick="app.deleteBatch(${b.id}, '${this.escapeJsString(b.name)}')" title="Delete Training Batch">
+                            <i class="fa-solid fa-trash"></i>
+                          </button>
+                        ` : ''}
                       </div>
                     </td>
                   </tr>

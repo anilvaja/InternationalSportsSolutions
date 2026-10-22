@@ -4,6 +4,7 @@ import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById } from '../db/connectionManager.js';
 import { signToken } from '../middleware/auth.js';
 import { config } from '../config/index.js';
+import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
 
 export const authRouter = express.Router();
 
@@ -91,6 +92,21 @@ authRouter.post('/login', (req, res) => {
     if (staffUser) {
       const match = bcrypt.compareSync(password, staffUser.password_hash);
       if (match) {
+        let permissionsList = [];
+        try {
+          permissionsList = JSON.parse(staffUser.custom_permissions || '[]');
+        } catch (e) {}
+        const roleRec = tenantDb.prepare('SELECT permissions FROM academy_roles WHERE name = ?').get(staffUser.role);
+        if (roleRec) {
+          try {
+            const rolePerms = JSON.parse(roleRec.permissions || '[]');
+            permissionsList = Array.from(new Set([...permissionsList, ...rolePerms]));
+          } catch (e) {}
+        }
+        if (staffUser.role === 'academy_admin') {
+          permissionsList = Array.from(new Set([...permissionsList, 'all', ...ALL_ACADEMY_PERMISSIONS]));
+        }
+
         const payload = {
           userId: staffUser.id,
           name: staffUser.name,
@@ -101,6 +117,7 @@ authRouter.post('/login', (req, res) => {
           academyName: academy.name,
           academyLogo: academy.logo_url || null,
           isSuperAdmin: false,
+          permissions: permissionsList,
         };
         const token = signToken(payload);
 
@@ -218,8 +235,11 @@ authRouter.get('/me', (req, res) => {
         if (student) userTheme = student.theme_color;
         roleTheme = 'indigo';
       } else {
-        const staff = tenantDb.prepare('SELECT theme_color, custom_permissions FROM users WHERE id = ?').get(req.user.userId);
+        const staff = tenantDb.prepare('SELECT role, theme_color, custom_permissions FROM users WHERE id = ?').get(req.user.userId);
         if (staff) {
+          if (staff.role) {
+            req.user.role = staff.role;
+          }
           userTheme = staff.theme_color;
           try {
             permissionsList = JSON.parse(staff.custom_permissions || '[]');
@@ -236,6 +256,10 @@ authRouter.get('/me', (req, res) => {
             permissionsList = Array.from(new Set([...permissionsList, ...rolePerms]));
           } catch (e) {}
         }
+
+        if (req.user.role === 'academy_admin') {
+          permissionsList = Array.from(new Set([...permissionsList, 'all', ...ALL_ACADEMY_PERMISSIONS]));
+        }
       }
     } catch (err) {
       console.warn('[auth/me] Error loading tenant theme settings:', err.message);
@@ -248,6 +272,7 @@ authRouter.get('/me', (req, res) => {
 
   const enrichedUser = {
     ...req.user,
+    role: req.user.role,
     themeColor: userTheme,
     roleThemeColor: roleTheme,
     academyDefaultTheme,

@@ -15,6 +15,7 @@ import { UserService } from '../services/userService.js';
 import { InquiryService } from '../services/inquiryService.js';
 import { AutoApprovalService } from '../services/autoApprovalService.js';
 import { StorageService } from '../services/storageService.js';
+import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
 import bcrypt from 'bcryptjs';
 
 export const academyRouter = express.Router();
@@ -33,14 +34,19 @@ export {
 // All routes here require valid auth, academy staff access, and tenant DB resolution
 academyRouter.use(requireAuth, requireAcademyStaff, resolveTenant);
 
-// Invalidate/refresh effective permissions on every request directly from database
+// Invalidate/refresh effective role and permissions on every request directly from database
 academyRouter.use((req, res, next) => {
   if (req.user && req.tenantDb && req.user.userId) {
     try {
       let perms = [];
-      const userRow = req.tenantDb.prepare('SELECT custom_permissions FROM users WHERE id = ?').get(req.user.userId);
-      if (userRow && userRow.custom_permissions) {
-        try { perms = JSON.parse(userRow.custom_permissions); } catch (e) {}
+      const userRow = req.tenantDb.prepare('SELECT role, custom_permissions FROM users WHERE id = ?').get(req.user.userId);
+      if (userRow) {
+        if (userRow.role) {
+          req.user.role = userRow.role;
+        }
+        if (userRow.custom_permissions) {
+          try { perms = JSON.parse(userRow.custom_permissions); } catch (e) {}
+        }
       }
       const roleRow = req.tenantDb.prepare('SELECT permissions FROM academy_roles WHERE name = ?').get(req.user.role);
       if (roleRow && roleRow.permissions) {
@@ -49,11 +55,30 @@ academyRouter.use((req, res, next) => {
           perms = Array.from(new Set([...perms, ...rolePerms]));
         } catch (e) {}
       }
+      if (req.user.isSuperAdmin || req.user.role === 'academy_admin') {
+        perms = Array.from(new Set([...perms, 'all', ...ALL_ACADEMY_PERMISSIONS]));
+      }
       req.user.permissions = perms;
     } catch (e) {}
   }
   next();
 });
+
+/**
+ * Middleware factory requiring specific permission(s)
+ */
+export function requirePermission(permission) {
+  return (req, res, next) => {
+    if (hasPermission(req, permission)) {
+      return next();
+    }
+    const permLabel = Array.isArray(permission) ? permission.join(' or ') : permission;
+    return res.status(403).json({
+      success: false,
+      error: `Access denied: Permission '${permLabel}' required for this action.`
+    });
+  };
+}
 
 /**
  * Pure helper to verify permission from refreshed user context
