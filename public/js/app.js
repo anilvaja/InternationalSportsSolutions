@@ -4713,11 +4713,13 @@ const app = {
           <div style="font-size: 38px; color: var(--text-dim); margin-bottom: 12px;"><i class="fa-regular fa-calendar-xmark"></i></div>
           <h4 style="color: var(--text-heading); font-size: 15px; font-weight: 700; margin-bottom: 4px;">No Batches Scheduled Today</h4>
           <p style="font-size: 13px; color: var(--text-muted); max-width: 440px; margin: 0 auto 16px;">
-            Enjoy the quiet day! Or create a new batch schedule if needed.
+            Enjoy the quiet day!${this.hasPermission(['create_batches', 'manage_batches']) ? ' Or create a new batch schedule if needed.' : ''}
           </p>
-          <button class="btn btn-primary btn-sm" onclick="app.showAddBatchModal()" style="display: inline-flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-plus"></i> Create Batch Schedule
-          </button>
+          ${this.hasPermission(['create_batches', 'manage_batches']) ? `
+            <button class="btn btn-primary btn-sm" onclick="app.showAddBatchModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-plus"></i> Create Batch Schedule
+            </button>
+          ` : ''}
         </div>
       `;
     } else {
@@ -4779,16 +4781,22 @@ const app = {
                     ${isDone ? `<span style="color: #10b981; font-weight: 600;"><i class="fa-solid fa-check"></i> ${b.present_count || b.marked_count} Present · ${b.absent_count || 0} Absent</span>` : 'Pending attendance submission'}
                   </div>
                   <div style="display: flex; gap: 6px; align-items: center;">
-                    <button class="btn btn-secondary btn-sm" onclick="app.navigateToAttendance(${b.id})" title="Open full dedicated attendance page for this batch">
-                      <i class="fa-solid fa-arrow-up-right-from-square"></i> Full Page
-                    </button>
-                    ${isDone ? `
-                      <button class="btn btn-primary btn-sm" id="batch-att-btn-${b.id}" onclick="app.openQuickAttendanceModal(${b.id}, '${b.name.replace(/'/g, "\\'")}', true)">
-                        <i class="fa-solid fa-pen-to-square"></i> View / Edit
+                    ${this.hasPermission(['view_attendance', 'manage_attendance']) ? `
+                      <button class="btn btn-secondary btn-sm" onclick="app.navigateToAttendance(${b.id})" title="Open full dedicated attendance page for this batch">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Full Page
                       </button>
+                      ${isDone ? `
+                        <button class="btn btn-primary btn-sm" id="batch-att-btn-${b.id}" onclick="app.openQuickAttendanceModal(${b.id}, '${b.name.replace(/'/g, "\\'")}', true)">
+                          <i class="fa-solid fa-pen-to-square"></i> View / Edit
+                        </button>
+                      ` : `
+                        <button class="btn btn-primary btn-sm" id="batch-att-btn-${b.id}" onclick="app.openQuickAttendanceModal(${b.id}, '${b.name.replace(/'/g, "\\'")}', false)">
+                          <i class="fa-solid fa-clipboard-user"></i> Take Attendance
+                        </button>
+                      `}
                     ` : `
-                      <button class="btn btn-primary btn-sm" id="batch-att-btn-${b.id}" onclick="app.openQuickAttendanceModal(${b.id}, '${b.name.replace(/'/g, "\\'")}', false)">
-                        <i class="fa-solid fa-clipboard-user"></i> Take Attendance
+                      <button class="btn btn-secondary btn-sm" onclick="app.navigate('batches')" title="View Batch Details">
+                        <i class="fa-solid fa-calendar-days"></i> Details
                       </button>
                     `}
                   </div>
@@ -4839,19 +4847,28 @@ const app = {
       </div>
     `;
 
-    // Build Priority Actions Strip
+    // Build Priority Actions Strip (filtered by user permissions)
+    const visiblePriorityActions = priorityActions.filter(action => {
+      if (action.actionRoute === 'inquiries' && !this.hasPermission(['view_inquiries', 'manage_inquiries'])) return false;
+      if (action.actionRoute === 'leaves' && !this.hasPermission(['view_leaves', 'manage_leaves'])) return false;
+      if (action.actionRoute === 'attendance' && !this.hasPermission(['view_attendance', 'manage_attendance'])) return false;
+      if (action.actionRoute === 'batches' && !this.hasPermission(['view_batches', 'manage_batches'])) return false;
+      if (action.actionRoute === 'fees' && !this.hasPermission(['view_fees', 'manage_fees', 'collect_fees'])) return false;
+      return true;
+    });
+
     let priorityActionsHtml = '';
-    if (priorityActions.length > 0) {
+    if (visiblePriorityActions.length > 0) {
       priorityActionsHtml = `
         <div class="priority-actions-tray">
           <div class="priority-tray-header">
             <div class="priority-tray-title">
-              <i class="fa-solid fa-triangle-exclamation"></i> Priority Operational Actions (${priorityActions.length})
+              <i class="fa-solid fa-triangle-exclamation"></i> Priority Operational Actions (${visiblePriorityActions.length})
             </div>
             <span style="font-size: 12px; color: var(--text-muted);">Urgent tasks requiring attention today</span>
           </div>
           <div class="priority-action-grid">
-            ${priorityActions.map(action => `
+            ${visiblePriorityActions.map(action => `
               <div class="priority-action-item type-${action.type || 'warning'}">
                 <div style="display: flex; align-items: center; gap: 10px;">
                   <div class="priority-action-icon">
@@ -4885,6 +4902,160 @@ const app = {
       `;
     }
 
+    // Determine birthday permissions
+    const canSeeStaffBday = this.hasPermission(['view_coaches', 'manage_coaches']) || this.user.isSuperAdmin || this.user.role === 'academy_admin';
+    const canSeeStudentBday = this.hasPermission(['view_students']) || this.user.isSuperAdmin || this.user.role === 'academy_admin';
+
+    // Build Quick Access Launchpad tiles based strictly on user permissions
+    const launchpadTiles = [];
+    if (this.hasPermission(['view_attendance', 'manage_attendance'])) {
+      launchpadTiles.push(`
+        <div class="launchpad-tile">
+          <div>
+            <div class="launchpad-tile-top">
+              <div class="launchpad-tile-name"><i class="fa-solid fa-clipboard-user" style="color: #2563eb;"></i> Class Attendance</div>
+              <span class="launchpad-tile-badge">Roster</span>
+            </div>
+            <div class="launchpad-tile-desc">Mark batch attendance & track progression</div>
+          </div>
+          <div class="launchpad-tile-bottom">
+            <a class="launchpad-open-link" onclick="app.navigate('attendance')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+            <button class="launchpad-action-btn" onclick="app.navigate('attendance')"><i class="fa-solid fa-plus"></i> Take</button>
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasPermission(['view_students'])) {
+      const canAddStudent = this.hasPermission(['create_students', 'manage_students']);
+      launchpadTiles.push(`
+        <div class="launchpad-tile">
+          <div>
+            <div class="launchpad-tile-top">
+              <div class="launchpad-tile-name"><i class="fa-solid fa-users" style="color: #3b82f6;"></i> Students Directory</div>
+              <span class="launchpad-tile-badge">Profiles</span>
+            </div>
+            <div class="launchpad-tile-desc">Student records, contact info & belt ranks</div>
+          </div>
+          <div class="launchpad-tile-bottom">
+            <a class="launchpad-open-link" onclick="app.navigate('students')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+            ${canAddStudent ? `<button class="launchpad-action-btn" onclick="app.showAddStudentModal()"><i class="fa-solid fa-plus"></i> Add</button>` : ''}
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasPermission(['view_inquiries', 'manage_inquiries'])) {
+      launchpadTiles.push(`
+        <div class="launchpad-tile">
+          <div>
+            <div class="launchpad-tile-top">
+              <div class="launchpad-tile-name"><i class="fa-solid fa-user-plus" style="color: #0ea5e9;"></i> Inquiries Pipeline</div>
+              <span class="launchpad-tile-badge">Leads</span>
+            </div>
+            <div class="launchpad-tile-desc">Leads, follow-ups & trial scheduling</div>
+          </div>
+          <div class="launchpad-tile-bottom">
+            <a class="launchpad-open-link" onclick="app.navigate('inquiries')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+            <button class="launchpad-action-btn" onclick="app.openNewInquiryModal()"><i class="fa-solid fa-plus"></i> Inquiry</button>
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasPermission(['view_batches'])) {
+      const canAddBatch = this.hasPermission(['create_batches', 'manage_batches']);
+      launchpadTiles.push(`
+        <div class="launchpad-tile">
+          <div>
+            <div class="launchpad-tile-top">
+              <div class="launchpad-tile-name"><i class="fa-solid fa-calendar-days" style="color: #8b5cf6;"></i> Batches & Schedule</div>
+              <span class="launchpad-tile-badge">Schedules</span>
+            </div>
+            <div class="launchpad-tile-desc">Class timings & coach assignments</div>
+          </div>
+          <div class="launchpad-tile-bottom">
+            <a class="launchpad-open-link" onclick="app.navigate('batches')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+            ${canAddBatch ? `<button class="launchpad-action-btn" onclick="app.showAddBatchModal()"><i class="fa-solid fa-plus"></i> Batch</button>` : ''}
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasPermission(['view_fees', 'collect_fees', 'manage_fees'])) {
+      const canCollect = this.hasPermission(['collect_fees', 'manage_fees']);
+      launchpadTiles.push(`
+        <div class="launchpad-tile">
+          <div>
+            <div class="launchpad-tile-top">
+              <div class="launchpad-tile-name"><i class="fa-solid fa-file-invoice-dollar" style="color: #10b981;"></i> Fee Collection</div>
+              <span class="launchpad-tile-badge">Payments</span>
+            </div>
+            <div class="launchpad-tile-desc">Collect student fees & receipts</div>
+          </div>
+          <div class="launchpad-tile-bottom">
+            <a class="launchpad-open-link" onclick="app.navigate('fees')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+            ${canCollect ? `<button class="launchpad-action-btn" onclick="app.showCollectStudentFeeModal()"><i class="fa-solid fa-plus"></i> Collect</button>` : ''}
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasPermission(['view_leaves', 'manage_leaves', 'apply_leave'])) {
+      launchpadTiles.push(`
+        <div class="launchpad-tile">
+          <div>
+            <div class="launchpad-tile-top">
+              <div class="launchpad-tile-name"><i class="fa-solid fa-calendar-check" style="color: #f59e0b;"></i> Staff Leaves</div>
+              <span class="launchpad-tile-badge">Leaves</span>
+            </div>
+            <div class="launchpad-tile-desc">Apply leave & review approval status</div>
+          </div>
+          <div class="launchpad-tile-bottom">
+            <a class="launchpad-open-link" onclick="app.navigate('leaves')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+            <button class="launchpad-action-btn" onclick="app.showApplyLeaveModal()"><i class="fa-solid fa-plus"></i> Apply</button>
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasPermission(['view_events', 'manage_events'])) {
+      const canCreateEv = this.hasPermission(['manage_events', 'create_events']);
+      launchpadTiles.push(`
+        <div class="launchpad-tile">
+          <div>
+            <div class="launchpad-tile-top">
+              <div class="launchpad-tile-name"><i class="fa-solid fa-trophy" style="color: #eab308;"></i> Events & Tournaments</div>
+              <span class="launchpad-tile-badge">Events</span>
+            </div>
+            <div class="launchpad-tile-desc">Tournaments, belt tests & seminars</div>
+          </div>
+          <div class="launchpad-tile-bottom">
+            <a class="launchpad-open-link" onclick="app.navigate('events')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+            ${canCreateEv ? `<button class="launchpad-action-btn" onclick="app.openCreateEventModal()"><i class="fa-solid fa-plus"></i> Event</button>` : ''}
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasPermission(['view_syllabus', 'manage_syllabus'])) {
+      launchpadTiles.push(`
+        <div class="launchpad-tile">
+          <div>
+            <div class="launchpad-tile-top">
+              <div class="launchpad-tile-name"><i class="fa-solid fa-book-open-reader" style="color: #ec4899;"></i> Belt Syllabus</div>
+              <span class="launchpad-tile-badge">Progression</span>
+            </div>
+            <div class="launchpad-tile-desc">Belt categories, techniques & grading</div>
+          </div>
+          <div class="launchpad-tile-bottom">
+            <a class="launchpad-open-link" onclick="app.navigate('syllabus')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+            <button class="launchpad-action-btn" onclick="app.navigate('syllabus')"><i class="fa-solid fa-sliders"></i> Techniques</button>
+          </div>
+        </div>
+      `);
+    }
+
     content.innerHTML = `
       <!-- Greeting & Top Scope Bar -->
       <div class="dashboard-greeting-bar" style="margin-bottom: 14px;">
@@ -4899,15 +5070,31 @@ const app = {
           </div>
         </div>
         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-          <button class="btn btn-primary" onclick="app.openNewInquiryModal()" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; font-weight: 600; font-size: 13.5px; border-radius: var(--radius-sm);" title="Record new prospective student lead">
-            <i class="fa-solid fa-plus"></i> New Inquiry
-          </button>
-          <button class="btn btn-secondary" onclick="app.openAdmissionWizard()" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 13px;" title="Direct student admission wizard">
-            <i class="fa-solid fa-wand-magic-sparkles"></i> Direct Admission
-          </button>
-          <button class="btn btn-secondary" onclick="app.showAddBatchModal()" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 13px;" title="Create new batch schedule">
-            <i class="fa-solid fa-calendar-plus"></i> Add Batch
-          </button>
+          ${this.hasPermission(['collect_fees', 'manage_fees']) ? `
+            <button class="btn btn-primary" onclick="app.showCollectStudentFeeModal()" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; font-weight: 600; font-size: 13.5px; border-radius: var(--radius-sm);" title="Collect student fees">
+              <i class="fa-solid fa-hand-holding-dollar"></i> Collect Fee
+            </button>
+          ` : ''}
+          ${this.hasPermission(['create_inquiries', 'manage_inquiries']) ? `
+            <button class="btn ${!this.hasPermission(['collect_fees', 'manage_fees']) ? 'btn-primary' : 'btn-secondary'}" onclick="app.openNewInquiryModal()" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; font-weight: 600; font-size: 13.5px; border-radius: var(--radius-sm);" title="Record new prospective student lead">
+              <i class="fa-solid fa-plus"></i> New Inquiry
+            </button>
+          ` : ''}
+          ${this.hasPermission(['create_students', 'manage_students']) ? `
+            <button class="btn btn-secondary" onclick="app.openAdmissionWizard()" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 13px;" title="Direct student admission wizard">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Direct Admission
+            </button>
+          ` : ''}
+          ${this.hasPermission(['create_batches', 'manage_batches']) ? `
+            <button class="btn btn-secondary" onclick="app.showAddBatchModal()" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 13px;" title="Create new batch schedule">
+              <i class="fa-solid fa-calendar-plus"></i> Add Batch
+            </button>
+          ` : ''}
+          ${this.hasPermission(['view_fees', 'manage_fees']) && !this.hasPermission(['create_inquiries', 'create_students']) ? `
+            <button class="btn btn-secondary" onclick="app.navigate('fees')" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 13px;" title="Open Financial Ledger">
+              <i class="fa-solid fa-file-invoice-dollar"></i> Fee Ledger
+            </button>
+          ` : ''}
         </div>
       </div>
 
@@ -4934,35 +5121,37 @@ const app = {
         </div>
       </div>
 
-      <!-- Hero Operational Priority Row (Top 4 Command Pipelines) -->
+      <!-- Hero Operational Priority Row (Filtered by Permissions) -->
       <div class="hero-pipeline-grid">
-        <!-- 1. Inquiries Pipeline Card -->
-        <div class="pipeline-card card-inquiries">
-          <div>
-            <div class="pipeline-card-top">
-              <div class="pipeline-card-label">Inquiries Pipeline</div>
-              <div class="pipeline-card-icon"><i class="fa-solid fa-user-plus"></i></div>
+        ${this.hasPermission(['view_inquiries', 'manage_inquiries']) ? `
+          <!-- 1. Inquiries Pipeline Card -->
+          <div class="pipeline-card card-inquiries">
+            <div>
+              <div class="pipeline-card-top">
+                <div class="pipeline-card-label">Inquiries Pipeline</div>
+                <div class="pipeline-card-icon"><i class="fa-solid fa-user-plus"></i></div>
+              </div>
+              <div class="pipeline-main-metric">${inq.totalActive} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Active Leads</span></div>
+              <div class="pipeline-chips-row">
+                <span class="pipeline-chip ${inq.newCount > 0 ? 'info' : ''}" title="New leads awaiting first contact"><i class="fa-solid fa-sparkles"></i> ${inq.newCount} New</span>
+                <span class="pipeline-chip ${inq.todayFollowUps > 0 ? 'warning' : ''}" title="Follow-ups due today"><i class="fa-solid fa-phone"></i> ${inq.todayFollowUps} Today</span>
+                <span class="pipeline-chip ${inq.overdueFollowUps > 0 ? 'danger' : ''}" title="Follow-ups past due date"><i class="fa-solid fa-triangle-exclamation"></i> ${inq.overdueFollowUps} Overdue</span>
+                <span class="pipeline-chip" title="Trial classes scheduled"><i class="fa-solid fa-vial"></i> ${inq.trialsScheduled} Trials</span>
+              </div>
             </div>
-            <div class="pipeline-main-metric">${inq.totalActive} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Active Leads</span></div>
-            <div class="pipeline-chips-row">
-              <span class="pipeline-chip ${inq.newCount > 0 ? 'info' : ''}" title="New leads awaiting first contact"><i class="fa-solid fa-sparkles"></i> ${inq.newCount} New</span>
-              <span class="pipeline-chip ${inq.todayFollowUps > 0 ? 'warning' : ''}" title="Follow-ups due today"><i class="fa-solid fa-phone"></i> ${inq.todayFollowUps} Today</span>
-              <span class="pipeline-chip ${inq.overdueFollowUps > 0 ? 'danger' : ''}" title="Follow-ups past due date"><i class="fa-solid fa-triangle-exclamation"></i> ${inq.overdueFollowUps} Overdue</span>
-              <span class="pipeline-chip" title="Trial classes scheduled"><i class="fa-solid fa-vial"></i> ${inq.trialsScheduled} Trials</span>
+            <div class="pipeline-card-actions">
+              <button class="btn btn-secondary btn-sm" onclick="app.openNewInquiryModal()" style="font-size: 11px; padding: 3px 8px;">
+                <i class="fa-solid fa-plus"></i> Lead
+              </button>
+              <a class="launchpad-open-link" onclick="app.navigate('inquiries')" style="font-weight: 600; cursor: pointer;">
+                Pipeline Board <i class="fa-solid fa-arrow-right" style="font-size: 10px;"></i>
+              </a>
             </div>
           </div>
-          <div class="pipeline-card-actions">
-            <button class="btn btn-secondary btn-sm" onclick="app.openNewInquiryModal()" style="font-size: 11px; padding: 3px 8px;">
-              <i class="fa-solid fa-plus"></i> Lead
-            </button>
-            <a class="launchpad-open-link" onclick="app.navigate('inquiries')" style="font-weight: 600; cursor: pointer;">
-              Pipeline Board <i class="fa-solid fa-arrow-right" style="font-size: 10px;"></i>
-            </a>
-          </div>
-        </div>
+        ` : ''}
 
-        <!-- 2. Fee Dues & Collections Card -->
-        ${!isCoach ? `
+        ${this.hasPermission(['view_fees', 'collect_fees', 'manage_fees']) ? `
+          <!-- 2. Fee Dues & Collections Card -->
           <div class="pipeline-card card-fees">
             <div>
               <div class="pipeline-card-top">
@@ -4985,7 +5174,30 @@ const app = {
               </a>
             </div>
           </div>
-        ` : `
+
+          <!-- Secondary Financial Card for Finance Roles -->
+          ${!this.hasPermission(['view_inquiries', 'manage_inquiries']) ? `
+            <div class="pipeline-card" style="border-left: 3px solid #10b981;">
+              <div>
+                <div class="pipeline-card-top">
+                  <div class="pipeline-card-label">Monthly Collections Realized</div>
+                  <div class="pipeline-card-icon"><i class="fa-solid fa-coins" style="color: #10b981;"></i></div>
+                </div>
+                <div class="pipeline-main-metric" style="color: #10b981;">₹${(fees.collectedThisMonth || 0).toLocaleString()} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">This Month</span></div>
+                <div class="pipeline-chips-row">
+                  <span class="pipeline-chip success" title="Total all-time collected"><i class="fa-solid fa-vault"></i> Cumulative: ₹${(fees.totalCollected || 0).toLocaleString()}</span>
+                  <span class="pipeline-chip" title="Students with dues"><i class="fa-solid fa-users"></i> ${fees.totalAffectedStudents || 0} Accounts Due</span>
+                </div>
+              </div>
+              <div class="pipeline-card-actions">
+                <span style="font-size: 11px; color: var(--text-muted);">Financial Reconciliation</span>
+                <a class="launchpad-open-link" onclick="app.navigate('fees')" style="font-weight: 600; cursor: pointer;">
+                  Statements <i class="fa-solid fa-arrow-right" style="font-size: 10px;"></i>
+                </a>
+              </div>
+            </div>
+          ` : ''}
+        ` : (isCoach ? `
           <div class="pipeline-card card-fees">
             <div>
               <div class="pipeline-card-top">
@@ -5005,308 +5217,436 @@ const app = {
               </a>
             </div>
           </div>
-        `}
+        ` : '')}
 
-        <!-- 3. Today's Batches Card -->
-        <div class="pipeline-card card-batches">
-          <div>
-            <div class="pipeline-card-top">
-              <div class="pipeline-card-label">Today's Batches</div>
-              <div class="pipeline-card-icon"><i class="fa-solid fa-calendar-day"></i></div>
+        ${this.hasPermission(['view_batches', 'manage_batches', 'view_attendance', 'manage_attendance']) ? `
+          <!-- 3. Today's Batches Card -->
+          <div class="pipeline-card card-batches">
+            <div>
+              <div class="pipeline-card-top">
+                <div class="pipeline-card-label">Today's Batches</div>
+                <div class="pipeline-card-icon"><i class="fa-solid fa-calendar-day"></i></div>
+              </div>
+              <div class="pipeline-main-metric">${todayBatches.length} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Sessions Today</span></div>
+              <div class="pipeline-chips-row">
+                <span class="pipeline-chip ${completedBatchesCount === todayBatches.length && todayBatches.length > 0 ? 'success' : ''}" title="Completed batches"><i class="fa-solid fa-circle-check"></i> ${completedBatchesCount} Marked</span>
+                <span class="pipeline-chip ${pendingBatchesCount > 0 ? 'warning' : ''}" title="Batches pending attendance"><i class="fa-solid fa-hourglass-half"></i> ${pendingBatchesCount} Pending</span>
+                <span class="pipeline-chip" title="Next upcoming class"><i class="fa-solid fa-bell"></i> ${nextBatch ? nextBatch.start_time : 'Done'}</span>
+              </div>
             </div>
-            <div class="pipeline-main-metric">${todayBatches.length} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Sessions Today</span></div>
-            <div class="pipeline-chips-row">
-              <span class="pipeline-chip ${completedBatchesCount === todayBatches.length && todayBatches.length > 0 ? 'success' : ''}" title="Completed batches"><i class="fa-solid fa-circle-check"></i> ${completedBatchesCount} Marked</span>
-              <span class="pipeline-chip ${pendingBatchesCount > 0 ? 'warning' : ''}" title="Batches pending attendance"><i class="fa-solid fa-hourglass-half"></i> ${pendingBatchesCount} Pending</span>
-              <span class="pipeline-chip" title="Next upcoming class"><i class="fa-solid fa-bell"></i> ${nextBatch ? nextBatch.start_time : 'Done'}</span>
+            <div class="pipeline-card-actions">
+              ${this.hasPermission(['view_attendance', 'manage_attendance']) ? `
+                <button class="btn btn-secondary btn-sm" onclick="app.navigate('attendance')" style="font-size: 11px; padding: 3px 8px;">
+                  <i class="fa-solid fa-clipboard-user"></i> Attendance
+                </button>
+              ` : `
+                <span style="font-size: 11px; color: var(--text-muted);">Class Schedule</span>
+              `}
+              <a class="launchpad-open-link" onclick="app.navigate('batches')" style="font-weight: 600; cursor: pointer;">
+                Schedule <i class="fa-solid fa-arrow-right" style="font-size: 10px;"></i>
+              </a>
             </div>
           </div>
-          <div class="pipeline-card-actions">
-            <button class="btn btn-secondary btn-sm" onclick="app.navigate('attendance')" style="font-size: 11px; padding: 3px 8px;">
-              <i class="fa-solid fa-clipboard-user"></i> Attendance
-            </button>
-            <a class="launchpad-open-link" onclick="app.navigate('batches')" style="font-weight: 600; cursor: pointer;">
-              Schedule <i class="fa-solid fa-arrow-right" style="font-size: 10px;"></i>
-            </a>
-          </div>
-        </div>
+        ` : ''}
 
-        <!-- 4. Staff Availability Card -->
-        <div class="pipeline-card card-staff">
-          <div>
-            <div class="pipeline-card-top">
-              <div class="pipeline-card-label">Staff Availability</div>
-              <div class="pipeline-card-icon"><i class="fa-solid fa-user-check"></i></div>
+        ${this.hasPermission(['view_coaches', 'manage_coaches', 'view_leaves', 'manage_leaves']) ? `
+          <!-- 4. Staff Availability Card -->
+          <div class="pipeline-card card-staff">
+            <div>
+              <div class="pipeline-card-top">
+                <div class="pipeline-card-label">Staff Availability</div>
+                <div class="pipeline-card-icon"><i class="fa-solid fa-user-check"></i></div>
+              </div>
+              <div class="pipeline-main-metric">${staffAvail.leavesToday.length} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">On Leave Today</span></div>
+              <div class="pipeline-chips-row">
+                <span class="pipeline-chip ${staffAvail.affectedBatchesCount > 0 ? 'danger' : 'success'}" title="Batch coverage status">
+                  <i class="fa-solid ${staffAvail.affectedBatchesCount > 0 ? 'fa-triangle-exclamation' : 'fa-circle-check'}"></i>
+                  ${staffAvail.affectedBatchesCount > 0 ? staffAvail.affectedBatchesCount + ' Uncovered' : 'All Covered'}
+                </span>
+                <span class="pipeline-chip info" title="Active available coaches"><i class="fa-solid fa-user-ninja"></i> ${staffAvail.availableCoaches.length} Coaches Free</span>
+              </div>
             </div>
-            <div class="pipeline-main-metric">${staffAvail.leavesToday.length} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">On Leave Today</span></div>
-            <div class="pipeline-chips-row">
-              <span class="pipeline-chip ${staffAvail.affectedBatchesCount > 0 ? 'danger' : 'success'}" title="Batch coverage status">
-                <i class="fa-solid ${staffAvail.affectedBatchesCount > 0 ? 'fa-triangle-exclamation' : 'fa-circle-check'}"></i>
-                ${staffAvail.affectedBatchesCount > 0 ? staffAvail.affectedBatchesCount + ' Uncovered' : 'All Covered'}
-              </span>
-              <span class="pipeline-chip info" title="Active available coaches"><i class="fa-solid fa-user-ninja"></i> ${staffAvail.availableCoaches.length} Coaches Free</span>
+            <div class="pipeline-card-actions">
+              <button class="btn btn-secondary btn-sm" onclick="app.showApplyLeaveModal()" style="font-size: 11px; padding: 3px 8px;">
+                <i class="fa-solid fa-plus"></i> Apply Leave
+              </button>
+              <a class="launchpad-open-link" onclick="app.navigate('leaves')" style="font-weight: 600; cursor: pointer;">
+                Staff Leaves <i class="fa-solid fa-arrow-right" style="font-size: 10px;"></i>
+              </a>
             </div>
           </div>
-          <div class="pipeline-card-actions">
-            <button class="btn btn-secondary btn-sm" onclick="app.showApplyLeaveModal()" style="font-size: 11px; padding: 3px 8px;">
-              <i class="fa-solid fa-plus"></i> Apply Leave
-            </button>
-            <a class="launchpad-open-link" onclick="app.navigate('leaves')" style="font-weight: 600; cursor: pointer;">
-              Staff Leaves <i class="fa-solid fa-arrow-right" style="font-size: 10px;"></i>
-            </a>
-          </div>
-        </div>
+        ` : ''}
       </div>
 
       <!-- Priority Actions Alert Strip -->
       ${priorityActionsHtml}
 
-      <!-- 2-Column Operational Grid: Schedule & Attendance (Left) vs. Dual Birthdays & Shift Clock (Right) -->
+      <!-- 2-Column Operational Grid: Main Focus (Left) vs. Shift Clock & Birthdays (Right) -->
       <div class="two-col-ops-grid">
-        <!-- Left: Today's Batch Schedule & Live Attendance Marking -->
+        <!-- Left Column: Context-Aware Main Widget -->
         <div>
-          <div class="content-card" style="margin-bottom: 24px;">
-            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-              <div>
-                <h2 class="card-title" style="font-size: 14px;">
-                  <i class="fa-solid fa-calendar-day" style="color: var(--primary);"></i> Today's Batch Schedule & Attendance
-                </h2>
-                <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
-                  Chronological class roster · 1-click attendance entry · Coach coverage status
-                </p>
+          ${this.hasPermission(['view_attendance', 'manage_attendance']) ? `
+            <!-- Today's Batch Schedule & Live Attendance Marking -->
+            <div class="content-card" style="margin-bottom: 24px;">
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                  <h2 class="card-title" style="font-size: 14px;">
+                    <i class="fa-solid fa-calendar-day" style="color: var(--primary);"></i> Today's Batch Schedule & Attendance
+                  </h2>
+                  <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                    Chronological class roster · 1-click attendance entry · Coach coverage status
+                  </p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button class="btn btn-secondary btn-sm" onclick="app.renderAcademyOverview()">
+                    <i class="fa-solid fa-rotate"></i> Refresh
+                  </button>
+                  <button class="btn btn-primary btn-sm" onclick="app.navigate('batches')">
+                    <i class="fa-solid fa-calendar-days"></i> All Batches
+                  </button>
+                </div>
               </div>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <button class="btn btn-secondary btn-sm" onclick="app.renderAcademyOverview()">
-                  <i class="fa-solid fa-rotate"></i> Refresh
-                </button>
-                <button class="btn btn-primary btn-sm" onclick="app.navigate('batches')">
-                  <i class="fa-solid fa-calendar-days"></i> All Batches
-                </button>
+              <div style="padding: 16px 20px;">
+                ${todayBatchesHtml}
               </div>
             </div>
-            <div style="padding: 16px 20px;">
-              ${todayBatchesHtml}
+          ` : (this.hasPermission(['view_fees', 'collect_fees', 'manage_fees']) ? `
+            <!-- Dedicated Pending Fees & Collection Due Accounts for Finance Roles -->
+            <div class="content-card" style="margin-bottom: 24px;">
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: gap; gap: 10px;">
+                <div>
+                  <h2 class="card-title" style="font-size: 14px;">
+                    <i class="fa-solid fa-file-invoice-dollar" style="color: var(--primary);"></i> Pending Fees & Collection Due Accounts
+                  </h2>
+                  <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                    Upcoming student fee liabilities · Overdue balances · 1-click payment collection
+                  </p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button class="btn btn-secondary btn-sm" onclick="app.renderAcademyOverview()">
+                    <i class="fa-solid fa-rotate"></i> Refresh
+                  </button>
+                  <button class="btn btn-primary btn-sm" onclick="app.navigate('fees')">
+                    <i class="fa-solid fa-file-invoice-dollar"></i> Fee Ledger
+                  </button>
+                </div>
+              </div>
+              <div style="padding: 16px 20px;">
+                ${(!data.upcomingFees || data.upcomingFees.length === 0) ? `
+                  <div style="text-align: center; padding: 36px 20px; background: rgba(100, 116, 139, 0.02); border: 1px dashed var(--border); border-radius: 8px;">
+                    <div style="font-size: 36px; color: #10b981; margin-bottom: 10px;"><i class="fa-solid fa-circle-check"></i></div>
+                    <h4 style="color: var(--text-heading); font-size: 15px; font-weight: 700; margin-bottom: 4px;">Zero Pending Fee Liabilities</h4>
+                    <p style="font-size: 13px; color: var(--text-muted); margin: 0 auto 14px;">All active student accounts are current and up to date.</p>
+                    <button class="btn btn-primary btn-sm" onclick="app.showCollectStudentFeeModal()">
+                      <i class="fa-solid fa-hand-holding-dollar"></i> Collect Advance Fee
+                    </button>
+                  </div>
+                ` : `
+                  <div style="display: flex; flex-direction: column; gap: 10px;">
+                    ${data.upcomingFees.slice(0, 6).map(f => {
+                      const sName = `${f.first_name || ''} ${f.last_name || ''}`.trim() || 'Student';
+                      const bal = Number(f.balance_amount || 0);
+                      const isOverdue = f.status === 'overdue' || (f.due_date && f.due_date < new Date().toISOString().split('T')[0]);
+                      return `
+                        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface, #f8fafc); border: 1px solid var(--border); border-left: 3px solid ${isOverdue ? '#ef4444' : '#f59e0b'}; border-radius: 6px; padding: 12px 14px;">
+                          <div>
+                            <div style="font-size: 13.5px; font-weight: 700; color: var(--text-heading);">${app.escapeHtml(sName)}</div>
+                            <div style="font-size: 11.5px; color: var(--text-muted); display: flex; gap: 8px; margin-top: 2px;">
+                              <span style="font-family: monospace;">${app.escapeHtml(f.admission_number || ('#STU-' + f.student_id))}</span>
+                              <span>•</span>
+                              <span>${app.escapeHtml(f.branch_name || 'Main Campus')}</span>
+                              <span>•</span>
+                              <span style="color: ${isOverdue ? '#ef4444' : 'var(--text-muted)'}; font-weight: 600;">Due: ${f.due_date || 'Immediate'}</span>
+                            </div>
+                          </div>
+                          <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="text-align: right;">
+                              <div style="font-size: 14px; font-weight: 700; color: ${isOverdue ? '#ef4444' : 'var(--text-heading)'};">₹${bal.toLocaleString()}</div>
+                              <span class="badge ${isOverdue ? 'badge-danger' : 'badge-warning'}" style="font-size: 10px; padding: 2px 6px;">${isOverdue ? 'Overdue' : 'Pending'}</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="app.showCollectStudentFeeModal(${f.student_id})" title="Collect Fee">
+                              <i class="fa-solid fa-hand-holding-dollar"></i> Collect
+                            </button>
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                `}
+              </div>
             </div>
-          </div>
+          ` : `
+            <!-- Fallback Batch Schedule Overview -->
+            <div class="content-card" style="margin-bottom: 24px;">
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 class="card-title" style="font-size: 14px;"><i class="fa-solid fa-calendar-days"></i> Training Schedules</h2>
+                <button class="btn btn-secondary btn-sm" onclick="app.navigate('batches')">All Batches</button>
+              </div>
+              <div style="padding: 16px 20px;">
+                ${todayBatchesHtml}
+              </div>
+            </div>
+          `)}
         </div>
 
-        <!-- Right: Dual Birthdays & Shift Clock -->
+        <!-- Right Column: Shift Clock & Permitted Birthdays -->
         <div>
-          <!-- Dual Birthday Widget (Staff & Student Columns) -->
-          <div class="birthdays-card">
-            <div class="birthdays-nav-tabs">
-              <button type="button" class="birthdays-nav-tab active" id="bday-tab-staff" onclick="app.switchBirthdayTab('staff')">
-                <i class="fa-solid fa-id-badge" style="color: #f59e0b;"></i> Staff Birthdays (${staffBdays.length})
-              </button>
-              <button type="button" class="birthdays-nav-tab" id="bday-tab-student" onclick="app.switchBirthdayTab('student')">
-                <i class="fa-solid fa-graduation-cap" style="color: #3b82f6;"></i> Student Birthdays (${studentBdays.length})
-              </button>
-            </div>
-            <div style="padding: 14px 16px;">
-              <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px;">
-                <i class="fa-regular fa-calendar"></i> Today + Next 7 Days
+          <!-- Birthday Widget (Rendered only if user has student or staff view permission) -->
+          ${(canSeeStaffBday || canSeeStudentBday) ? `
+            <div class="birthdays-card">
+              <div class="birthdays-nav-tabs">
+                ${canSeeStaffBday ? `
+                  <button type="button" class="birthdays-nav-tab active" id="bday-tab-staff" onclick="app.switchBirthdayTab('staff')">
+                    <i class="fa-solid fa-id-badge" style="color: #f59e0b;"></i> Staff Birthdays (${staffBdays.length})
+                  </button>
+                ` : ''}
+                ${canSeeStudentBday ? `
+                  <button type="button" class="birthdays-nav-tab ${!canSeeStaffBday ? 'active' : ''}" id="bday-tab-student" onclick="app.switchBirthdayTab('student')">
+                    <i class="fa-solid fa-graduation-cap" style="color: #3b82f6;"></i> Student Birthdays (${studentBdays.length})
+                  </button>
+                ` : ''}
               </div>
+              <div style="padding: 14px 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px;">
+                  <i class="fa-regular fa-calendar"></i> Today + Next 7 Days
+                </div>
 
-              <!-- Staff List Container -->
-              <div id="bday-list-staff" style="display: block;">
-                ${staffBdays.length === 0 ? emptyBirthdaysHtml('staff') : staffBdays.map(p => renderBirthdayRow(p, true)).join('')}
-              </div>
+                ${canSeeStaffBday ? `
+                  <!-- Staff List Container -->
+                  <div id="bday-list-staff" style="display: block;">
+                    ${staffBdays.length === 0 ? emptyBirthdaysHtml('staff') : staffBdays.map(p => renderBirthdayRow(p, true)).join('')}
+                  </div>
+                ` : ''}
 
-              <!-- Student List Container -->
-              <div id="bday-list-student" style="display: none;">
-                ${studentBdays.length === 0 ? emptyBirthdaysHtml('student') : studentBdays.map(p => renderBirthdayRow(p, false)).join('')}
+                ${canSeeStudentBday ? `
+                  <!-- Student List Container -->
+                  <div id="bday-list-student" style="display: ${!canSeeStaffBday ? 'block' : 'none'};">
+                    ${studentBdays.length === 0 ? emptyBirthdaysHtml('student') : studentBdays.map(p => renderBirthdayRow(p, false)).join('')}
+                  </div>
+                ` : ''}
               </div>
             </div>
-          </div>
+          ` : ''}
 
           <!-- Employee Shift Clock (Punch In / Out) -->
           ${punchHtml}
         </div>
       </div>
 
-      <!-- Performance & Operational Summary (Secondary Metrics) -->
-      <div style="margin-bottom: 22px;">
-        <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 12px;">
-          <i class="fa-solid fa-chart-line"></i> Performance & Academy Overview
-        </div>
-        <div class="kpi-metric-grid" style="margin-bottom: 24px;">
-          <div class="kpi-card" onclick="app.navigate('students')" title="View Students Directory">
-            <div>
-              <div class="kpi-label">Total Students</div>
-              <div class="kpi-value">${m.totalStudents ?? 0}</div>
-              <div class="kpi-subtext">Active academy roster</div>
-            </div>
-            <div class="kpi-icon-badge">
-              <i class="fa-solid fa-graduation-cap"></i>
-            </div>
+      <!-- Performance & Operational Summary (Secondary Metrics Filtered by Permissions) -->
+      ${(this.hasPermission(['view_students', 'view_batches', 'view_coaches', 'view_branches', 'view_fees'])) ? `
+        <div style="margin-bottom: 22px;">
+          <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 12px;">
+            <i class="fa-solid fa-chart-line"></i> Performance & Academy Overview
           </div>
-
-          <div class="kpi-card" onclick="app.navigate('batches')" title="View Batches & Schedules">
-            <div>
-              <div class="kpi-label">Active Batches</div>
-              <div class="kpi-value">${m.totalBatches ?? 0}</div>
-              <div class="kpi-subtext muted">Running class schedules</div>
-            </div>
-            <div class="kpi-icon-badge dark">
-              <i class="fa-solid fa-calendar-days"></i>
-            </div>
-          </div>
-
-          <div class="kpi-card" onclick="app.navigate('coaches')" title="View Coaches & Staff">
-            <div>
-              <div class="kpi-label">Coaches & Staff</div>
-              <div class="kpi-value">${m.totalCoaches ?? 0}</div>
-              <div class="kpi-subtext muted">Active staff members</div>
-            </div>
-            <div class="kpi-icon-badge dark">
-              <i class="fa-solid fa-user-group"></i>
-            </div>
-          </div>
-
-          <div class="kpi-card" onclick="app.navigate('branches')" title="View Academy Branches">
-            <div>
-              <div class="kpi-label">Academy Branches</div>
-              <div class="kpi-value">${m.totalBranches ?? 0}</div>
-              <div class="kpi-subtext muted">Operational locations</div>
-            </div>
-            <div class="kpi-icon-badge dark">
-              <i class="fa-solid fa-code-branch"></i>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Recent Admissions & Absence Audit Grid -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 24px; margin-bottom: 24px;">
-        <!-- Recent Admissions Card -->
-        <div class="content-card">
-          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <h2 class="card-title"><i class="fa-solid fa-user-check" style="color: #10b981;"></i> Recent Admissions</h2>
-              <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Recently converted or directly admitted students</p>
-            </div>
-            <button class="btn btn-secondary btn-sm" onclick="app.navigate('students')">All Students</button>
-          </div>
-          <div style="padding: 12px 16px;">
-            ${(!data.newlyJoinedStudents || data.newlyJoinedStudents.length === 0) ? `
-              <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px;">
-                <i class="fa-regular fa-id-card fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
-                No newly admitted students found.
+          <div class="kpi-metric-grid" style="margin-bottom: 24px;">
+            ${this.hasPermission(['view_students']) ? `
+              <div class="kpi-card" onclick="app.navigate('students')" title="View Students Directory">
+                <div>
+                  <div class="kpi-label">Total Students</div>
+                  <div class="kpi-value">${m.totalStudents ?? 0}</div>
+                  <div class="kpi-subtext">Active academy roster</div>
+                </div>
+                <div class="kpi-icon-badge">
+                  <i class="fa-solid fa-graduation-cap"></i>
+                </div>
               </div>
-            ` : `
-              <div style="display: flex; flex-direction: column; gap: 8px;">
-                ${data.newlyJoinedStudents.slice(0, 6).map(s => {
-                  const sName = `${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Student';
-                  const initials = sName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'ST';
-                  const admNo = s.admission_number || ('#STU-' + s.id);
-                  const joinDate = s.admission_date || (s.created_at ? s.created_at.split('T')[0] : 'Recent');
-                  return `
-                    <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface, #f8fafc); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; transition: transform 0.15s ease;">
-                      <div style="display: flex; align-items: center; gap: 12px;">
-                        <div style="width: 38px; height: 38px; border-radius: 50%; background: rgba(37,99,235,0.12); color: var(--primary, #2563eb); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13.5px;">
-                          ${initials}
-                        </div>
-                        <div>
-                          <div style="font-size: 13.5px; font-weight: 700; color: var(--text-heading);">${app.escapeHtml(sName)}</div>
-                          <div style="font-size: 11.5px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; margin-top: 2px;">
-                            <span style="font-family: monospace; font-weight: 600;">${admNo}</span>
-                            <span>•</span>
-                            <span>${app.escapeHtml(s.branch_name || 'Main Campus')}</span>
-                            ${s.inquiry_source ? `<span class="badge badge-info" style="font-size: 10px; padding: 2px 6px;">Via: ${app.escapeHtml(s.inquiry_source)}</span>` : ''}
+            ` : ''}
+
+            ${this.hasPermission(['view_batches']) ? `
+              <div class="kpi-card" onclick="app.navigate('batches')" title="View Batches & Schedules">
+                <div>
+                  <div class="kpi-label">Active Batches</div>
+                  <div class="kpi-value">${m.totalBatches ?? 0}</div>
+                  <div class="kpi-subtext muted">Running class schedules</div>
+                </div>
+                <div class="kpi-icon-badge dark">
+                  <i class="fa-solid fa-calendar-days"></i>
+                </div>
+              </div>
+            ` : ''}
+
+            ${this.hasPermission(['view_coaches']) ? `
+              <div class="kpi-card" onclick="app.navigate('coaches')" title="View Coaches & Staff">
+                <div>
+                  <div class="kpi-label">Coaches & Staff</div>
+                  <div class="kpi-value">${m.totalCoaches ?? 0}</div>
+                  <div class="kpi-subtext muted">Active staff members</div>
+                </div>
+                <div class="kpi-icon-badge dark">
+                  <i class="fa-solid fa-user-group"></i>
+                </div>
+              </div>
+            ` : ''}
+
+            ${this.hasPermission(['view_branches', 'manage_branches']) ? `
+              <div class="kpi-card" onclick="app.navigate('branches')" title="View Academy Branches">
+                <div>
+                  <div class="kpi-label">Academy Branches</div>
+                  <div class="kpi-value">${m.totalBranches ?? 0}</div>
+                  <div class="kpi-subtext muted">Operational locations</div>
+                </div>
+                <div class="kpi-icon-badge dark">
+                  <i class="fa-solid fa-code-branch"></i>
+                </div>
+              </div>
+            ` : ''}
+
+            ${this.hasPermission(['view_fees', 'collect_fees', 'manage_fees']) ? `
+              <div class="kpi-card" onclick="app.navigate('fees')" title="View Fee Collections">
+                <div>
+                  <div class="kpi-label">Fee Collections</div>
+                  <div class="kpi-value">₹${(fees.collectedThisMonth || 0).toLocaleString()}</div>
+                  <div class="kpi-subtext success">Collected this month</div>
+                </div>
+                <div class="kpi-icon-badge" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">
+                  <i class="fa-solid fa-file-invoice-dollar"></i>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      ` : ''}
+
+      <!-- Recent Admissions & Absence Audit Grid (Permission Aware) -->
+      ${(this.hasPermission(['view_students']) || this.hasPermission(['view_attendance', 'manage_attendance'])) ? `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px; margin-bottom: 24px;">
+          ${this.hasPermission(['view_students']) ? `
+            <!-- Recent Admissions Card -->
+            <div class="content-card">
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <h2 class="card-title"><i class="fa-solid fa-user-check" style="color: #10b981;"></i> Recent Admissions</h2>
+                  <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Recently converted or directly admitted students</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="app.navigate('students')">All Students</button>
+              </div>
+              <div style="padding: 12px 16px;">
+                ${(!data.newlyJoinedStudents || data.newlyJoinedStudents.length === 0) ? `
+                  <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px;">
+                    <i class="fa-regular fa-id-card fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+                    No newly admitted students found.
+                  </div>
+                ` : `
+                  <div style="display: flex; flex-direction: column; gap: 8px;">
+                    ${data.newlyJoinedStudents.slice(0, 6).map(s => {
+                      const sName = `${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Student';
+                      const initials = sName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'ST';
+                      const admNo = s.admission_number || ('#STU-' + s.id);
+                      const joinDate = s.admission_date || (s.created_at ? s.created_at.split('T')[0] : 'Recent');
+                      return `
+                        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface, #f8fafc); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; transition: transform 0.15s ease;">
+                          <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="width: 38px; height: 38px; border-radius: 50%; background: rgba(37,99,235,0.12); color: var(--primary, #2563eb); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13.5px;">
+                              ${initials}
+                            </div>
+                            <div>
+                              <div style="font-size: 13.5px; font-weight: 700; color: var(--text-heading);">${app.escapeHtml(sName)}</div>
+                              <div style="font-size: 11.5px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; margin-top: 2px;">
+                                <span style="font-family: monospace; font-weight: 600;">${admNo}</span>
+                                <span>•</span>
+                                <span>${app.escapeHtml(s.branch_name || 'Main Campus')}</span>
+                                ${s.inquiry_source ? `<span class="badge badge-info" style="font-size: 10px; padding: 2px 6px;">Via: ${app.escapeHtml(s.inquiry_source)}</span>` : ''}
+                              </div>
+                            </div>
+                          </div>
+                          <div style="text-align: right;">
+                            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 2px;"><i class="fa-regular fa-calendar"></i> ${joinDate}</div>
+                            <span class="badge badge-success" style="font-size: 10.5px; padding: 2px 8px;">${s.status || 'Active'}</span>
                           </div>
                         </div>
-                      </div>
-                      <div style="text-align: right;">
-                        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 2px;"><i class="fa-regular fa-calendar"></i> ${joinDate}</div>
-                        <span class="badge badge-success" style="font-size: 10.5px; padding: 2px 8px;">${s.status || 'Active'}</span>
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
+                      `;
+                    }).join('')}
+                  </div>
+                `}
               </div>
-            `}
-          </div>
-        </div>
-
-        <!-- Student Absence Audit Card -->
-        <div class="content-card">
-          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <h2 class="card-title"><i class="fa-solid fa-user-xmark" style="color: #ef4444;"></i> Student Absence Audit</h2>
-              <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Actionable recent absences and follow-ups</p>
             </div>
-            <button class="btn btn-secondary btn-sm" onclick="app.navigate('attendance')">Audit Sheet</button>
+          ` : ''}
+
+          ${this.hasPermission(['view_attendance', 'manage_attendance']) ? `
+            <!-- Student Absence Audit Card -->
+            <div class="content-card">
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <h2 class="card-title"><i class="fa-solid fa-user-xmark" style="color: #ef4444;"></i> Student Absence Audit</h2>
+                  <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Actionable recent absences and follow-ups</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="app.navigate('attendance')">Audit Sheet</button>
+              </div>
+              <div style="padding: 16px 20px;">
+                ${(!data.recentAbsences || data.recentAbsences.length === 0) ? `
+                  <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px;">
+                    <i class="fa-regular fa-face-smile fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+                    No recent unexcused absences recorded. Great attendance!
+                  </div>
+                ` : `
+                  <div style="display: flex; flex-direction: column; gap: 8px;">
+                    ${data.recentAbsences.slice(0, 5).map(a => `
+                      <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;">
+                        <div>
+                          <div style="font-size: 13px; font-weight: 600; color: var(--text-heading);">${app.escapeHtml((a.first_name || '') + ' ' + (a.last_name || ''))}</div>
+                          <div style="font-size: 11.5px; color: var(--text-muted); display: flex; gap: 8px;">
+                            <span>${app.escapeHtml(a.admission_number || '-')}</span>
+                            <span>•</span>
+                            <span>${app.escapeHtml(a.batch_name || 'Class')}</span>
+                          </div>
+                        </div>
+                        <div style="text-align: right;">
+                          <div style="font-size: 11px; color: #ef4444; font-weight: 600;"><i class="fa-regular fa-calendar-xmark"></i> ${app.formatDate(a.attendance_date)}</div>
+                          <span style="font-size: 11px; color: var(--text-dim);">${app.escapeHtml(a.remarks || 'Absent')}</span>
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                `}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      ` : ''}
+
+      ${this.hasPermission(['view_attendance', 'manage_attendance']) ? `
+        <!-- Overall Attendance Summary Bar -->
+        <div class="content-card" style="margin-bottom: 24px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 class="card-title" style="font-size: 14px;">
+              <i class="fa-solid fa-clipboard-user" style="color: var(--primary);"></i> Overall Daily Attendance Rate
+            </h2>
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('attendance')">Detailed Sheet</button>
           </div>
           <div style="padding: 16px 20px;">
-            ${(!data.recentAbsences || data.recentAbsences.length === 0) ? `
-              <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px;">
-                <i class="fa-regular fa-face-smile fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
-                No recent unexcused absences recorded. Great attendance!
+            <div class="attendance-kpi-row">
+              <div class="attendance-kpi-item">
+                <div class="label">Present</div>
+                <div class="val" style="color: #10b981;">${attPresent}</div>
               </div>
-            ` : `
-              <div style="display: flex; flex-direction: column; gap: 8px;">
-                ${data.recentAbsences.slice(0, 5).map(a => `
-                  <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;">
-                    <div>
-                      <div style="font-size: 13px; font-weight: 600; color: var(--text-heading);">${app.escapeHtml((a.first_name || '') + ' ' + (a.last_name || ''))}</div>
-                      <div style="font-size: 11.5px; color: var(--text-muted); display: flex; gap: 8px;">
-                        <span>${app.escapeHtml(a.admission_number || '-')}</span>
-                        <span>•</span>
-                        <span>${app.escapeHtml(a.batch_name || 'Class')}</span>
-                      </div>
-                    </div>
-                    <div style="text-align: right;">
-                      <div style="font-size: 11px; color: #ef4444; font-weight: 600;"><i class="fa-regular fa-calendar-xmark"></i> ${app.formatDate(a.attendance_date)}</div>
-                      <span style="font-size: 11px; color: var(--text-dim);">${app.escapeHtml(a.remarks || 'Absent')}</span>
-                    </div>
-                  </div>
-                `).join('')}
+              <div class="attendance-kpi-item">
+                <div class="label">Absent</div>
+                <div class="val" style="color: #ef4444;">${attAbsent}</div>
               </div>
-            `}
-          </div>
-        </div>
-      </div>
+              <div class="attendance-kpi-item">
+                <div class="label">Late</div>
+                <div class="val" style="color: #f59e0b;">${attLate}</div>
+              </div>
+              <div class="attendance-kpi-item">
+                <div class="label">Attendance Rate</div>
+                <div class="val">${attRate}%</div>
+              </div>
+            </div>
 
-      <!-- Overall Attendance Summary Bar -->
-      <div class="content-card" style="margin-bottom: 24px;">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-          <h2 class="card-title" style="font-size: 14px;">
-            <i class="fa-solid fa-clipboard-user" style="color: var(--primary);"></i> Overall Daily Attendance Rate
-          </h2>
-          <button class="btn btn-secondary btn-sm" onclick="app.navigate('attendance')">Detailed Sheet</button>
-        </div>
-        <div style="padding: 16px 20px;">
-          <div class="attendance-kpi-row">
-            <div class="attendance-kpi-item">
-              <div class="label">Present</div>
-              <div class="val" style="color: #10b981;">${attPresent}</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 12px; color: var(--text-muted);">
+              <span>Daily attendance completion</span>
+              <span>${attPresent} / ${attScheduled > 0 ? attScheduled : (attTotalMarked > 0 ? attTotalMarked : 100)}</span>
             </div>
-            <div class="attendance-kpi-item">
-              <div class="label">Absent</div>
-              <div class="val" style="color: #ef4444;">${attAbsent}</div>
+            <div style="width: 100%; height: 6px; background: rgba(100, 116, 139, 0.15); border-radius: 3px; overflow: hidden; margin-top: 6px;">
+              <div style="height: 100%; width: ${Math.min(100, attRate)}%; background: #10b981; border-radius: 3px; transition: width 0.4s ease;"></div>
             </div>
-            <div class="attendance-kpi-item">
-              <div class="label">Late</div>
-              <div class="val" style="color: #f59e0b;">${attLate}</div>
-            </div>
-            <div class="attendance-kpi-item">
-              <div class="label">Attendance Rate</div>
-              <div class="val">${attRate}%</div>
-            </div>
-          </div>
-
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 12px; color: var(--text-muted);">
-            <span>Daily attendance completion</span>
-            <span>${attPresent} / ${attScheduled > 0 ? attScheduled : (attTotalMarked > 0 ? attTotalMarked : 100)}</span>
-          </div>
-          <div style="width: 100%; height: 6px; background: rgba(100, 116, 139, 0.15); border-radius: 3px; overflow: hidden; margin-top: 6px;">
-            <div style="height: 100%; width: ${Math.min(100, attRate)}%; background: #10b981; border-radius: 3px; transition: width 0.4s ease;"></div>
           </div>
         </div>
-      </div>
+      ` : ''}
 
       <!-- Upcoming Events (If any) -->
-      ${(data.upcomingEvents && data.upcomingEvents.length > 0) ? `
+      ${(this.hasPermission(['view_events', 'manage_events']) && data.upcomingEvents && data.upcomingEvents.length > 0) ? `
         <div class="content-card" style="margin-bottom: 24px;">
           <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
             <div>
@@ -5341,139 +5681,23 @@ const app = {
         </div>
       ` : ''}
 
-      <!-- Streamlined Quick Access Launchpad (8 Essential Operations) -->
-      <div class="launchpad-section" style="margin-bottom: 24px;">
-        <div class="launchpad-header">
-          <div class="launchpad-title">
-            <i class="fa-solid fa-bolt" style="color: #f59e0b;"></i> Quick Access Launchpad
+      <!-- Streamlined Quick Access Launchpad (Filtered by Permissions) -->
+      ${launchpadTiles.length > 0 ? `
+        <div class="launchpad-section" style="margin-bottom: 24px;">
+          <div class="launchpad-header">
+            <div class="launchpad-title">
+              <i class="fa-solid fa-bolt" style="color: #f59e0b;"></i> Quick Access Launchpad
+            </div>
+            <span style="font-size: 12px; color: var(--text-muted);">Direct operational shortcuts</span>
           </div>
-          <span style="font-size: 12px; color: var(--text-muted);">Direct operational shortcuts</span>
-        </div>
-        <div class="launchpad-grid" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));">
-          <!-- 1. Class Attendance -->
-          <div class="launchpad-tile">
-            <div>
-              <div class="launchpad-tile-top">
-                <div class="launchpad-tile-name"><i class="fa-solid fa-clipboard-user" style="color: #2563eb;"></i> Class Attendance</div>
-                <span class="launchpad-tile-badge">Roster</span>
-              </div>
-              <div class="launchpad-tile-desc">Mark batch attendance & track progression</div>
-            </div>
-            <div class="launchpad-tile-bottom">
-              <a class="launchpad-open-link" onclick="app.navigate('attendance')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
-              <button class="launchpad-action-btn" onclick="app.navigate('attendance')"><i class="fa-solid fa-plus"></i> Take</button>
-            </div>
-          </div>
-
-          <!-- 2. Students Directory -->
-          <div class="launchpad-tile">
-            <div>
-              <div class="launchpad-tile-top">
-                <div class="launchpad-tile-name"><i class="fa-solid fa-users" style="color: #3b82f6;"></i> Students Directory</div>
-                <span class="launchpad-tile-badge">Profiles</span>
-              </div>
-              <div class="launchpad-tile-desc">Student records, contact info & belt ranks</div>
-            </div>
-            <div class="launchpad-tile-bottom">
-              <a class="launchpad-open-link" onclick="app.navigate('students')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
-              <button class="launchpad-action-btn" onclick="app.showAddStudentModal()"><i class="fa-solid fa-plus"></i> Add</button>
-            </div>
-          </div>
-
-          <!-- 3. Inquiries Pipeline -->
-          <div class="launchpad-tile">
-            <div>
-              <div class="launchpad-tile-top">
-                <div class="launchpad-tile-name"><i class="fa-solid fa-user-plus" style="color: #0ea5e9;"></i> Inquiries Pipeline</div>
-                <span class="launchpad-tile-badge">Leads</span>
-              </div>
-              <div class="launchpad-tile-desc">Leads, follow-ups & trial scheduling</div>
-            </div>
-            <div class="launchpad-tile-bottom">
-              <a class="launchpad-open-link" onclick="app.navigate('inquiries')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
-              <button class="launchpad-action-btn" onclick="app.openNewInquiryModal()"><i class="fa-solid fa-plus"></i> Inquiry</button>
-            </div>
-          </div>
-
-          <!-- 4. Batches & Schedule -->
-          <div class="launchpad-tile">
-            <div>
-              <div class="launchpad-tile-top">
-                <div class="launchpad-tile-name"><i class="fa-solid fa-calendar-days" style="color: #8b5cf6;"></i> Batches & Schedule</div>
-                <span class="launchpad-tile-badge">Schedules</span>
-              </div>
-              <div class="launchpad-tile-desc">Class timings & coach assignments</div>
-            </div>
-            <div class="launchpad-tile-bottom">
-              <a class="launchpad-open-link" onclick="app.navigate('batches')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
-              <button class="launchpad-action-btn" onclick="app.showAddBatchModal()"><i class="fa-solid fa-plus"></i> Batch</button>
-            </div>
-          </div>
-
-          <!-- 5. Fee Collection -->
-          <div class="launchpad-tile">
-            <div>
-              <div class="launchpad-tile-top">
-                <div class="launchpad-tile-name"><i class="fa-solid fa-file-invoice-dollar" style="color: #10b981;"></i> Fee Collection</div>
-                <span class="launchpad-tile-badge">Payments</span>
-              </div>
-              <div class="launchpad-tile-desc">Collect student fees & receipts</div>
-            </div>
-            <div class="launchpad-tile-bottom">
-              <a class="launchpad-open-link" onclick="app.navigate('fees')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
-              <button class="launchpad-action-btn" onclick="app.showCollectStudentFeeModal()"><i class="fa-solid fa-plus"></i> Collect</button>
-            </div>
-          </div>
-
-          <!-- 6. Staff Leaves -->
-          <div class="launchpad-tile">
-            <div>
-              <div class="launchpad-tile-top">
-                <div class="launchpad-tile-name"><i class="fa-solid fa-calendar-check" style="color: #f59e0b;"></i> Staff Leaves</div>
-                <span class="launchpad-tile-badge">Leaves</span>
-              </div>
-              <div class="launchpad-tile-desc">Apply leave & review approval status</div>
-            </div>
-            <div class="launchpad-tile-bottom">
-              <a class="launchpad-open-link" onclick="app.navigate('leaves')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
-              <button class="launchpad-action-btn" onclick="app.showApplyLeaveModal()"><i class="fa-solid fa-plus"></i> Apply</button>
-            </div>
-          </div>
-
-          <!-- 7. Events & Tournaments -->
-          <div class="launchpad-tile">
-            <div>
-              <div class="launchpad-tile-top">
-                <div class="launchpad-tile-name"><i class="fa-solid fa-trophy" style="color: #eab308;"></i> Events & Tournaments</div>
-                <span class="launchpad-tile-badge">Events</span>
-              </div>
-              <div class="launchpad-tile-desc">Tournaments, belt tests & seminars</div>
-            </div>
-            <div class="launchpad-tile-bottom">
-              <a class="launchpad-open-link" onclick="app.navigate('events')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
-              <button class="launchpad-action-btn" onclick="app.openCreateEventModal()"><i class="fa-solid fa-plus"></i> Event</button>
-            </div>
-          </div>
-
-          <!-- 8. Syllabus / Belt Techniques -->
-          <div class="launchpad-tile">
-            <div>
-              <div class="launchpad-tile-top">
-                <div class="launchpad-tile-name"><i class="fa-solid fa-book-open-reader" style="color: #ec4899;"></i> Belt Syllabus</div>
-                <span class="launchpad-tile-badge">Progression</span>
-              </div>
-              <div class="launchpad-tile-desc">Belt categories, techniques & grading</div>
-            </div>
-            <div class="launchpad-tile-bottom">
-              <a class="launchpad-open-link" onclick="app.navigate('syllabus')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
-              <button class="launchpad-action-btn" onclick="app.navigate('syllabus')"><i class="fa-solid fa-sliders"></i> Techniques</button>
-            </div>
+          <div class="launchpad-grid" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));">
+            ${launchpadTiles.join('')}
           </div>
         </div>
-      </div>
+      ` : ''}
 
-      <!-- Collapsible Administration & System Tools (Bottom Drawer) -->
-      ${!isCoach ? `
+      <!-- Collapsible Administration & System Tools (Bottom Drawer - Restricted) -->
+      ${(this.user.isSuperAdmin || this.user.role === 'academy_admin' || this.hasPermission(['manage_settings', 'view_reports'])) ? `
         <div class="admin-collapsible-wrapper">
           <button type="button" class="admin-collapsible-trigger" onclick="app.toggleAdminTools()">
             <span style="display: flex; align-items: center; gap: 8px;">
@@ -5484,44 +5708,50 @@ const app = {
           </button>
           <div id="admin-tools-collapse-body" style="display: none; padding: 20px; border-top: 1px solid var(--border);">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 16px;">
-              <!-- Backup Box -->
-              <div class="admin-sub-card">
-                <h4 style="font-size: 13.5px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
-                  <i class="fa-solid fa-download" style="color: var(--primary);"></i> Tenant Database Backup
-                </h4>
-                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
-                  Download a complete standalone ZIP backup of this academy's isolated SQLite database.
-                </p>
-                <a href="/api/academy/backup" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;" download>
-                  <i class="fa-solid fa-file-zipper"></i> Download academy_${data.academy.id}.db ZIP
-                </a>
-              </div>
+              ${(this.user.isSuperAdmin || this.user.role === 'academy_admin') ? `
+                <!-- Backup Box -->
+                <div class="admin-sub-card">
+                  <h4 style="font-size: 13.5px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
+                    <i class="fa-solid fa-download" style="color: var(--primary);"></i> Tenant Database Backup
+                  </h4>
+                  <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
+                    Download a complete standalone ZIP backup of this academy's isolated SQLite database.
+                  </p>
+                  <a href="/api/academy/backup" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;" download>
+                    <i class="fa-solid fa-file-zipper"></i> Download academy_${data.academy.id}.db ZIP
+                  </a>
+                </div>
+              ` : ''}
 
-              <!-- Settings Box -->
-              <div class="admin-sub-card">
-                <h4 style="font-size: 13.5px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
-                  <i class="fa-solid fa-gear" style="color: #d97706;"></i> Academy Policies & Settings
-                </h4>
-                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
-                  Configure default currency, timezone, grace periods, and late fees.
-                </p>
-                <button class="btn btn-secondary btn-sm" onclick="app.navigate('policy-settings')">
-                  <i class="fa-solid fa-sliders"></i> Manage Policies
-                </button>
-              </div>
+              ${(this.user.isSuperAdmin || this.user.role === 'academy_admin' || this.hasPermission(['manage_settings'])) ? `
+                <!-- Settings Box -->
+                <div class="admin-sub-card">
+                  <h4 style="font-size: 13.5px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
+                    <i class="fa-solid fa-gear" style="color: #d97706;"></i> Academy Policies & Settings
+                  </h4>
+                  <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
+                    Configure default currency, timezone, grace periods, and late fees.
+                  </p>
+                  <button class="btn btn-secondary btn-sm" onclick="app.navigate('policy-settings')">
+                    <i class="fa-solid fa-sliders"></i> Manage Policies
+                  </button>
+                </div>
+              ` : ''}
 
-              <!-- Roles & Security Box -->
-              <div class="admin-sub-card">
-                <h4 style="font-size: 13.5px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
-                  <i class="fa-solid fa-shield-halved" style="color: #6366f1;"></i> Roles & Access Control
-                </h4>
-                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
-                  Fine-tune granular permissions for academy staff, coaches, and front desk.
-                </p>
-                <button class="btn btn-secondary btn-sm" onclick="app.navigate('roles-permissions')">
-                  <i class="fa-solid fa-key"></i> View Permissions
-                </button>
-              </div>
+              ${(this.user.isSuperAdmin || this.user.role === 'academy_admin' || this.hasPermission(['manage_roles'])) ? `
+                <!-- Roles & Security Box -->
+                <div class="admin-sub-card">
+                  <h4 style="font-size: 13.5px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
+                    <i class="fa-solid fa-shield-halved" style="color: #6366f1;"></i> Roles & Access Control
+                  </h4>
+                  <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
+                    Fine-tune granular permissions for academy staff, coaches, and front desk.
+                  </p>
+                  <button class="btn btn-secondary btn-sm" onclick="app.navigate('roles-permissions')">
+                    <i class="fa-solid fa-key"></i> View Permissions
+                  </button>
+                </div>
+              ` : ''}
             </div>
 
             <!-- Subscription Quotas -->
