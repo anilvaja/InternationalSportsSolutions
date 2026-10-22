@@ -1019,9 +1019,8 @@ const app = {
     }
 
     try {
-      const res = await fetch('/api/public/setup');
-      const data = await res.json();
-      if (data.success) {
+      const data = await this.apiRequest('/api/public/setup');
+      if (data && data.success) {
         this.showToast('Platform initialized successfully!', 'success');
         this.quickFill('anilvaja.007@gmail.com', 'password');
 
@@ -1043,7 +1042,7 @@ const app = {
           `;
         }
       } else {
-        this.showToast(data.error || 'Failed to initialize database', 'danger');
+        this.showToast((data && data.error) || 'Failed to initialize database', 'danger');
       }
     } catch (err) {
       this.showToast('Setup error: ' + err.message, 'danger');
@@ -1056,7 +1055,7 @@ const app = {
   },
 
   async resetEverythingFromScratch() {
-    if (!confirm("⚠️ DANGER: RESET EVERYTHING FROM SCRATCH\n\nThis will completely wipe ALL databases, demo academies, uploaded files, and tenant accounts.\n\nIt will re-seed ONLY:\n1. Super Admin: anilvaja.007@gmail.com\n2. Pratik Karate Academy (admin@pratikkarate.com)\n3. Academy Admin role (all permissions assigned)\n\nAre you sure you want to proceed?")) {
+    if (!confirm("⚠️ DANGER: RESET EVERYTHING FROM SCRATCH\n\nThis will completely wipe ALL databases, demo academies, uploaded files, and tenant accounts.\n\nIt will re-seed ONLY:\n1. Super Admin: anilvaja.007@gmail.com\n2. Pratik Karate Academy (admin@pratikkarate.com)\n3. Exactly 8 Standard Operational Roles\n\nAre you sure you want to proceed?")) {
       return;
     }
 
@@ -1067,9 +1066,8 @@ const app = {
     }
 
     try {
-      const res = await fetch('/api/public/reset-everything?confirm=RESET_EVERYTHING', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
+      const data = await this.apiRequest('/api/public/reset-everything?confirm=RESET_EVERYTHING', { method: 'POST' });
+      if (data && data.success) {
         this.showToast('Platform reset from scratch successfully!', 'success');
         this.quickFill('anilvaja.007@gmail.com', 'password');
 

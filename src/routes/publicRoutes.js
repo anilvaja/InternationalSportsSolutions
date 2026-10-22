@@ -3,6 +3,7 @@ import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById } from '../db/connectionManager.js';
 import { extractSubdomain, extractHost } from '../middleware/tenantResolver.js';
 import { runSeed } from '../db/seed.js';
+import { AcademyLifecycleService } from '../services/academyLifecycleService.js';
 
 export const publicRouter = express.Router();
 
@@ -227,8 +228,6 @@ publicRouter.post('/pay', (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-import { AcademyLifecycleService } from '../services/academyLifecycleService.js';
 
 /**
  * GET & POST /api/public/setup
