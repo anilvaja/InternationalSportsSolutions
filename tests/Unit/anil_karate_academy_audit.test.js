@@ -33,6 +33,7 @@ describe('Anil Karate Academy — Complete Audit & Verification Suite', () => {
     // Verify Anil Karate Academy setup in central db
     const tenant = centralDb.prepare('SELECT * FROM academies WHERE id = ?').get(ACADEMY_ID);
     assert.ok(tenant.name === 'Anil Karate Academy' || tenant.name === 'Pratik Karate Academy', 'Academy name should match');
+    centralDb.prepare("INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status) VALUES (?, ?, 0, 0, 'active')").run(ACADEMY_ID, TENANT_HOST);
 
     // Clean up any audit test records inside Academy 1
     academyDb.prepare("DELETE FROM syllabus_techniques WHERE name LIKE 'Audit Tech%'").run();

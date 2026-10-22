@@ -1116,6 +1116,39 @@ const app = {
     this.showLogin();
   },
 
+  checkDebugOrSetupMode() {
+    const search = window.location.search || '';
+    const hash = window.location.hash || '';
+    const combined = search + (hash.includes('?') ? '&' + hash.split('?')[1] : '&' + hash.replace(/^#/, ''));
+    const params = new URLSearchParams(combined);
+
+    let explicitDebug = null;
+    for (const [key, val] of params.entries()) {
+      const lowerKey = key.toLowerCase().trim();
+      const lowerVal = (val || '').toLowerCase().trim();
+
+      if (lowerKey === 'debug' || lowerKey === 'setup' || lowerKey === 'reset') {
+        if (['on', 'true', '1', 'yes', 'show', 'enable'].includes(lowerVal) || lowerVal === '') {
+          explicitDebug = 'on';
+        } else if (['off', 'false', '0', 'no', 'hide', 'disable'].includes(lowerVal)) {
+          explicitDebug = 'off';
+        }
+      }
+    }
+
+    if (explicitDebug === 'on') {
+      localStorage.setItem('iss_debug_tools', 'on');
+      return true;
+    }
+    if (explicitDebug === 'off') {
+      localStorage.setItem('iss_debug_tools', 'off');
+      return false;
+    }
+
+    // Default when no URL override is provided: check stored preference
+    return localStorage.getItem('iss_debug_tools') === 'on';
+  },
+
   showLogin() {
     const loginView = document.getElementById('login-view');
     loginView.style.display = 'flex';
@@ -1130,6 +1163,12 @@ const app = {
                             window.location.hostname.includes('preview') ||
                             window.location.hostname.includes('airoapp.ai');
       demoPicker.style.display = isDevOrPreview ? 'block' : 'none';
+    }
+
+    // Only show setup/reset database buttons when debug=on or setup=on in URL or stored in browser
+    const initDbContainer = document.getElementById('init-db-container');
+    if (initDbContainer) {
+      initDbContainer.style.display = this.checkDebugOrSetupMode() ? 'flex' : 'none';
     }
 
     // If on a tenant subdomain, customize branding
@@ -1857,9 +1896,11 @@ const app = {
             <a href="/api/central/backup" class="btn btn-secondary btn-sm" download>
               <i class="fa-solid fa-file-zipper"></i> Full Platform ZIP
             </a>
-            <button class="btn btn-outline-danger btn-sm" onclick="app.resetEverythingFromScratch()" title="Reset Platform From Scratch (Wipe & Re-Seed)">
-              <i class="fa-solid fa-triangle-exclamation"></i> Reset Everything
-            </button>
+            ${this.checkDebugOrSetupMode() ? `
+              <button class="btn btn-outline-danger btn-sm" onclick="app.resetEverythingFromScratch()" title="Reset Platform From Scratch (Wipe & Re-Seed)">
+                <i class="fa-solid fa-triangle-exclamation"></i> Reset Everything
+              </button>
+            ` : ''}
             <button class="btn btn-primary btn-sm" onclick="app.showProvisionAcademyModal()">
               <i class="fa-solid fa-plus"></i> Provision New Academy
             </button>
