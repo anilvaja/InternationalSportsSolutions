@@ -4071,6 +4071,12 @@ academyRouter.put('/fees/pauses/:id/review', (req, res) => {
 academyRouter.get('/fees/discount-presets', (req, res) => {
   try {
     const db = req.tenantDb;
+    try {
+      const cols = db.prepare("PRAGMA table_info(fee_discount_presets)").all();
+      if (!cols.some(c => c.name === 'plan_label')) {
+        db.prepare("ALTER TABLE fee_discount_presets ADD COLUMN plan_label TEXT").run();
+      }
+    } catch (e) {}
     const presets = db.prepare('SELECT * FROM fee_discount_presets ORDER BY months ASC').all();
     res.json({ success: true, presets });
   } catch (err) {
@@ -4080,35 +4086,54 @@ academyRouter.get('/fees/discount-presets', (req, res) => {
 
 /**
  * PUT /api/academy/fees/discount-presets
- * Updates multi-month discount presets (quarterly, half-yearly, annual, etc.)
+ * Updates multi-month discount presets (custom months, plan_label, percentage, active status)
+ * Supports full sync / deletion when sync: true is provided.
  */
 academyRouter.put('/fees/discount-presets', (req, res) => {
   try {
     const db = req.tenantDb;
-    const { presets } = req.body;
+    const { presets, sync } = req.body;
 
     if (!Array.isArray(presets)) {
       return res.status(400).json({ success: false, error: 'presets array required' });
     }
+
+    try {
+      const cols = db.prepare("PRAGMA table_info(fee_discount_presets)").all();
+      if (!cols.some(c => c.name === 'plan_label')) {
+        db.prepare("ALTER TABLE fee_discount_presets ADD COLUMN plan_label TEXT").run();
+      }
+    } catch (e) {}
+
+    const submittedMonths = [];
 
     const tx = db.transaction(() => {
       for (const p of presets) {
         const months = Number(p.months);
         const discount_percentage = Number(p.discount_percentage);
         const is_active = p.is_active !== undefined ? (p.is_active ? 1 : 0) : 1;
+        const plan_label = p.plan_label ? String(p.plan_label).trim() : null;
 
         if (isNaN(months) || months < 1 || isNaN(discount_percentage) || discount_percentage < 0) {
           continue;
         }
 
+        submittedMonths.push(months);
+
         const existing = db.prepare('SELECT id FROM fee_discount_presets WHERE months = ?').get(months);
         if (existing) {
-          db.prepare('UPDATE fee_discount_presets SET discount_percentage = ?, is_active = ? WHERE id = ?')
-            .run(discount_percentage, is_active, existing.id);
+          db.prepare('UPDATE fee_discount_presets SET discount_percentage = ?, is_active = ?, plan_label = ? WHERE id = ?')
+            .run(discount_percentage, is_active, plan_label, existing.id);
         } else {
-          db.prepare('INSERT INTO fee_discount_presets (months, discount_percentage, is_active) VALUES (?, ?, ?)')
-            .run(months, discount_percentage, is_active);
+          db.prepare('INSERT INTO fee_discount_presets (months, discount_percentage, is_active, plan_label) VALUES (?, ?, ?, ?)')
+            .run(months, discount_percentage, is_active, plan_label);
         }
+      }
+
+      // If sync requested, clean up any tiers that were deleted in the UI (except preserve base 1 mo if not submitted)
+      if (sync && submittedMonths.length > 0) {
+        const placeholders = submittedMonths.map(() => '?').join(',');
+        db.prepare(`DELETE FROM fee_discount_presets WHERE months NOT IN (${placeholders})`).run(...submittedMonths);
       }
     });
 
@@ -4116,6 +4141,24 @@ academyRouter.put('/fees/discount-presets', (req, res) => {
 
     const updated = db.prepare('SELECT * FROM fee_discount_presets ORDER BY months ASC').all();
     res.json({ success: true, message: 'Multi-month discount presets updated successfully', presets: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/fees/discount-presets/:months
+ */
+academyRouter.delete('/fees/discount-presets/:months', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const months = Number(req.params.months);
+    if (!months || months < 1) {
+      return res.status(400).json({ success: false, error: 'Valid months count required' });
+    }
+    db.prepare('DELETE FROM fee_discount_presets WHERE months = ?').run(months);
+    const updated = db.prepare('SELECT * FROM fee_discount_presets ORDER BY months ASC').all();
+    res.json({ success: true, message: `Discount tier for ${months} months deleted successfully`, presets: updated });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

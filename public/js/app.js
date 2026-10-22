@@ -10208,10 +10208,15 @@ const app = {
                       <strong style="color: #10b981;">Save ₹${exSave.toLocaleString()}</strong> 
                       (Student pays ₹${exNet.toLocaleString()})
                     </td>
-                    <td style="text-align: right;">
+                    <td style="text-align: right; white-space: nowrap;">
                       <button class="btn btn-secondary btn-sm" onclick="app.quickSaveSinglePreset(${p.months})" title="Save this tier">
                         <i class="fa-solid fa-check"></i>
                       </button>
+                      ${p.months !== 1 ? `
+                        <button class="btn btn-danger btn-sm" onclick="app.deletePresetTier(${p.months})" title="Delete Tier" style="margin-left: 4px;">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      ` : ''}
                     </td>
                   </tr>
                 `;
@@ -10223,65 +10228,75 @@ const app = {
     `;
   },
 
+  getDefaultPresetLabel(months) {
+    const map = {
+      1: 'Monthly (1 Month - Base)',
+      2: 'Bi-Monthly (2 Months Advance)',
+      3: 'Quarterly (3 Months Advance)',
+      4: '4-Month Advance Plan',
+      5: '5-Month Advance Plan',
+      6: 'Half-Yearly (6 Months Advance)',
+      7: '7-Month Advance Plan',
+      8: '8-Month Advance Plan',
+      9: 'Academic Session (9 Months)',
+      10: '10-Month Advance Plan',
+      11: '11-Month Advance Plan',
+      12: 'Annual / Full Year (12 Months)',
+      18: '1.5-Year Extended Plan (18 Months)',
+      24: '2-Year Long-Term Plan (24 Months)',
+      36: '3-Year Multi-Year Plan (36 Months)',
+    };
+    return map[months] || `${months} Months Advance`;
+  },
+
   async showFeeDiscountPresetsModal() {
     try {
       const res = await this.apiRequest('/api/academy/fees/discount-presets');
       const presets = (res && res.presets) || [];
       this.feesState.presetsCache = presets;
 
-      const defaultLabels = {
-        1: 'Monthly (1 Month - Base)',
-        2: 'Bi-Monthly (2 Months)',
-        3: 'Quarterly (3 Months Advance)',
-        4: '4-Month Advance',
-        5: '5-Month Advance',
-        6: 'Half-Yearly (6 Months Advance)',
-        12: 'Annual / Full Year (12 Months)',
-      };
-
       this.openModal(
         'Multi-Month Fee Discount Settings',
         `
           <div>
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
-              Configure percentage discounts automatically applied when students pay multiple months in advance (Quarterly, Half-Yearly, Yearly).
-            </p>
-
-            <div style="background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 16px; font-size: 12px;">
-              <i class="fa-solid fa-bolt" style="color: #f59e0b;"></i>
-              <strong>Tip:</strong> These rules automatically populate when selecting 3, 6, or 12 months in the fee collection modal.
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; flex-wrap: wrap;">
+              <div style="flex: 1; min-width: 250px;">
+                <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 4px 0;">
+                  Configure percentage discounts automatically applied when students pay multiple months in advance (Quarterly, Half-Yearly, Yearly, or any custom month duration).
+                </p>
+                <div style="font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 4px;">
+                  <i class="fa-solid fa-bolt" style="color: #f59e0b;"></i>
+                  <span>Active rules automatically calculate and apply discount when corresponding duration is selected in fee collection.</span>
+                </div>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.addPresetRowToModal()" style="white-space: nowrap; font-weight: 600;">
+                <i class="fa-solid fa-plus"></i> Add Option / Tier
+              </button>
             </div>
 
-            <table class="custom-table" style="font-size: 13px;">
-              <thead>
-                <tr>
-                  <th>Months</th>
-                  <th>Coverage Plan</th>
-                  <th style="width: 140px;">Discount (%)</th>
-                  <th style="width: 100px;">Active</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${presets.map(p => `
+            <div class="table-responsive" style="max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm);">
+              <table class="custom-table" style="font-size: 13px; margin: 0;">
+                <thead>
                   <tr>
-                    <td><strong style="font-family: monospace;">${p.months} mo</strong></td>
-                    <td><strong>${defaultLabels[p.months] || `${p.months} Months`}</strong></td>
-                    <td>
-                      <div style="display: flex; align-items: center; gap: 4px;">
-                        <input type="number" id="modal-preset-pct-${p.months}" class="form-input" min="0" max="100" step="0.5" value="${p.discount_percentage}" style="width: 80px; font-weight: 700; text-align: right;">
-                        <strong>%</strong>
-                      </div>
-                    </td>
-                    <td>
-                      <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                        <input type="checkbox" id="modal-preset-active-${p.months}" ${p.is_active ? 'checked' : ''}>
-                        <span>${p.is_active ? 'Yes' : 'No'}</span>
-                      </label>
-                    </td>
+                    <th style="width: 105px;">Months</th>
+                    <th>Coverage Plan Label</th>
+                    <th style="width: 130px;">Discount (%)</th>
+                    <th style="width: 85px; text-align: center;">Active</th>
+                    <th style="width: 55px; text-align: center;">Action</th>
                   </tr>
-                `).join('')}
-              </tbody>
-            </table>
+                </thead>
+                <tbody id="modal-presets-tbody">
+                  ${presets.map(p => this.renderPresetRowHtml(p)).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 11px; color: var(--text-dim); flex-wrap: wrap; gap: 8px;">
+              <span><i class="fa-solid fa-circle-info" style="color: #3b82f6;"></i> You can add custom month tiers (e.g. 2, 4, 9, 24 mo), edit plan labels, or remove unneeded options.</span>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="app.addPresetRowToModal()" style="font-size: 11px; font-weight: 600;">
+                <i class="fa-solid fa-plus"></i> Add Another Option
+              </button>
+            </div>
           </div>
         `,
         `
@@ -10294,30 +10309,176 @@ const app = {
     }
   },
 
+  renderPresetRowHtml(p) {
+    const isBase = Number(p.months) === 1;
+    const label = p.plan_label || this.getDefaultPresetLabel(p.months);
+    return `
+      <tr class="modal-preset-row" data-initial-months="${p.months || ''}">
+        <td>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <input type="number" class="form-input modal-row-months" min="1" max="60" value="${p.months || 1}"
+                   style="width: 60px; font-weight: 700; text-align: center; padding: 4px;" required
+                   onchange="app.onPresetMonthsChange(this)">
+            <span style="font-size: 11px; color: var(--text-dim); font-weight: 600;">mo</span>
+          </div>
+        </td>
+        <td>
+          <input type="text" class="form-input modal-row-label" value="${this.escapeHtml(label)}"
+                 placeholder="e.g. Quarterly (3 Months Advance)" style="width: 100%; font-size: 13px; font-weight: 500;" required>
+        </td>
+        <td>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <input type="number" class="form-input modal-row-pct fee-amount-input" min="0" max="100" step="0.5"
+                   value="${p.discount_percentage !== undefined ? p.discount_percentage : 0}"
+                   style="width: 75px; font-weight: 700; text-align: right; padding: 4px;" required>
+            <strong style="color: var(--text-muted);">%</strong>
+          </div>
+        </td>
+        <td style="text-align: center;">
+          <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 12px;">
+            <input type="checkbox" class="modal-row-active" ${p.is_active ? 'checked' : ''} onchange="this.nextElementSibling.innerText = this.checked ? 'Yes' : 'No'">
+            <span>${p.is_active ? 'Yes' : 'No'}</span>
+          </label>
+        </td>
+        <td style="text-align: center;">
+          ${isBase ? `
+            <span style="color: var(--text-muted); font-size: 11px;" title="Base 1-Month rate cannot be deleted">Base</span>
+          ` : `
+            <button type="button" class="btn btn-danger btn-xs" onclick="app.removePresetRowFromModal(this)" title="Delete Option" style="padding: 2px 7px; font-size: 11px;">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          `}
+        </td>
+      </tr>
+    `;
+  },
+
+  addPresetRowToModal() {
+    const tbody = document.getElementById('modal-presets-tbody');
+    if (!tbody) return;
+
+    // Determine next month count that isn't already used
+    const existingMonths = Array.from(tbody.querySelectorAll('.modal-row-months')).map(inp => parseInt(inp.value, 10));
+    let nextMonth = 2;
+    const candidates = [2, 4, 5, 7, 8, 9, 10, 11, 18, 24];
+    for (const c of candidates) {
+      if (!existingMonths.includes(c)) {
+        nextMonth = c;
+        break;
+      }
+    }
+    if (existingMonths.includes(nextMonth)) {
+      nextMonth = Math.max(...existingMonths, 0) + 1;
+    }
+
+    const newPreset = {
+      months: nextMonth,
+      discount_percentage: 0,
+      is_active: 1,
+      plan_label: this.getDefaultPresetLabel(nextMonth),
+    };
+
+    const tempDiv = document.createElement('tbody');
+    tempDiv.innerHTML = this.renderPresetRowHtml(newPreset);
+    const newTr = tempDiv.firstElementChild;
+    tbody.appendChild(newTr);
+
+    // Scroll to bottom and focus new input
+    newTr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const pctInput = newTr.querySelector('.modal-row-pct');
+    if (pctInput) {
+      pctInput.focus();
+      pctInput.select();
+    }
+  },
+
+  removePresetRowFromModal(btn) {
+    const tr = btn.closest('tr');
+    if (tr) {
+      tr.remove();
+    }
+  },
+
+  onPresetMonthsChange(input) {
+    const tr = input.closest('tr');
+    if (!tr) return;
+    const months = parseInt(input.value, 10) || 1;
+    const labelInput = tr.querySelector('.modal-row-label');
+    if (labelInput && (!labelInput.value || labelInput.value.includes('Months Advance') || labelInput.value.includes('Month'))) {
+      labelInput.value = this.getDefaultPresetLabel(months);
+    }
+  },
+
   async saveModalDiscountPresets() {
-    const presets = this.feesState.presetsCache || [];
-    const payload = presets.map(p => {
-      const pctInput = document.getElementById(`modal-preset-pct-${p.months}`);
-      const activeInput = document.getElementById(`modal-preset-active-${p.months}`);
-      return {
-        months: p.months,
-        discount_percentage: pctInput ? Number(pctInput.value) : p.discount_percentage,
-        is_active: activeInput ? !!activeInput.checked : p.is_active,
-      };
-    });
+    const tbody = document.getElementById('modal-presets-tbody');
+    if (!tbody) return;
+
+    const rows = tbody.querySelectorAll('tr.modal-preset-row');
+    const payload = [];
+    const seenMonths = new Set();
+
+    for (const tr of rows) {
+      const monthsInput = tr.querySelector('.modal-row-months');
+      const labelInput = tr.querySelector('.modal-row-label');
+      const pctInput = tr.querySelector('.modal-row-pct');
+      const activeInput = tr.querySelector('.modal-row-active');
+
+      const months = parseInt(monthsInput ? monthsInput.value : 0, 10);
+      const discount_percentage = parseFloat(pctInput ? pctInput.value : 0) || 0;
+      const is_active = activeInput ? !!activeInput.checked : true;
+      const plan_label = labelInput ? labelInput.value.trim() : this.getDefaultPresetLabel(months);
+
+      if (!months || months < 1) {
+        this.showToast('Duration in months must be at least 1', 'danger');
+        if (monthsInput) monthsInput.focus();
+        return;
+      }
+
+      if (seenMonths.has(months)) {
+        this.showToast(`Duplicate entry found for ${months} month(s). Each option must have a unique month duration.`, 'danger');
+        if (monthsInput) monthsInput.focus();
+        return;
+      }
+      seenMonths.add(months);
+
+      if (discount_percentage < 0 || discount_percentage > 100) {
+        this.showToast(`Discount percentage for ${months} month(s) must be between 0% and 100%`, 'danger');
+        if (pctInput) pctInput.focus();
+        return;
+      }
+
+      payload.push({
+        months,
+        plan_label,
+        discount_percentage,
+        is_active,
+      });
+    }
+
+    if (payload.length === 0) {
+      this.showToast('At least one discount option is required', 'danger');
+      return;
+    }
+
+    // Sort payload by months ascending
+    payload.sort((a, b) => a.months - b.months);
 
     const res = await this.apiRequest('/api/academy/fees/discount-presets', {
       method: 'PUT',
-      body: JSON.stringify({ presets: payload }),
+      body: JSON.stringify({ presets: payload, sync: true }),
     });
 
     if (res.success) {
-      this.showToast('Multi-month discount rules saved successfully!', 'success');
+      this.showToast('Multi-month discount options saved successfully!', 'success');
       this.feesState.presetsCache = res.presets || payload;
       this.closeModal();
       this.renderFees();
+      // Recalculate if fee modal is open
+      if (document.getElementById('collect-fee-months')) {
+        this.recalculateFeeLive();
+      }
     } else {
-      this.showToast(res.error || 'Failed to save discount rules', 'danger');
+      this.showToast(res.error || 'Failed to save discount options', 'danger');
     }
   },
 
@@ -10379,53 +10540,28 @@ const app = {
     }
   },
 
-  showAddPresetTierModal() {
-    this.openModal(
-      'Add Multi-Month Discount Tier',
-      `
-        <div>
-          <div class="form-group">
-            <label>Duration in Months (e.g. 4, 5, 9, 24) *</label>
-            <input type="number" id="new-preset-months" class="form-input" min="1" max="36" required style="width: 100%;">
-          </div>
-          <div class="form-group">
-            <label>Discount Percentage (%) *</label>
-            <input type="number" id="new-preset-pct" class="form-input" min="0" max="100" step="0.5" required style="width: 100%;" placeholder="e.g. 7.5">
-          </div>
-        </div>
-      `,
-      `
-        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="app.submitNewPresetTier()"><i class="fa-solid fa-plus"></i> Add Tier</button>
-      `
-    );
-  },
-
-  async submitNewPresetTier() {
-    const months = Number(document.getElementById('new-preset-months').value);
-    const discount_percentage = Number(document.getElementById('new-preset-pct').value);
-
-    if (!months || months < 1 || isNaN(discount_percentage) || discount_percentage < 0) {
-      this.showToast('Please enter a valid month count and discount percentage', 'danger');
+  async deletePresetTier(months) {
+    if (months === 1) {
+      this.showToast('Base 1-Month rate cannot be deleted', 'warning');
       return;
     }
-
-    const res = await this.apiRequest('/api/academy/fees/discount-presets', {
-      method: 'PUT',
-      body: JSON.stringify({
-        presets: [{ months, discount_percentage, is_active: 1 }]
-      }),
+    if (!confirm(`Are you sure you want to delete the ${months}-month discount tier?`)) {
+      return;
+    }
+    const res = await this.apiRequest(`/api/academy/fees/discount-presets/${months}`, {
+      method: 'DELETE',
     });
-
     if (res.success) {
-      this.showToast(`Tier for ${months} months added!`, 'success');
-      this.closeModal();
+      this.showToast(`Tier for ${months} months deleted!`, 'success');
       this.feesState.presetsCache = res.presets;
-      this.feesState.activeTab = 'discounts';
       this.renderFees();
     } else {
-      this.showToast(res.error || 'Failed to add tier', 'danger');
+      this.showToast(res.error || 'Failed to delete tier', 'danger');
     }
+  },
+
+  showAddPresetTierModal() {
+    this.showFeeDiscountPresetsModal();
   },
 
   // ==========================================
@@ -10560,13 +10696,7 @@ const app = {
             <!-- Quick Month Selection Pills -->
             <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
               <span style="font-size: 11px; color: var(--text-dim); margin-right: 2px;">Quick Select:</span>
-              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(1)">1 mo</button>
-              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(2)">2 mo</button>
-              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(3)">3 mo (Quarterly)</button>
-              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(4)">4 mo</button>
-              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(6)">6 mo (Half-Yr)</button>
-              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(9)">9 mo</button>
-              <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(12)">12 mo (Annual)</button>
+              ${this.renderQuickMonthPillsHtml()}
             </div>
 
             <!-- Auto-Calculated Next Installment Banner -->
@@ -10756,6 +10886,43 @@ const app = {
       input.value = Math.min(12, Math.max(1, parseInt(months, 10) || 1));
       this.onFeeDateOrMonthsChange();
     }
+  },
+
+  renderQuickMonthPillsHtml() {
+    const presets = this.feesState.presetsCache || [];
+    const pillMap = new Map();
+
+    // Default base 1 month
+    pillMap.set(1, { months: 1, label: '1 mo' });
+
+    // Include all active presets from cache
+    presets.forEach(p => {
+      if (p.is_active && p.months >= 1) {
+        let label = `${p.months} mo`;
+        if (p.months === 3) label = '3 mo (Quarterly)';
+        else if (p.months === 6) label = '6 mo (Half-Yr)';
+        else if (p.months === 12) label = '12 mo (Annual)';
+        else if (p.plan_label) label = `${p.months} mo (${p.plan_label.split(' ')[0]})`;
+
+        if (p.discount_percentage > 0) {
+          label += ` &minus;${p.discount_percentage}%`;
+        }
+        pillMap.set(p.months, { months: p.months, label });
+      }
+    });
+
+    // If cache had few items, ensure common durations are always clickable
+    [2, 3, 6, 12].forEach(m => {
+      if (!pillMap.has(m)) {
+        const defaultLabel = m === 3 ? '3 mo (Quarterly)' : (m === 6 ? '6 mo (Half-Yr)' : (m === 12 ? '12 mo (Annual)' : `${m} mo`));
+        pillMap.set(m, { months: m, label: defaultLabel });
+      }
+    });
+
+    const sortedList = Array.from(pillMap.values()).sort((a, b) => a.months - b.months);
+    return sortedList.map(item => `
+      <button type="button" class="policy-preset-pill" onclick="app.setFeeMonths(${item.months})">${item.label}</button>
+    `).join('');
   },
 
   setDiscountReason(reason) {
