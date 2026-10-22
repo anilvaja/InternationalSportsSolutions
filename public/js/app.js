@@ -1599,9 +1599,25 @@ const app = {
     document.title = `${tabTitle} — ${academyName}`;
   },
 
-  // ==========================================
-  // SIDEBAR NAVIGATION (ACCURATE LOGICAL ORDER)
-  // ==========================================
+  toggleSidebar(forceState = null) {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    const toggleBtn = document.getElementById('sidebar-toggle-btn');
+    if (!sidebar) return;
+
+    const isOpen = forceState !== null ? forceState : !sidebar.classList.contains('open');
+    if (isOpen) {
+      sidebar.classList.add('open');
+      if (overlay) overlay.classList.add('active');
+      if (toggleBtn) toggleBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+      if (window.innerWidth <= 768) document.body.style.overflow = 'hidden';
+    } else {
+      sidebar.classList.remove('open');
+      if (overlay) overlay.classList.remove('active');
+      if (toggleBtn) toggleBtn.innerHTML = '<i class="fa-solid fa-bars"></i>';
+      document.body.style.overflow = '';
+    }
+  },
 
   renderSidebar() {
     this.renderSidebarBrand();
@@ -1761,6 +1777,11 @@ const app = {
 
     this.updateDocumentTitle(tab);
     this.renderSidebar();
+
+    // Auto-close mobile sidebar drawer on navigation
+    if (window.innerWidth <= 992) {
+      this.toggleSidebar(false);
+    }
 
     const content = document.getElementById('page-content');
     content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';

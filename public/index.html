@@ -88,6 +88,9 @@
   <!-- ========================================== -->
   <div id="app-view" class="app-container" style="display: none;">
     
+    <!-- MOBILE SIDEBAR BACKDROP OVERLAY -->
+    <div id="sidebar-overlay" class="sidebar-overlay" onclick="app.toggleSidebar(false)"></div>
+
     <!-- SIDEBAR -->
     <aside class="sidebar">
       <div class="sidebar-header" id="sidebar-header">
@@ -98,6 +101,9 @@
           <h1 id="sidebar-brand-name">Sports Solutions</h1>
           <span id="sidebar-role-badge">Multi-Tenant SaaS</span>
         </div>
+        <button type="button" class="sidebar-close-btn" onclick="app.toggleSidebar(false)" aria-label="Close Navigation Menu" title="Close Menu">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
       </div>
 
       <nav class="sidebar-nav" id="sidebar-nav-items">
@@ -120,6 +126,9 @@
       <!-- TOP HEADER -->
       <header class="top-header">
         <div class="header-left">
+          <button type="button" class="mobile-sidebar-toggle" id="sidebar-toggle-btn" onclick="app.toggleSidebar()" aria-label="Toggle Navigation Menu" title="Toggle Navigation Menu">
+            <i class="fa-solid fa-bars"></i>
+          </button>
           <div id="tenant-selector-container">
             <!-- Rendered dynamically -->
           </div>
@@ -129,19 +138,19 @@
           <!-- Dynamic Color Theme Switcher -->
           <button type="button" class="theme-picker-btn" id="header-theme-btn" onclick="app.showThemePickerModal()" title="Customize Color Theme">
             <span class="theme-indicator-dot" id="header-theme-dot"></span>
-            <span id="header-theme-name" style="font-size: 12px; font-weight: 600;">Theme</span>
+            <span id="header-theme-name" class="header-btn-text" style="font-size: 12px; font-weight: 600;">Theme</span>
           </button>
 
-          <a href="/pay.html" class="btn btn-secondary btn-sm" target="_blank">
-            <i class="fa-solid fa-credit-card" style="color: #10b981;"></i> Quick Pay Portal
+          <a href="/pay.html" class="btn btn-secondary btn-sm" target="_blank" title="Quick Pay Portal">
+            <i class="fa-solid fa-credit-card" style="color: #10b981;"></i> <span class="header-btn-text">Quick Pay Portal</span>
           </a>
 
           <button type="button" class="btn btn-secondary btn-sm" id="header-academy-settings-btn" onclick="app.openAcademySettingsModal()" title="Academy Profile & Logo Branding">
-            <i class="fa-solid fa-building" style="color: var(--primary);"></i> Academy Info
+            <i class="fa-solid fa-building" style="color: var(--primary);"></i> <span class="header-btn-text">Academy Info</span>
           </button>
 
           <button type="button" class="btn btn-secondary btn-sm" onclick="app.openChangeMyPasswordModal()" title="Change Account Password">
-            <i class="fa-solid fa-key" style="color: #f59e0b;"></i> Password
+            <i class="fa-solid fa-key" style="color: #f59e0b;"></i> <span class="header-btn-text">Password</span>
           </button>
 
           <div class="user-profile-menu" onclick="app.openChangeMyPasswordModal()" style="cursor: pointer;" title="Click to Change Password">
