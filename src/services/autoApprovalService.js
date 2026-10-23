@@ -2,6 +2,7 @@ import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById } from '../db/connectionManager.js';
 import { OvertimeService } from './overtimeService.js';
 import { FeeService } from './feeService.js';
+import { AttendanceAdjustmentService } from './attendanceAdjustmentService.js';
 
 export class AutoApprovalService {
   /**
@@ -28,51 +29,16 @@ export class AutoApprovalService {
       `).all();
 
       for (const corr of pendingCorrections) {
-        // If specific student attendance needs to be reflected
-        if (corr.batch_id && corr.date) {
-          let attRecord = db.prepare(`
-            SELECT id FROM attendance WHERE batch_id = ? AND date = ?
-          `).get(corr.batch_id, corr.date);
-
-          if (!attRecord) {
-            const insAtt = db.prepare(`
-              INSERT INTO attendance (batch_id, date, taken_by_user_id)
-              VALUES (?, ?, ?)
-            `).run(corr.batch_id, corr.date, approvedByUserId);
-            attRecord = { id: insAtt.lastInsertRowid };
-          }
-
-          if (corr.student_id && attRecord?.id) {
-            const desiredStatus = corr.requested_status || 'present';
-            const existingStudentAtt = db.prepare(`
-              SELECT id FROM student_attendance WHERE attendance_id = ? AND student_id = ?
-            `).get(attRecord.id, corr.student_id);
-
-            if (existingStudentAtt) {
-              db.prepare(`
-                UPDATE student_attendance
-                SET status = ?, remarks = COALESCE(?, remarks)
-                WHERE id = ?
-              `).run(desiredStatus, corr.reason, existingStudentAtt.id);
-            } else {
-              db.prepare(`
-                INSERT INTO student_attendance (attendance_id, student_id, status, remarks)
-                VALUES (?, ?, ?, ?)
-              `).run(attRecord.id, corr.student_id, desiredStatus, corr.reason || 'Auto-approved correction');
-            }
-          }
-        }
-
-        db.prepare(`
-          UPDATE attendance_corrections
-          SET status = 'approved',
-              approved_by = ?,
-              reviewer_notes = COALESCE(reviewer_notes, 'Auto-approved by system'),
-              reviewed_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(approvedByUserId, corr.id);
-
-        results.attendanceCorrections++;
+        try {
+          AttendanceAdjustmentService.reviewAdjustment(
+            db,
+            academyId,
+            corr.id,
+            { status: 'approved', reviewerNotes: 'Auto-approved by system batch' },
+            approvedByUserId
+          );
+          results.attendanceCorrections++;
+        } catch (_) {}
       }
     } catch (e) {
       console.warn(`[AutoApproval] Error approving attendance corrections for academy ${academyId}:`, e.message);

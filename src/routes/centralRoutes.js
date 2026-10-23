@@ -10,9 +10,11 @@ import { DbViewerService } from '../services/dbViewerService.js';
 import { TenantCleanupService } from '../services/tenantCleanupService.js';
 import { StorageService } from '../services/storageService.js';
 import { AcademyLifecycleService } from '../services/academyLifecycleService.js';
+import { PratikKarateAcademyDemoSeeder } from '../db/pratikKarateAcademyDemoSeeder.js';
 
 export const centralRouter = express.Router();
 const uploadLogoMiddleware = StorageService.getLogoUploadMiddleware().single('logo');
+let isDemoSeederRunning = false;
 
 // Enforce Super Admin on all central routes
 centralRouter.use(requireAuth, requireSuperAdmin);
@@ -1551,4 +1553,118 @@ centralRouter.post('/db-viewer/query', (req, res) => {
     res.status(400).json({ success: false, error: err.message });
   }
 });
+
+/**
+ * GET /api/central/seed-pratik-demo/info
+ * Returns safe environment context and scope for pre-execution confirmation
+ */
+centralRouter.get('/seed-pratik-demo/info', (req, res) => {
+  try {
+    const env = process.env.NODE_ENV || 'preview / development';
+    const isProd = env === 'production';
+
+    res.json({
+      success: true,
+      environment: env,
+      isProduction: isProd,
+      academy: {
+        id: 1,
+        name: 'Pratik Karate Academy',
+        slug: 'pratik-karate-academy',
+        city: 'Ahmedabad'
+      },
+      targetSport: 'Karate',
+      targetBranches: [
+        'Pratik Karate Academy - Navrangpura Central Dojo',
+        'Pratik Karate Academy - Satellite Kumite Branch',
+        'Pratik Karate Academy - Vastrapur Kata Center'
+      ],
+      scope: [
+        '3 Branches in Ahmedabad with unique operating schedules',
+        '7 Karate Batches (Beginner, Intermediate, Advanced, Black Belt)',
+        '6 Staff Accounts with Verified Salary Models (Monthly ₹45k, Hourly ₹600/hr, Per-Session ₹500, Per-Day ₹1.2k, Monthly ₹28k/₹35k)',
+        '18 Students enrolled strictly in one active batch and single academy',
+        'Student attendance records & staff biometric duty punches (Sept & Oct 2026)',
+        'Attendance adjustments with 2-day late rule, admin approvals & effective punch updates',
+        'Holidays & weekly offs configuration without unintended salary inflation',
+        'Fee structures, monthly tuition invoices, and partial/full UPI payments',
+        'Direct payroll verification against actual attendance and approved adjustments'
+      ],
+      safetyGuarantees: [
+        'Deterministic & Idempotent: safe to run repeatedly without creating duplicates',
+        'Isolated: strictly touches Pratik Karate Academy (Academy ID 1)',
+        'Zero Data Loss: never resets other academies, external users, or system tables',
+        'Audit Logged: every execution is permanently recorded in central audit logs'
+      ]
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/seed-pratik-demo
+ * Executes dedicated, idempotent Pratik Karate Academy demo seeder
+ */
+centralRouter.post('/seed-pratik-demo', async (req, res) => {
+  const env = process.env.NODE_ENV || 'preview / development';
+  const isProd = env === 'production';
+
+  // Production Safety Gate
+  if (isProd && !req.body.confirm_production) {
+    return res.status(400).json({
+      success: false,
+      error: 'Production environment detected. You must explicitly confirm production execution with { confirm_production: true }.'
+    });
+  }
+
+  // Concurrency Gate: prevent duplicate simultaneous executions
+  if (isDemoSeederRunning) {
+    return res.status(429).json({
+      success: false,
+      error: 'A Pratik Karate demo seeder execution is currently in progress. Please wait for it to complete.'
+    });
+  }
+
+  isDemoSeederRunning = true;
+  const startTime = Date.now();
+
+  try {
+    const results = await PratikKarateAcademyDemoSeeder.run();
+
+    // Record Super Admin Audit Trail in central_audit_logs
+    try {
+      const centralDb = getCentralDb();
+      centralDb.prepare(`
+        INSERT INTO central_audit_logs (user_id, user_email, action, entity, entity_id, details, ip_address)
+        VALUES (?, ?, 'RUN_PRATIK_KARATE_DEMO_SEEDER', 'academy', '1', ?, ?)
+      `).run(
+        req.user ? req.user.id : null,
+        req.user ? req.user.email : 'superadmin',
+        JSON.stringify({
+          executionId: results.executionId,
+          success: results.success,
+          stats: results.stats,
+          errors: results.errors,
+          durationMs: results.durationMs,
+          environment: results.environment
+        }),
+        req.ip || (req.socket && req.socket.remoteAddress) || null
+      );
+    } catch (auditErr) {
+      console.warn('[Audit Log Warning]', auditErr.message);
+    }
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to execute Pratik Karate demo seeder: ' + err.message,
+      durationMs: Date.now() - startTime
+    });
+  } finally {
+    isDemoSeederRunning = false;
+  }
+});
+
 

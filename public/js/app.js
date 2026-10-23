@@ -2108,6 +2108,9 @@ const app = {
             <a href="/api/central/backup" class="btn btn-secondary btn-sm" download>
               <i class="fa-solid fa-file-zipper"></i> Full Platform ZIP
             </a>
+            <button class="btn btn-warning btn-sm" onclick="app.confirmRunPratikDemoSeeder()" title="Run dedicated Pratik Karate Academy demo seeder" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; font-weight: 600; border: none; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.25);">
+              <i class="fa-solid fa-bolt"></i> Run Pratik Karate Demo Seeder
+            </button>
             ${this.checkDebugOrSetupMode() ? `
               <button class="btn btn-outline-danger btn-sm" onclick="app.resetEverythingFromScratch()" title="Reset Platform From Scratch (Wipe & Re-Seed)">
                 <i class="fa-solid fa-triangle-exclamation"></i> Reset Everything
@@ -2219,6 +2222,231 @@ const app = {
         </div>
       </div>
     `;
+  },
+
+  async confirmRunPratikDemoSeeder() {
+    this.showToast('Fetching environment & target context...', 'info');
+    const info = await this.apiRequest('/api/central/seed-pratik-demo/info');
+    if (!info.success) {
+      this.showToast(info.error || 'Failed to retrieve seeder information', 'danger');
+      return;
+    }
+
+    const isProd = !!info.isProduction;
+
+    this.openModal(
+      `<i class="fa-solid fa-bolt" style="color: #f59e0b;"></i> Run Pratik Karate Demo Seeder`,
+      `
+        <div style="margin-bottom: 16px;">
+          <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted); letter-spacing: 0.5px;">Environment Context</span>
+              <span class="badge ${isProd ? 'badge-danger' : 'badge-primary'}">${info.environment}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
+              <i class="fa-solid fa-building" style="color: var(--primary);"></i>
+              <strong>${info.academy.name}</strong>
+              <span style="color: var(--text-muted); font-size: 12px;">(ID #${info.academy.id} &bull; ${info.academy.slug})</span>
+            </div>
+            <div style="margin-top: 6px; font-size: 12px; color: var(--text-muted);">
+              <i class="fa-solid fa-bullseye" style="color: #10b981;"></i> Dedicated Discipline: <strong>${info.targetSport}</strong> (Strictly single sport seeded)
+            </div>
+          </div>
+
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-main);">
+              <i class="fa-solid fa-code-branch" style="color: #3b82f6;"></i> Target Branches (${info.targetBranches.length})
+            </div>
+            <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: var(--text-muted); line-height: 1.6;">
+              ${info.targetBranches.map(b => `<li><strong>${b}</strong></li>`).join('')}
+            </ul>
+          </div>
+
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-main);">
+              <i class="fa-solid fa-list-check" style="color: #10b981;"></i> Execution Scope & Workflows
+            </div>
+            <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+              ${info.scope.map(s => `<li>${s}</li>`).join('')}
+            </ul>
+          </div>
+
+          <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px;">
+            <div style="font-size: 12px; font-weight: 600; color: #10b981; margin-bottom: 4px;">
+              <i class="fa-solid fa-shield-halved"></i> Safety & Idempotency Guarantees
+            </div>
+            <ul style="margin: 0; padding-left: 18px; font-size: 11px; color: var(--text-muted); line-height: 1.5;">
+              ${info.safetyGuarantees.map(g => `<li>${g}</li>`).join('')}
+            </ul>
+          </div>
+
+          ${isProd ? `
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+              <div style="font-weight: 700; color: #ef4444; font-size: 12px; margin-bottom: 4px;">
+                <i class="fa-solid fa-triangle-exclamation"></i> Production Confirmation Required
+              </div>
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: var(--text-main);">
+                <input type="checkbox" id="chk-confirm-prod-demo">
+                I explicitly authorize running the Pratik Karate Academy demo seeder in this production environment.
+              </label>
+            </div>
+          ` : ''}
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;">
+            <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+            <button class="btn btn-warning" id="btn-run-pratik-seeder" onclick="app.executePratikDemoSeeder(${isProd})" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; font-weight: 600; border: none;">
+              <i class="fa-solid fa-play"></i> Run Seeder Now
+            </button>
+          </div>
+        </div>
+      `
+    );
+  },
+
+  async executePratikDemoSeeder(isProd) {
+    if (isProd) {
+      const chk = document.getElementById('chk-confirm-prod-demo');
+      if (!chk || !chk.checked) {
+        this.showToast('Please check the confirmation box before running in production.', 'warning');
+        return;
+      }
+    }
+
+    const btn = document.getElementById('btn-run-pratik-seeder');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Executing Seeder...';
+    }
+
+    try {
+      const res = await this.apiRequest('/api/central/seed-pratik-demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm_production: !!isProd })
+      });
+
+      this.closeModal();
+      this.showPratikDemoSeederResultModal(res);
+      if (this.currentTab === 'central-academies') {
+        this.renderCentralAcademies();
+      }
+    } catch (err) {
+      this.showToast('Seeder execution error: ' + err.message, 'danger');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-play"></i> Run Seeder Now';
+      }
+    }
+  },
+
+  showPratikDemoSeederResultModal(res) {
+    const isSuccess = res.success;
+    const stats = res.stats || {};
+    const salaryVerifs = res.salaryVerifications || [];
+
+    this.openModal(
+      `<i class="fa-solid ${isSuccess ? 'fa-circle-check' : 'fa-circle-xmark'}" style="color: ${isSuccess ? '#10b981' : '#ef4444'};"></i> Demo Seeder Execution Result`,
+      `
+        <div style="max-height: 75vh; overflow-y: auto; padding-right: 4px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; background: ${isSuccess ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)'}; border: 1px solid ${isSuccess ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+            <div>
+              <div style="font-weight: 700; font-size: 14px; color: ${isSuccess ? '#10b981' : '#ef4444'};">
+                ${isSuccess ? 'Pratik Karate Academy Seeded Successfully' : 'Seeder Execution Encountered Errors'}
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                Execution ID: <code>${res.executionId || 'N/A'}</code> &bull; Timestamp: ${res.timestamp ? new Date(res.timestamp).toLocaleString() : 'Just now'} &bull; Duration: ${res.durationMs || 0}ms
+              </div>
+            </div>
+            <span class="badge ${isSuccess ? 'badge-success' : 'badge-danger'}" style="font-size: 12px; padding: 4px 10px;">
+              ${isSuccess ? 'SUCCESS' : 'FAILED'}
+            </span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px;">
+            <div style="background: var(--surface-hover); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center;">
+              <div style="font-size: 18px; font-weight: 700; color: var(--primary);">${(stats.branchesCreated || 0) + (stats.branchesReused || 0)}</div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Branches (${stats.branchesCreated || 0} new, ${stats.branchesReused || 0} reused)</div>
+            </div>
+            <div style="background: var(--surface-hover); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center;">
+              <div style="font-size: 18px; font-weight: 700; color: #3b82f6;">${(stats.batchesCreated || 0) + (stats.batchesReused || 0)}</div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Batches (${stats.batchesCreated || 0} new, ${stats.batchesReused || 0} reused)</div>
+            </div>
+            <div style="background: var(--surface-hover); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center;">
+              <div style="font-size: 18px; font-weight: 700; color: #10b981;">${(stats.staffCreated || 0) + (stats.staffReused || 0)}</div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Staff (${stats.staffCreated || 0} new, ${stats.staffReused || 0} reused)</div>
+            </div>
+            <div style="background: var(--surface-hover); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center;">
+              <div style="font-size: 18px; font-weight: 700; color: #f59e0b;">${(stats.studentsCreated || 0) + (stats.studentsReused || 0)}</div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Students (${stats.studentsCreated || 0} new, ${stats.studentsReused || 0} reused)</div>
+            </div>
+            <div style="background: var(--surface-hover); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center;">
+              <div style="font-size: 18px; font-weight: 700; color: #8b5cf6;">${(stats.studentAttendanceMarked || 0) + (stats.staffPunchesMarked || 0)}</div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Attendance / Punches</div>
+            </div>
+            <div style="background: var(--surface-hover); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center;">
+              <div style="font-size: 18px; font-weight: 700; color: #ec4899;">${stats.attendanceAdjustmentsCreated || 0}</div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Adjustments Tested</div>
+            </div>
+          </div>
+
+          <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+            <span><i class="fa-solid fa-calculator" style="color: #10b981;"></i> Salary Calculation Verification Against Attendance</span>
+            <span class="badge badge-success" style="font-size: 11px;">${stats.salaryStatementsVerified || salaryVerifs.filter(v => v.passed).length} / ${salaryVerifs.length} Verified</span>
+          </h4>
+          <div class="table-responsive" style="margin-bottom: 16px; border: 1px solid var(--border); border-radius: 8px;">
+            <table class="custom-table" style="font-size: 12px; margin: 0;">
+              <thead>
+                <tr>
+                  <th>Employee & Role</th>
+                  <th>Salary Mode</th>
+                  <th>Base Rate</th>
+                  <th>Gross</th>
+                  <th>Deductions</th>
+                  <th>Net Earnings</th>
+                  <th>Audit Check</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${salaryVerifs.map(v => `
+                  <tr>
+                    <td>
+                      <strong>${v.employee}</strong>
+                      <div style="font-size: 11px; color: var(--text-muted);">${v.email}</div>
+                    </td>
+                    <td><span class="badge badge-secondary" style="font-size: 10px;">${v.mode}</span></td>
+                    <td>₹${(v.baseRate || 0).toLocaleString()}</td>
+                    <td>₹${(v.gross || 0).toLocaleString()}</td>
+                    <td style="color: ${v.deductions > 0 ? '#ef4444' : 'inherit'};">₹${(v.deductions || 0).toLocaleString()}</td>
+                    <td style="font-weight: 700; color: var(--primary);">₹${(v.net || 0).toLocaleString()}</td>
+                    <td>
+                      <span class="badge ${v.passed ? 'badge-success' : 'badge-danger'}" style="font-size: 11px;">
+                        <i class="fa-solid ${v.passed ? 'fa-check' : 'fa-xmark'}"></i> ${v.passed ? 'VERIFIED' : 'MISMATCH'}
+                      </span>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          ${(res.errors && res.errors.length > 0) ? `
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+              <div style="font-weight: 700; color: #ef4444; font-size: 12px; margin-bottom: 4px;">Errors Encountered:</div>
+              <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #ef4444;">
+                ${res.errors.map(e => `<li>${e}</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;">
+            <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+            <button class="btn btn-primary" onclick="app.closeModal(); app.switchAcademy(1); app.navigate('overview');">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Pratik Karate Academy Portal
+            </button>
+          </div>
+        </div>
+      `
+    );
   },
 
   async showManageDomainsModal(academyId, academyName) {

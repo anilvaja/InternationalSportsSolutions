@@ -16,9 +16,9 @@ import { InquiryService } from '../services/inquiryService.js';
 import { AutoApprovalService } from '../services/autoApprovalService.js';
 import { StorageService } from '../services/storageService.js';
 import { LeaveService } from '../services/leaveService.js';
-import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
 import bcrypt from 'bcryptjs';
 import { DateUtils } from '../utils/dateUtils.js';
+import { AttendanceAdjustmentService } from '../services/attendanceAdjustmentService.js';
 
 export const academyRouter = express.Router();
 
@@ -3346,37 +3346,21 @@ academyRouter.post('/attendance/switch-session', (req, res) => {
 academyRouter.post('/attendance/corrections', (req, res) => {
   try {
     const db = req.tenantDb;
-    const { session_id, batch_id, date, student_id, original_status, requested_status, reason } = req.body;
-
-    if (!batch_id || !date || !reason || !reason.trim()) {
-      return res.status(400).json({ success: false, error: 'batch_id, date, and reason are required' });
-    }
-
-    const normalizedDate = normalizeDate(date) || date;
-
-    const ins = db.prepare(`
-      INSERT INTO attendance_corrections (
-        academy_id, session_id, batch_id, date, student_id, original_status, requested_status, reason, requested_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    const correction = AttendanceAdjustmentService.createAdjustment(
+      db,
       req.academy.id,
-      session_id ? Number(session_id) : null,
-      Number(batch_id),
-      normalizedDate,
-      student_id ? Number(student_id) : null,
-      original_status || 'absent',
-      requested_status || 'present',
-      reason.trim(),
-      req.user.userId
+      req.body,
+      req.user ? req.user.userId : 1
     );
 
     res.status(201).json({
       success: true,
       message: 'Attendance correction request submitted for administrative review',
-      correctionId: ins.lastInsertRowid,
+      correctionId: correction.id,
+      correction,
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
@@ -3386,15 +3370,7 @@ academyRouter.post('/attendance/corrections', (req, res) => {
 academyRouter.get('/attendance/corrections', (req, res) => {
   try {
     const db = req.tenantDb;
-    const corrections = db.prepare(`
-      SELECT ac.*, b.name as batch_name, s.first_name, s.last_name, u.name as requester_name
-      FROM attendance_corrections ac
-      JOIN batches b ON ac.batch_id = b.id
-      LEFT JOIN students s ON ac.student_id = s.id
-      JOIN users u ON ac.requested_by = u.id
-      ORDER BY ac.created_at DESC
-    `).all();
-
+    const corrections = AttendanceAdjustmentService.listAdjustments(db, req.academy.id, req.query);
     res.json({ success: true, corrections });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -3410,24 +3386,21 @@ academyRouter.put('/attendance/corrections/:id', (req, res) => {
     const id = Number(req.params.id);
     const { status, reviewer_notes } = req.body;
 
-    if (!['approved', 'rejected'].includes(status)) {
-      return res.status(400).json({ success: false, error: 'status must be approved or rejected' });
-    }
+    const result = AttendanceAdjustmentService.reviewAdjustment(
+      db,
+      req.academy.id,
+      id,
+      { status, reviewerNotes: reviewer_notes },
+      req.user ? req.user.userId : 1
+    );
 
-    const corr = db.prepare('SELECT * FROM attendance_corrections WHERE id = ?').get(id);
-    if (!corr) {
-      return res.status(404).json({ success: false, error: 'Correction request not found' });
-    }
-
-    db.prepare(`
-      UPDATE attendance_corrections
-      SET status = ?, reviewer_notes = ?, approved_by = ?, reviewed_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(status, reviewer_notes || null, req.user.userId, id);
-
-    res.json({ success: true, message: `Correction request marked as ${status}` });
+    res.json({
+      success: true,
+      message: `Correction request marked as ${status}`,
+      correction: result,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
