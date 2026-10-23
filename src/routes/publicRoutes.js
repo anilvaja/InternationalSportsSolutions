@@ -51,6 +51,25 @@ publicRouter.get('/tenant-info', (req, res) => {
       }
     }
 
+    // 3. Fallback for cloud preview / development environments
+    if (!academy) {
+      const isCloudPreview = (
+        host && (
+          host.includes('airoapp.ai') ||
+          host.includes('preview') ||
+          host.includes('vercel.app') ||
+          host.includes('onrender.com') ||
+          host.includes('railway.app') ||
+          host === 'localhost' ||
+          host === '127.0.0.1' ||
+          host === 'internationalsportssolutions.test'
+        )
+      );
+      if (isCloudPreview) {
+        academy = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
+      }
+    }
+
     if (!academy) {
       return res.json({ success: true, isTenantSubdomain: false, academy: null });
     }

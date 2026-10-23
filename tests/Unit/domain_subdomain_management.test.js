@@ -163,4 +163,26 @@ describe('Domain & Subdomain Management Architecture', () => {
     // Business rule: preventing deletion of the last remaining domain
     assert.ok(remainingCount <= 1, 'Validation check triggers prevent deletion');
   });
+
+  it('8. Safely resolves cloud preview and airoapp domains without false subdomain extraction', () => {
+    const previewReq = {
+      headers: { host: 'quzjwl4b2x.preview.c40.airoapp.ai' },
+      query: {},
+    };
+    assert.equal(extractSubdomain(previewReq), null, 'Preview host must not extract random container hash as tenant slug');
+
+    const res = {
+      status(code) { this.statusCode = code; return this; },
+      json(data) { this.data = data; return this; },
+    };
+    let calledNext = false;
+
+    resolveTenant(previewReq, res, () => {
+      calledNext = true;
+    });
+
+    assert.ok(calledNext, 'Middleware next() must be called for preview domain');
+    assert.ok(previewReq.academy, 'req.academy must be populated with default active academy');
+    assert.ok(previewReq.tenantDb, 'req.tenantDb must be mounted');
+  });
 });

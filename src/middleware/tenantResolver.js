@@ -18,6 +18,21 @@ export function extractHost(req) {
 export function extractSubdomain(req) {
   const host = extractHost(req);
 
+  // Exclude known preview environments, cloud staging hosts, and raw IP addresses
+  if (
+    !host ||
+    host.includes('airoapp.ai') ||
+    host.includes('preview') ||
+    host.includes('vercel.app') ||
+    host.includes('onrender.com') ||
+    host.includes('railway.app') ||
+    host.includes('ngrok') ||
+    host.includes('herokuapp.com') ||
+    /^\d+\.\d+\.\d+\.\d+$/.test(host)
+  ) {
+    return null;
+  }
+
   const parts = host.split('.');
   if (parts.length >= 3) {
     const sub = parts[0];
@@ -44,8 +59,20 @@ export function resolveTenant(req, res, next) {
     // 1. Direct Domain Match from Host, X-Academy-Domain, or query.domain
     const host = extractHost(req);
     const customDomainQuery = req.query.domain || req.headers['x-academy-domain'];
+    const isCloudPreviewHost = (
+      host && (
+        host.includes('airoapp.ai') ||
+        host.includes('preview') ||
+        host.includes('vercel.app') ||
+        host.includes('onrender.com') ||
+        host.includes('railway.app')
+      )
+    );
+
     const domainCandidate = customDomainQuery || (
-      host && host !== 'localhost' && host !== '127.0.0.1' && host !== 'internationalsportssolutions.test' ? host : null
+      host && host !== 'localhost' && host !== '127.0.0.1' && host !== 'internationalsportssolutions.test' && !isCloudPreviewHost
+        ? host
+        : null
     );
 
     if (domainCandidate) {
@@ -100,10 +127,18 @@ export function resolveTenant(req, res, next) {
       }
     }
 
-    // 6. Host / Super Admin fallback (localhost, 127.0.0.1, internationalsportssolutions.test, or super admin default)
+    // 6. Host / Super Admin / Cloud Preview fallback (localhost, 127.0.0.1, internationalsportssolutions.test, airoapp.ai preview)
     if (!academyRecord && !academyId && !academySlug) {
       const host = extractHost(req);
-      if (host === 'localhost' || host === '127.0.0.1' || host === 'internationalsportssolutions.test' || (req.user && req.user.isSuperAdmin)) {
+      const isDefaultHost = (
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === 'internationalsportssolutions.test' ||
+        isCloudPreviewHost ||
+        (req.user && req.user.isSuperAdmin)
+      );
+
+      if (isDefaultHost) {
         const defaultAcademy = centralDb.prepare("SELECT id FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
         if (defaultAcademy) {
           academyId = defaultAcademy.id;
@@ -135,6 +170,11 @@ export function resolveTenant(req, res, next) {
           academyRecord = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
         }
       }
+    }
+
+    // Cloud preview / Staging graceful fallback if still unmapped
+    if (!academyRecord && isCloudPreviewHost) {
+      academyRecord = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
     }
 
     if (!academyRecord) {
