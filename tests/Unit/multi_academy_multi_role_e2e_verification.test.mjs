@@ -35,8 +35,8 @@ describe('Multi-Academy, Multi-Role & Complete Workflow Verification', () => {
     // 1. Ensure Academy 1 and Academy 2 exist in central.db
     centralDb.prepare(`
       INSERT INTO academies (id, name, slug, status, plan, max_branches, max_students, max_coaches, db_path)
-      VALUES (1, 'Anil Karate Academy', 'anil-karate-academy', 'active', 'enterprise', 10, 500, 50, 'data/academies/academy_1.db')
-      ON CONFLICT(id) DO UPDATE SET name = 'Anil Karate Academy', slug = 'anil-karate-academy', db_path = 'data/academies/academy_1.db'
+      VALUES (1, 'Pratik Karate Academy', 'pratik-karate-academy', 'active', 'enterprise', 10, 500, 50, 'data/academies/academy_1.db')
+      ON CONFLICT(id) DO UPDATE SET name = 'Pratik Karate Academy', slug = 'pratik-karate-academy', db_path = 'data/academies/academy_1.db'
     `).run();
 
     centralDb.prepare(`
@@ -48,7 +48,7 @@ describe('Multi-Academy, Multi-Role & Complete Workflow Verification', () => {
     // Ensure domains
     centralDb.prepare(`
       INSERT INTO domains (academy_id, domain, is_primary, is_custom, status)
-      VALUES (1, 'anil-karate-academy.internationalsportssolutions.test', 1, 0, 'active')
+      VALUES (1, 'pratik-karate-academy.internationalsportssolutions.test', 1, 0, 'active')
       ON CONFLICT(domain) DO NOTHING
     `).run();
 
@@ -218,7 +218,7 @@ describe('Multi-Academy, Multi-Role & Complete Workflow Verification', () => {
       assert.strictEqual(res.status, 200);
       assert.ok(Array.isArray(res.body.academies), 'Must return array of academies');
       const names = res.body.academies.map(a => a.name);
-      assert.ok(names.includes('Anil Karate Academy'));
+      assert.ok(names.includes('Pratik Karate Academy'));
       assert.ok(names.includes('Phoenix Martial Arts Academy'));
     });
 
