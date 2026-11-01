@@ -1,0 +1,17 @@
+Feature_ID,Section,Feature_Name,Required_Verification,Backend_API,UI_Route,Unit_Test,E2E_QA_Scenario,Final_Status
+FEAT-001,Section 1,Inquiry – Edit Inquiry,Verify editing existing inquiries,PUT /api/academy/inquiries/:id,/academy/inquiries,inquiry_to_admission.test.mjs,QA-AA-06,Verified Complete
+FEAT-002,Section 1,Inquiry – Add Branch Selection,Verify branch selection saves correctly,POST /api/academy/inquiries,/academy/inquiries,inquiry_to_admission.test.mjs,QA-FD-02,Verified Complete
+FEAT-003,Section 1,Customizable Admission Checklist,Verify customizable template items and auto-population,GET/POST/PUT /api/academy/admission-checklist/templates,/academy/students,customizable_admission_checklist.test.mjs,QA-AA-02,Verified Complete
+FEAT-004,Section 1,Invoice – Remove Invoice Heading,Verify generated PDF/print layout,GET /api/academy/fees/receipt/:id,/academy/fees,financial_accuracy_and_invoicing.test.mjs,QA-AA-07,Verified Complete
+FEAT-005,Section 1,Invoice – GST Handling,Verify GST is removed wherever applicable,POST /api/academy/fees/collect,/pay.html,fee_collection_and_receipts.test.mjs,QA-FM-02,Verified Complete
+FEAT-006,Section 1,Concession / Discount,Verify percentage and fixed discounts up to 20%,POST /api/academy/fees/collect,/academy/fees,fee_collection_and_receipts.test.mjs,QA-FM-02,Verified Complete
+FEAT-007,Section 1,Print Receipt,Verify receipt printing and payment details,GET /api/academy/fees/receipt/:id,/pay.html,fee_collection_and_receipts.test.mjs,QA-STUDENT-04,Verified Complete
+FEAT-008,Section 1,Before Joining Candidates,Verify candidates display Not Employed status,GET /api/academy/users,/academy/staff,staff_joining_date_and_salary_proration.test.mjs,QA-AA-08,Verified Complete
+FEAT-009,Section 1,Batches – Sample CSV Upload,Download sample CSV and import roster,GET /api/academy/batches/sample-csv,/academy/batches,bulk_csv_import_and_export.test.mjs,QA-AA-03,Verified Complete
+FEAT-010,Section 2,Staff Compensation & Multiple Shifts,Verify fixed/hourly/per-minute and multiple daily shifts,GET /api/academy/payroll/statement/:userId,/academy/payroll,attendance_overtime_payroll.test.js,QA-AA-08,Verified Complete
+FEAT-011,Section 2,My Staff Salary Overlap Fix,Verify desktop/mobile layout and historical month binding,GET /api/academy/payroll/my-salary,/academy/my-salary,security_qa_remediation.test.mjs,QA-CO-02,Verified Complete
+FEAT-012,Section 3,Holiday Calendar,Add paid/unpaid and branch-specific holidays,GET/POST /api/academy/holidays,/academy/holidays,complete_payroll_weekly_off_holiday_leave.test.mjs,QA-AA-09,Verified Complete
+FEAT-013,Section 4,Facility & Equipment Management,Track equipment, branch stock, issues, and returns,GET/POST /api/academy/equipment,/academy/equipment,facility_and_equipment_management.test.mjs,QA-AA-01,Verified Complete
+FEAT-014,Section 5,Student Attendance & Syllabus Progression,Manual/QR/photo attendance and syllabus progression,POST /api/academy/attendance/save,/academy/attendance,sports_syllabus_progression.test.mjs,QA-AA-04,Verified Complete
+FEAT-015,Section 6,Automatic Shift Checkout,Configurable grace period, auto-checkout, and audit trail,POST /api/academy/shifts/auto-checkout,/academy/payroll,automatic_shift_checkout.test.mjs,QA-AA-08,Verified Complete
+FEAT-016,Section 16,Organization Documents & Compliance,Agreements, insurance, AMC, MOM, and expiry alerts,GET/POST /api/academy/compliance/documents,/academy/compliance,compliance_documents_and_expiry.test.mjs,QA-AA-01,Verified Complete

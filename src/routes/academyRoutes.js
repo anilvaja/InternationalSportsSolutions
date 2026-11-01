@@ -5562,6 +5562,243 @@ academyRouter.get('/equipment/:id/logs', requirePermission(['view_facilities', '
   }
 });
 
+// ==========================================
+// ACADEMY DOCUMENTS & COMPLIANCE MANAGEMENT
+// ==========================================
+
+/**
+ * GET /api/academy/compliance/documents
+ * Lists organizational agreements, certificates, insurance policies, and AMC contracts
+ */
+academyRouter.get('/compliance/documents', requireRole('academy_admin', 'super_admin'), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { branch_id, category, status, search } = req.query;
+
+    let sql = `
+      SELECT doc.*, b.name as branch_name, u.name as uploaded_by_name
+      FROM academy_compliance_documents doc
+      LEFT JOIN branches b ON b.id = doc.branch_id
+      LEFT JOIN users u ON u.id = doc.uploaded_by
+      WHERE doc.academy_id = ?
+    `;
+    const params = [req.academy.id];
+
+    if (branch_id) {
+      sql += ` AND (doc.branch_id IS NULL OR doc.branch_id = ?)`;
+      params.push(Number(branch_id));
+    }
+    if (category) {
+      sql += ` AND doc.category = ?`;
+      params.push(category);
+    }
+    if (status) {
+      sql += ` AND doc.status = ?`;
+      params.push(status);
+    }
+    if (search) {
+      sql += ` AND (doc.title LIKE ? OR doc.document_number LIKE ? OR doc.issuing_authority LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    sql += ` ORDER BY doc.expiry_date ASC, doc.id DESC`;
+    const documents = db.prepare(sql).all(...params);
+
+    res.json({ success: true, documents });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/compliance/expiring-alerts
+ * Returns compliance documents that are expiring within their reminder window
+ */
+academyRouter.get('/compliance/expiring-alerts', requireRole('academy_admin', 'super_admin'), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const today = DateUtils.getTodayDate('Asia/Kolkata');
+
+    const expiring = db.prepare(`
+      SELECT doc.*, b.name as branch_name
+      FROM academy_compliance_documents doc
+      LEFT JOIN branches b ON b.id = doc.branch_id
+      WHERE doc.academy_id = ?
+        AND doc.expiry_date IS NOT NULL
+        AND doc.expiry_date >= ?
+        AND julianday(doc.expiry_date) - julianday(?) <= doc.renewal_reminder_days
+        AND doc.status != 'archived'
+      ORDER BY doc.expiry_date ASC
+    `).all(req.academy.id, today, today);
+
+    const expired = db.prepare(`
+      SELECT doc.*, b.name as branch_name
+      FROM academy_compliance_documents doc
+      LEFT JOIN branches b ON b.id = doc.branch_id
+      WHERE doc.academy_id = ?
+        AND doc.expiry_date IS NOT NULL
+        AND doc.expiry_date < ?
+        AND doc.status != 'archived'
+      ORDER BY doc.expiry_date ASC
+    `).all(req.academy.id, today);
+
+    res.json({
+      success: true,
+      expiring_count: expiring.length,
+      expired_count: expired.length,
+      expiring_documents: expiring,
+      expired_documents: expired,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/compliance/documents
+ * Registers an organizational agreement, certificate, insurance, AMC, or MOM
+ */
+academyRouter.post('/compliance/documents', requireRole('academy_admin', 'super_admin'), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const {
+      title,
+      category = 'other',
+      document_number,
+      issuing_authority,
+      branch_id,
+      issue_date,
+      expiry_date,
+      renewal_reminder_days = 30,
+      document_url,
+      notes,
+    } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, error: 'Document title is required' });
+    }
+
+    const parsedIssueDate = issue_date ? normalizeDate(issue_date, 'issue_date') : null;
+    const parsedExpiryDate = expiry_date ? normalizeDate(expiry_date, 'expiry_date') : null;
+
+    let initialStatus = 'active';
+    if (parsedExpiryDate) {
+      const today = DateUtils.getTodayDate('Asia/Kolkata');
+      if (parsedExpiryDate < today) initialStatus = 'expired';
+    }
+
+    const ins = db.prepare(`
+      INSERT INTO academy_compliance_documents (
+        academy_id, branch_id, category, title, document_number,
+        issuing_authority, issue_date, expiry_date, renewal_reminder_days,
+        document_url, notes, status, uploaded_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      req.academy.id,
+      branch_id ? Number(branch_id) : null,
+      category,
+      title.trim(),
+      document_number || null,
+      issuing_authority || null,
+      parsedIssueDate,
+      parsedExpiryDate,
+      Number(renewal_reminder_days) || 30,
+      document_url || null,
+      notes || null,
+      initialStatus,
+      req.user.userId
+    );
+
+    const doc = db.prepare('SELECT * FROM academy_compliance_documents WHERE id = ?').get(ins.lastInsertRowid);
+    res.status(201).json({ success: true, document: doc, message: 'Compliance document registered successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/compliance/documents/:id
+ * Updates compliance document details
+ */
+academyRouter.put('/compliance/documents/:id', requireRole('academy_admin', 'super_admin'), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const doc = db.prepare('SELECT * FROM academy_compliance_documents WHERE id = ? AND academy_id = ?').get(id, req.academy.id);
+    if (!doc) {
+      return res.status(404).json({ success: false, error: 'Compliance document not found' });
+    }
+
+    const {
+      title,
+      category,
+      document_number,
+      issuing_authority,
+      branch_id,
+      issue_date,
+      expiry_date,
+      renewal_reminder_days,
+      document_url,
+      notes,
+      status,
+    } = req.body;
+
+    const parsedIssueDate = issue_date ? normalizeDate(issue_date, 'issue_date') : doc.issue_date;
+    const parsedExpiryDate = expiry_date ? normalizeDate(expiry_date, 'expiry_date') : doc.expiry_date;
+
+    db.prepare(`
+      UPDATE academy_compliance_documents SET
+        title = COALESCE(?, title),
+        category = COALESCE(?, category),
+        document_number = COALESCE(?, document_number),
+        issuing_authority = COALESCE(?, issuing_authority),
+        branch_id = ?,
+        issue_date = ?,
+        expiry_date = ?,
+        renewal_reminder_days = COALESCE(?, renewal_reminder_days),
+        document_url = COALESCE(?, document_url),
+        notes = COALESCE(?, notes),
+        status = COALESCE(?, status),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND academy_id = ?
+    `).run(
+      title ? title.trim() : null,
+      category || null,
+      document_number !== undefined ? document_number : null,
+      issuing_authority !== undefined ? issuing_authority : null,
+      branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : doc.branch_id,
+      parsedIssueDate,
+      parsedExpiryDate,
+      renewal_reminder_days !== undefined ? Number(renewal_reminder_days) : null,
+      document_url !== undefined ? document_url : null,
+      notes !== undefined ? notes : null,
+      status || null,
+      id,
+      req.academy.id
+    );
+
+    const updated = db.prepare('SELECT * FROM academy_compliance_documents WHERE id = ?').get(id);
+    res.json({ success: true, document: updated, message: 'Compliance document updated successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/compliance/documents/:id
+ * Deletes or archives a compliance document
+ */
+academyRouter.delete('/compliance/documents/:id', requireRole('academy_admin', 'super_admin'), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    db.prepare('DELETE FROM academy_compliance_documents WHERE id = ? AND academy_id = ?').run(id, req.academy.id);
+    res.json({ success: true, message: 'Compliance document removed successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 /**
  * GET /api/academy/audit-logs
  */
