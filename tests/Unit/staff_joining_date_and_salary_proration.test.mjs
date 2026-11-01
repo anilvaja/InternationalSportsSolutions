@@ -67,7 +67,7 @@ test('Staff Joining Date & Salary Proration Verification', async (t) => {
     const todayCell = statementData.calendarDays.find(d => d.date === todayStr);
     assert.ok(todayCell, 'Today cell must exist');
     assert.notEqual(todayCell.status, 'absent', 'Today must not be marked as absent');
-    assert.equal(todayCell.status, 'shift_pending', 'Today should have shift_pending status');
+    assert.ok(['shift_pending', 'weekly_off', 'holiday'].includes(todayCell.status), `Today should have non-absent status (shift_pending or weekly_off), got ${todayCell.status}`);
 
     const daysBefore = statementData.calendarDays.filter(d => d.date < todayStr);
     for (const d of daysBefore) {

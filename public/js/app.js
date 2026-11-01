@@ -10031,9 +10031,9 @@ const app = {
     } catch (e) {}
 
     const csvContent = 'Batch Name,Branch,Sport,Coach,Days,Start Time,End Time,Capacity,Fee\n' +
-      `Morning Kumite Elite,${branchName},${sportName},,Mon\\,Wed\\,Fri,06:30,07:30,25,2500\n` +
-      `Evening Beginners Kata,${branchName},${sportName},,Tue\\,Thu\\,Sat,17:00,18:00,30,2000\n` +
-      `Weekend Advanced Dojo,${branchName},${sportName},,Sat\\,Sun,08:00,10:00,20,3000\n`;
+      `"Morning Kumite Elite","${branchName}","${sportName}",,"Mon,Wed,Fri",06:30,07:30,25,2500\n` +
+      `"Evening Beginners Kata","${branchName}","${sportName}",,"Tue,Thu,Sat",17:00,18:00,30,2000\n` +
+      `"Weekend Advanced Dojo","${branchName}","${sportName}",,"Sat,Sun",08:00,10:00,20,3000\n`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -20868,20 +20868,23 @@ const app = {
               <span class="legend-item"><span class="legend-dot" style="background: #ef4444;"></span> Absent</span>
             </div>
 
-            <!-- 7-Column Day Headers (Mon - Sun) -->
-            <div class="salary-calendar-grid" style="margin-bottom: 4px;">
-              <div class="calendar-day-header">Mon</div>
-              <div class="calendar-day-header">Tue</div>
-              <div class="calendar-day-header">Wed</div>
-              <div class="calendar-day-header">Thu</div>
-              <div class="calendar-day-header">Fri</div>
-              <div class="calendar-day-header">Sat</div>
-              <div class="calendar-day-header">Sun</div>
-            </div>
+            <!-- Unified Horizontal Scroll Wrapper for Headers & Cells -->
+            <div class="salary-calendar-scroll-wrapper">
+              <!-- 7-Column Day Headers (Mon - Sun) -->
+              <div class="salary-calendar-grid" style="margin-bottom: 4px;">
+                <div class="calendar-day-header">Mon</div>
+                <div class="calendar-day-header">Tue</div>
+                <div class="calendar-day-header">Wed</div>
+                <div class="calendar-day-header">Thu</div>
+                <div class="calendar-day-header">Fri</div>
+                <div class="calendar-day-header">Sat</div>
+                <div class="calendar-day-header">Sun</div>
+              </div>
 
-            <!-- 7-Column Day Cells Grid -->
-            <div class="salary-calendar-grid">
-              ${this.renderCalendarGridCells(calendarDays)}
+              <!-- 7-Column Day Cells Grid -->
+              <div class="salary-calendar-grid">
+                ${this.renderCalendarGridCells(calendarDays)}
+              </div>
             </div>
           </div>
 

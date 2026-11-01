@@ -6,6 +6,7 @@ import { signToken } from '../../src/middleware/auth.js';
 import { AttendanceScheduleService } from '../../src/services/attendanceScheduleService.js';
 import { OvertimeService } from '../../src/services/overtimeService.js';
 import { PayrollService } from '../../src/services/payrollService.js';
+import { ScheduleService } from '../../src/services/scheduleService.js';
 import app from '../../server.js';
 
 describe('Attendance Scheduling, Overtime Approval, and Attendance-Based Staff Payroll', () => {
@@ -568,6 +569,21 @@ describe('Attendance Scheduling, Overtime Approval, and Attendance-Based Staff P
 
     it('4.1. Calculates monthly fixed salary with proration and leave adjustments', () => {
       const period = PayrollService.getOrCreatePeriod(academy1Db, ACADEMY_1_ID, '2026-10');
+
+      // Ensure user 1 has punches for working days in October 2026
+      const schedule = ScheduleService.calculateExpectedHoursForPeriod(academy1Db, 1, period.start_date, period.end_date);
+      for (const day of schedule.dayBreakdown || []) {
+        if (day.isWorkingDay) {
+          const existingPunch = academy1Db.prepare('SELECT id FROM staff_time_punches WHERE user_id = ? AND punch_date = ?').get(1, day.date);
+          if (!existingPunch) {
+            academy1Db.prepare(`
+              INSERT INTO staff_time_punches (
+                academy_id, user_id, punch_date, punch_in_time, punch_out_time, duration_minutes, status
+              ) VALUES (?, ?, ?, ?, ?, ?, 'completed')
+            `).run(ACADEMY_1_ID, 1, day.date, `${day.date} 09:00:00`, `${day.date} 17:00:00`, 480);
+          }
+        }
+      }
 
       // User 1 is Monthly ₹45,000
       const statement = PayrollService.calculateEmployeeStatement(academy1Db, period.id, 1, ACADEMY_1_ID);

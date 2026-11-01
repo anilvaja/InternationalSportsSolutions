@@ -1,174 +1,127 @@
-# AGENTS.md — Multi-Tenant SaaS Platform (Laravel + Filament)
+# AGENTS.md — Multi-Tenant Sports SaaS Platform (Pure Node.js + Express + SQLite)
 
-Verified against the actual source of `anilvaja/InternationalSportsSolutions`
-(not just its README) on 2026-07-31. Where the real implementation differs
-from what a generic "multi-tenant Laravel SaaS" template would assume,
-this file states the real pattern.
+Verified against the current implementation of `node-express-rebuild` on 2026-11-02.
+The legacy Laravel/Filament project has been completely removed from this branch.
+The application is 100% standalone Node.js Express with physical database-per-tenant SQLite isolation.
 
-## 1. Tech Stack (from composer.json)
+## 1. Tech Stack (from package.json)
 
-| Layer              | Package                          | Version |
+| Layer              | Technology / Package              | Version |
 |---------------------|-----------------------------------|---------|
-| Framework           | laravel/framework                | ^12.0   |
-| PHP                 | —                                  | ^8.2    |
-| Admin UI            | filament/filament (+ forms/tables/actions/widgets/infolists) | ^3.3 |
-| Media in Filament   | filament/spatie-laravel-media-library-plugin | ^3.3 |
-| Multi-tenancy pkg   | stancl/tenancy                    | ^3.9    |
-| Roles/permissions   | spatie/laravel-permission         | ^6.21   |
-| PDF                 | barryvdh/laravel-dompdf           | ^3.1    |
+| Runtime             | Node.js (ES Modules, `type: module`)| ^20 / ^24|
+| HTTP Framework      | express                           | ^4.22   |
+| Database Engine     | better-sqlite3                    | ^11.10  |
+| Authentication      | jsonwebtoken (JWT) + bcryptjs     | ^9.0 / ^2.4 |
+| File Uploads        | multer + sharp                    | ^1.4 / ^0.35 |
+| Backups & Export    | archiver                          | ^7.0    |
+| Testing             | Node.js native test runner (`node:test`) | built-in |
+| E2E & Browser Tests | @playwright/test + puppeteer-core | ^1.64 / ^25.3 |
+| Frontend            | Vanilla JS SPA (`public/`)         | Static / No-build |
 
-**Caveat on `stancl/tenancy`**: it's a declared dependency, but tenant
-isolation in the actual Filament resources is NOT done via stancl's
-per-tenant database switching — it's done manually (see §3). Don't assume
-`stancl/tenancy`'s automatic tenant context is what's protecting queries;
-verify per-resource before relying on it.
-
-## 2. Panels (real namespaces, not generic placeholders)
+## 2. Panels and Portals
 
 ```mermaid
 graph TD
-    SA[Super Admin, is_super_admin=true] --> CP["/admin — App\Filament\CentralPanel"]
-    AA[Academy staff, web guard] --> AP["/academy — App\Filament\Academy"]
-    ST[Student, student guard] --> SP["/student — App\Filament\Student"]
+    SA["Super Admin (/central)"] --> CP["/api/central — Platform Management"]
+    AA["Academy Staff / Coach / Admin"] --> AP["/api/academy — Multi-Tenant Operations"]
+    ST["Student (/student)"] --> SP["/api/student — Student Self-Service"]
+    PB["Public / Pay"] --> PP["/api/public & /pay.html — Inquiries, Fees"]
 ```
 
-- `/admin` → `App\Filament\CentralPanel\Resources\*` — tenant onboarding,
-  system settings, global branding.
-- `/academy` → `App\Filament\Academy\Resources\*` — the actual product
-  (students, batches, fees, attendance, leaves, rooms, pharmacy). Guard:
-  `web`. Panel provider: `AcademyPanelProvider::authGuard('web')`.
-- `/student` → `App\Filament\Student\Pages\*` — self-service portal.
-  Guard: `student` (a distinct Eloquent model `App\Models\Student`, not
-  the `User` model). Panel provider: `StudentPanelProvider::authGuard('student')`.
+- `/api/central` → Central platform operations: tenant onboarding, subscription plans, quota overrides, domain routing, system audit.
+- `/api/academy` → Academy management: branches, coaches, batches, students, attendance, syllabus progression, fees, compensation, shifts, payroll, holidays, equipment.
+- `/api/student` → Student self-service: attendance history, syllabus status, fee ledger, event sign-ups, leave requests.
+- `/api/auth` → Universal authentication (login, profile, theme customization, logout).
+- `/api/public` → Public inquiry creation, branch listing, online invoice payments (`pay.html`).
 
-There is no separate guard per role inside `/academy` (admin, coach,
-staff, etc. all authenticate via the single `web` guard) — role
-distinction happens through permissions, not guards.
+## 3. Tenant Isolation — Physical Database-Per-Tenant
 
-## 3. Tenant Isolation — the real mechanism
+Tenant model: Dedicated SQLite database per academy.
+- Central database: `data/central.db` (contains `academies`, `subscription_plans`, `subscription_plan_limits`, `academy_subscriptions`, `super_admins`, `academy_users_lookup`).
+- Tenant database: `data/academies/academy_<id>.db` (each academy has its own isolated SQLite database file).
+- Resolved dynamically via `src/db/connectionManager.js`:
+  - `getTenantDbById(academyId)`
+  - `getTenantDbBySlug(slug)`
 
-Tenant model: `App\Models\Academy`. FK column: `academy_id` on every
-tenant-scoped table.
+Because queries run against an isolated SQLite file for each tenant, cross-tenant data leakage is physically impossible when using `req.academyDb`.
 
-Each tenant-scoped model defines a **local query scope**:
-```php
-// e.g. app/Models/Student.php, Branch.php, etc.
-public function scopeForAcademy($query, $academyId)
-{
-    return $query->where('academy_id', $academyId);
-}
-```
+## 4. Authorization & RBAC
 
-Every Filament Resource under `App\Filament\Academy\Resources` **must**
-override `getEloquentQuery()` to apply it:
-```php
-public static function getEloquentQuery(): Builder
-{
-    return parent::getEloquentQuery()->forAcademy(Auth::user()->academy_id);
-}
-```
+Authentication is handled by `src/middleware/auth.js`:
+- `authenticateToken`: Validates JWT from `Authorization: Bearer <token>` or cookies. Attaches `req.user` and provisions `req.academyDb`.
+- `requireRole(allowedRoles)`: Enforces role-level access (e.g. `requireRole('academy_admin')`).
+- `requirePermission(requiredPermissions)`: Enforces granular permission keys (e.g. `view_students`, `assign_user_roles`, `delete_students`).
+- Self-role escalation protection: A user cannot alter their own `role` field on `PUT /api/academy/users/:id/role`.
+- Wildcard protection: Non-admin users cannot create or assign roles with wildcard `['all']` permissions.
 
-This is **not automatic**. There is no global scope. A new resource that
-forgets this override will leak cross-tenant data. This is the single
-most important thing to check when reviewing agent-generated code for
-this app.
-
-`App\Models\User::canAccessAcademy(Academy $academy)` is the
-authoritative tenant-access check:
-```php
-return $this->is_super_admin || $this->academy_id === $academy->id;
-```
-
-Test coverage: `tests/Feature/TenantIsolationTest.php` — asserts a
-non-super-admin user can access only their own academy, and a super
-admin can access any academy. Any new tenant-scoped feature should add
-an equivalent assertion.
-
-## 4. Authorization — no Laravel Policies
-
-There is **no `app/Policies` directory**. Do not generate
-`php artisan make:policy` boilerplate or reference `authorize()` calls
-expecting a policy class — that convention isn't used here.
-
-Instead, every Filament Resource implements its own static methods
-backed by `App\Support\AcademyPermissionHelper`:
-```php
-public static function canViewAny(): bool
-{
-    return \App\Support\AcademyPermissionHelper::can('view_students');
-}
-public static function canCreate(): bool
-{
-    return \App\Support\AcademyPermissionHelper::can('create_students');
-}
-// ...canEdit(), canDelete() follow the same pattern
-```
-
-`AcademyPermissionHelper` resolves permissions by combining the current
-user's `AcademyRole` and any per-user overrides in `user_academy_roles`,
-scoped to `Auth::user()->academy_id`. When adding a new resource, add its
-permission keys (e.g. `view_x`, `create_x`, `edit_x`, `delete_x`) to
-wherever the role/permission seed data is defined, and gate all four
-`can*()` methods through the helper — don't hand-roll a new auth check.
-
-## 5. Commands
-
-```bash
-composer install
-cp .env.example .env && php artisan key:generate
-php -r "file_exists('database/database.sqlite') || touch('database/database.sqlite');"
-php artisan migrate:fresh --seed
-php artisan serve
-
-php artisan test                               # full suite
-php artisan test --filter=TenantIsolationTest
-php artisan test --filter=UiPanelTestingTest
-php artisan test --filter=FeeManagementTest
-
-php scripts/ui_test_runner.php                 # custom CLI panel/DOM diagnostic
-```
-
-## 6. Agent Workflow Rules
-
-1. Read before writing: check `app/Models`, the relevant
-   `app/Filament/Academy/Resources/*Resource.php` (or `CentralPanel`/
-   `Student` equivalents), and existing tests in the same area first.
-2. New tenant-scoped model → add `scopeForAcademy()` following the
-   existing pattern, and use it in the Resource's `getEloquentQuery()`.
-   Never skip this.
-3. New Filament Resource → implement `canViewAny/canCreate/canEdit/
-   canDelete` via `AcademyPermissionHelper::can(...)`, not a Policy.
-4. New feature affecting `/academy` data → add or extend a
-   `TenantIsolationTest`-style assertion.
-5. UI-facing change → run `php artisan test --filter=UiPanelTestingTest`
-   and `php scripts/ui_test_runner.php` before calling it done.
-6. Don't touch `Academy` subscription-limit fields (`max_branches`,
-   `max_students`, `max_coaches`) without an explicit task for it.
-7. Use `.agents/skills/application-agent/SKILL.md` for feature work and
-   `.agents/skills/ui-testing-agent/SKILL.md` for UI regression checks.
-
-## 7. Directory Structure (verified)
+## 5. Directory Structure
 
 ```
 InternationalSportsSolutions/
 ├── .agents/
-│   ├── AGENTS.md
-│   └── skills/
-│       ├── application-agent/SKILL.md   # name: application-development-agent
-│       └── ui-testing-agent/SKILL.md
-├── app/
-│   ├── Filament/
-│   │   ├── CentralPanel/Resources/       # /admin
-│   │   ├── Academy/Resources/            # /academy
-│   │   ├── Student/Pages/                # /student
-│   │   └── Resources/                    # shared/legacy resources
-│   ├── Models/                           # Academy, Student, Coach, Batch, Fee...
-│   ├── Support/AcademyPermissionHelper.php
-│   └── Providers/Filament/               # one provider per panel
-├── database/{migrations,seeders}/
-├── scripts/ui_test_runner.php
-└── tests/Feature/
-    ├── TenantIsolationTest.php
-    ├── UiPanelTestingTest.php
-    └── FeeManagementTest.php
+│   ├── AGENTS.md                         # This file
+│   └── complete-node-rebuild.md          # 24-Hour Master Specifications & Requirements
+├── data/
+│   ├── central.db                        # Central platform SQLite database
+│   └── academies/
+│       └── academy_*.db                  # Tenant-specific SQLite databases
+├── public/
+│   ├── index.html                        # SPA main application entry
+│   ├── pay.html                          # Public fee payment portal
+│   ├── css/style.css                     # Responsive styling & themes
+│   └── js/app.js                         # Frontend client application logic
+├── scripts/                              # Maintenance, migration, and verification scripts
+├── src/
+│   ├── config/                           # Environment and permission definitions
+│   ├── db/
+│   │   ├── centralDb.js                  # Central database initialization
+│   │   ├── connectionManager.js          # Tenant DB resolution and pool
+│   │   ├── migrator.js                   # Automated database migration runner
+│   │   ├── migrations/tenant/            # Tenant schema migrations (001-026)
+│   │   └── seed.js                       # Platform initialization and seed data
+│   ├── middleware/                       # Auth, roles, permissions, tenant context
+│   ├── routes/                           # Express route definitions
+│   │   ├── academyRoutes.js
+│   │   ├── authRoutes.js
+│   │   ├── centralRoutes.js
+│   │   ├── publicRoutes.js
+│   │   ├── staffRoutes.js
+│   │   └── studentRoutes.js
+│   ├── services/                         # Business logic engines
+│   │   ├── attendanceScheduleService.js
+│   │   ├── feeService.js
+│   │   ├── payrollService.js
+│   │   ├── quotaService.js
+│   │   ├── scheduleService.js
+│   │   └── userService.js
+│   └── utils/
+│       └── dateUtils.js                  # IST & DD/MM/YYYY standardized date utilities
+├── storage/                              # Uploads, payslips, and database backups
+├── tests/
+│   ├── Unit/                             # Native Node unit tests (303 tests)
+│   ├── e2e/                              # Playwright end-to-end browser tests
+│   └── qa/                               # Comprehensive QA test suites
+├── package.json
+└── server.js                             # Express application server
 ```
+
+## 6. Commands
+
+```bash
+npm install                               # Install Node dependencies
+npm start                                 # Start production server (port 3005)
+npm run server:dev                        # Start server in watch mode
+npm run seed                              # Initialize central database and default tenant
+npm run migrate                           # Apply database migrations
+npm test                                  # Run full test suite (303 unit tests)
+npm run test:e2e                          # Run Playwright E2E browser tests
+npm run test:qa:roles                     # Run comprehensive role-based QA automation
+```
+
+## 7. Master Rules & Conventions
+
+1. **Pure Node.js**: Do not add PHP or Laravel files. The application is completely Node.js + Express.
+2. **Standardized Date Handling**: All Indian calendar dates displayed/inputted use `DD/MM/YYYY`. Database columns store `YYYY-MM-DD`. Use `src/utils/dateUtils.js` for safe timezone-aware conversions.
+3. **RBAC on Every Endpoint**: Every mutating or sensitive `/api/academy/*` route must specify `requirePermission(...)` or `requireRole(...)`.
+4. **Idempotency**: All seeders, migrations, and batch operations must be idempotent and safely re-runnable.
+5. **No Regression**: Run `npm test` after all changes. All 303+ unit tests must pass.

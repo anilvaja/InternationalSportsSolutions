@@ -463,6 +463,8 @@ export class PratikKarateAcademyDemoSeeder {
 
     const staffMap = {};
 
+    const centralDb = getCentralDb();
+
     for (const s of staffDefs) {
       let user = db.prepare('SELECT * FROM users WHERE email = ?').get(s.email);
       if (!user) {
@@ -475,6 +477,12 @@ export class PratikKarateAcademyDemoSeeder {
       } else {
         results.stats.staffReused++;
       }
+
+      // Sync into central academy_users_lookup so login without academy_slug succeeds
+      centralDb.prepare(`
+        INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role)
+        VALUES (?, ?, ?)
+      `).run(s.email.trim().toLowerCase(), academyId, s.role);
 
       staffMap[s.email] = { ...s, user };
 

@@ -832,19 +832,22 @@ export class PayrollService {
   /**
    * Retrieves an employee's salary statement respecting the 25th-of-month visibility rule
    */
-  static getEmployeeStatement(db, userId, yearMonth) {
+  static getEmployeeStatement(db, userId, yearMonth, academyId = 1) {
     const today = new Date();
     const currentDay = today.getDate();
-    const period = this.getOrCreatePeriod(db, 1, yearMonth);
+    const currentYearMonth = today.toISOString().slice(0, 7);
+    const isPastMonth = yearMonth < currentYearMonth;
+    const isCurrentMonth = yearMonth === currentYearMonth;
+    const period = this.getOrCreatePeriod(db, academyId, yearMonth);
 
-    const statement = this.calculateEmployeeStatement(db, period.id, userId, 1);
+    const statement = this.calculateEmployeeStatement(db, period.id, userId, academyId);
     const adjustments = db.prepare('SELECT * FROM staff_salary_adjustments WHERE statement_id = ?').all(statement.id);
     const payments = db.prepare('SELECT * FROM staff_salary_payments WHERE statement_id = ?').all(statement.id);
 
     const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(userId);
 
     const visibilityDay = period.statement_visibility_day || 25;
-    const isPastVisibilityDay = currentDay >= visibilityDay;
+    const isPastVisibilityDay = isPastMonth || (isCurrentMonth && currentDay >= visibilityDay);
     const isFinalized = period.status === 'finalized';
 
     const approvedOvertime = db.prepare(`

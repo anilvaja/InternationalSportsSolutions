@@ -385,8 +385,8 @@ describe('System-Wide Date Format Audit & Compliance (DD/MM/YYYY)', () => {
 
       assert.equal(res.status, 201);
       assert.equal(res.data.success, true);
-      // 5 calendar days with 1 Sunday weekly off = 4 chargeable working days
-      assert.equal(res.data.daysCount, 4);
+      // 5 calendar days with 1 Sunday weekly off and 1 Gandhi Jayanti holiday (02/10) = 3 chargeable working days
+      assert.equal(res.data.daysCount, 3);
 
       const row = tenantDb.prepare('SELECT start_date, end_date FROM leave_requests WHERE id = ?').get(res.data.leaveId);
       assert.equal(row.start_date, '2026-10-01');

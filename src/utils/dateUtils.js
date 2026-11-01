@@ -10,6 +10,26 @@
 
 export class DateUtils {
   /**
+   * Get current date in specified timezone as ISO YYYY-MM-DD
+   * Defaults to 'Asia/Kolkata' (IST)
+   * @param {string} timezone 
+   * @returns {string} YYYY-MM-DD
+   */
+  static getTodayDate(timezone = 'Asia/Kolkata') {
+    try {
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      return formatter.format(new Date());
+    } catch (_) {
+      return new Date().toISOString().split('T')[0];
+    }
+  }
+
+  /**
    * Determine if a given year is a leap year (Gregorian calendar rules)
    * @param {number} year 
    * @returns {boolean}

@@ -6,7 +6,7 @@ import { QuotaService, DEFAULT_PLAN_VALUES } from '../../src/services/quotaServi
 
 test('Subscription Plans & Academy Quota Management Module', async (t) => {
   const centralDb = getCentralDb();
-  const testRunId = Date.now().toString().slice(-4);
+  const testRunId = `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
   const academySlugA = `quota-test-a-${testRunId}`;
   const academySlugB = `quota-test-b-${testRunId}`;
 

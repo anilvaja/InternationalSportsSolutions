@@ -89,8 +89,8 @@ export class QuotaService {
     // 4. Platform default values fallback
     if (DEFAULT_PLAN_VALUES[quotaKey] !== undefined) {
       if (academy && academy.plan === 'enterprise') {
-        if (quotaKey === 'batches') return 50;
-        if (quotaKey === 'users') return 25;
+        if (quotaKey === 'batches') return 100;
+        if (quotaKey === 'users') return 150;
       }
       return DEFAULT_PLAN_VALUES[quotaKey];
     }

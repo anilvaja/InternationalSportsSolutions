@@ -123,7 +123,11 @@ test('Complete Employee Payroll, Weekly Off, Holiday & Leave Management (All 20 
     const emp = createTestEmployee('Holiday Test Emp', 'monthly', 31000, '2026-01-01');
     const period = PayrollService.getOrCreatePeriod(db, 1, testMonth);
 
-    // Add a paid holiday on 2026-03-25
+    // Save existing March holidays and isolate test holiday
+    const existingMarchHolidays = db.prepare("SELECT * FROM academy_holidays WHERE academy_id = 1 AND holiday_date LIKE '2026-03%'").all();
+    db.prepare("DELETE FROM academy_holidays WHERE academy_id = 1 AND holiday_date LIKE '2026-03%'").run();
+
+    // Add a single paid holiday on 2026-03-25
     db.prepare(`
       INSERT INTO academy_holidays (academy_id, holiday_date, name, is_paid, category, is_closed)
       VALUES (1, '2026-03-25', 'Holi Festival', 1, 'festival', 1)
@@ -137,6 +141,18 @@ test('Complete Employee Payroll, Weekly Off, Holiday & Leave Management (All 20 
     assert.equal(snap.absence_deductions, 0, 'Paid holiday must not count as absence deduction');
     assert.equal(snap.paid_holidays, 1, 'Paid holiday tracked in snapshot');
     assert.equal(stmt.net_earnings, 31000, 'Net earnings unchanged by paid holiday');
+
+    // Clean up test holiday
+    db.prepare("DELETE FROM academy_holidays WHERE academy_id = 1 AND holiday_date = '2026-03-25'").run();
+    // Restore pre-existing holidays
+    for (const h of existingMarchHolidays) {
+      if (h.holiday_date !== '2026-03-25') {
+        db.prepare(`
+          INSERT INTO academy_holidays (id, academy_id, branch_id, holiday_date, name, is_paid, category, is_closed, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(h.id, h.academy_id, h.branch_id, h.holiday_date, h.name, h.is_paid, h.category, h.is_closed, h.status);
+      }
+    }
 
     cleanupTestEmployee(emp);
   });

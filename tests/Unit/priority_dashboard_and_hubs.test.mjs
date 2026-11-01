@@ -129,9 +129,11 @@ test('fetchInquiryPipeline computes counts, follow-ups, and conversion metrics a
     );
   `);
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const yesterdayStr = '2026-10-19';
-  const futureStr = '2026-10-28';
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const yesterdayStr = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const overdueStr = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const futureStr = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
   // New inquiry awaiting contact
   db.prepare(`INSERT INTO inquiries (branch_id, student_name, status, next_followup_date, created_at) VALUES (?, ?, ?, ?, ?)`).run(
@@ -143,7 +145,7 @@ test('fetchInquiryPipeline computes counts, follow-ups, and conversion metrics a
   );
   // Overdue follow-up
   db.prepare(`INSERT INTO inquiries (branch_id, student_name, status, next_followup_date, created_at) VALUES (?, ?, ?, ?, ?)`).run(
-    1, 'Meera Nair', 'contacted', '2026-10-10', yesterdayStr
+    1, 'Meera Nair', 'contacted', overdueStr, yesterdayStr
   );
   // Trial scheduled
   db.prepare(`INSERT INTO inquiries (branch_id, student_name, status, next_followup_date, created_at) VALUES (?, ?, ?, ?, ?)`).run(

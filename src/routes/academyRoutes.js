@@ -83,6 +83,24 @@ export function requirePermission(permission) {
 }
 
 /**
+ * Middleware factory requiring specific role(s)
+ */
+export function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    if (req.user.isSuperAdmin || roles.includes(req.user.role)) {
+      return next();
+    }
+    return res.status(403).json({
+      success: false,
+      error: `Access denied: Role '${roles.join(' or ')}' required for this action.`
+    });
+  };
+}
+
+/**
  * Pure helper to verify permission from refreshed user context
  */
 export function hasPermission(req, perm) {
@@ -1317,6 +1335,10 @@ academyRouter.get('/students', (req, res) => {
       const offset = (p - 1) * l;
       selectQuery += ` LIMIT ? OFFSET ?`;
       students = db.prepare(selectQuery).all(...params, l, offset);
+      students.forEach(s => {
+        s.has_password = Boolean(s.password_hash);
+        delete s.password_hash;
+      });
       return res.json({
         success: true,
         students,
@@ -1327,6 +1349,10 @@ academyRouter.get('/students', (req, res) => {
       });
     } else {
       students = db.prepare(selectQuery).all(...params);
+      students.forEach(s => {
+        s.has_password = Boolean(s.password_hash);
+        delete s.password_hash;
+      });
       return res.json({ success: true, students, total, page: 1, limit: total, totalPages: 1 });
     }
   } catch (err) {
@@ -1985,10 +2011,35 @@ academyRouter.post('/coaches/import', (req, res) => {
 });
 
 /**
+ * GET /api/academy/batches/sample-csv
+ * Downloadable pre-formatted sample CSV template for training batch import
+ */
+academyRouter.get('/batches/sample-csv', requirePermission(['download_batches_sample', 'view_batches', 'manage_batches']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const branches = db.prepare('SELECT name FROM branches ORDER BY id ASC LIMIT 1').all();
+    const sports = db.prepare('SELECT name FROM sports ORDER BY id ASC LIMIT 1').all();
+    const branchName = branches.length > 0 ? branches[0].name : 'Main Campus';
+    const sportName = sports.length > 0 ? sports[0].name : 'Karate';
+
+    const csvContent = 'Batch Name,Branch,Sport,Coach,Days,Start Time,End Time,Capacity,Fee\r\n' +
+      `"Morning Kumite Elite","${branchName}","${sportName}",,"Mon,Wed,Fri","06:30","07:30",25,2500\r\n` +
+      `"Evening Beginners Kata","${branchName}","${sportName}",,"Tue,Thu,Sat","17:00","18:00",30,2000\r\n` +
+      `"Weekend Advanced Dojo","${branchName}","${sportName}",,"Sat,Sun","08:00","10:00",20,3000\r\n`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="training_batches_sample.csv"');
+    res.send(csvContent);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * POST /api/academy/batches/import
  * CSV Batch schedule import
  */
-academyRouter.post('/batches/import', (req, res) => {
+academyRouter.post('/batches/import', requirePermission(['import_batches', 'manage_batches']), (req, res) => {
   try {
     const db = req.tenantDb;
     const { batches } = req.body;
@@ -2476,7 +2527,7 @@ academyRouter.post('/students/:id/notifications', (req, res) => {
  * DELETE /api/academy/students/:id
  * Soft-deletes / archives student and terminates active batch enrollment
  */
-academyRouter.delete('/students/:id', (req, res) => {
+academyRouter.delete('/students/:id', requirePermission('delete_students'), (req, res) => {
   try {
     const db = req.tenantDb;
     const id = Number(req.params.id);
@@ -2680,13 +2731,24 @@ academyRouter.get('/users/:id/profile', (req, res) => {
  * POST /api/academy/users/:id/role-revision
  * Promotes, transfers or updates role with effective dating & audit trail
  */
-academyRouter.post('/users/:id/role-revision', (req, res) => {
+academyRouter.post('/users/:id/role-revision', requirePermission('assign_user_roles'), (req, res) => {
   try {
     const db = req.tenantDb;
     const centralDb = getCentralDb();
+    const targetUserId = Number(req.params.id);
+    const currentUserId = Number(req.user?.userId || req.user?.id);
     const { new_role, effective_from, reason } = req.body;
+
+    if (currentUserId && targetUserId === currentUserId) {
+      return res.status(403).json({ success: false, error: 'Access denied: Users cannot alter their own role.' });
+    }
+
+    if (new_role === 'academy_admin' && !req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Access denied: Only Academy Admins or Super Admins can assign the academy_admin role.' });
+    }
+
     const result = UserService.updateUserRole(
-      db, centralDb, req.academy.id, Number(req.params.id), new_role, reason, req.user?.userId, effective_from
+      db, centralDb, req.academy.id, targetUserId, new_role, reason, req.user?.userId, effective_from
     );
     res.json({ success: true, ...result });
   } catch (err) {
@@ -2698,7 +2760,7 @@ academyRouter.post('/users/:id/role-revision', (req, res) => {
  * POST /api/academy/users/:id/salary-revision
  * Modifies compensation policy with effective dating & audit trail
  */
-academyRouter.post('/users/:id/salary-revision', (req, res) => {
+academyRouter.post('/users/:id/salary-revision', requirePermission('manage_staff_payroll'), (req, res) => {
   try {
     const db = req.tenantDb;
     const { compensation_mode, new_amount, effective_from, reason } = req.body;
@@ -2721,7 +2783,7 @@ academyRouter.post('/users/:id/salary-revision', (req, res) => {
  * POST /api/academy/users/:id/branch-transfer
  * Reassigns employee branch with effective dating & history
  */
-academyRouter.post('/users/:id/branch-transfer', (req, res) => {
+academyRouter.post('/users/:id/branch-transfer', requirePermission('manage_branches'), (req, res) => {
   try {
     const db = req.tenantDb;
     const { new_branch_id, effective_from, reason } = req.body;
@@ -3642,7 +3704,7 @@ academyRouter.post('/attendance', (req, res) => {
  * GET /api/academy/fees/dashboard
  * Summary financial analytics, collection metrics, and ageing buckets
  */
-academyRouter.get('/fees/dashboard', (req, res) => {
+academyRouter.get('/fees/dashboard', requirePermission('view_fees'), (req, res) => {
   try {
     const db = req.tenantDb;
     const analytics = FeeService.getFeeDashboardAnalytics(db);
@@ -5128,19 +5190,370 @@ academyRouter.get('/facilities', (req, res) => {
 });
 
 /**
- * GET /api/academy/inventory
+ * GET /api/academy/inventory & /api/academy/equipment
+ * List facility equipment with category, branch, stock, and staff tracking
  */
-academyRouter.get('/inventory', (req, res) => {
+academyRouter.get(['/inventory', '/equipment'], requirePermission(['view_facilities', 'manage_facilities']), (req, res) => {
   try {
     const db = req.tenantDb;
-    const items = db.prepare(`
-      SELECT eq.*, s.name as sport_name, b.name as branch_name 
+    const { branch_id, category, condition, status, search } = req.query;
+
+    let sql = `
+      SELECT eq.*, s.name as sport_name, b.name as branch_name, u.name as responsible_staff_name
       FROM equipment_inventory eq
       LEFT JOIN sports s ON s.id = eq.sport_id
       LEFT JOIN branches b ON b.id = eq.branch_id
-      ORDER BY eq.name ASC
-    `).all();
+      LEFT JOIN users u ON u.id = eq.responsible_staff_id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (branch_id) {
+      sql += ` AND eq.branch_id = ?`;
+      params.push(Number(branch_id));
+    }
+    if (category) {
+      sql += ` AND eq.category = ?`;
+      params.push(category);
+    }
+    if (condition) {
+      sql += ` AND eq.condition = ?`;
+      params.push(condition);
+    }
+    if (status) {
+      sql += ` AND eq.status = ?`;
+      params.push(status);
+    }
+    if (search) {
+      sql += ` AND (eq.name LIKE ? OR eq.description LIKE ? OR eq.supplier LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    sql += ` ORDER BY eq.name ASC`;
+    const items = db.prepare(sql).all(...params);
     res.json({ success: true, items });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/equipment
+ * Registers new equipment or facility asset
+ */
+academyRouter.post('/equipment', requirePermission(['create_facilities', 'manage_facilities']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const {
+      name,
+      category = 'General Equipment',
+      description,
+      quantity = 1,
+      branch_id,
+      sport_id,
+      condition = 'good',
+      location,
+      purchase_date,
+      purchase_cost = 0,
+      supplier,
+      responsible_staff_id,
+    } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Equipment name is required' });
+    }
+
+    const qty = Math.max(0, parseInt(quantity) || 1);
+    const parsedPurchaseDate = purchase_date ? normalizeDate(purchase_date, 'purchase_date') : DateUtils.getTodayDate('Asia/Kolkata');
+
+    const ins = db.prepare(`
+      INSERT INTO equipment_inventory (
+        name, category, description, quantity, available_quantity,
+        branch_id, sport_id, condition, location, purchase_date,
+        purchase_cost, supplier, responsible_staff_id, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+    `).run(
+      name.trim(),
+      category,
+      description || null,
+      qty,
+      qty, // available_quantity initialized to quantity
+      branch_id ? Number(branch_id) : null,
+      sport_id ? Number(sport_id) : null,
+      condition,
+      location || null,
+      parsedPurchaseDate,
+      Number(purchase_cost) || 0,
+      supplier || null,
+      responsible_staff_id ? Number(responsible_staff_id) : null
+    );
+
+    const newItem = db.prepare('SELECT * FROM equipment_inventory WHERE id = ?').get(ins.lastInsertRowid);
+    res.status(201).json({ success: true, item: newItem, message: 'Equipment registered successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/equipment/:id
+ * Updates equipment or facility asset details
+ */
+academyRouter.put('/equipment/:id', requirePermission(['edit_facilities', 'manage_facilities']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const item = db.prepare('SELECT * FROM equipment_inventory WHERE id = ?').get(id);
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Equipment item not found' });
+    }
+
+    const {
+      name,
+      category,
+      description,
+      quantity,
+      branch_id,
+      sport_id,
+      condition,
+      location,
+      purchase_date,
+      purchase_cost,
+      supplier,
+      responsible_staff_id,
+      status
+    } = req.body;
+
+    let availableQty = item.available_quantity;
+    if (quantity !== undefined) {
+      const newQty = Math.max(0, parseInt(quantity) || 0);
+      const diff = newQty - item.quantity;
+      availableQty = Math.max(0, item.available_quantity + diff);
+    }
+
+    db.prepare(`
+      UPDATE equipment_inventory SET
+        name = COALESCE(?, name),
+        category = COALESCE(?, category),
+        description = COALESCE(?, description),
+        quantity = COALESCE(?, quantity),
+        available_quantity = ?,
+        branch_id = ?,
+        sport_id = ?,
+        condition = COALESCE(?, condition),
+        location = COALESCE(?, location),
+        purchase_date = COALESCE(?, purchase_date),
+        purchase_cost = COALESCE(?, purchase_cost),
+        supplier = COALESCE(?, supplier),
+        responsible_staff_id = ?,
+        status = COALESCE(?, status),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      name ? name.trim() : null,
+      category || null,
+      description !== undefined ? description : null,
+      quantity !== undefined ? parseInt(quantity) : null,
+      availableQty,
+      branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : item.branch_id,
+      sport_id !== undefined ? (sport_id ? Number(sport_id) : null) : item.sport_id,
+      condition || null,
+      location || null,
+      purchase_date ? normalizeDate(purchase_date, 'purchase_date') : null,
+      purchase_cost !== undefined ? Number(purchase_cost) : null,
+      supplier || null,
+      responsible_staff_id !== undefined ? (responsible_staff_id ? Number(responsible_staff_id) : null) : item.responsible_staff_id,
+      status || null,
+      id
+    );
+
+    const updated = db.prepare('SELECT * FROM equipment_inventory WHERE id = ?').get(id);
+    res.json({ success: true, item: updated, message: 'Equipment updated successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/equipment/:id
+ * Decommissions or deletes equipment
+ */
+academyRouter.delete('/equipment/:id', requirePermission(['delete_facilities', 'manage_facilities']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const item = db.prepare('SELECT * FROM equipment_inventory WHERE id = ?').get(id);
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Equipment item not found' });
+    }
+
+    // Check if there are active loans/logs
+    const activeLoans = db.prepare(`
+      SELECT COUNT(*) as count FROM equipment_assignment_logs
+      WHERE equipment_id = ? AND action = 'issue' AND actual_return_date IS NULL
+    `).get(id)?.count || 0;
+
+    if (activeLoans > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot delete: ${activeLoans} active item(s) are currently checked out. Return all units first.`
+      });
+    }
+
+    db.prepare('DELETE FROM equipment_inventory WHERE id = ?').run(id);
+    res.json({ success: true, message: 'Equipment deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/equipment/:id/issue
+ * Issues equipment to student or staff member
+ */
+academyRouter.post('/equipment/:id/issue', requirePermission(['edit_facilities', 'manage_facilities']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const item = db.prepare('SELECT * FROM equipment_inventory WHERE id = ?').get(id);
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Equipment item not found' });
+    }
+
+    const { student_id, staff_id, quantity = 1, return_due_date, notes } = req.body;
+    const qtyToIssue = Math.max(1, parseInt(quantity) || 1);
+
+    if (item.available_quantity < qtyToIssue) {
+      return res.status(400).json({
+        success: false,
+        error: `Insufficient stock: only ${item.available_quantity} available (requested: ${qtyToIssue})`
+      });
+    }
+
+    if (!student_id && !staff_id) {
+      return res.status(400).json({ success: false, error: 'Either student_id or staff_id is required' });
+    }
+
+    const today = DateUtils.getTodayDate('Asia/Kolkata');
+    const dueDate = return_due_date ? normalizeDate(return_due_date, 'return_due_date') : null;
+
+    db.transaction(() => {
+      // Decrement available stock
+      db.prepare(`
+        UPDATE equipment_inventory
+        SET available_quantity = available_quantity - ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(qtyToIssue, id);
+
+      // Create log
+      db.prepare(`
+        INSERT INTO equipment_assignment_logs (
+          academy_id, equipment_id, student_id, staff_id, action,
+          quantity, condition_on_action, action_date, return_due_date,
+          notes, issued_by
+        ) VALUES (?, ?, ?, ?, 'issue', ?, ?, ?, ?, ?, ?)
+      `).run(
+        req.academy.id,
+        id,
+        student_id ? Number(student_id) : null,
+        staff_id ? Number(staff_id) : null,
+        qtyToIssue,
+        item.condition,
+        today,
+        dueDate,
+        notes || null,
+        req.user.id
+      );
+    })();
+
+    res.json({
+      success: true,
+      message: `Issued ${qtyToIssue} unit(s) of ${item.name} successfully`,
+      available_quantity: item.available_quantity - qtyToIssue
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/equipment/:id/return
+ * Records equipment return and updates stock & condition
+ */
+academyRouter.post('/equipment/:id/return', requirePermission(['edit_facilities', 'manage_facilities']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const item = db.prepare('SELECT * FROM equipment_inventory WHERE id = ?').get(id);
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Equipment item not found' });
+    }
+
+    const { log_id, condition_on_return, notes } = req.body;
+    if (!log_id) {
+      return res.status(400).json({ success: false, error: 'log_id of the checkout assignment is required' });
+    }
+
+    const log = db.prepare('SELECT * FROM equipment_assignment_logs WHERE id = ? AND equipment_id = ?').get(log_id, id);
+    if (!log) {
+      return res.status(404).json({ success: false, error: 'Assignment log record not found' });
+    }
+    if (log.actual_return_date) {
+      return res.status(400).json({ success: false, error: 'This equipment assignment has already been returned' });
+    }
+
+    const today = DateUtils.getTodayDate('Asia/Kolkata');
+    const returnedCondition = condition_on_return || item.condition;
+
+    db.transaction(() => {
+      // Mark log returned
+      db.prepare(`
+        UPDATE equipment_assignment_logs
+        SET actual_return_date = ?, condition_on_action = COALESCE(?, condition_on_action),
+            notes = COALESCE(?, notes)
+        WHERE id = ?
+      `).run(today, returnedCondition, notes ? `${log.notes || ''} [Return: ${notes}]` : log.notes, log_id);
+
+      // Increment available stock and update condition
+      db.prepare(`
+        UPDATE equipment_inventory
+        SET available_quantity = MIN(quantity, available_quantity + ?),
+            condition = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(log.quantity, returnedCondition, id);
+    })();
+
+    res.json({
+      success: true,
+      message: `Returned ${log.quantity} unit(s) of ${item.name} successfully`,
+      available_quantity: Math.min(item.quantity, item.available_quantity + log.quantity)
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/equipment/:id/logs
+ * Retrieves full equipment audit & checkout history
+ */
+academyRouter.get('/equipment/:id/logs', requirePermission(['view_facilities', 'manage_facilities']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const logs = db.prepare(`
+      SELECT l.*, s.first_name || ' ' || COALESCE(s.last_name, '') as student_name,
+             u.name as staff_name, issuer.name as issued_by_name
+      FROM equipment_assignment_logs l
+      LEFT JOIN students s ON s.id = l.student_id
+      LEFT JOIN users u ON u.id = l.staff_id
+      LEFT JOIN users issuer ON issuer.id = l.issued_by
+      WHERE l.equipment_id = ?
+      ORDER BY l.action_date DESC, l.id DESC
+    `).all(id);
+
+    res.json({ success: true, logs });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -5149,7 +5562,7 @@ academyRouter.get('/inventory', (req, res) => {
 /**
  * GET /api/academy/audit-logs
  */
-academyRouter.get('/audit-logs', (req, res) => {
+academyRouter.get('/audit-logs', requirePermission('view_audit_logs'), (req, res) => {
   try {
     const db = req.tenantDb;
     const { action, search, user_role, page, limit } = req.query;
@@ -5201,9 +5614,9 @@ academyRouter.get('/audit-logs', (req, res) => {
 
 /**
  * GET /api/academy/backup
- * Downloads this academy's isolated database backup
+ * Downloads this academy's isolated database backup (Strictly Academy Admin & Super Admin)
  */
-academyRouter.get('/backup', async (req, res) => {
+academyRouter.get('/backup', requireRole('academy_admin'), async (req, res) => {
   try {
     await streamAcademyBackup(req.academy.id, res);
   } catch (err) {
@@ -5560,7 +5973,7 @@ academyRouter.get('/payroll/my-salary', (req, res) => {
     const db = req.tenantDb;
     const yearMonth = req.query.year_month || new Date().toISOString().slice(0, 7);
 
-    const statementData = PayrollService.getEmployeeStatement(db, req.user.userId, yearMonth);
+    const statementData = PayrollService.getEmployeeStatement(db, req.user.userId, yearMonth, req.academy.id);
     res.json({ success: true, ...statementData });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -5571,7 +5984,7 @@ academyRouter.get('/payroll/my-salary', (req, res) => {
  * GET /api/academy/payroll/periods
  * Lists payroll periods for the academy
  */
-academyRouter.get('/payroll/periods', (req, res) => {
+academyRouter.get('/payroll/periods', requirePermission(['view_payroll', 'manage_staff_payroll']), (req, res) => {
   try {
     const db = req.tenantDb;
     const periods = db.prepare(`
@@ -5596,7 +6009,7 @@ academyRouter.get('/payroll/periods', (req, res) => {
  * GET /api/academy/payroll/periods/:id/statements
  * Admin view of all statements for a given period
  */
-academyRouter.get('/payroll/periods/:id/statements', (req, res) => {
+academyRouter.get('/payroll/periods/:id/statements', requirePermission(['view_payroll', 'manage_staff_payroll']), (req, res) => {
   try {
     const db = req.tenantDb;
     const periodId = Number(req.params.id);
@@ -5624,7 +6037,7 @@ academyRouter.get('/payroll/periods/:id/statements', (req, res) => {
  * POST /api/academy/payroll/periods/:id/calculate
  * Recalculates statements for a period
  */
-academyRouter.post('/payroll/periods/:id/calculate', (req, res) => {
+academyRouter.post('/payroll/periods/:id/calculate', requirePermission(['calculate_payroll', 'manage_staff_payroll']), (req, res) => {
   try {
     const db = req.tenantDb;
     const periodId = Number(req.params.id);
@@ -5640,7 +6053,7 @@ academyRouter.post('/payroll/periods/:id/calculate', (req, res) => {
  * POST /api/academy/payroll/periods/:id/finalize
  * Finalizes monthly payroll period, creating immutable calculation snapshot
  */
-academyRouter.post('/payroll/periods/:id/finalize', (req, res) => {
+academyRouter.post('/payroll/periods/:id/finalize', requirePermission(['finalize_payroll', 'manage_staff_payroll']), (req, res) => {
   try {
     const db = req.tenantDb;
     const periodId = Number(req.params.id);
@@ -5804,7 +6217,7 @@ academyRouter.get('/payroll/audit-logs', (req, res) => {
  * POST /api/academy/payroll/statements/:id/adjustments
  * Adds an itemized addition (bonus/overtime) or deduction (unpaid leave/penalty)
  */
-academyRouter.post('/payroll/statements/:id/adjustments', (req, res) => {
+academyRouter.post('/payroll/statements/:id/adjustments', requirePermission('manage_staff_payroll'), (req, res) => {
   try {
     const db = req.tenantDb;
     const statementId = Number(req.params.id);
@@ -5829,7 +6242,7 @@ academyRouter.post('/payroll/statements/:id/adjustments', (req, res) => {
  * POST /api/academy/payroll/statements/:id/payments
  * Records salary payment disbursement
  */
-academyRouter.post('/payroll/statements/:id/payments', (req, res) => {
+academyRouter.post('/payroll/statements/:id/payments', requirePermission(['record_payroll_payment', 'manage_staff_payroll']), (req, res) => {
   try {
     const db = req.tenantDb;
     const statementId = Number(req.params.id);
@@ -5855,7 +6268,7 @@ academyRouter.post('/payroll/statements/:id/payments', (req, res) => {
  * GET /api/academy/payroll/profiles
  * Lists staff salary profiles
  */
-academyRouter.get('/payroll/profiles', (req, res) => {
+academyRouter.get('/payroll/profiles', requirePermission(['view_payroll', 'manage_staff_payroll']), (req, res) => {
   try {
     const db = req.tenantDb;
     const profiles = db.prepare(`
@@ -5876,7 +6289,7 @@ academyRouter.get('/payroll/profiles', (req, res) => {
  * POST /api/academy/payroll/profiles
  * Creates or updates a staff salary profile (backwards-compatible alias)
  */
-academyRouter.post('/payroll/profiles', (req, res) => {
+academyRouter.post('/payroll/profiles', requirePermission('manage_staff_payroll'), (req, res) => {
   try {
     const db = req.tenantDb;
     const {
@@ -7769,7 +8182,7 @@ academyRouter.get('/permissions', (req, res) => {
  * GET /api/academy/roles
  * Lists all academy roles with user counts and permissions
  */
-academyRouter.get('/roles', (req, res) => {
+academyRouter.get('/roles', requirePermission(['view_roles', 'manage_roles']), (req, res) => {
   try {
     const db = req.tenantDb;
     const roles = db.prepare('SELECT * FROM academy_roles ORDER BY id ASC').all();
@@ -7806,7 +8219,7 @@ academyRouter.get('/roles', (req, res) => {
  * POST /api/academy/roles
  * Creates a new custom role
  */
-academyRouter.post('/roles', (req, res) => {
+academyRouter.post('/roles', requirePermission('manage_roles'), (req, res) => {
   try {
     const db = req.tenantDb;
     const { name, display_name, description, permissions, theme_color } = req.body;
@@ -7824,6 +8237,10 @@ academyRouter.post('/roles', (req, res) => {
     }
 
     const permsArray = Array.isArray(permissions) ? permissions : [];
+    if (permsArray.includes('all') && !req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Access denied: Only Academy Admins or Super Admins can grant universal \'all\' permission' });
+    }
+
     const insert = db.prepare(`
       INSERT INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
       VALUES (?, ?, ?, ?, 0, ?)
@@ -7845,7 +8262,7 @@ academyRouter.post('/roles', (req, res) => {
  * PUT /api/academy/roles/:id
  * Updates role display name, description, permissions, and theme_color
  */
-academyRouter.put('/roles/:id', (req, res) => {
+academyRouter.put('/roles/:id', requirePermission('manage_roles'), (req, res) => {
   try {
     const db = req.tenantDb;
     const roleId = Number(req.params.id);
@@ -7858,6 +8275,9 @@ academyRouter.put('/roles/:id', (req, res) => {
 
     const cleanDisplayName = display_name || existing.display_name || existing.name;
     const permsArray = Array.isArray(permissions) ? permissions : (existing.name === 'academy_admin' ? ['all'] : []);
+    if (permsArray.includes('all') && !req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Access denied: Only Academy Admins or Super Admins can grant universal \'all\' permission' });
+    }
 
     db.prepare(`
       UPDATE academy_roles 
@@ -7878,7 +8298,7 @@ academyRouter.put('/roles/:id', (req, res) => {
  * DELETE /api/academy/roles/:id
  * Safely deletes custom role
  */
-academyRouter.delete('/roles/:id', (req, res) => {
+academyRouter.delete('/roles/:id', requirePermission('manage_roles'), (req, res) => {
   try {
     const db = req.tenantDb;
     const roleId = Number(req.params.id);
@@ -7911,7 +8331,7 @@ academyRouter.delete('/roles/:id', (req, res) => {
  * GET /api/academy/users
  * Lists staff users belonging to this academy with custom permissions and coach status
  */
-academyRouter.get('/users', (req, res) => {
+academyRouter.get('/users', requirePermission(['view_coaches', 'manage_coaches', 'assign_user_roles']), (req, res) => {
   try {
     const db = req.tenantDb;
     const users = db.prepare(`
@@ -7947,7 +8367,7 @@ academyRouter.get('/users', (req, res) => {
  * POST /api/academy/users
  * Creates a new staff user with quota enforcement (users quota and coaches subset)
  */
-academyRouter.post('/users', (req, res) => {
+academyRouter.post('/users', requirePermission(['create_coaches', 'manage_coaches', 'assign_user_roles']), (req, res) => {
   try {
     const db = req.tenantDb;
     const { name, email, password, role, phone, custom_permissions, theme_color } = req.body;
@@ -7957,6 +8377,14 @@ academyRouter.post('/users', (req, res) => {
     }
 
     const assignedRole = role || 'academy_staff';
+
+    // Prevent non-super_admin / non-academy_admin from creating academy_admin accounts
+    if (assignedRole === 'academy_admin' && !req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: Only existing Academy Admins or Super Admins can create admin accounts.'
+      });
+    }
 
     // Enforce total users quota
     QuotaService.assertCanCreate(req.academy.id, 'users', 1);
@@ -7994,14 +8422,31 @@ academyRouter.post('/users', (req, res) => {
  * PUT /api/academy/users/:id/role
  * Changes user role and updates custom permissions with role-transition quota check
  */
-academyRouter.put('/users/:id/role', (req, res) => {
+academyRouter.put('/users/:id/role', requirePermission('assign_user_roles'), (req, res) => {
   try {
     const db = req.tenantDb;
     const userId = Number(req.params.id);
+    const currentUserId = Number(req.user?.userId || req.user?.id);
     const { role, custom_permissions, theme_color } = req.body;
+
+    // 1. Explicitly block self-role modification: a user cannot change their own role!
+    if (currentUserId && userId === currentUserId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: Users cannot alter their own role or permissions.'
+      });
+    }
 
     if (!role) {
       return res.status(400).json({ success: false, error: 'Role is required' });
+    }
+
+    // 2. Only academy_admin or super_admin can assign or revoke the 'academy_admin' role
+    if (role === 'academy_admin' && !req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: Only existing Academy Admins or Super Admins can assign the academy_admin role.'
+      });
     }
 
     const existingUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
@@ -8520,7 +8965,7 @@ academyRouter.get('/punches/map', (req, res) => {
 /**
  * GET /api/academy/inquiries
  */
-academyRouter.get('/inquiries', (req, res) => {
+academyRouter.get('/inquiries', requirePermission('view_inquiries'), (req, res) => {
   try {
     const db = req.tenantDb;
     const result = InquiryService.listInquiries(db, req.academy.id, req.query);
