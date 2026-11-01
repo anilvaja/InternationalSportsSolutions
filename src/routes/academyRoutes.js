@@ -9378,6 +9378,96 @@ academyRouter.put('/students/:id/checklist/:itemId', (req, res) => {
 });
 
 /**
+ * GET /api/academy/admission-checklist/templates
+ * Lists customizable admission checklist templates
+ */
+academyRouter.get('/admission-checklist/templates', requirePermission(['view_students', 'manage_students']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const templates = db.prepare(`
+      SELECT * FROM admission_checklist_templates
+      WHERE academy_id = ? AND is_active = 1
+      ORDER BY sort_order ASC, id ASC
+    `).all(req.academy.id);
+    res.json({ success: true, templates });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/admission-checklist/templates
+ * Adds a customizable admission checklist item template
+ */
+academyRouter.post('/admission-checklist/templates', requireRole('academy_admin', 'super_admin'), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { item_name, is_mandatory = 0, sort_order = 0 } = req.body;
+    if (!item_name || !item_name.trim()) {
+      return res.status(400).json({ success: false, error: 'Checklist item name is required' });
+    }
+    const key = req.body.item_key || item_name.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 40);
+    const ins = db.prepare(`
+      INSERT INTO admission_checklist_templates (
+        academy_id, item_key, item_name, is_mandatory, sort_order, is_active
+      ) VALUES (?, ?, ?, ?, ?, 1)
+    `).run(req.academy.id, key, item_name.trim(), is_mandatory ? 1 : 0, Number(sort_order) || 0);
+
+    const created = db.prepare('SELECT * FROM admission_checklist_templates WHERE id = ?').get(ins.lastInsertRowid);
+    res.status(201).json({ success: true, template: created, message: 'Checklist item template added successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/admission-checklist/templates/:id
+ * Updates an admission checklist template
+ */
+academyRouter.put('/admission-checklist/templates/:id', requireRole('academy_admin', 'super_admin'), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const { item_name, is_mandatory, sort_order } = req.body;
+    db.prepare(`
+      UPDATE admission_checklist_templates
+      SET item_name = COALESCE(?, item_name),
+          is_mandatory = COALESCE(?, is_mandatory),
+          sort_order = COALESCE(?, sort_order),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND academy_id = ?
+    `).run(
+      item_name ? item_name.trim() : null,
+      is_mandatory !== undefined ? (is_mandatory ? 1 : 0) : null,
+      sort_order !== undefined ? Number(sort_order) : null,
+      id,
+      req.academy.id
+    );
+
+    const updated = db.prepare('SELECT * FROM admission_checklist_templates WHERE id = ?').get(id);
+    res.json({ success: true, template: updated, message: 'Checklist template updated' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/admission-checklist/templates/:id
+ * Removes or deactivates an admission checklist template
+ */
+academyRouter.delete('/admission-checklist/templates/:id', requireRole('academy_admin', 'super_admin'), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    db.prepare('UPDATE admission_checklist_templates SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND academy_id = ?')
+      .run(id, req.academy.id);
+    res.json({ success: true, message: 'Checklist template removed' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/academy/students/next-admission-number
  */
 academyRouter.get('/students/next-admission-number', (req, res) => {

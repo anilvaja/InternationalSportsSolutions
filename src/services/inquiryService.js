@@ -700,16 +700,34 @@ export class InquiryService {
         }
       }
 
-      // 6. Initialize Standard Admission Checklist
-      const defaultChecklist = [
-        { key: 'doc_photo', name: 'Student Photo Uploaded', mandatory: 0, completed: admissionData.photo_url ? 1 : 0 },
-        { key: 'guardian_consent', name: 'Parent / Guardian Consent Form', mandatory: 1, completed: admissionData.medical_consent ? 1 : 0 },
-        { key: 'medical_clearance', name: 'Medical Clearance & Health Declaration', mandatory: 0, completed: admissionData.medical_consent ? 1 : 0 },
-        { key: 'admission_fee_settled', name: 'Admission & Initial Fee Settlement', mandatory: 1, completed: (initial_payment_amount >= totalAmountDue && totalAmountDue > 0) ? 1 : 0 },
-        { key: 'batch_assignment', name: 'Batch & Schedule Assignment', mandatory: 0, completed: batch_id ? 1 : 0 },
-      ];
+      // 6. Initialize Configured Admission Checklist
+      let configuredTemplates = [];
+      try {
+        configuredTemplates = db.prepare(`
+          SELECT item_key as key, item_name as name, is_mandatory as mandatory
+          FROM admission_checklist_templates
+          WHERE academy_id = ? AND is_active = 1
+          ORDER BY sort_order ASC, id ASC
+        `).all(Number(academyId));
+      } catch (_) {}
 
-      for (const item of defaultChecklist) {
+      if (!configuredTemplates || configuredTemplates.length === 0) {
+        configuredTemplates = [
+          { key: 'doc_photo', name: 'Student Photo Uploaded', mandatory: 0 },
+          { key: 'guardian_consent', name: 'Parent / Guardian Consent Form', mandatory: 1 },
+          { key: 'medical_clearance', name: 'Medical Clearance & Health Declaration', mandatory: 0 },
+          { key: 'admission_fee_settled', name: 'Admission & Initial Fee Settlement', mandatory: 1 },
+          { key: 'batch_assignment', name: 'Batch & Schedule Assignment', mandatory: 0 },
+        ];
+      }
+
+      for (const item of configuredTemplates) {
+        let isCompleted = 0;
+        if (item.key === 'doc_photo' && admissionData.photo_url) isCompleted = 1;
+        if ((item.key === 'guardian_consent' || item.key === 'medical_clearance') && admissionData.medical_consent) isCompleted = 1;
+        if (item.key === 'admission_fee_settled' && initial_payment_amount >= totalAmountDue && totalAmountDue > 0) isCompleted = 1;
+        if (item.key === 'batch_assignment' && batch_id) isCompleted = 1;
+
         db.prepare(`
           INSERT INTO admission_checklists (
             academy_id, student_id, item_key, item_name, is_mandatory, is_completed, verified_by_user_id, verified_at
@@ -720,9 +738,9 @@ export class InquiryService {
           item.key,
           item.name,
           item.mandatory,
-          item.completed,
-          item.completed ? (currentUser ? currentUser.userId : null) : null,
-          item.completed ? new Date().toISOString() : null
+          isCompleted,
+          isCompleted ? (currentUser ? currentUser.userId : null) : null,
+          isCompleted ? new Date().toISOString() : null
         );
       }
 
