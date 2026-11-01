@@ -38,3 +38,4 @@ CREATE TABLE IF NOT EXISTS equipment_assignment_logs (
 CREATE INDEX IF NOT EXISTS idx_equip_logs_equip ON equipment_assignment_logs(equipment_id);
 CREATE INDEX IF NOT EXISTS idx_equip_logs_student ON equipment_assignment_logs(student_id);
 CREATE INDEX IF NOT EXISTS idx_equip_logs_staff ON equipment_assignment_logs(staff_id);
+

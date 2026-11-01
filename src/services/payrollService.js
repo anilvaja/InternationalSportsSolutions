@@ -193,12 +193,12 @@ export class PayrollService {
       `).all(coachId, coachId, period.start_date, period.end_date);
     }
 
-    // 3. Query staff time punches in this period
+    // 3. Query staff time punches in this period (both manually completed and system auto-closed)
     const punches = db.prepare(`
       SELECT * FROM staff_time_punches
       WHERE user_id = ?
         AND punch_date BETWEEN ? AND ?
-        AND status = 'completed'
+        AND status IN ('completed', 'auto_closed')
       ORDER BY punch_date ASC
     `).all(userId, period.start_date, period.end_date);
 

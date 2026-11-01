@@ -19,6 +19,7 @@ import { LeaveService } from '../services/leaveService.js';
 import bcrypt from 'bcryptjs';
 import { DateUtils } from '../utils/dateUtils.js';
 import { AttendanceAdjustmentService } from '../services/attendanceAdjustmentService.js';
+import { ShiftCheckoutService } from '../services/shiftCheckoutService.js';
 
 export const academyRouter = express.Router();
 
@@ -84,18 +85,20 @@ export function requirePermission(permission) {
 
 /**
  * Middleware factory requiring specific role(s)
+ * Accepts either varargs: requireRole('a', 'b') or array: requireRole(['a', 'b'])
  */
 export function requireRole(...roles) {
+  const allowedRoles = roles.flat();
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
-    if (req.user.isSuperAdmin || roles.includes(req.user.role)) {
+    if (req.user.isSuperAdmin || allowedRoles.includes(req.user.role)) {
       return next();
     }
     return res.status(403).json({
       success: false,
-      error: `Access denied: Role '${roles.join(' or ')}' required for this action.`
+      error: `Access denied: Role '${allowedRoles.join(' or ')}' required for this action.`
     });
   };
 }
@@ -8953,6 +8956,49 @@ academyRouter.get('/punches/map', (req, res) => {
         currently_signed_out: signedOutCount,
       },
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// AUTOMATIC SHIFT CHECKOUT & SHIFT POLICIES
+// ==========================================
+
+/**
+ * GET /api/academy/shifts/policy
+ * View automatic shift checkout policy settings
+ */
+academyRouter.get('/shifts/policy', requireRole(['academy_admin', 'super_admin']), (req, res) => {
+  try {
+    const policy = ShiftCheckoutService.getPolicySettings(req.tenantDb);
+    res.json({ success: true, policy });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/shifts/policy
+ * Configure automatic shift checkout settings
+ */
+academyRouter.put('/shifts/policy', requireRole(['academy_admin', 'super_admin']), (req, res) => {
+  try {
+    const updated = ShiftCheckoutService.updatePolicySettings(req.tenantDb, req.body);
+    res.json({ success: true, policy: updated, message: 'Shift auto-checkout settings updated successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/shifts/auto-checkout
+ * Executes automatic shift checkout for all open in-progress punches past threshold
+ */
+academyRouter.post('/shifts/auto-checkout', requireRole(['academy_admin', 'super_admin']), (req, res) => {
+  try {
+    const result = ShiftCheckoutService.processAutomaticShiftCheckouts(req.tenantDb, req.academy.id, req.body);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
