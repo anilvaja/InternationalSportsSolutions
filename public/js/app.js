@@ -313,6 +313,47 @@ const app = {
     return '';
   },
 
+  parseDateObject(val) {
+    if (!val) return null;
+    if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+    const str = String(val).trim();
+    if (!str) return null;
+
+    // 1. Check DD/MM/YYYY format (e.g. 10/11/2026 or 15/11/2026)
+    const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+    if (ddmmyyyy) {
+      const day = parseInt(ddmmyyyy[1], 10);
+      const month = parseInt(ddmmyyyy[2], 10) - 1;
+      const year = parseInt(ddmmyyyy[3], 10);
+      const d = new Date(year, month, day);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    // 2. Check YYYY-MM-DD format (e.g. 2026-11-10)
+    const yyyymmdd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+    if (yyyymmdd) {
+      const year = parseInt(yyyymmdd[1], 10);
+      const month = parseInt(yyyymmdd[2], 10) - 1;
+      const day = parseInt(yyyymmdd[3], 10);
+      const d = new Date(year, month, day);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    // 3. Fallback to standard JavaScript Date parser
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? null : d;
+  },
+
+  calculateCalendarDaysBetween(startVal, endVal) {
+    const s = this.parseDateObject(startVal);
+    const e = this.parseDateObject(endVal);
+    if (!s || !e) return NaN;
+
+    const sUtc = Date.UTC(s.getFullYear(), s.getMonth(), s.getDate());
+    const eUtc = Date.UTC(e.getFullYear(), e.getMonth(), e.getDate());
+    return Math.round((eUtc - sUtc) / (1000 * 60 * 60 * 24)) + 1;
+  },
+
   renderIndianDateInput({
     id,
     name = '',
@@ -394,6 +435,7 @@ const app = {
       if (iso && iso.length === 10) {
         input.dataset.iso = iso;
         input.classList.remove('is-invalid');
+        input.dispatchEvent(new Event('change', { bubbles: true }));
       }
     } else {
       input.dataset.iso = '';
@@ -7571,10 +7613,12 @@ const app = {
     // Calculate age if DOB exists
     let ageStr = '-';
     if (s.date_of_birth || s.dob) {
-      const birth = new Date(s.date_of_birth || s.dob);
-      const diff = Date.now() - birth.getTime();
-      const ageDate = new Date(diff);
-      ageStr = Math.abs(ageDate.getUTCFullYear() - 1970) + ' yrs';
+      const birth = this.parseDateObject(s.date_of_birth || s.dob);
+      if (birth && !isNaN(birth.getTime())) {
+        const diff = Date.now() - birth.getTime();
+        const ageDate = new Date(diff);
+        ageStr = Math.abs(ageDate.getUTCFullYear() - 1970) + ' yrs';
+      }
     }
 
     const modalBody = `
@@ -16481,17 +16525,19 @@ const app = {
   },
 
   updateLeaveDaysCount() {
-    const sStr = document.getElementById('leave-start-date')?.value;
-    const eStr = document.getElementById('leave-end-date')?.value;
+    const sInput = document.getElementById('leave-start-date');
+    const eInput = document.getElementById('leave-end-date');
+    const sStr = sInput?.dataset?.iso || this.normalizeDateToIso(sInput?.value) || sInput?.value;
+    const eStr = eInput?.dataset?.iso || this.normalizeDateToIso(eInput?.value) || eInput?.value;
     const part = document.getElementById('leave-day-part')?.value || 'full_day';
     const countEl = document.getElementById('leave-days-count');
     if (!sStr || !eStr || !countEl) return;
 
-    const s = new Date(sStr);
-    const e = new Date(eStr);
-    const diffTime = e - s;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    if (diffDays <= 0) {
+    const diffDays = this.calculateCalendarDaysBetween(sStr, eStr);
+    if (isNaN(diffDays)) {
+      countEl.textContent = 'Please enter valid dates (dd/mm/yyyy)';
+      countEl.style.color = '#dc2626';
+    } else if (diffDays <= 0) {
       countEl.textContent = 'Invalid dates (End date must be on or after Start date)';
       countEl.style.color = '#dc2626';
     } else {
@@ -16506,8 +16552,10 @@ const app = {
 
   async submitLeaveRequest() {
     const target = document.querySelector('input[name="leave_for"]:checked')?.value || 'myself';
-    const startDate = document.getElementById('leave-start-date')?.value;
-    const endDate = document.getElementById('leave-end-date')?.value;
+    const sInput = document.getElementById('leave-start-date');
+    const eInput = document.getElementById('leave-end-date');
+    const startDate = sInput?.dataset?.iso || this.normalizeDateToIso(sInput?.value) || sInput?.value;
+    const endDate = eInput?.dataset?.iso || this.normalizeDateToIso(eInput?.value) || eInput?.value;
     const leave_type = document.getElementById('leave-type-policy')?.value || 'casual';
     const day_part = document.getElementById('leave-day-part')?.value || 'full_day';
     const category = document.getElementById('leave-category')?.value || 'Casual Leave';
@@ -16519,7 +16567,9 @@ const app = {
       return;
     }
 
-    if (new Date(endDate) < new Date(startDate)) {
+    const sObj = this.parseDateObject(startDate);
+    const eObj = this.parseDateObject(endDate);
+    if (!sObj || !eObj || eObj < sObj) {
       this.showToast('End date cannot be earlier than start date', 'warning');
       return;
     }
@@ -16982,13 +17032,13 @@ const app = {
                 <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
                   Start Date <span style="color: #dc2626;">*</span>
                 </label>
-                <input type="date" id="holiday-start-date" class="form-control" value="${defaultDate}" onchange="app.updateHolidayDaysCount()">
+                <input type="date" id="holiday-start-date" class="form-control" value="${defaultDate}" oninput="app.updateHolidayDaysCount()" onchange="app.updateHolidayDaysCount()">
               </div>
               <div class="form-group">
                 <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
                   End Date <span style="color: #dc2626;">*</span>
                 </label>
-                <input type="date" id="holiday-end-date" class="form-control" value="${defaultDate}" onchange="app.updateHolidayDaysCount()">
+                <input type="date" id="holiday-end-date" class="form-control" value="${defaultDate}" oninput="app.updateHolidayDaysCount()" onchange="app.updateHolidayDaysCount()">
               </div>
             </div>
             <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; display: flex; align-items: center; gap: 6px;">
@@ -17097,16 +17147,18 @@ const app = {
   },
 
   updateHolidayDaysCount() {
-    const sStr = document.getElementById('holiday-start-date')?.value;
-    const eStr = document.getElementById('holiday-end-date')?.value;
+    const sInput = document.getElementById('holiday-start-date');
+    const eInput = document.getElementById('holiday-end-date');
+    const sStr = sInput?.dataset?.iso || this.normalizeDateToIso(sInput?.value) || sInput?.value;
+    const eStr = eInput?.dataset?.iso || this.normalizeDateToIso(eInput?.value) || eInput?.value;
     const countEl = document.getElementById('holiday-days-count');
     if (!sStr || !eStr || !countEl) return;
 
-    const s = new Date(sStr);
-    const e = new Date(eStr);
-    const diffTime = e - s;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    if (diffDays <= 0) {
+    const diffDays = this.calculateCalendarDaysBetween(sStr, eStr);
+    if (isNaN(diffDays)) {
+      countEl.textContent = 'Please enter valid dates (dd/mm/yyyy)';
+      countEl.style.color = '#dc2626';
+    } else if (diffDays <= 0) {
       countEl.textContent = 'Invalid (End date before Start date)';
       countEl.style.color = '#dc2626';
     } else {
@@ -17141,20 +17193,25 @@ const app = {
     };
 
     if (mode === 'range') {
-      const startDate = document.getElementById('holiday-start-date')?.value;
-      const endDate = document.getElementById('holiday-end-date')?.value;
+      const sInput = document.getElementById('holiday-start-date');
+      const eInput = document.getElementById('holiday-end-date');
+      const startDate = sInput?.dataset?.iso || this.normalizeDateToIso(sInput?.value) || sInput?.value;
+      const endDate = eInput?.dataset?.iso || this.normalizeDateToIso(eInput?.value) || eInput?.value;
       if (!startDate || !endDate) {
         this.showToast('Please specify both Start Date and End Date', 'warning');
         return;
       }
-      if (new Date(endDate) < new Date(startDate)) {
+      const sObj = this.parseDateObject(startDate);
+      const eObj = this.parseDateObject(endDate);
+      if (!sObj || !eObj || eObj < sObj) {
         this.showToast('End date cannot be earlier than start date', 'warning');
         return;
       }
       payload.start_date = startDate;
       payload.end_date = endDate;
     } else {
-      const dateVal = document.getElementById('holiday-date-input')?.value;
+      const dInput = document.getElementById('holiday-date-input');
+      const dateVal = dInput?.dataset?.iso || this.normalizeDateToIso(dInput?.value) || dInput?.value;
       if (!dateVal) {
         this.showToast('Please select a holiday date', 'warning');
         return;
