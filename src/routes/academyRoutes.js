@@ -21,6 +21,7 @@ import { DateUtils } from '../utils/dateUtils.js';
 import { AttendanceAdjustmentService } from '../services/attendanceAdjustmentService.js';
 import { ShiftCheckoutService } from '../services/shiftCheckoutService.js';
 import { StaffAvailabilityService } from '../services/staffAvailabilityService.js';
+import { SecurityGuardService } from '../services/securityGuardService.js';
 
 export const academyRouter = express.Router();
 
@@ -130,7 +131,7 @@ export function hasPermission(req, perm) {
     // e.g. target is 'manage_sports' and user has 'create_sports' or 'edit_sports'
     if (target.startsWith('manage_')) {
       const mod = target.substring(7);
-      if (perms.some(k => k === `create_${mod}` || k === `edit_${mod}` || k === `delete_${mod}` || k === `view_${mod}`)) {
+      if (perms.some(k => k === `create_${mod}` || k === `edit_${mod}` || k === `delete_${mod}`)) {
         return true;
       }
     }
@@ -1367,7 +1368,7 @@ academyRouter.get('/students', (req, res) => {
 /**
  * POST /api/academy/students
  */
-academyRouter.post('/students', (req, res) => {
+academyRouter.post('/students', requirePermission(['create_students', 'manage_students', 'all']), (req, res) => {
   try {
     const db = req.tenantDb;
     const {
@@ -1759,7 +1760,7 @@ academyRouter.post('/students/bulk-enroll', (req, res) => {
  * POST /api/academy/students/import
  * CSV / Batch student import with full validation of branch and batch relationships
  */
-academyRouter.post('/students/import', (req, res) => {
+academyRouter.post('/students/import', requirePermission(['import_students', 'manage_students', 'create_students', 'all']), (req, res) => {
   try {
     const db = req.tenantDb;
     const { students, academy_id } = req.body;
@@ -1934,7 +1935,7 @@ academyRouter.post('/students/import', (req, res) => {
  * POST /api/academy/coaches/import
  * CSV / Batch coach and staff import
  */
-academyRouter.post('/coaches/import', (req, res) => {
+academyRouter.post('/coaches/import', requirePermission(['import_coaches', 'manage_coaches', 'create_coaches', 'all']), (req, res) => {
   try {
     const db = req.tenantDb;
     const centralDb = getCentralDb();
@@ -1953,6 +1954,19 @@ academyRouter.post('/coaches/import', (req, res) => {
       const item = coaches[i];
       if (!item.name || !item.name.trim()) {
         errors.push({ row: i + 1, error: 'Coach name is required' });
+        continue;
+      }
+
+      const candidateRole = item.role || 'coach';
+      try {
+        SecurityGuardService.assertCanCreateOrImportUser({
+          db,
+          actor: req.user,
+          role: candidateRole,
+          custom_permissions: item.custom_permissions || []
+        });
+      } catch (secErr) {
+        errors.push({ row: i + 1, error: secErr.message });
         continue;
       }
 
@@ -2740,23 +2754,41 @@ academyRouter.post('/users/:id/role-revision', requirePermission('assign_user_ro
     const db = req.tenantDb;
     const centralDb = getCentralDb();
     const targetUserId = Number(req.params.id);
-    const currentUserId = Number(req.user?.userId || req.user?.id);
     const { new_role, effective_from, reason } = req.body;
 
-    if (currentUserId && targetUserId === currentUserId) {
-      return res.status(403).json({ success: false, error: 'Access denied: Users cannot alter their own role.' });
+    if (!new_role) {
+      return res.status(400).json({ success: false, error: 'new_role is required' });
     }
 
-    if (new_role === 'academy_admin' && !req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
-      return res.status(403).json({ success: false, error: 'Access denied: Only Academy Admins or Super Admins can assign the academy_admin role.' });
-    }
+    // Centralized Security Guard: Validate self-escalation and delegated scope
+    const guard = SecurityGuardService.assertCanModifyUserRole({
+      db,
+      actor: req.user,
+      targetUserId,
+      newRole: new_role,
+      reason
+    });
+
+    const previousRole = guard.targetUser.role;
 
     const result = UserService.updateUserRole(
-      db, centralDb, req.academy.id, targetUserId, new_role, reason, req.user?.userId, effective_from
+      db, centralDb, req.academy.id, targetUserId, new_role, effective_from, reason, req.user?.userId
     );
+
+    // Record immutable audit trail
+    SecurityGuardService.recordAuthorizationAudit(db, {
+      action: 'ROLE_REVISED',
+      actor: req.user,
+      target: { id: targetUserId, name: guard.targetUser.name, email: guard.targetUser.email },
+      before: { role: previousRole },
+      after: { role: new_role },
+      reason: reason || `Role revised from ${previousRole} to ${new_role}`,
+      ipAddress: req.ip || '127.0.0.1'
+    });
+
     res.json({ success: true, ...result });
   } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
+    res.status(err.message.startsWith('Access denied') ? 403 : 400).json({ success: false, error: err.message });
   }
 });
 
@@ -8510,9 +8542,15 @@ academyRouter.post('/roles', requirePermission('manage_roles'), (req, res) => {
     }
 
     const permsArray = Array.isArray(permissions) ? permissions : [];
-    if (permsArray.includes('all') && !req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
-      return res.status(403).json({ success: false, error: 'Access denied: Only Academy Admins or Super Admins can grant universal \'all\' permission' });
-    }
+
+    // Centralized Security Guard: Validate delegated authority and prevent 'all' wildcard escalation
+    SecurityGuardService.assertCanCreateOrModifyRole({
+      db,
+      actor: req.user,
+      roleName: cleanName,
+      permissions: permsArray,
+      displayName: cleanDisplayName
+    });
 
     const insert = db.prepare(`
       INSERT INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
@@ -8521,13 +8559,24 @@ academyRouter.post('/roles', requirePermission('manage_roles'), (req, res) => {
 
     const result = insert.run(cleanName, cleanDisplayName, description || '', JSON.stringify(permsArray), theme_color || 'blue');
 
+    // Immutable authorization audit log
+    SecurityGuardService.recordAuthorizationAudit(db, {
+      action: 'ROLE_CREATED',
+      actor: req.user,
+      target: { roleId: result.lastInsertRowid, name: cleanName, display_name: cleanDisplayName },
+      before: null,
+      after: { name: cleanName, display_name: cleanDisplayName, permissions: permsArray, theme_color: theme_color || 'blue' },
+      reason: `Custom role '${cleanDisplayName}' created`,
+      ipAddress: req.ip || '127.0.0.1'
+    });
+
     res.status(201).json({
       success: true,
       roleId: result.lastInsertRowid,
       message: `Custom role '${cleanDisplayName}' created successfully`,
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(err.message.startsWith('Access denied') ? 403 : 500).json({ success: false, error: err.message });
   }
 });
 
@@ -8548,9 +8597,19 @@ academyRouter.put('/roles/:id', requirePermission('manage_roles'), (req, res) =>
 
     const cleanDisplayName = display_name || existing.display_name || existing.name;
     const permsArray = Array.isArray(permissions) ? permissions : (existing.name === 'academy_admin' ? ['all'] : []);
-    if (permsArray.includes('all') && !req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
-      return res.status(403).json({ success: false, error: 'Access denied: Only Academy Admins or Super Admins can grant universal \'all\' permission' });
-    }
+
+    // Centralized Security Guard: Validate delegated authority
+    SecurityGuardService.assertCanCreateOrModifyRole({
+      db,
+      actor: req.user,
+      roleId,
+      roleName: existing.name,
+      permissions: permsArray,
+      displayName: cleanDisplayName
+    });
+
+    let prevPerms = [];
+    try { prevPerms = JSON.parse(existing.permissions || '[]'); } catch (_) {}
 
     db.prepare(`
       UPDATE academy_roles 
@@ -8558,12 +8617,23 @@ academyRouter.put('/roles/:id', requirePermission('manage_roles'), (req, res) =>
       WHERE id = ?
     `).run(cleanDisplayName, description || existing.description || '', JSON.stringify(permsArray), theme_color || null, roleId);
 
+    // Immutable authorization audit log
+    SecurityGuardService.recordAuthorizationAudit(db, {
+      action: 'ROLE_UPDATED',
+      actor: req.user,
+      target: { roleId, name: existing.name, display_name: cleanDisplayName },
+      before: { display_name: existing.display_name, description: existing.description, permissions: prevPerms },
+      after: { display_name: cleanDisplayName, description: description || existing.description, permissions: permsArray },
+      reason: `Role '${cleanDisplayName}' updated`,
+      ipAddress: req.ip || '127.0.0.1'
+    });
+
     res.json({
       success: true,
       message: `Role '${cleanDisplayName}' updated successfully`,
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(err.message.startsWith('Access denied') ? 403 : 500).json({ success: false, error: err.message });
   }
 });
 
@@ -8594,6 +8664,18 @@ academyRouter.delete('/roles/:id', requirePermission('manage_roles'), (req, res)
     }
 
     db.prepare('DELETE FROM academy_roles WHERE id = ?').run(roleId);
+
+    // Immutable authorization audit log
+    SecurityGuardService.recordAuthorizationAudit(db, {
+      action: 'ROLE_DELETED',
+      actor: req.user,
+      target: { roleId, name: existing.name, display_name: existing.display_name },
+      before: { name: existing.name, display_name: existing.display_name },
+      after: null,
+      reason: `Role '${existing.display_name || existing.name}' deleted`,
+      ipAddress: req.ip || '127.0.0.1'
+    });
+
     res.json({ success: true, message: `Role '${existing.display_name || existing.name}' deleted successfully` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -8651,13 +8733,13 @@ academyRouter.post('/users', requirePermission(['create_coaches', 'manage_coache
 
     const assignedRole = role || 'academy_staff';
 
-    // Prevent non-super_admin / non-academy_admin from creating academy_admin accounts
-    if (assignedRole === 'academy_admin' && !req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied: Only existing Academy Admins or Super Admins can create admin accounts.'
-      });
-    }
+    // Centralized Security Guard: Validate delegated authority and prevent privilege escalation
+    SecurityGuardService.assertCanCreateOrImportUser({
+      db,
+      actor: req.user,
+      role: assignedRole,
+      custom_permissions
+    });
 
     // Enforce total users quota
     QuotaService.assertCanCreate(req.academy.id, 'users', 1);
@@ -8681,13 +8763,24 @@ academyRouter.post('/users', requirePermission(['create_coaches', 'manage_coache
       VALUES (?, ?, ?)
     `).run(email.trim().toLowerCase(), req.academy.id, assignedRole);
 
+    // Immutable authorization audit log
+    SecurityGuardService.recordAuthorizationAudit(db, {
+      action: 'USER_CREATED',
+      actor: req.user,
+      target: { id: result.lastInsertRowid, name: name.trim(), email: email.trim().toLowerCase() },
+      before: null,
+      after: { role: assignedRole, custom_permissions: custom_permissions || [] },
+      reason: 'Staff user created with login account',
+      ipAddress: req.ip || '127.0.0.1'
+    });
+
     res.status(201).json({
       success: true,
       userId: result.lastInsertRowid,
       message: 'Staff user created successfully',
     });
   } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
+    res.status(err.message.startsWith('Access denied') ? 403 : 400).json({ success: false, error: err.message });
   }
 });
 
@@ -8699,33 +8792,33 @@ academyRouter.put('/users/:id/role', requirePermission('assign_user_roles'), (re
   try {
     const db = req.tenantDb;
     const userId = Number(req.params.id);
-    const currentUserId = Number(req.user?.userId || req.user?.id);
-    const { role, custom_permissions, theme_color } = req.body;
-
-    // 1. Explicitly block self-role modification: a user cannot change their own role!
-    if (currentUserId && userId === currentUserId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied: Users cannot alter their own role or permissions.'
-      });
-    }
+    const { role, custom_permissions, theme_color, reason } = req.body;
 
     if (!role) {
       return res.status(400).json({ success: false, error: 'Role is required' });
     }
 
-    // 2. Only academy_admin or super_admin can assign or revoke the 'academy_admin' role
-    if (role === 'academy_admin' && !req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied: Only existing Academy Admins or Super Admins can assign the academy_admin role.'
+    // Centralized Security Guard: Validate self-escalation and delegated scope
+    const guard = SecurityGuardService.assertCanModifyUserRole({
+      db,
+      actor: req.user,
+      targetUserId: userId,
+      newRole: role,
+      reason
+    });
+
+    // If custom permissions are also being modified:
+    if (custom_permissions !== undefined) {
+      SecurityGuardService.assertCanGrantPermissions({
+        db,
+        actor: req.user,
+        targetUserId: userId,
+        permissionsToGrant: custom_permissions,
+        reason
       });
     }
 
-    const existingUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-    if (!existingUser) {
-      return res.status(404).json({ success: false, error: 'User not found' });
-    }
+    const existingUser = guard.targetUser;
 
     // Role conversion check: if converting to coach, verify coaches quota!
     if (existingUser.role !== 'coach' && role === 'coach') {
@@ -8748,12 +8841,23 @@ academyRouter.put('/users/:id/role', requirePermission('assign_user_roles'), (re
     centralDb.prepare('UPDATE academy_users_lookup SET role = ? WHERE email = ? AND academy_id = ?')
       .run(role, existingUser.email, req.academy.id);
 
+    // Record immutable audit trail
+    SecurityGuardService.recordAuthorizationAudit(db, {
+      action: 'ROLE_AND_PERMISSIONS_UPDATED',
+      actor: req.user,
+      target: { id: userId, name: existingUser.name, email: existingUser.email },
+      before: { role: existingUser.role, custom_permissions: existingUser.custom_permissions },
+      after: { role, custom_permissions: customPermsJson },
+      reason: reason || `Role updated from ${existingUser.role} to ${role}`,
+      ipAddress: req.ip || '127.0.0.1'
+    });
+
     res.json({
       success: true,
       message: `User '${existingUser.name}' updated to role '${role}' with permissions synced`,
     });
   } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
+    res.status(err.message.startsWith('Access denied') ? 403 : 400).json({ success: false, error: err.message });
   }
 });
 
@@ -9354,7 +9458,7 @@ academyRouter.post('/inquiries', (req, res) => {
 /**
  * POST /api/academy/inquiries/import
  */
-academyRouter.post('/inquiries/import', (req, res) => {
+academyRouter.post('/inquiries/import', requirePermission(['import_inquiries', 'manage_inquiries', 'create_inquiries', 'all']), (req, res) => {
   try {
     const db = req.tenantDb;
     const { inquiries } = req.body;

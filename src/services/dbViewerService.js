@@ -387,6 +387,17 @@ export class DbViewerService {
       throw new Error('No valid columns specified for update');
     }
 
+    // Protection for last active Super Admin
+    if (dbKey === 'central' && cleanTable === 'super_admins') {
+      if (updates.status && updates.status !== 'active') {
+        const activeCount = db.prepare("SELECT COUNT(*) as c FROM super_admins WHERE status = 'active'").get().c;
+        const target = db.prepare(`SELECT * FROM super_admins WHERE "${cleanPk}" = ?`).get(pkValue);
+        if (target && target.status === 'active' && activeCount <= 1) {
+          throw new Error('Security Guard Violation: Cannot deactivate the last active Super Admin account.');
+        }
+      }
+    }
+
     values.push(pkValue);
     const sql = `UPDATE "${cleanTable}" SET ${updateFields.join(', ')} WHERE "${cleanPk}" = ?`;
     const res = db.prepare(sql).run(...values);
@@ -442,6 +453,15 @@ export class DbViewerService {
     const { db } = this.getTargetDb(dbKey);
     const cleanTable = tableName.replace(/"/g, '');
     const cleanPk = pkColumn.replace(/"/g, '');
+
+    // Protection for last active Super Admin
+    if (dbKey === 'central' && cleanTable === 'super_admins') {
+      const activeCount = db.prepare("SELECT COUNT(*) as c FROM super_admins WHERE status = 'active'").get().c;
+      const target = db.prepare(`SELECT * FROM super_admins WHERE "${cleanPk}" = ?`).get(pkValue);
+      if (target && target.status === 'active' && activeCount <= 1) {
+        throw new Error('Security Guard Violation: Cannot delete the last active Super Admin account.');
+      }
+    }
 
     const sql = `DELETE FROM "${cleanTable}" WHERE "${cleanPk}" = ?`;
     const res = db.prepare(sql).run(pkValue);

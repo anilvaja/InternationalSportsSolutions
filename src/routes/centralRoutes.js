@@ -11,6 +11,7 @@ import { TenantCleanupService } from '../services/tenantCleanupService.js';
 import { StorageService } from '../services/storageService.js';
 import { AcademyLifecycleService } from '../services/academyLifecycleService.js';
 import { PratikKarateAcademyDemoSeeder } from '../db/pratikKarateAcademyDemoSeeder.js';
+import { SecurityGuardService } from '../services/securityGuardService.js';
 
 export const centralRouter = express.Router();
 const uploadLogoMiddleware = StorageService.getLogoUploadMiddleware().single('logo');
@@ -502,6 +503,155 @@ centralRouter.get('/academies/:id/admins', (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* ==========================================================================
+   SUPER ADMIN MANAGEMENT & SELF-ESCALATION / LAST ADMIN PROTECTION
+   ========================================================================== */
+
+/**
+ * GET /api/central/super-admins
+ * Lists all super admin accounts
+ */
+centralRouter.get('/super-admins', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const admins = centralDb.prepare(`
+      SELECT id, name, email, status, created_at, updated_at
+      FROM super_admins
+      ORDER BY id ASC
+    `).all();
+    res.json({ success: true, superAdmins: admins });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/super-admins
+ * Creates a new super admin account
+ */
+centralRouter.post('/super-admins', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, error: 'Name, email, and password are required' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const existing = centralDb.prepare('SELECT id FROM super_admins WHERE email = ? COLLATE NOCASE').get(cleanEmail);
+    if (existing) {
+      return res.status(400).json({ success: false, error: `A super admin with email '${cleanEmail}' already exists` });
+    }
+
+    const hash = bcrypt.hashSync(password, 10);
+    const result = centralDb.prepare(`
+      INSERT INTO super_admins (name, email, password_hash, status)
+      VALUES (?, ?, ?, 'active')
+    `).run(name.trim(), cleanEmail, hash);
+
+    centralDb.prepare(`
+      INSERT INTO central_audit_logs (user_id, user_email, action, entity, entity_id, details, ip_address)
+      VALUES (?, ?, 'SUPER_ADMIN_CREATED', 'super_admins', ?, ?, ?)
+    `).run(
+      req.user ? req.user.userId : null,
+      req.user ? req.user.email : 'system',
+      String(result.lastInsertRowid),
+      `Created super admin account for ${cleanEmail}`,
+      req.ip || '127.0.0.1'
+    );
+
+    res.status(201).json({
+      success: true,
+      id: result.lastInsertRowid,
+      message: `Super Admin account for '${cleanEmail}' created successfully`
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/central/super-admins/:id
+ * Updates super admin name, email, or status (protects last active super admin)
+ */
+centralRouter.put('/super-admins/:id', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const targetId = Number(req.params.id);
+    const { name, status } = req.body;
+
+    const existing = centralDb.prepare('SELECT * FROM super_admins WHERE id = ?').get(targetId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Super Admin not found' });
+    }
+
+    // Protection for last active Super Admin
+    if (status && status !== 'active') {
+      SecurityGuardService.assertCanDeactivateOrDeleteSuperAdmin(centralDb, targetId, status);
+    }
+
+    centralDb.prepare(`
+      UPDATE super_admins
+      SET name = COALESCE(?, name),
+          status = COALESCE(?, status),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(name || null, status || null, targetId);
+
+    centralDb.prepare(`
+      INSERT INTO central_audit_logs (user_id, user_email, action, entity, entity_id, details, ip_address)
+      VALUES (?, ?, 'SUPER_ADMIN_UPDATED', 'super_admins', ?, ?, ?)
+    `).run(
+      req.user ? req.user.userId : null,
+      req.user ? req.user.email : 'system',
+      String(targetId),
+      `Updated super admin ID ${targetId} (status: ${status || existing.status})`,
+      req.ip || '127.0.0.1'
+    );
+
+    res.json({ success: true, message: 'Super Admin updated successfully' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/central/super-admins/:id
+ * Deletes super admin account (protects last active super admin)
+ */
+centralRouter.delete('/super-admins/:id', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const targetId = Number(req.params.id);
+
+    const existing = centralDb.prepare('SELECT * FROM super_admins WHERE id = ?').get(targetId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Super Admin not found' });
+    }
+
+    // Protection for last active Super Admin
+    SecurityGuardService.assertCanDeactivateOrDeleteSuperAdmin(centralDb, targetId, null);
+
+    centralDb.prepare('DELETE FROM super_admins WHERE id = ?').run(targetId);
+
+    centralDb.prepare(`
+      INSERT INTO central_audit_logs (user_id, user_email, action, entity, entity_id, details, ip_address)
+      VALUES (?, ?, 'SUPER_ADMIN_DELETED', 'super_admins', ?, ?, ?)
+    `).run(
+      req.user ? req.user.userId : null,
+      req.user ? req.user.email : 'system',
+      String(targetId),
+      `Deleted super admin ID ${targetId} (${existing.email})`,
+      req.ip || '127.0.0.1'
+    );
+
+    res.json({ success: true, message: `Super Admin account '${existing.email}' deleted successfully` });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
