@@ -15,3 +15,4 @@ FEAT-013,Section 4,Facility & Equipment Management,Track equipment, branch stock
 FEAT-014,Section 5,Student Attendance & Syllabus Progression,Manual/QR/photo attendance and syllabus progression,POST /api/academy/attendance/save,/academy/attendance,sports_syllabus_progression.test.mjs,QA-AA-04,Verified Complete
 FEAT-015,Section 6,Automatic Shift Checkout,Configurable grace period, auto-checkout, and audit trail,POST /api/academy/shifts/auto-checkout,/academy/payroll,automatic_shift_checkout.test.mjs,QA-AA-08,Verified Complete
 FEAT-016,Section 16,Organization Documents & Compliance,Agreements, insurance, AMC, MOM, and expiry alerts,GET/POST /api/academy/compliance/documents,/academy/compliance,compliance_documents_and_expiry.test.mjs,QA-AA-01,Verified Complete
+

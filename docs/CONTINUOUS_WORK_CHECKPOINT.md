@@ -24,3 +24,4 @@
   - `tests/Unit/compliance_documents_and_expiry.test.mjs` (5 unit tests)
   - `tests/qa/QA_ROLE_MODULE_E2E_WORKBOOK.csv` & `tests/qa/QA_ROLE_MODULE_E2E_REPORT.md` (33 E2E scenarios)
   - `docs/*` (Architecture, Migration Report, Bug Tracker, Feature Verification, Changelog)
+

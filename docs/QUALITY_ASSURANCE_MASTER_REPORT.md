@@ -68,3 +68,4 @@
    - Corrected responsive layout and bound historical month selector so users inspect accurate historical statements.
 6. **Batches Sample CSV Download (Section 12):**
    - Added `GET /api/academy/batches/sample-csv` for direct CSV roster import template download.
+

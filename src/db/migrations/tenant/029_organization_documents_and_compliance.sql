@@ -23,3 +23,4 @@ CREATE TABLE IF NOT EXISTS academy_compliance_documents (
 CREATE INDEX IF NOT EXISTS idx_comp_docs_academy ON academy_compliance_documents(academy_id, category);
 CREATE INDEX IF NOT EXISTS idx_comp_docs_expiry ON academy_compliance_documents(expiry_date);
 CREATE INDEX IF NOT EXISTS idx_comp_docs_branch ON academy_compliance_documents(branch_id);
+

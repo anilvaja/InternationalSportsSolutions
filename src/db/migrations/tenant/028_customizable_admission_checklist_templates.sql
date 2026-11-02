@@ -35,3 +35,4 @@ WHERE NOT EXISTS (SELECT 1 FROM admission_checklist_templates WHERE academy_id =
 INSERT INTO admission_checklist_templates (academy_id, item_key, item_name, is_mandatory, sort_order, is_active)
 SELECT 1, 'batch_assignment', 'Batch & Schedule Assignment', 0, 50, 1
 WHERE NOT EXISTS (SELECT 1 FROM admission_checklist_templates WHERE academy_id = 1 AND item_key = 'batch_assignment');
+

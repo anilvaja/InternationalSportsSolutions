@@ -168,3 +168,4 @@ describe('Automatic Employee Shift Checkout & Policy Workflow', () => {
     db.prepare('DELETE FROM staff_time_punches WHERE id = ?').run(punchId);
   });
 });
+

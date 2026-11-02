@@ -12,3 +12,4 @@ BUG-010,Test Suite,Medium,Run npm test on different calendar days,All tests pass
 BUG-011,Code Quality,Low,Check date calls across codebase,IST helper used consistently,new Date().toISOString() used in 53 sites,Inconsistent timezone computation near midnight,Standardized all date calculations on DateUtils.getTodayDate('Asia/Kolkata'),PASS,No regression,Verified Complete
 BUG-012,Payroll UI,Medium,Inspect My Staff Salary on mobile/desktop,Clean responsive layout,Display overlapping and old month data reused,CSS grid flex overflow and stale state in monthly statement,Fixed responsive styles and ensured selected month binds to monthly statement,PASS,No regression,Verified Complete
 BUG-013,Batches Import,Medium,Download sample CSV from batches screen,Sample CSV downloaded,Missing endpoint,Implemented GET /api/academy/batches/sample-csv with headers,PASS,No regression,Verified Complete
+

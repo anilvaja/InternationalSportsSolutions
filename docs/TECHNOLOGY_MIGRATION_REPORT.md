@@ -52,3 +52,4 @@ The remaining active application is powered exclusively by Node.js ES Modules:
 - **Frontend SPA:** Static vanilla JavaScript client (`public/index.html`, `public/pay.html`, `public/js/app.js`, `public/css/style.css`)
 - **Unit Test Runner:** Node.js native test runner (`node:test`)
 - **Browser Automation:** Playwright Chromium (`@playwright/test`)
+

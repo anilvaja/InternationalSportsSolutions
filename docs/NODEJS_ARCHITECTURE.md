@@ -89,3 +89,4 @@ InternationalSportsSolutions/
 - `027_comprehensive_facility_and_equipment_management.sql`: Facility inventory, issue/return checkout logs, condition tracking.
 - `028_customizable_admission_checklist_templates.sql`: Configurable admission checklist templates with dynamic inquiry conversion.
 - `029_organization_documents_and_compliance.sql`: Agreements, insurance, certificates, equipment AMC, MOM, and expiry reminder alerts.
+

@@ -59,3 +59,4 @@ Executed via `tests/qa/run_comprehensive_role_qa.mjs`:
 - Cross-role & session security checks (2/2 passed)
 
 **Result:** All 33 real browser UI tests passed cleanly with 0 errors.
+
