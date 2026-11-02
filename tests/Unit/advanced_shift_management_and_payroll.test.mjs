@@ -398,6 +398,16 @@ describe('Advanced Shift Management, Multiple Daily Slots, Availability & Payrol
     assert.equal(tueExp.shifts[0].start_time, '09:00');
     assert.equal(tueExp.shifts[0].end_time, '17:00');
     assert.equal(tueExp.scheduledHours, 8.0);
+
+    // Verify workload report accurately includes branch association
+    const workloadRes = await api('/api/academy/shifts/reports/workload?date=2026-11-09');
+    assert.equal(workloadRes.status, 200);
+    assert.ok(Array.isArray(workloadRes.data.staffSchedules));
+    assert.ok(Array.isArray(workloadRes.data.branchStaffing));
+    const userInReport = workloadRes.data.staffSchedules.find(s => s.userId === TEST_USER_ID);
+    assert.ok(userInReport);
+    assert.equal(userInReport.branchId, 1);
+    assert.equal(userInReport.scheduledHours, 4.0);
   });
 
   // =========================================================================

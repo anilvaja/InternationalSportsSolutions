@@ -6394,7 +6394,10 @@ academyRouter.get('/payroll/statements/:id/payslip', (req, res) => {
       FROM staff_salary_statements s
       JOIN users u ON s.user_id = u.id
       JOIN staff_payroll_periods p ON s.payroll_period_id = p.id
-      LEFT JOIN branches b ON u.branch_id = b.id
+      LEFT JOIN user_branch_assignments uba ON uba.user_id = u.id AND uba.is_primary = 1
+      LEFT JOIN coaches c ON c.user_id = u.id
+      LEFT JOIN employment_records er ON er.user_id = u.id AND er.status = 'active'
+      LEFT JOIN branches b ON b.id = COALESCE(uba.branch_id, c.branch_id, er.branch_id)
       WHERE s.id = ?
     `).get(statementId);
 
@@ -10256,17 +10259,28 @@ academyRouter.get('/shifts/reports/workload', requirePermission(['export_shift_r
     const branchId = req.query.branch_id ? Number(req.query.branch_id) : null;
 
     // 1. Staff schedules for date
-    const users = db.prepare('SELECT id, name, role, branch_id FROM users WHERE role IN ("coach", "head_coach", "academy_staff")').all();
+    const users = db.prepare(`
+      SELECT u.id, u.name, u.role,
+             COALESCE(uba.branch_id, c.branch_id, er.branch_id) as branch_id,
+             b.name as branch_name
+      FROM users u
+      LEFT JOIN user_branch_assignments uba ON uba.user_id = u.id AND uba.is_primary = 1
+      LEFT JOIN coaches c ON c.user_id = u.id
+      LEFT JOIN employment_records er ON er.user_id = u.id AND er.status = 'active'
+      LEFT JOIN branches b ON b.id = COALESCE(uba.branch_id, c.branch_id, er.branch_id)
+      WHERE u.role IN ('coach', 'head_coach', 'academy_staff')
+    `).all();
     const staffSchedules = [];
 
     for (const u of users) {
-      if (branchId && u.branch_id && Number(u.branch_id) !== branchId) continue;
+      if (branchId && Number(u.branch_id) !== branchId) continue;
       const dayExp = ScheduleService.getDayScheduleExpectation(db, u.id, date);
       staffSchedules.push({
         userId: u.id,
         name: u.name,
         role: u.role,
         branchId: u.branch_id,
+        branchName: u.branch_name,
         dayType: dayExp.dayType,
         scheduledHours: dayExp.scheduledHours,
         shiftsCount: (dayExp.shifts || []).length,
@@ -10276,9 +10290,11 @@ academyRouter.get('/shifts/reports/workload', requirePermission(['export_shift_r
 
     // 2. Branch-wise staffing summary
     const branchStaffing = db.prepare(`
-      SELECT b.id as branch_id, b.name as branch_name, COUNT(u.id) as staff_count
+      SELECT b.id as branch_id, b.name as branch_name,
+             COUNT(DISTINCT COALESCE(uba.user_id, c.user_id)) as staff_count
       FROM branches b
-      LEFT JOIN users u ON u.branch_id = b.id AND u.role IN ('coach', 'head_coach', 'academy_staff')
+      LEFT JOIN user_branch_assignments uba ON uba.branch_id = b.id
+      LEFT JOIN coaches c ON c.branch_id = b.id
       GROUP BY b.id
     `).all();
 

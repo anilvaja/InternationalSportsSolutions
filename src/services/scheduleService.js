@@ -72,8 +72,8 @@ export class ScheduleService {
       const coach = db.prepare('SELECT branch_id FROM coaches WHERE user_id = ? LIMIT 1').get(userId);
       if (coach && coach.branch_id) return coach.branch_id;
 
-      const user = db.prepare('SELECT branch_id FROM users WHERE id = ? LIMIT 1').get(userId);
-      if (user && user.branch_id) return user.branch_id;
+      const anyUba = db.prepare('SELECT branch_id FROM user_branch_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId);
+      if (anyUba && anyUba.branch_id) return anyUba.branch_id;
     } catch (_) {}
     return null;
   }
