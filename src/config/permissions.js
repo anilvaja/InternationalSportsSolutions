@@ -175,6 +175,22 @@ export const ALL_ACADEMY_PERMISSIONS = [
   'view_my_fees',
   'pay_fees',
 
+  // 21. Advanced Shifts, Multiple Daily Slots, Staff Availability & Swaps
+  'view_schedules',
+  'create_shifts',
+  'edit_shifts',
+  'delete_shifts',
+  'assign_staff_shifts',
+  'assign_batch_coaches',
+  'view_staff_availability',
+  'modify_slot_attendance',
+  'approve_attendance_adjustments',
+  'approve_shift_swaps',
+  'manage_salary_policies',
+  'view_staff_salaries',
+  'approve_payroll',
+  'export_shift_reports',
+
   // Universal super capability
   'all'
 ];
@@ -235,7 +251,10 @@ export const DEFAULT_ACADEMY_ROLES = [
       'manage_syllabus',
       'view_sports',
       'view_leaves',
-      'apply_leave'
+      'apply_leave',
+      'view_schedules',
+      'view_staff_availability',
+      'assign_batch_coaches'
     ],
     is_system: 1,
     theme_color: 'blue'

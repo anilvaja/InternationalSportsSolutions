@@ -29,15 +29,19 @@ export class ScheduleService {
       if (!shiftsByDay[day]) shiftsByDay[day] = [];
       
       const startMin = this.timeToMinutes(s.start_time);
-      const endMin = this.timeToMinutes(s.end_time);
+      let endMin = this.timeToMinutes(s.end_time);
 
-      if (endMin <= startMin) {
-        throw new Error(`Invalid shift times for day ${day}: End time (${s.end_time}) must be after start time (${s.start_time}).`);
+      if (endMin === startMin) {
+        throw new Error(`Invalid shift times for day ${day}: End time cannot be identical to start time (${s.start_time}).`);
+      }
+      if (endMin < startMin) {
+        endMin += 1440; // Overnight shift crossing midnight
       }
 
       for (const existing of shiftsByDay[day]) {
         const exStart = this.timeToMinutes(existing.start_time);
-        const exEnd = this.timeToMinutes(existing.end_time);
+        let exEnd = this.timeToMinutes(existing.end_time);
+        if (exEnd < exStart) exEnd += 1440;
 
         // Check overlap: (StartA < EndB) and (EndA > StartB)
         if (startMin < exEnd && endMin > exStart) {
@@ -62,7 +66,7 @@ export class ScheduleService {
       `).get(userId);
       if (uba && uba.branch_id) return uba.branch_id;
 
-      const emp = db.prepare('SELECT branch_id FROM employment_records WHERE user_id = ? AND status = "active" LIMIT 1').get(userId);
+      const emp = db.prepare("SELECT branch_id FROM employment_records WHERE user_id = ? AND status = 'active' LIMIT 1").get(userId);
       if (emp && emp.branch_id) return emp.branch_id;
 
       const coach = db.prepare('SELECT branch_id FROM coaches WHERE user_id = ? LIMIT 1').get(userId);
@@ -89,7 +93,7 @@ export class ScheduleService {
         AND effective_from <= ?
         AND (effective_to IS NULL OR effective_to >= ?)
         AND is_active = 1
-      ORDER BY effective_from DESC
+      ORDER BY effective_from DESC, id DESC
       LIMIT 1
     `).get(userId, dateStr, dateStr);
 
@@ -388,14 +392,70 @@ export class ScheduleService {
       LIMIT 1
     `).get(userId, dateStr);
 
-    // 4. Find shifts scheduled for this weekday
-    const dayShifts = (schedule.shifts || []).filter(s => s.day_of_week === dayOfWeek && s.is_working_day === 1);
+    // 3.5 Check date-specific schedule overrides
+    let overrides = [];
+    try {
+      overrides = db.prepare(`
+        SELECT * FROM employee_schedule_overrides
+        WHERE user_id = ? AND override_date = ?
+      `).all(userId, dateStr);
+    } catch (_) {}
 
-    let isWorkingDay = dayShifts.length > 0;
+    let dayShifts = [];
+    let isDayCancelledOrOff = false;
+
+    if (overrides.length > 0) {
+      const cancelOverride = overrides.find(o => o.schedule_action === 'cancel' || o.schedule_action === 'off');
+      if (cancelOverride && (!cancelOverride.start_time || !cancelOverride.end_time)) {
+        isDayCancelledOrOff = true;
+      }
+
+      const replaceOverrides = overrides.filter(o => o.schedule_action === 'replace' && o.start_time && o.end_time);
+      const addOverrides = overrides.filter(o => o.schedule_action === 'add' && o.start_time && o.end_time);
+
+      if (replaceOverrides.length > 0) {
+        dayShifts = replaceOverrides.map(o => ({
+          day_of_week: dayOfWeek,
+          shift_name: o.shift_name,
+          start_time: o.start_time,
+          end_time: o.end_time,
+          shift_type: o.shift_type || 'regular',
+          scheduled_hours: o.scheduled_hours,
+          break_duration_minutes: 0,
+          is_break_paid: 1,
+          is_working_day: 1,
+          is_override: true,
+          override_id: o.id
+        }));
+      } else if (!isDayCancelledOrOff) {
+        dayShifts = (schedule.shifts || []).filter(s => s.day_of_week === dayOfWeek && s.is_working_day === 1);
+      }
+
+      for (const ao of addOverrides) {
+        dayShifts.push({
+          day_of_week: dayOfWeek,
+          shift_name: ao.shift_name,
+          start_time: ao.start_time,
+          end_time: ao.end_time,
+          shift_type: ao.shift_type || 'regular',
+          scheduled_hours: ao.scheduled_hours,
+          break_duration_minutes: 0,
+          is_break_paid: 1,
+          is_working_day: 1,
+          is_override: true,
+          override_id: ao.id
+        });
+      }
+    } else {
+      dayShifts = (schedule.shifts || []).filter(s => s.day_of_week === dayOfWeek && s.is_working_day === 1);
+    }
+
+    let isWorkingDay = dayShifts.length > 0 && !isDayCancelledOrOff;
     let scheduledHours = 0;
 
     for (const shift of dayShifts) {
-      const grossMinutes = this.timeToMinutes(shift.end_time) - this.timeToMinutes(shift.start_time);
+      let grossMinutes = this.timeToMinutes(shift.end_time) - this.timeToMinutes(shift.start_time);
+      if (grossMinutes < 0) grossMinutes += 1440; // Overnight shift crossing midnight
       const breakDeduct = shift.is_break_paid ? 0 : (shift.break_duration_minutes || 0);
       const netMinutes = Math.max(0, grossMinutes - breakDeduct);
       scheduledHours += (netMinutes / 60);
@@ -639,12 +699,14 @@ export class ScheduleService {
       const insertShift = db.prepare(`
         INSERT INTO employee_schedule_shifts (
           schedule_id, user_id, day_of_week, shift_name, start_time, end_time,
-          scheduled_hours, break_duration_minutes, is_break_paid, is_working_day
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          scheduled_hours, break_duration_minutes, is_break_paid, is_working_day,
+          branch_id, shift_type, travel_buffer_minutes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const s of shiftsData) {
-        const grossMinutes = this.timeToMinutes(s.end_time) - this.timeToMinutes(s.start_time);
+        let grossMinutes = this.timeToMinutes(s.end_time) - this.timeToMinutes(s.start_time);
+        if (grossMinutes < 0) grossMinutes += 1440;
         const breakDeduct = s.is_break_paid ? 0 : (s.break_duration_minutes || 0);
         const netHours = Number((Math.max(0, grossMinutes - breakDeduct) / 60).toFixed(2));
 
@@ -658,7 +720,10 @@ export class ScheduleService {
           s.is_working_day ? netHours : 0,
           s.break_duration_minutes || 0,
           s.is_break_paid ? 1 : 0,
-          s.is_working_day ? 1 : 0
+          s.is_working_day ? 1 : 0,
+          s.branch_id || scheduleData.branch_id || null,
+          s.shift_type || 'regular',
+          s.travel_buffer_minutes || 0
         );
       }
 
@@ -793,5 +858,507 @@ export class ScheduleService {
       days: defaultDays,
       is_configured: false,
     };
+  }
+
+  /**
+   * Updates only a specific weekday's shifts for an employee without affecting other weekdays
+   */
+  static updateEmployeeScheduleShiftsForDay(db, scheduleId, userId, dayOfWeek, shiftsForDay, actorId = null) {
+    return db.transaction(() => {
+      // 1. Delete existing shifts for this day_of_week
+      db.prepare(`
+        DELETE FROM employee_schedule_shifts
+        WHERE schedule_id = ? AND user_id = ? AND day_of_week = ?
+      `).run(scheduleId, userId, dayOfWeek);
+
+      // 2. Validate new shifts for this day
+      this.validateShifts(shiftsForDay);
+
+      // 3. Insert new shifts
+      const insertShift = db.prepare(`
+        INSERT INTO employee_schedule_shifts (
+          schedule_id, user_id, day_of_week, shift_name, start_time, end_time,
+          scheduled_hours, break_duration_minutes, is_break_paid, is_working_day,
+          branch_id, shift_type, travel_buffer_minutes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const s of shiftsForDay) {
+        let grossMinutes = this.timeToMinutes(s.end_time) - this.timeToMinutes(s.start_time);
+        if (grossMinutes < 0) grossMinutes += 1440;
+        const breakDeduct = s.is_break_paid ? 0 : (s.break_duration_minutes || 0);
+        const netHours = Number((Math.max(0, grossMinutes - breakDeduct) / 60).toFixed(2));
+
+        insertShift.run(
+          scheduleId,
+          userId,
+          dayOfWeek,
+          s.shift_name || `Shift Day ${dayOfWeek}`,
+          s.start_time,
+          s.end_time,
+          s.is_working_day ? netHours : 0,
+          s.break_duration_minutes || 0,
+          s.is_break_paid ? 1 : 0,
+          s.is_working_day ? 1 : 0,
+          s.branch_id || null,
+          s.shift_type || 'regular',
+          s.travel_buffer_minutes || 0
+        );
+      }
+
+      // 4. Recalculate schedule total weekly hours and daily expected hours
+      const allShifts = db.prepare('SELECT * FROM employee_schedule_shifts WHERE schedule_id = ?').all(scheduleId);
+      let totalWeeklyHours = 0;
+      let workingDaysCount = 0;
+      const seenDays = new Set();
+      for (const ash of allShifts) {
+        if (ash.is_working_day) {
+          totalWeeklyHours += Number(ash.scheduled_hours || 0);
+          if (!seenDays.has(ash.day_of_week)) {
+            seenDays.add(ash.day_of_week);
+            workingDaysCount++;
+          }
+        }
+      }
+      const avgDailyHours = workingDaysCount > 0 ? Number((totalWeeklyHours / workingDaysCount).toFixed(2)) : 0;
+      totalWeeklyHours = Number(totalWeeklyHours.toFixed(2));
+
+      db.prepare(`
+        UPDATE employee_work_schedules
+        SET expected_daily_hours = ?, expected_weekly_hours = ?, working_days_per_week = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(avgDailyHours, totalWeeklyHours, workingDaysCount, scheduleId);
+
+      return { scheduleId, dayOfWeek, shiftsUpdated: shiftsForDay.length, totalWeeklyHours, avgDailyHours };
+    })();
+  }
+
+  /**
+   * Saves or creates a date-specific schedule override
+   */
+  static saveScheduleOverride(db, academyId, userId, overrideData, actorId = null) {
+    const {
+      override_date,
+      schedule_action = 'replace',
+      shift_name = 'Special Shift',
+      start_time,
+      end_time,
+      shift_type = 'regular',
+      reason,
+      branch_id
+    } = overrideData;
+
+    const normDate = DateUtils.parseAndNormalizeDate(override_date, { fieldName: 'Override date', required: true });
+
+    let scheduledHours = 0;
+    if (start_time && end_time && schedule_action !== 'off' && schedule_action !== 'cancel') {
+      let grossMinutes = this.timeToMinutes(end_time) - this.timeToMinutes(start_time);
+      if (grossMinutes < 0) grossMinutes += 1440;
+      scheduledHours = Number((grossMinutes / 60).toFixed(2));
+    }
+
+    return db.transaction(() => {
+      const ins = db.prepare(`
+        INSERT INTO employee_schedule_overrides (
+          academy_id, branch_id, user_id, override_date, schedule_action, shift_name,
+          start_time, end_time, scheduled_hours, shift_type, reason, approved_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        academyId,
+        branch_id || this.getUserBranchId(db, userId),
+        userId,
+        normDate,
+        schedule_action,
+        shift_name,
+        start_time || null,
+        end_time || null,
+        scheduledHours,
+        shift_type,
+        reason || 'Date schedule adjustment',
+        actorId
+      );
+
+      return { id: ins.lastInsertRowid, userId, overrideDate: normDate, scheduledHours };
+    })();
+  }
+
+  /**
+   * Records check-in to a specific attendance slot
+   */
+  static recordSlotCheckIn(db, academyId, data, actorId = null) {
+    const {
+      user_id,
+      attendance_date,
+      scheduled_start_time,
+      scheduled_end_time,
+      slot_name = 'Slot',
+      shift_type = 'regular',
+      actual_check_in,
+      branch_id,
+      batch_id,
+      schedule_id,
+      schedule_shift_id,
+      override_id,
+      notes
+    } = data;
+
+    const normDate = DateUtils.parseAndNormalizeDate(attendance_date, { fieldName: 'Attendance date', required: true });
+    const checkInTime = actual_check_in || new Date().toTimeString().slice(0, 5);
+
+    let scheduledMinutes = this.timeToMinutes(scheduled_end_time) - this.timeToMinutes(scheduled_start_time);
+    if (scheduledMinutes < 0) scheduledMinutes += 1440;
+
+    const startMin = this.timeToMinutes(scheduled_start_time);
+    const inMin = this.timeToMinutes(checkInTime);
+    const lateMinutes = Math.max(0, inMin - startMin);
+    const status = lateMinutes > 15 ? 'late' : 'present';
+
+    return db.transaction(() => {
+      const stmt = db.prepare(`
+        INSERT INTO staff_slot_attendance (
+          academy_id, branch_id, user_id, schedule_id, schedule_shift_id, override_id, batch_id,
+          attendance_date, slot_name, shift_type, scheduled_start_time, scheduled_end_time,
+          actual_check_in, scheduled_minutes, late_arrival_minutes, status, source, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?)
+        ON CONFLICT(user_id, attendance_date, scheduled_start_time, scheduled_end_time) DO UPDATE SET
+          actual_check_in = excluded.actual_check_in,
+          late_arrival_minutes = excluded.late_arrival_minutes,
+          status = excluded.status,
+          updated_at = CURRENT_TIMESTAMP
+      `);
+
+      stmt.run(
+        academyId,
+        branch_id || this.getUserBranchId(db, user_id),
+        user_id,
+        schedule_id || null,
+        schedule_shift_id || null,
+        override_id || null,
+        batch_id || null,
+        normDate,
+        slot_name,
+        shift_type,
+        scheduled_start_time,
+        scheduled_end_time,
+        checkInTime,
+        scheduledMinutes,
+        lateMinutes,
+        status,
+        notes || null
+      );
+
+      return db.prepare(`
+        SELECT * FROM staff_slot_attendance
+        WHERE user_id = ? AND attendance_date = ? AND scheduled_start_time = ? AND scheduled_end_time = ?
+      `).get(user_id, normDate, scheduled_start_time, scheduled_end_time);
+    })();
+  }
+
+  /**
+   * Records check-out from a specific attendance slot
+   */
+  static recordSlotCheckOut(db, academyId, data, actorId = null) {
+    const {
+      user_id,
+      attendance_date,
+      scheduled_start_time,
+      scheduled_end_time,
+      actual_check_out,
+      overtime_minutes = 0
+    } = data;
+
+    const normDate = DateUtils.parseAndNormalizeDate(attendance_date, { fieldName: 'Attendance date', required: true });
+    const checkOutTime = actual_check_out || new Date().toTimeString().slice(0, 5);
+
+    return db.transaction(() => {
+      const slot = db.prepare(`
+        SELECT * FROM staff_slot_attendance
+        WHERE user_id = ? AND attendance_date = ? AND scheduled_start_time = ? AND scheduled_end_time = ?
+      `).get(user_id, normDate, scheduled_start_time, scheduled_end_time);
+
+      if (!slot) {
+        throw new Error(`Slot attendance not found for ${normDate} [${scheduled_start_time}-${scheduled_end_time}]`);
+      }
+
+      const checkInMin = this.timeToMinutes(slot.actual_check_in || slot.scheduled_start_time);
+      let checkOutMin = this.timeToMinutes(checkOutTime);
+      if (checkOutMin < checkInMin) checkOutMin += 1440;
+
+      const attendedMinutes = Math.max(0, checkOutMin - checkInMin);
+      let endMin = this.timeToMinutes(scheduled_end_time);
+      if (endMin < this.timeToMinutes(scheduled_start_time)) endMin += 1440;
+
+      const earlyDeparture = Math.max(0, endMin - checkOutMin);
+      const approvedMinutes = Math.min(attendedMinutes, slot.scheduled_minutes);
+
+      let status = slot.status;
+      if (attendedMinutes < slot.scheduled_minutes * 0.75) {
+        status = 'partial';
+      } else if (earlyDeparture > 15) {
+        status = 'early_checkout';
+      }
+
+      db.prepare(`
+        UPDATE staff_slot_attendance
+        SET actual_check_out = ?,
+            attended_minutes = ?,
+            approved_payable_minutes = ?,
+            early_departure_minutes = ?,
+            overtime_minutes = ?,
+            status = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(
+        checkOutTime,
+        attendedMinutes,
+        approvedMinutes,
+        earlyDeparture,
+        Number(overtime_minutes || 0),
+        status,
+        slot.id
+      );
+
+      return db.prepare('SELECT * FROM staff_slot_attendance WHERE id = ?').get(slot.id);
+    })();
+  }
+
+  /**
+   * Admin manual adjustment of slot attendance with reason, approval and audit log
+   */
+  static adjustSlotAttendance(db, academyId, data, actorId = null) {
+    const {
+      slot_id,
+      actual_check_in,
+      actual_check_out,
+      attended_minutes,
+      approved_payable_minutes,
+      status,
+      adjustment_reason,
+      overtime_minutes = 0
+    } = data;
+
+    if (!slot_id) throw new Error('Slot ID is required for adjustment');
+    if (!adjustment_reason) throw new Error('Adjustment reason is mandatory');
+
+    return db.transaction(() => {
+      const slot = db.prepare('SELECT * FROM staff_slot_attendance WHERE id = ?').get(slot_id);
+      if (!slot) throw new Error(`Slot attendance with ID ${slot_id} not found`);
+
+      const finalAttended = attended_minutes !== undefined ? Number(attended_minutes) : slot.attended_minutes;
+      const finalPayable = approved_payable_minutes !== undefined ? Number(approved_payable_minutes) : finalAttended;
+      const finalStatus = status || slot.status;
+
+      db.prepare(`
+        UPDATE staff_slot_attendance
+        SET actual_check_in = COALESCE(?, actual_check_in),
+            actual_check_out = COALESCE(?, actual_check_out),
+            attended_minutes = ?,
+            approved_payable_minutes = ?,
+            overtime_minutes = ?,
+            status = ?,
+            source = 'admin_adjustment',
+            adjustment_reason = ?,
+            approved_by = ?,
+            approved_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(
+        actual_check_in || null,
+        actual_check_out || null,
+        finalAttended,
+        finalPayable,
+        Number(overtime_minutes),
+        finalStatus,
+        adjustment_reason,
+        actorId,
+        slot_id
+      );
+
+      // Audit log
+      db.prepare(`
+        INSERT INTO payroll_audit_logs (academy_id, entity_type, entity_id, action, actor_id, changes_summary, reason)
+        VALUES (?, 'schedule', ?, 'update', ?, ?, ?)
+      `).run(
+        academyId,
+        slot_id,
+        actorId || 1,
+        `Slot attendance #${slot_id} adjusted: status=${finalStatus}, attended=${finalAttended}m, payable=${finalPayable}m`,
+        adjustment_reason
+      );
+
+      return db.prepare('SELECT * FROM staff_slot_attendance WHERE id = ?').get(slot_id);
+    })();
+  }
+
+  /**
+   * Automated slot checkout for expired slots past scheduled end time + grace period
+   */
+  static processAutomaticSlotCheckout(db, academyId, options = {}) {
+    const graceMinutes = options.graceMinutes !== undefined ? options.graceMinutes : 15;
+    const nowTimeStr = options.currentTimeStr || new Date().toTimeString().slice(0, 5);
+    const todayDateStr = options.currentDateStr || DateUtils.getTodayDate();
+    const nowMin = this.timeToMinutes(nowTimeStr);
+
+    const openSlots = db.prepare(`
+      SELECT * FROM staff_slot_attendance
+      WHERE academy_id = ?
+        AND attendance_date = ?
+        AND actual_check_in IS NOT NULL
+        AND actual_check_out IS NULL
+        AND status IN ('present', 'late')
+    `).all(academyId, todayDateStr);
+
+    const checkedOut = [];
+
+    for (const slot of openSlots) {
+      let endMin = this.timeToMinutes(slot.scheduled_end_time);
+      let startMin = this.timeToMinutes(slot.scheduled_start_time);
+      if (endMin <= startMin) endMin += 1440;
+
+      if (nowMin >= (endMin + graceMinutes) || options.force) {
+        const checkInMin = this.timeToMinutes(slot.actual_check_in);
+        let attendedMin = Math.max(0, endMin - checkInMin);
+        if (slot.scheduled_minutes > 0) {
+          attendedMin = Math.min(attendedMin, slot.scheduled_minutes);
+        }
+
+        db.prepare(`
+          UPDATE staff_slot_attendance
+          SET actual_check_out = ?,
+              attended_minutes = ?,
+              approved_payable_minutes = ?,
+              source = 'auto_checkout',
+              notes = COALESCE(notes, '') || ' [Auto checked out with ' || ? || 'm grace]',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(slot.scheduled_end_time, attendedMin, attendedMin, graceMinutes, slot.id);
+
+        checkedOut.push({
+          id: slot.id,
+          userId: slot.user_id,
+          slotName: slot.slot_name,
+          actualCheckOut: slot.scheduled_end_time,
+          attendedMinutes: attendedMin
+        });
+      }
+    }
+
+    return { processedCount: checkedOut.length, checkedOut };
+  }
+
+  /**
+   * Submit shift swap request
+   */
+  static async requestShiftSwap(db, academyId, data, actorId = null) {
+    const {
+      requester_id,
+      recipient_id,
+      slot_attendance_id,
+      swap_date,
+      slot_name = 'Shift Slot',
+      start_time,
+      end_time,
+      branch_id,
+      batch_id,
+      reason
+    } = data;
+
+    const normDate = DateUtils.parseAndNormalizeDate(swap_date, { fieldName: 'Swap date', required: true });
+
+    // Validate recipient availability
+    const { StaffAvailabilityService } = await import('./staffAvailabilityService.js');
+    const conflictResult = StaffAvailabilityService.checkSlotConflict(db, {
+      userId: recipient_id,
+      date: normDate,
+      startTime: start_time,
+      endTime: end_time,
+      branchId: branch_id
+    });
+
+    if (conflictResult.hasConflict) {
+      throw new Error(`Cannot request swap: Recipient coach is unavailable on ${normDate} [${start_time}-${end_time}]. Reason: ${conflictResult.reason}`);
+    }
+
+    const ins = db.prepare(`
+      INSERT INTO staff_shift_swaps (
+        academy_id, requester_id, recipient_id, slot_attendance_id, swap_date,
+        slot_name, start_time, end_time, branch_id, batch_id, reason, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    `).run(
+      academyId,
+      requester_id,
+      recipient_id,
+      slot_attendance_id || null,
+      normDate,
+      slot_name,
+      start_time,
+      end_time,
+      branch_id || null,
+      batch_id || null,
+      reason || 'Staff requested shift swap'
+    );
+
+    return db.prepare('SELECT * FROM staff_shift_swaps WHERE id = ?').get(ins.lastInsertRowid);
+  }
+
+  /**
+   * Review (approve or reject) shift swap request
+   */
+  static async reviewShiftSwap(db, academyId, swapId, { status, rejectionReason }, actorId = null) {
+    const swap = db.prepare('SELECT * FROM staff_shift_swaps WHERE id = ?').get(swapId);
+    if (!swap) throw new Error(`Shift swap request #${swapId} not found`);
+
+    if (status === 'approved') {
+      // Re-verify recipient availability before approval
+      const { StaffAvailabilityService } = await import('./staffAvailabilityService.js');
+      const conflictResult = StaffAvailabilityService.checkSlotConflict(db, {
+        userId: swap.recipient_id,
+        date: swap.swap_date,
+        startTime: swap.start_time,
+        endTime: swap.end_time,
+        branchId: swap.branch_id
+      });
+
+      if (conflictResult.hasConflict) {
+        throw new Error(`Approval blocked: Recipient coach is now conflicting: ${conflictResult.reason}`);
+      }
+
+      return db.transaction(() => {
+        // If tied to a slot attendance record, reassign to recipient
+        if (swap.slot_attendance_id) {
+          db.prepare(`
+            UPDATE staff_slot_attendance
+            SET user_id = ?,
+                source = 'swap',
+                notes = COALESCE(notes, '') || ' [Swapped from user #' || ? || ']',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(swap.recipient_id, swap.requester_id, swap.slot_attendance_id);
+        }
+
+        db.prepare(`
+          UPDATE staff_shift_swaps
+          SET status = 'approved',
+              reviewed_by = ?,
+              reviewed_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(actorId, swapId);
+
+        return db.prepare('SELECT * FROM staff_shift_swaps WHERE id = ?').get(swapId);
+      })();
+    } else {
+      db.prepare(`
+        UPDATE staff_shift_swaps
+        SET status = 'rejected',
+            rejection_reason = ?,
+            reviewed_by = ?,
+            reviewed_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(rejectionReason || 'Rejected by administrator', actorId, swapId);
+
+      return db.prepare('SELECT * FROM staff_shift_swaps WHERE id = ?').get(swapId);
+    }
   }
 }

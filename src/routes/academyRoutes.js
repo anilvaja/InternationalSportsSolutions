@@ -20,6 +20,7 @@ import bcrypt from 'bcryptjs';
 import { DateUtils } from '../utils/dateUtils.js';
 import { AttendanceAdjustmentService } from '../services/attendanceAdjustmentService.js';
 import { ShiftCheckoutService } from '../services/shiftCheckoutService.js';
+import { StaffAvailabilityService } from '../services/staffAvailabilityService.js';
 
 export const academyRouter = express.Router();
 
@@ -3104,6 +3105,18 @@ academyRouter.post('/batches', (req, res) => {
       ? days_of_week.join(', ')
       : (typeof days_of_week === 'string' ? days_of_week.trim() : 'Mon, Wed, Fri');
 
+    // Section B: Batch-Based Staff Scheduling & Conflict Prevention
+    if (coach_id) {
+      StaffAvailabilityService.validateBatchCoachAssignment(db, {
+        batchId: 0,
+        coachId: Number(coach_id),
+        branchId: Number(branch_id),
+        startTime: start_time,
+        endTime: end_time,
+        daysOfWeek: formattedDays
+      });
+    }
+
     const result = insert.run(
       name.trim(),
       sport_id ? Number(sport_id) : null,
@@ -3136,7 +3149,7 @@ academyRouter.put('/batches/:id', (req, res) => {
       return res.status(403).json({ success: false, error: 'Cross-academy batch modification is strictly forbidden' });
     }
 
-    const batch = db.prepare('SELECT id, branch_id FROM batches WHERE id = ?').get(batchId);
+    const batch = db.prepare('SELECT id, branch_id, coach_id, start_time, end_time, days_of_week FROM batches WHERE id = ?').get(batchId);
     if (!batch) {
       return res.status(404).json({ success: false, error: 'Batch not found in this academy' });
     }
@@ -3149,6 +3162,23 @@ academyRouter.put('/batches/:id', (req, res) => {
       if (!branch) {
         return res.status(400).json({ success: false, error: 'The specified branch does not exist in this academy' });
       }
+    }
+
+    const targetCoachId = coach_id !== undefined ? (coach_id ? Number(coach_id) : null) : batch.coach_id;
+    const targetBranchId = branch_id !== undefined ? Number(branch_id) : batch.branch_id;
+    const targetStartTime = start_time || batch.start_time;
+    const targetEndTime = end_time || batch.end_time;
+    const targetDays = days_of_week !== undefined ? days_of_week : batch.days_of_week;
+
+    if (targetCoachId) {
+      StaffAvailabilityService.validateBatchCoachAssignment(db, {
+        batchId,
+        coachId: targetCoachId,
+        branchId: targetBranchId,
+        startTime: targetStartTime,
+        endTime: targetEndTime,
+        daysOfWeek: targetDays
+      });
     }
 
     db.prepare(`
@@ -9714,6 +9744,599 @@ academyRouter.get('/students/next-admission-number', (req, res) => {
     const year = new Date().getFullYear();
     const admissionNumber = `STU-${year}-${String(count).padStart(4, '0')}`;
     res.json({ success: true, admissionNumber, next_admission_number: admissionNumber });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* ==========================================================================
+   ADVANCED SHIFT MANAGEMENT, MULTIPLE DAILY SLOTS, STAFF AVAILABILITY & SWAPS
+   ========================================================================== */
+
+/**
+ * GET /api/academy/shifts/slots
+ * Returns all configured shift templates / slots in the academy
+ */
+academyRouter.get('/shifts/slots', requirePermission(['view_schedules', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const branchId = req.query.branch_id ? Number(req.query.branch_id) : null;
+    let query = `
+      SELECT DISTINCT shift_name, start_time, end_time, shift_type, scheduled_hours, branch_id
+      FROM employee_schedule_shifts
+      WHERE is_working_day = 1
+    `;
+    const params = [];
+    if (branchId) {
+      query += ' AND (branch_id = ? OR branch_id IS NULL)';
+      params.push(branchId);
+    }
+    query += ' ORDER BY start_time ASC';
+    const slots = db.prepare(query).all(...params);
+    res.json({ success: true, slots });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/shifts/slots
+ * Creates or configures a new shift slot
+ */
+academyRouter.post('/shifts/slots', requirePermission(['create_shifts', 'edit_shifts', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const { shift_name, start_time, end_time, shift_type = 'regular', branch_id, break_duration_minutes = 0 } = req.body;
+    if (!shift_name || !start_time || !end_time) {
+      return res.status(400).json({ success: false, error: 'Shift name, start time, and end time are required' });
+    }
+    let grossMinutes = ScheduleService.timeToMinutes(end_time) - ScheduleService.timeToMinutes(start_time);
+    if (grossMinutes < 0) grossMinutes += 1440; // overnight
+    const scheduled_hours = Number(((grossMinutes - (Number(break_duration_minutes) || 0)) / 60).toFixed(2));
+    res.status(201).json({
+      success: true,
+      slot: {
+        shift_name,
+        start_time,
+        end_time,
+        shift_type,
+        branch_id: branch_id ? Number(branch_id) : null,
+        scheduled_hours
+      },
+      message: 'Shift slot configured successfully'
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/shifts/employee/:userId
+ * Retrieves effective work schedule, weekday shifts, and overrides for a staff member
+ */
+academyRouter.get('/shifts/employee/:userId', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const targetUserId = Number(req.params.userId);
+
+    // Self-access or authorization check
+    if (req.user.userId !== targetUserId && !hasPermission(req, ['view_schedules', 'manage_staff_payroll', 'all'])) {
+      return res.status(403).json({ success: false, error: 'Access denied: You can only view your own schedule' });
+    }
+
+    const dateStr = req.query.date || new Date().toISOString().split('T')[0];
+    const schedule = ScheduleService.getEffectiveSchedule(db, targetUserId, dateStr);
+    const overrides = db.prepare('SELECT * FROM employee_schedule_overrides WHERE user_id = ? ORDER BY override_date DESC LIMIT 50').all(targetUserId);
+
+    res.json({ success: true, schedule, overrides });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/shifts/employee/:userId
+ * Configures full schedule with multiple daily slots for an employee
+ */
+academyRouter.post('/shifts/employee/:userId', requirePermission(['create_shifts', 'edit_shifts', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const targetUserId = Number(req.params.userId);
+    const { schedule_name, effective_from, effective_to, branch_id, shifts, notes } = req.body;
+
+    if (!shifts || !Array.isArray(shifts) || shifts.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one shift slot is required' });
+    }
+
+    const result = ScheduleService.saveEmployeeSchedule(
+      db,
+      req.academy.id,
+      targetUserId,
+      { schedule_name, effective_from, effective_to, branch_id, notes },
+      shifts,
+      req.user.userId
+    );
+
+    res.status(201).json({ success: true, result, message: 'Employee work schedule saved successfully' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/shifts/employee/:userId/day/:dayOfWeek
+ * Modifies only a specific weekday's shifts without affecting other weekdays
+ */
+academyRouter.put('/shifts/employee/:userId/day/:dayOfWeek', requirePermission(['create_shifts', 'edit_shifts', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const targetUserId = Number(req.params.userId);
+    const dayOfWeek = Number(req.params.dayOfWeek);
+    const { shifts, schedule_id } = req.body;
+
+    if (!shifts || !Array.isArray(shifts)) {
+      return res.status(400).json({ success: false, error: 'Array of shifts is required' });
+    }
+
+    let schedId = schedule_id ? Number(schedule_id) : null;
+    if (!schedId) {
+      const activeSched = db.prepare('SELECT id FROM employee_work_schedules WHERE user_id = ? AND is_active = 1 ORDER BY effective_from DESC LIMIT 1').get(targetUserId);
+      if (!activeSched) {
+        return res.status(404).json({ success: false, error: 'No active schedule found for this employee to update' });
+      }
+      schedId = activeSched.id;
+    }
+
+    const result = ScheduleService.updateEmployeeScheduleShiftsForDay(
+      db,
+      schedId,
+      targetUserId,
+      dayOfWeek,
+      shifts,
+      req.user.userId
+    );
+
+    res.json({ success: true, result, message: `Shifts for day ${dayOfWeek} updated successfully` });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/shifts/overrides
+ * Creates a date-specific schedule override
+ */
+academyRouter.post('/shifts/overrides', requirePermission(['create_shifts', 'edit_shifts', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { user_id, override_date, schedule_action, shift_name, start_time, end_time, shift_type, reason, branch_id } = req.body;
+
+    if (!user_id || !override_date) {
+      return res.status(400).json({ success: false, error: 'User ID and override date are required' });
+    }
+
+    const result = ScheduleService.saveScheduleOverride(
+      db,
+      req.academy.id,
+      Number(user_id),
+      { override_date, schedule_action, shift_name, start_time, end_time, shift_type, reason, branch_id },
+      req.user.userId
+    );
+
+    res.status(201).json({ success: true, result, message: 'Date schedule override created successfully' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/shifts/overrides
+ * Lists date schedule overrides
+ */
+academyRouter.get('/shifts/overrides', requirePermission(['view_schedules', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const userId = req.query.user_id ? Number(req.query.user_id) : null;
+    const date = req.query.date || null;
+    let query = `
+      SELECT eso.*, u.name as user_name, br.name as branch_name
+      FROM employee_schedule_overrides eso
+      JOIN users u ON eso.user_id = u.id
+      LEFT JOIN branches br ON eso.branch_id = br.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (userId) {
+      query += ' AND eso.user_id = ?';
+      params.push(userId);
+    }
+    if (date) {
+      query += ' AND eso.override_date = ?';
+      params.push(date);
+    }
+    query += ' ORDER BY eso.override_date DESC';
+    const overrides = db.prepare(query).all(...params);
+    res.json({ success: true, overrides });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/shifts/check-conflict
+ * Real-time schedule and travel buffer conflict detection
+ */
+academyRouter.post('/shifts/check-conflict', requirePermission(['view_staff_availability', 'view_schedules', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const { user_id, coach_id, date, start_time, end_time, branch_id, travel_buffer_minutes } = req.body;
+
+    if ((!user_id && !coach_id) || !date || !start_time || !end_time) {
+      return res.status(400).json({ success: false, error: 'User/Coach ID, date, start time, and end time are required' });
+    }
+
+    const normDate = DateUtils.parseAndNormalizeDate(date, { fieldName: 'Date', required: true });
+    const result = StaffAvailabilityService.checkSlotConflict(db, {
+      userId: user_id ? Number(user_id) : null,
+      coachId: coach_id ? Number(coach_id) : null,
+      date: normDate,
+      startTime: start_time,
+      endTime: end_time,
+      branchId: branch_id ? Number(branch_id) : null,
+      travelBufferMinutes: travel_buffer_minutes !== undefined ? Number(travel_buffer_minutes) : 30
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/shifts/availability
+ * Evaluates coach availability or searches available coaches for a given time window
+ */
+academyRouter.get('/shifts/availability', requirePermission(['view_staff_availability', 'view_schedules', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const date = req.query.date || DateUtils.getCurrentDateString();
+    const startTime = req.query.start_time || '09:00';
+    const endTime = req.query.end_time || '10:00';
+    const branchId = req.query.branch_id ? Number(req.query.branch_id) : null;
+    const coachId = req.query.coach_id ? Number(req.query.coach_id) : null;
+    const userId = req.query.user_id ? Number(req.query.user_id) : null;
+
+    if (coachId || userId) {
+      const avail = StaffAvailabilityService.getCoachAvailability(db, {
+        coachId,
+        userId,
+        date,
+        startTime,
+        endTime,
+        branchId
+      });
+      return res.json({ success: true, availability: avail });
+    }
+
+    const availableCoaches = StaffAvailabilityService.findAvailableCoaches(
+      db,
+      req.academy.id,
+      date,
+      startTime,
+      endTime,
+      branchId
+    );
+
+    res.json({ success: true, date, startTime, endTime, coaches: availableCoaches });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/shifts/slot-attendance
+ * Lists slot attendance records
+ */
+academyRouter.get('/shifts/slot-attendance', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const date = req.query.date || null;
+    const userId = req.query.user_id ? Number(req.query.user_id) : null;
+    const branchId = req.query.branch_id ? Number(req.query.branch_id) : null;
+    const status = req.query.status || null;
+
+    // Permissions check
+    if (userId && req.user.userId !== userId && !hasPermission(req, ['view_attendance', 'view_schedules', 'manage_staff_payroll', 'all'])) {
+      return res.status(403).json({ success: false, error: 'Access denied: You can only view your own attendance' });
+    }
+
+    let query = `
+      SELECT sa.*, u.name as user_name, br.name as branch_name, b.name as batch_name
+      FROM staff_slot_attendance sa
+      JOIN users u ON sa.user_id = u.id
+      LEFT JOIN branches br ON sa.branch_id = br.id
+      LEFT JOIN batches b ON sa.batch_id = b.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (date) {
+      query += ' AND sa.attendance_date = ?';
+      params.push(date);
+    }
+    if (userId) {
+      query += ' AND sa.user_id = ?';
+      params.push(userId);
+    }
+    if (branchId) {
+      query += ' AND sa.branch_id = ?';
+      params.push(branchId);
+    }
+    if (status) {
+      query += ' AND sa.status = ?';
+      params.push(status);
+    }
+    query += ' ORDER BY sa.attendance_date DESC, sa.scheduled_start_time ASC';
+
+    const records = db.prepare(query).all(...params);
+    res.json({ success: true, records });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/shifts/slot-attendance/check-in
+ * Records check-in to a specific work slot
+ */
+academyRouter.post('/shifts/slot-attendance/check-in', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const targetUserId = req.body.user_id ? Number(req.body.user_id) : req.user.userId;
+
+    if (req.user.userId !== targetUserId && !hasPermission(req, ['modify_slot_attendance', 'manage_staff_payroll', 'all'])) {
+      return res.status(403).json({ success: false, error: 'Access denied: Cannot check in for another employee' });
+    }
+
+    const record = ScheduleService.recordSlotCheckIn(db, req.academy.id, {
+      ...req.body,
+      user_id: targetUserId
+    }, req.user.userId);
+
+    res.status(201).json({ success: true, record, message: 'Slot check-in recorded successfully' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/shifts/slot-attendance/check-out
+ * Records check-out from a specific work slot
+ */
+academyRouter.post('/shifts/slot-attendance/check-out', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const targetUserId = req.body.user_id ? Number(req.body.user_id) : req.user.userId;
+
+    if (req.user.userId !== targetUserId && !hasPermission(req, ['modify_slot_attendance', 'manage_staff_payroll', 'all'])) {
+      return res.status(403).json({ success: false, error: 'Access denied: Cannot check out for another employee' });
+    }
+
+    const record = ScheduleService.recordSlotCheckOut(db, req.academy.id, {
+      ...req.body,
+      user_id: targetUserId
+    }, req.user.userId);
+
+    res.json({ success: true, record, message: 'Slot check-out recorded successfully' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/shifts/slot-attendance/adjust
+ * Authorized manual adjustment of slot attendance record
+ */
+academyRouter.post('/shifts/slot-attendance/adjust', requirePermission(['modify_slot_attendance', 'approve_attendance_adjustments', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const record = ScheduleService.adjustSlotAttendance(db, req.academy.id, req.body, req.user.userId);
+    res.json({ success: true, record, message: 'Slot attendance adjusted successfully' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/shifts/slot-attendance/auto-checkout
+ * Automated slot check-out for expired slots
+ */
+academyRouter.post('/shifts/slot-attendance/auto-checkout', requirePermission(['modify_slot_attendance', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const result = ScheduleService.processAutomaticSlotCheckout(db, req.academy.id, req.body || {});
+    res.json({ success: true, result, message: `Auto checkout processed ${result.processedCount} slot(s)` });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/shifts/swaps
+ * Submit a shift swap request
+ */
+academyRouter.post('/shifts/swaps', async (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const requesterId = req.body.requester_id ? Number(req.body.requester_id) : req.user.userId;
+    const recipientId = Number(req.body.recipient_id);
+
+    if (req.user.userId !== requesterId && !hasPermission(req, ['manage_staff_payroll', 'all'])) {
+      return res.status(403).json({ success: false, error: 'Access denied: Cannot request swap on behalf of another coach' });
+    }
+
+    const swap = await ScheduleService.requestShiftSwap(db, req.academy.id, {
+      ...req.body,
+      requester_id: requesterId,
+      recipient_id: recipientId
+    }, req.user.userId);
+
+    res.status(201).json({ success: true, swap, message: 'Shift swap request submitted successfully' });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/shifts/swaps
+ * Lists shift swap requests
+ */
+academyRouter.get('/shifts/swaps', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const status = req.query.status || null;
+    let query = `
+      SELECT ss.*, req.name as requester_name, rec.name as recipient_name, br.name as branch_name
+      FROM staff_shift_swaps ss
+      JOIN users req ON ss.requester_id = req.id
+      JOIN users rec ON ss.recipient_id = rec.id
+      LEFT JOIN branches br ON ss.branch_id = br.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (status) {
+      query += ' AND ss.status = ?';
+      params.push(status);
+    }
+    // If not admin, only show swaps involving the logged-in user
+    if (!hasPermission(req, ['approve_shift_swaps', 'manage_staff_payroll', 'all'])) {
+      query += ' AND (ss.requester_id = ? OR ss.recipient_id = ?)';
+      params.push(req.user.userId, req.user.userId);
+    }
+    query += ' ORDER BY ss.swap_date DESC';
+
+    const swaps = db.prepare(query).all(...params);
+    res.json({ success: true, swaps });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/shifts/swaps/:id/review
+ * Approves or rejects a shift swap request
+ */
+academyRouter.put('/shifts/swaps/:id/review', requirePermission(['approve_shift_swaps', 'manage_staff_payroll', 'all']), async (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const swapId = Number(req.params.id);
+    const { status, rejection_reason } = req.body;
+
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ success: false, error: "Status must be 'approved' or 'rejected'" });
+    }
+
+    const swap = await ScheduleService.reviewShiftSwap(db, req.academy.id, swapId, {
+      status,
+      rejectionReason: rejection_reason
+    }, req.user.userId);
+
+    res.json({ success: true, swap, message: `Shift swap ${status} successfully` });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/shifts/reports/workload
+ * Workload, daily/weekly schedules, and branch staffing report
+ */
+academyRouter.get('/shifts/reports/workload', requirePermission(['export_shift_reports', 'view_schedules', 'manage_staff_payroll', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const date = req.query.date || DateUtils.getCurrentDateString();
+    const branchId = req.query.branch_id ? Number(req.query.branch_id) : null;
+
+    // 1. Staff schedules for date
+    const users = db.prepare('SELECT id, name, role, branch_id FROM users WHERE role IN ("coach", "head_coach", "academy_staff")').all();
+    const staffSchedules = [];
+
+    for (const u of users) {
+      if (branchId && u.branch_id && Number(u.branch_id) !== branchId) continue;
+      const dayExp = ScheduleService.getDayScheduleExpectation(db, u.id, date);
+      staffSchedules.push({
+        userId: u.id,
+        name: u.name,
+        role: u.role,
+        branchId: u.branch_id,
+        dayType: dayExp.dayType,
+        scheduledHours: dayExp.scheduledHours,
+        shiftsCount: (dayExp.shifts || []).length,
+        shifts: dayExp.shifts || []
+      });
+    }
+
+    // 2. Branch-wise staffing summary
+    const branchStaffing = db.prepare(`
+      SELECT b.id as branch_id, b.name as branch_name, COUNT(u.id) as staff_count
+      FROM branches b
+      LEFT JOIN users u ON u.branch_id = b.id AND u.role IN ('coach', 'head_coach', 'academy_staff')
+      GROUP BY b.id
+    `).all();
+
+    // 3. Today's slot attendance stats
+    const slotStats = db.prepare(`
+      SELECT 
+        COUNT(*) as total_slots,
+        SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_count,
+        SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) as late_count,
+        SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) as absent_count,
+        SUM(attended_minutes) as total_attended_minutes
+      FROM staff_slot_attendance
+      WHERE attendance_date = ?
+    `).get(date) || { total_slots: 0, present_count: 0, late_count: 0, absent_count: 0, total_attended_minutes: 0 };
+
+    res.json({
+      success: true,
+      date,
+      staffSchedules,
+      branchStaffing,
+      slotStats
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/payroll/salary-breakdown/:userId
+ * Detailed employee salary breakdown for a period
+ */
+academyRouter.get('/payroll/salary-breakdown/:userId', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const targetUserId = Number(req.params.userId);
+
+    if (req.user.userId !== targetUserId && !hasPermission(req, ['view_staff_salaries', 'manage_staff_payroll', 'all'])) {
+      return res.status(403).json({ success: false, error: 'Access denied: You can only view your own salary breakdown' });
+    }
+
+    const yearMonth = req.query.month || new Date().toISOString().slice(0, 7);
+    const period = PayrollService.getOrCreatePeriod(db, req.academy.id, yearMonth);
+    const statement = PayrollService.calculateEmployeeStatement(db, period.id, targetUserId, req.academy.id);
+
+    let snapshot = {};
+    if (statement.calculation_snapshot) {
+      try {
+        snapshot = JSON.parse(statement.calculation_snapshot);
+      } catch (_) {}
+    }
+
+    res.json({
+      success: true,
+      userId: targetUserId,
+      yearMonth,
+      statement,
+      snapshot
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

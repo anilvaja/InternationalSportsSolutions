@@ -39,7 +39,7 @@ export class PayrollService {
         AND effective_from <= ?
         AND (effective_to IS NULL OR effective_to >= ?)
         AND is_active = 1
-      ORDER BY effective_from DESC
+      ORDER BY effective_from DESC, id DESC
       LIMIT 1
     `).get(userId, dateStr, dateStr);
 
@@ -218,12 +218,45 @@ export class PayrollService {
       if (s.scheduled_date) sessionDates.add(s.scheduled_date);
     }
 
-    const allWorkedDates = new Set([...punchDates, ...sessionDates]);
+    // 3.5 Query independent staff slot attendance in this period
+    let slotRecords = [];
+    try {
+      slotRecords = db.prepare(`
+        SELECT * FROM staff_slot_attendance
+        WHERE user_id = ?
+          AND attendance_date BETWEEN ? AND ?
+        ORDER BY attendance_date ASC, scheduled_start_time ASC
+      `).all(userId, period.start_date, period.end_date);
+    } catch (_) {}
+
+    let slotAttendedMinutes = 0;
+    let slotApprovedMinutes = 0;
+    let slotApprovedOvertimeMinutes = 0;
+    let slotCompletedSessions = 0;
+    const slotWorkedDates = new Set();
+
+    for (const sa of slotRecords) {
+      if (['present', 'late', 'early_checkout', 'partial'].includes(sa.status)) {
+        slotAttendedMinutes += (sa.attended_minutes || 0);
+        slotApprovedMinutes += (sa.approved_payable_minutes || sa.attended_minutes || 0);
+        slotWorkedDates.add(sa.attendance_date);
+        if (sa.batch_id || ['regular', 'morning', 'evening', 'special_training'].includes(sa.shift_type)) {
+          slotCompletedSessions++;
+        }
+      }
+      if (sa.overtime_minutes > 0 && (sa.status === 'approved_overtime' || sa.approved_by)) {
+        slotApprovedOvertimeMinutes += sa.overtime_minutes;
+      }
+    }
+
+    const allWorkedDates = new Set([...punchDates, ...sessionDates, ...slotWorkedDates]);
     const actualDaysWorked = allWorkedDates.size;
 
-    const totalActualMinutes = Math.max(punchMinutes, sessionMinutes) > 0 
-      ? (punchMinutes > 0 ? punchMinutes : sessionMinutes)
-      : (scheduleSummary.scheduledWorkingDays > 0 && punches.length === 0 && sessions.length === 0 ? 0 : 0);
+    const totalActualMinutes = slotRecords.length > 0
+      ? slotAttendedMinutes
+      : (Math.max(punchMinutes, sessionMinutes) > 0 
+        ? (punchMinutes > 0 ? punchMinutes : sessionMinutes)
+        : (scheduleSummary.scheduledWorkingDays > 0 && punches.length === 0 && sessions.length === 0 ? 0 : 0));
 
     const actualHoursWorked = this.round(totalActualMinutes / 60);
 
@@ -238,6 +271,46 @@ export class PayrollService {
       unitLabel = 'hours';
       payableUnits = actualHoursWorked > 0 ? actualHoursWorked : (punches.length > 0 ? this.round(punchMinutes / 60) : this.round(sessionMinutes / 60));
       grossEarnings = this.round(payableUnits * rate);
+
+    } else if (mode === 'per_batch') {
+      unitLabel = 'batches';
+      const batchRate = profile.batch_rate || profile.base_rate;
+      const assigned = coachId ? db.prepare(`
+        SELECT COUNT(*) as count FROM batches
+        WHERE (coach_id = ? OR assistant_coach_id = ?) AND is_active = 1
+      `).get(coachId, coachId) : { count: 0 };
+      payableUnits = assigned.count || 0;
+      grossEarnings = this.round(payableUnits * batchRate);
+
+    } else if (mode === 'hybrid') {
+      unitLabel = 'hybrid';
+      const deductionPolicy = profile.deduction_policy || 'working_days';
+      let deductionBasis = Math.max(1, scheduleSummary.scheduledWorkingDays);
+      if (deductionPolicy === 'calendar_days') deductionBasis = Math.max(1, scheduleSummary.totalCalendarDays);
+      const perDayRate = this.round(rate / deductionBasis);
+
+      const fullUnpaidDays = scheduleSummary.unpaidLeaveDays || 0;
+      const halfUnpaidDays = (scheduleSummary.halfDayLeaveDays || 0) * 0.5;
+      const totalUnpaidDays = fullUnpaidDays + halfUnpaidDays;
+      absenceDeductions = this.round(totalUnpaidDays * perDayRate);
+      const baseProrated = Math.max(0, rate - absenceDeductions);
+
+      const sessionRate = Number(profile.session_rate || 0);
+      const completedSessionsCount = sessions.length > 0 ? sessions.length : slotCompletedSessions;
+      const sessionEarnings = this.round(completedSessionsCount * sessionRate);
+
+      const hourlyRate = Number(profile.hourly_rate || 0);
+      const extraHoursEarnings = this.round(actualHoursWorked * hourlyRate);
+
+      const batchRate = Number(profile.batch_rate || 0);
+      const assigned = coachId ? db.prepare(`
+        SELECT COUNT(*) as count FROM batches
+        WHERE (coach_id = ? OR assistant_coach_id = ?) AND is_active = 1
+      `).get(coachId, coachId) : { count: 0 };
+      const batchEarnings = this.round((assigned.count || 0) * batchRate);
+
+      grossEarnings = this.round(baseProrated + sessionEarnings + extraHoursEarnings + batchEarnings);
+      payableUnits = 1;
 
     } else if (mode === 'monthly') {
       unitLabel = 'month';
@@ -394,7 +467,7 @@ export class PayrollService {
 
       absenceDeductions = this.round(unpaidLeaveDeduction + unauthorizedDeduction);
 
-    } else if (mode === 'per_day') {
+    } else if (mode === 'per_day' || mode === 'daily') {
       unitLabel = 'days';
       // Payable units = actual days worked
       payableUnits = actualDaysWorked > 0 ? actualDaysWorked : scheduleSummary.scheduledWorkingDays;
@@ -402,7 +475,7 @@ export class PayrollService {
 
     } else if (mode === 'per_session') {
       unitLabel = 'sessions';
-      payableUnits = sessions.length;
+      payableUnits = sessions.length > 0 ? sessions.length : slotCompletedSessions;
       grossEarnings = this.round(payableUnits * rate);
 
     } else if (mode === 'per_minute') {
@@ -422,7 +495,16 @@ export class PayrollService {
       approvedOvertimeAmount += Number(ot.payable_amount || 0);
     }
 
-    if (profile.overtime_eligible && punchOvertimeMinutes > 0 && approvedOvertime.length === 0) {
+    if (slotApprovedOvertimeMinutes > 0) {
+      const otHours = slotApprovedOvertimeMinutes / 60;
+      const otMultiplier = Number(profile.overtime_rate_multiplier || 1.0);
+      const baseHourlyRate = (mode === 'hourly' || mode === 'hybrid') 
+        ? (profile.hourly_rate || rate) 
+        : (scheduleSummary.totalScheduledHours > 0 ? (rate / scheduleSummary.totalScheduledHours) : 150);
+      approvedOvertimeAmount += this.round(otHours * baseHourlyRate * otMultiplier);
+    }
+
+    if (profile.overtime_eligible && punchOvertimeMinutes > 0 && approvedOvertime.length === 0 && slotApprovedOvertimeMinutes === 0) {
       const otHours = punchOvertimeMinutes / 60;
       const otMultiplier = Number(profile.overtime_rate_multiplier || 1.0);
       const baseHourlyRate = mode === 'hourly' 
@@ -508,6 +590,9 @@ export class PayrollService {
       actual_hours_worked: actualHoursWorked,
       actual_days_worked: actualDaysWorked,
       verified_sessions_count: sessions.length,
+      slot_attendance_count: slotRecords.length,
+      slot_attended_minutes: slotAttendedMinutes,
+      slot_approved_minutes: slotApprovedMinutes,
       overtime_amount: approvedOvertimeAmount,
       work_exception_amount: workExceptionAmount,
       profile_allowances: profileAllowances,
