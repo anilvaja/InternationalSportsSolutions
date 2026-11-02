@@ -19,10 +19,10 @@ export function seedUnitTestFixtures(db, academyId = 1) {
   insertRole.run('academy_staff', 'Staff', 'Staff members', JSON.stringify(['mark_attendance', 'view_attendance', 'view_students', 'view_batches', 'customize_theme']), 0, 'blue');
 
   // 2. Staff and Coaches in Tenant DB and Central Lookup
-  const insertUser = db.prepare('INSERT OR REPLACE INTO users (id, name, email, password_hash, role, phone, status) VALUES (?, ?, ?, ?, ?, ?, ?)');
-  insertUser.run(1, 'John Smith', 'john.smith@mahavirsportsacademy.com', passwordHash, 'academy_admin', '+91 98250 12345', 'active');
-  insertUser.run(2, 'Rohit Coach', 'rohit.sharma@mahavircoach.com', passwordHash, 'coach', '+91 98250 44444', 'active');
-  insertUser.run(3, 'Neha Coach', 'neha.verma@mahavircoach.com', passwordHash, 'coach', '+91 98250 55555', 'active');
+  const insertUser = db.prepare('INSERT OR REPLACE INTO users (id, name, email, password_hash, role, phone, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  insertUser.run(1, 'John Smith', 'john.smith@mahavirsportsacademy.com', passwordHash, 'academy_admin', '+91 98250 12345', 'active', '2026-01-01 00:00:00');
+  insertUser.run(2, 'Rohit Coach', 'rohit.sharma@mahavircoach.com', passwordHash, 'coach', '+91 98250 44444', 'active', '2026-01-01 00:00:00');
+  insertUser.run(3, 'Neha Coach', 'neha.verma@mahavircoach.com', passwordHash, 'coach', '+91 98250 55555', 'active', '2026-01-01 00:00:00');
 
   centralDb.prepare('INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role) VALUES (?, ?, ?)').run('john.smith@mahavirsportsacademy.com', academyId, 'academy_admin');
   centralDb.prepare('INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role) VALUES (?, ?, ?)').run('rohit.sharma@mahavircoach.com', academyId, 'coach');
@@ -30,8 +30,26 @@ export function seedUnitTestFixtures(db, academyId = 1) {
 
   // 3. Branches
   const insertBranch = db.prepare('INSERT OR REPLACE INTO branches (id, name, address, city, phone, email) VALUES (?, ?, ?, ?, ?, ?)');
-  insertBranch.run(1, 'Main Campus - West Wing', '101 Stadium Complex, Drive-in Road', 'Ahmedabad', '+91 79 2685 0001', 'west@mahavirsports.com');
-  insertBranch.run(2, 'East City Center', 'Sports Enclave, Nikol Road', 'Ahmedabad', '+91 79 2685 0002', 'east@mahavirsports.com');
+  const branchName1 = academyId === 1 ? 'Main Campus - West Wing' : `Campus Alpha (Academy ${academyId})`;
+  const branchName2 = academyId === 1 ? 'East City Center' : `Campus Beta (Academy ${academyId})`;
+  insertBranch.run(1, branchName1, '101 Stadium Complex, Drive-in Road', 'Ahmedabad', '+91 79 2685 0001', 'west@mahavirsports.com');
+  insertBranch.run(2, branchName2, 'Sports Enclave, Nikol Road', 'Ahmedabad', '+91 79 2685 0002', 'east@mahavirsports.com');
+
+  const insertSched = db.prepare('INSERT OR REPLACE INTO branch_work_schedules (id, academy_id, branch_id, schedule_name, effective_from, is_active) VALUES (?, ?, ?, ?, ?, ?)');
+  insertSched.run(1, academyId, 1, 'Main Campus General Schedule', '2026-01-01', 1);
+  insertSched.run(2, academyId, 2, 'East City Center Schedule', '2026-01-01', 1);
+
+  const insertDay = db.prepare(`
+    INSERT OR IGNORE INTO branch_schedule_days (
+      branch_schedule_id, day_of_week, shift_name, start_time, end_time, scheduled_hours, break_duration_minutes, is_break_paid, is_working_day
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const schedId of [1, 2]) {
+    for (let day = 1; day <= 6; day++) {
+      insertDay.run(schedId, day, 'Regular Shift', '09:00', '17:00', 8.0, 60, 1, 1);
+    }
+    insertDay.run(schedId, 7, 'Weekly Off', '00:00', '00:00', 0.0, 0, 0, 0);
+  }
 
   const b1 = 1;
   const b2 = 2;

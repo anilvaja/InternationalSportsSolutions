@@ -2,6 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { getTenantDbById } from '../../src/db/connectionManager.js';
+import { seedUnitTestFixtures } from '../../src/db/testFixtures.js';
 import { signToken } from '../../src/middleware/auth.js';
 import { AttendanceScheduleService } from '../../src/services/attendanceScheduleService.js';
 import { OvertimeService } from '../../src/services/overtimeService.js';
@@ -26,6 +27,14 @@ describe('Attendance Scheduling, Overtime Approval, and Attendance-Based Staff P
     process.env.NODE_ENV = 'test';
     academy1Db = getTenantDbById(ACADEMY_1_ID);
     academy2Db = getTenantDbById(ACADEMY_2_ID);
+    seedUnitTestFixtures(academy1Db, ACADEMY_1_ID);
+    seedUnitTestFixtures(academy2Db, ACADEMY_2_ID);
+
+    // Reset payroll tables so section 4 tests live calculation before section 5 finalizes
+    academy1Db.prepare("DELETE FROM staff_salary_statements").run();
+    academy1Db.prepare("DELETE FROM staff_payroll_periods").run();
+    academy2Db.prepare("DELETE FROM staff_salary_statements").run();
+    academy2Db.prepare("DELETE FROM staff_payroll_periods").run();
 
     academyAdminToken = signToken({
       userId: 1,

@@ -2,6 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { getTenantDbById } from '../../src/db/connectionManager.js';
+import { seedUnitTestFixtures } from '../../src/db/testFixtures.js';
 import { signToken } from '../../src/middleware/auth.js';
 import app from '../../server.js';
 
@@ -15,6 +16,7 @@ describe('Facility & Equipment Management Module', () => {
   before(async () => {
     process.env.NODE_ENV = 'test';
     const db = getTenantDbById(ACADEMY_ID);
+    seedUnitTestFixtures(db, ACADEMY_ID);
 
     adminToken = signToken({
       userId: 1,

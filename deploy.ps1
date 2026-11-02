@@ -1,6 +1,6 @@
 # Windows PowerShell Automated Deployment Script
 param (
-    [switch]$SkipSeed = $false,
+    [switch]$RunSeed = $false,
     [switch]$StartWithPm2 = $false
 )
 
@@ -31,12 +31,13 @@ foreach ($dir in $dirs) {
     }
 }
 
-# 4. Run Seed & Migrations (Central & Tenant Databases)
-if (-not $SkipSeed) {
-    Write-Host "[4/5] Executing database migrations and seeders..." -ForegroundColor Yellow
+# 4. Run Migrations (Safe, Non-Destructive)
+Write-Host "[4/5] Executing database migrations..." -ForegroundColor Yellow
+node scripts/run_migrations.js
+
+if ($RunSeed -or -not (Test-Path "data/central.db")) {
+    Write-Host "[4/5b] Initializing first-time platform seed..." -ForegroundColor Yellow
     node src/db/seed.js
-} else {
-    Write-Host "[4/5] Skipping database seeding..." -ForegroundColor Gray
 }
 
 # 5. Start / Restart Process

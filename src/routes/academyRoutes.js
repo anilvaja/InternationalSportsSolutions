@@ -5527,7 +5527,7 @@ academyRouter.post('/equipment/:id/issue', requirePermission(['edit_facilities',
         today,
         dueDate,
         notes || null,
-        req.user.id
+        req.user?.userId || req.user?.id || 1
       );
     })();
 

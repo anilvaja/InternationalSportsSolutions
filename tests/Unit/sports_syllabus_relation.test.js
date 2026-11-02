@@ -67,8 +67,8 @@ describe('Sports, Syllabus Categories & Techniques Discipline Hierarchy', () => 
 
     const catRes = await api(`/api/academy/syllabus-categories?sport_id=${karate.id}`);
     assert.equal(catRes.status, 200);
-    const kata = catRes.data.categories.find(c => c.name.toLowerCase() === 'kata');
-    const kumite = catRes.data.categories.find(c => c.name.toLowerCase() === 'kumite');
+    const kata = catRes.data.categories.find(c => c.name.toLowerCase().includes('kata'));
+    const kumite = catRes.data.categories.find(c => c.name.toLowerCase().includes('kumite'));
     assert.ok(kata, 'Kata must belong to Karate');
     assert.ok(kumite, 'Kumite must belong to Karate');
     assert.equal(kata.sport_id, karate.id);

@@ -26,9 +26,15 @@ echo "[3/5] Verifying persistent directories..."
 mkdir -p data/academies storage/uploads storage/backups storage/logs
 chmod -R 775 data storage
 
-# 4. Run migrations and database seeds
-echo "[4/5] Running database migrations and multi-tenant seed..."
-node src/db/seed.js
+# 4. Run database migrations (safe, non-destructive)
+echo "[4/5] Running database migrations..."
+node scripts/run_migrations.js
+
+# Only seed if explicitly requested via RUN_SEED=true or fresh install without central db
+if [ "$RUN_SEED" = "true" ] || [ ! -f "data/central.db" ]; then
+    echo "[4/5b] Initializing first-time platform seed..."
+    node src/db/seed.js
+fi
 
 # 5. Start / Restart via PM2
 echo "[5/5] Managing process with PM2..."

@@ -30,17 +30,43 @@ export function getTenantDbById(academyId) {
   }
 
   if (tenantDbMap.has(id)) {
-    return tenantDbMap.get(id);
+    const cached = tenantDbMap.get(id);
+    const expectedPath = config.isTest ? getAcademyDbPath(id) : (cached.name);
+    if (cached && cached.open && cached.name === expectedPath) {
+      return cached;
+    }
+    try { cached.close(); } catch (_) {}
+    tenantDbMap.delete(id);
   }
 
   const centralDb = getCentralDb();
   let academy = centralDb.prepare('SELECT * FROM academies WHERE id = ?').get(id);
-  if (!academy && process.env.NODE_ENV === 'test' && id === 2) {
-    centralDb.prepare(`
-      INSERT OR REPLACE INTO academies (id, name, slug, status, plan, max_branches, max_students, max_coaches, db_path)
-      VALUES (2, 'Phoenix Martial Arts Academy', 'phoenix-martial-arts', 'active', 'professional', 5, 200, 20, 'data/academies/academy_2.db')
-    `).run();
-    academy = centralDb.prepare('SELECT * FROM academies WHERE id = 2').get();
+  if (!academy && config.isTest) {
+    if (id === 1) {
+      centralDb.prepare(`
+        INSERT OR REPLACE INTO academies (id, name, slug, status, plan, max_branches, max_students, max_coaches, db_path)
+        VALUES (1, 'Pratik Karate Academy', 'pratik-karate-academy', 'active', 'enterprise', 10, 1000, 50, ?)
+      `).run(getAcademyDbPath(1));
+      try {
+        centralDb.prepare(`
+          INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
+          VALUES (1, 'pratik-karate-academy.internationalsportssolutions.test', 1, 0, 'active')
+        `).run();
+      } catch (_) {}
+      academy = centralDb.prepare('SELECT * FROM academies WHERE id = 1').get();
+    } else if (id === 2) {
+      centralDb.prepare(`
+        INSERT OR REPLACE INTO academies (id, name, slug, status, plan, max_branches, max_students, max_coaches, db_path)
+        VALUES (2, 'Phoenix Martial Arts Academy', 'phoenix-martial-arts', 'active', 'professional', 5, 200, 20, ?)
+      `).run(getAcademyDbPath(2));
+      try {
+        centralDb.prepare(`
+          INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
+          VALUES (2, 'phoenix-martial-arts.internationalsportssolutions.test', 1, 0, 'active')
+        `).run();
+      } catch (_) {}
+      academy = centralDb.prepare('SELECT * FROM academies WHERE id = 2').get();
+    }
   }
   if (!academy) {
     throw new Error(`Academy with ID ${id} not found in central registry`);
@@ -50,7 +76,7 @@ export function getTenantDbById(academyId) {
     throw new Error(`Academy '${academy.name}' is currently suspended`);
   }
 
-  const dbPath = academy.db_path || getAcademyDbPath(id);
+  const dbPath = config.isTest ? getAcademyDbPath(id) : (academy.db_path || getAcademyDbPath(id));
 
   // Ensure directory exists
   const parentDir = path.dirname(dbPath);
@@ -115,13 +141,15 @@ export function getTenantDbById(academyId) {
     // ignore if tables not yet created
   }
 
-  if (process.env.NODE_ENV === 'test' && id === 1) {
-    try {
-      const kataCount = db.prepare("SELECT count(*) as c FROM syllabus_categories WHERE name = 'Kata'").get()?.c || 0;
-      if (kataCount === 0) {
-        seedUnitTestFixtures(db, 1);
-      }
-    } catch (_) {}
+  if (process.env.NODE_ENV === 'test') {
+    if (id === 1 || id === 2) {
+      try {
+        const b = db.prepare("SELECT name FROM branches WHERE id = 1").get();
+        if (!b || (id === 2 && b.name === 'Main Campus - West Wing')) {
+          seedUnitTestFixtures(db, id);
+        }
+      } catch (_) {}
+    }
   }
 
   tenantDbMap.set(id, db);

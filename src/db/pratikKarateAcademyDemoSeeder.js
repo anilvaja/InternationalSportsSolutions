@@ -207,6 +207,7 @@ export class PratikKarateAcademyDemoSeeder {
       { name: 'Kihon & White to Yellow Belt', desc: 'White Belt Fundamentals', order: 1 },
       { name: 'Intermediate Kata & Kumite (Green - Brown)', desc: 'Green to Brown Belt Progression', order: 2 },
       { name: 'Black Belt Dan Master Curriculum', desc: '1st Dan Black Belt Master Curriculum', order: 3 },
+      { name: 'Bunkai (Practical Application & Self-Defense)', desc: 'Combat applications of traditional katas', order: 4 },
     ];
 
     const catMap = {};
@@ -231,6 +232,9 @@ export class PratikKarateAcademyDemoSeeder {
       { catName: 'Intermediate Kata & Kumite (Green - Brown)', name: 'Gyaku-Zuki (Reverse Punch)', level: 3, code: 'TECH-GYA-ZUK' },
       { catName: 'Intermediate Kata & Kumite (Green - Brown)', name: 'Mawashi-Geri (Roundhouse Kick)', level: 4, code: 'TECH-MAW-GER' },
       { catName: 'Black Belt Dan Master Curriculum', name: 'Bassai Dai (Storm the Fortress)', level: 5, code: 'TECH-BAS-DAI' },
+      { catName: 'Black Belt Dan Master Curriculum', name: 'Kanku Dai (Viewing the Sky)', level: 5, code: 'TECH-KAN-DAI' },
+      { catName: 'Bunkai (Practical Application & Self-Defense)', name: 'Bunkai Heian Shodan (Practical Counters)', level: 2, code: 'TECH-BUN-SHO' },
+      { catName: 'Bunkai (Practical Application & Self-Defense)', name: 'Bunkai Bassai Dai (Joint Defense & Locks)', level: 5, code: 'TECH-BUN-BAS' },
     ];
 
     for (const t of techniques) {
@@ -311,7 +315,8 @@ export class PratikKarateAcademyDemoSeeder {
     // 4.1 Branch Schedules:
     // Branches 1 & 2: Mon-Sat working (8 hrs/day), Sunday weekly off
     // Branch 3: Tue-Sun working (8 hrs/day), Monday weekly off (tests diverse weekly-off logic!)
-    for (const branch of branches) {
+    const allBranches = db.prepare('SELECT * FROM branches WHERE is_active = 1').all();
+    for (const branch of allBranches) {
       const isMondayOff = branch.name.includes('Vastrapur');
 
       const existingSched = db.prepare('SELECT id FROM branch_work_schedules WHERE branch_id = ? AND is_active = 1').get(branch.id);

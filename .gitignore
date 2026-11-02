@@ -27,6 +27,8 @@ Thumbs.db
 scripts/local_ftp_push.ps1
 /data/*.db*
 /data/academies/*.db*
+/data_test/
+/storage_test/
 *.db
 *.db-wal
 *.db-shm

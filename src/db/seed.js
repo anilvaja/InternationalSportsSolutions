@@ -14,12 +14,8 @@ export function runSeed() {
   console.log('--- Starting Platform Database Seed ---');
   const centralDb = getCentralDb();
 
-  // 1. Seed Super Admin (Exactly 1 super admin)
+  // 1. Seed Super Admin (ensure primary super admin exists)
   const defaultPasswordHash = bcrypt.hashSync('password', 10);
-  
-  // Remove any legacy/extra super admins so only anilvaja.007@gmail.com exists
-  centralDb.prepare('DELETE FROM super_admins WHERE email != ?').run('anilvaja.007@gmail.com');
-
   const existingSuperAdmin = centralDb.prepare('SELECT id FROM super_admins WHERE email = ?').get('anilvaja.007@gmail.com');
   if (!existingSuperAdmin) {
     centralDb.prepare(`
@@ -165,11 +161,9 @@ export function runSeed() {
   // 5. Ensure tenant DB has exactly the standard 8 operational roles
   const tenantDb = getTenantDbById(academyId);
 
-  // Strictly enforce: Only the standard 8 operational roles exist in exact display order
-  tenantDb.prepare('DELETE FROM academy_roles').run();
-
+  // Ensure tenant DB has the standard 8 operational roles
   const insertRole = tenantDb.prepare(`
-    INSERT INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
+    INSERT OR REPLACE INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
 
@@ -184,7 +178,7 @@ export function runSeed() {
     );
   }
 
-  // Ensure Admin user exists with role academy_admin, and no other users exist
+  // Ensure Admin user exists with role academy_admin
   const adminPassHash = bcrypt.hashSync(pratikAcademyData.admin_password, 10);
   const existingAdmin = tenantDb.prepare('SELECT id FROM users WHERE email = ?').get(pratikAcademyData.admin_email);
   if (!existingAdmin) {
@@ -206,13 +200,6 @@ export function runSeed() {
       adminPassHash,
       existingAdmin.id
     );
-  }
-  
-  tenantDb.pragma('foreign_keys = OFF');
-  try {
-    tenantDb.prepare('DELETE FROM users WHERE email != ?').run(pratikAcademyData.admin_email);
-  } finally {
-    tenantDb.pragma('foreign_keys = ON');
   }
 
   // Ensure central users lookup
