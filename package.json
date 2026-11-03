@@ -7,6 +7,8 @@
         "server:dev": "node --watch server.js",
         "seed": "node src/db/seed.js",
         "migrate": "node scripts/run_migrations.js",
+        "db:reset": "node scripts/cleanup_all_academies.js",
+        "db:clean": "node scripts/cleanup_all_academies.js",
         "test": "node --test --test-concurrency=1 tests/Unit/**/*.test.js tests/Unit/**/*.test.mjs",
         "mobile:start": "npm --prefix mobile run start",
         "mobile:android": "npm --prefix mobile run android",
