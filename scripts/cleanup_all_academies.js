@@ -124,6 +124,7 @@ if (lockedFiles.length > 0) {
         db.prepare('DELETE FROM academy_users_lookup').run();
         db.prepare('DELETE FROM academy_subscriptions').run();
         db.prepare('DELETE FROM academy_limit_overrides').run();
+        try { db.prepare("DELETE FROM sqlite_sequence WHERE name IN ('academies', 'domains', 'academy_users_lookup')").run(); } catch (_) {}
         console.log('   ✔ Truncated central registry tables in locked central.db');
       } else {
         // Tenant database: truncate all non-system tables
@@ -169,6 +170,7 @@ if (fs.existsSync(tenant1Path)) {
   const userCount = tDb.prepare('SELECT count(*) as c FROM users').get().c;
   const roleCount = tDb.prepare('SELECT count(*) as c FROM academy_roles').get().c;
   const sportsCount = tDb.prepare('SELECT count(*) as c FROM sports').get().c;
+  const branchCount = tDb.prepare('SELECT count(*) as c FROM branches').get().c;
   const studentCount = tDb.prepare('SELECT count(*) as c FROM students').get().c;
   const batchCount = tDb.prepare('SELECT count(*) as c FROM batches').get().c;
   tDb.close();
@@ -177,6 +179,7 @@ if (fs.existsSync(tenant1Path)) {
   console.log(`   Admin Users: ${userCount}`);
   console.log(`   Configured Roles: ${roleCount}`);
   console.log(`   Sports Disciplines: ${sportsCount}`);
+  console.log(`   Branches: ${branchCount} (default baseline campus)`);
   console.log(`   Students: ${studentCount} (clean slate)`);
   console.log(`   Batches: ${batchCount} (clean slate)`);
 }

@@ -208,6 +208,16 @@ export function runSeed() {
     VALUES (?, ?, 'academy_admin')
   `).run(pratikAcademyData.admin_email, academyId);
 
+  // 5b. Ensure baseline branch exists in tenant DB so branch selection is ready immediately
+  const branchCount = tenantDb.prepare('SELECT count(*) as c FROM branches').get().c;
+  if (branchCount === 0) {
+    tenantDb.prepare(`
+      INSERT INTO branches (id, name, city, is_active, academy_id, geofence_radius_meters, is_geofence_enforced)
+      VALUES (1, 'Main Campus Dojo', ?, 1, ?, 100, 1)
+    `).run(pratikAcademyData.city || 'Ahmedabad', academyId);
+    console.log('[Seed] Seeded default branch: Main Campus Dojo (ID: 1)');
+  }
+
   // 6. Register domains for Pratik Karate Academy
   try {
     const insertDomain = centralDb.prepare(`

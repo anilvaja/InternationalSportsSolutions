@@ -766,24 +766,24 @@ const app = {
       .replace(/\r/g, '\\r');
   },
 
-  async getCachedBranches() {
-    if (!this.cachedBranches) {
+  async getCachedBranches(force = false) {
+    if (force || !this.cachedBranches || !this.cachedBranches.length) {
       const res = await this.apiRequest('/api/academy/branches');
       this.cachedBranches = (res && res.branches) || [];
     }
     return this.cachedBranches;
   },
 
-  async getCachedSports() {
-    if (!this.cachedSports) {
+  async getCachedSports(force = false) {
+    if (force || !this.cachedSports || !this.cachedSports.length) {
       const res = await this.apiRequest('/api/academy/sports');
       this.cachedSports = (res && res.sports) || [];
     }
     return this.cachedSports;
   },
 
-  async getCachedBatches() {
-    if (!this.cachedBatches) {
+  async getCachedBatches(force = false) {
+    if (force || !this.cachedBatches || !this.cachedBatches.length) {
       const res = await this.apiRequest('/api/academy/batches');
       this.cachedBatches = (res && res.batches) || [];
     }
@@ -9191,6 +9191,13 @@ const app = {
       return;
     }
 
+    const branchEl = document.getElementById('stu-branch');
+    if (branchEl && branchEl.options.length > 1 && !branch_id) {
+      this.showToast('Please select an academy branch/campus', 'danger');
+      branchEl.focus();
+      return;
+    }
+
     const payload = {
       first_name,
       last_name,
@@ -9479,6 +9486,13 @@ const app = {
 
     if (!first_name || !last_name) {
       this.showToast('First and last name are required', 'danger');
+      return;
+    }
+
+    const branchEl = document.getElementById('stu-branch');
+    if (branchEl && branchEl.options.length > 1 && !branch_id) {
+      this.showToast('Please select an academy branch/campus', 'danger');
+      branchEl.focus();
       return;
     }
 
@@ -15215,11 +15229,20 @@ const app = {
         salary_type: document.getElementById('coach-salary-type') ? document.getElementById('coach-salary-type').value : 'monthly',
         salary_amount: document.getElementById('coach-salary-amount') ? document.getElementById('coach-salary-amount').value : '35000',
       };
+    } else if (targetSelectId === 'wiz-branch-id') {
+      this.collectWizardFormData();
+      window._pendingWizardState = this._wizardState;
     }
 
     const cancelAction = targetSelectId === 'batch-branch'
       ? 'app.showAddBatchModal()'
-      : (targetSelectId === 'stu-branch' ? 'app.showAddStudentModal()' : (targetSelectId === 'coach-branch' ? 'app.showAddCoachModal()' : 'app.closeModal()'));
+      : (targetSelectId === 'stu-branch'
+          ? 'app.showAddStudentModal()'
+          : (targetSelectId === 'coach-branch'
+              ? 'app.showAddCoachModal()'
+              : (targetSelectId === 'wiz-branch-id'
+                  ? 'app.renderAdmissionWizardModal()'
+                  : 'app.closeModal()')));
 
     this.openModal(
       'Create New Branch',
@@ -15326,6 +15349,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedBranches = null;
       this.showToast(res.message || `Branch "${name}" created successfully`, 'success');
       const newBranchId = res.branchId || (res.branch && res.branch.id);
 
@@ -15335,6 +15359,19 @@ const app = {
         this.showAddStudentModal(newBranchId);
       } else if (targetSelectId === 'coach-branch') {
         this.showAddCoachModal(newBranchId);
+      } else if (targetSelectId === 'wiz-branch-id') {
+        const freshBranches = await this.getCachedBranches(true);
+        if (this._wizardState) {
+          this._wizardState.branches = freshBranches;
+          if (this._wizardState.formData) {
+            this._wizardState.formData.branch_id = newBranchId;
+          }
+          this._wizardState.currentStep = 6;
+          this.renderAdmissionWizardModal();
+          this.showToast(`Branch "${name}" created and selected!`, 'success');
+        } else {
+          this.closeModal();
+        }
       } else {
         this.closeModal();
         if (this.currentTab === 'batches') {
@@ -15486,6 +15523,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedBranches = null;
       this.showToast(res.message || 'Branch updated successfully', 'success');
       this.closeModal();
       this.renderBranches();
@@ -15501,6 +15539,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedBranches = null;
       this.showToast(`Branch ${currentActive ? 'deactivated' : 'activated'} successfully`, 'success');
       this.renderBranches();
     } else {
@@ -15518,6 +15557,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedBranches = null;
       this.showToast(res.message || 'Branch deleted successfully', 'success');
       this.renderBranches();
     } else {
@@ -15945,6 +15985,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedBatches = null;
       this.showToast(res.message, 'success');
       this.closeModal();
       this.renderBatches();
@@ -16116,6 +16157,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedBatches = null;
       this.showToast(res.message || 'Batch updated successfully', 'success');
       this.closeModal();
       this.renderBatches();
@@ -16134,6 +16176,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedBatches = null;
       this.showToast(res.message || 'Batch deleted successfully', 'success');
       this.renderBatches();
     } else {
@@ -17634,6 +17677,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedSports = null;
       this.showToast(res.message || 'Sport created successfully', 'success');
       this.closeModal();
       this.renderSports();
@@ -17692,6 +17736,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedSports = null;
       this.showToast(res.message || 'Sport updated successfully', 'success');
       this.closeModal();
       this.renderSports();
@@ -17707,6 +17752,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedSports = null;
       this.showToast(`Sport ${currentActive ? 'deactivated' : 'activated'} successfully`, 'success');
       this.renderSports();
     } else {
@@ -17724,6 +17770,7 @@ const app = {
     });
 
     if (res.success) {
+      this.cachedSports = null;
       this.showToast(res.message || 'Sport removed', res.deactivated ? 'info' : 'success');
       this.renderSports();
     } else {
@@ -24373,12 +24420,19 @@ const app = {
   // ==========================================
 
   async openAdmissionWizard(inquiryData = null) {
-    const [branches, sports, batches, admNumRes] = await Promise.all([
-      this.getCachedBranches(),
-      this.getCachedSports(),
-      this.getCachedBatches(),
+    const [branchesRes, sportsRes, batchesRes, admNumRes] = await Promise.all([
+      this.apiRequest('/api/academy/branches'),
+      this.apiRequest('/api/academy/sports'),
+      this.apiRequest('/api/academy/batches'),
       this.apiRequest('/api/academy/students/next-admission-number'),
     ]);
+
+    const branches = (branchesRes && branchesRes.branches) || [];
+    const sports = (sportsRes && sportsRes.sports) || [];
+    const batches = (batchesRes && batchesRes.batches) || [];
+    this.cachedBranches = branches;
+    this.cachedSports = sports;
+    this.cachedBatches = batches;
 
     const nextAdmNum = (admNumRes && (admNumRes.next_admission_number || admNumRes.admissionNumber))
       ? (admNumRes.next_admission_number || admNumRes.admissionNumber)
@@ -24400,7 +24454,7 @@ const app = {
       }
     }
 
-    const initialBranchId = inquiryData?.branch_id || (branches.length === 1 ? branches[0].id : '');
+    const initialBranchId = inquiryData?.branch_id || (branches.length >= 1 ? branches[0].id : '');
     const initialSportId = inquiryData?.sport_id || '';
     const initialBatchId = inquiryData?.preferred_batch_id || '';
     const initialDob = inquiryData?.date_of_birth || inquiryData?.dob || '';
@@ -24695,11 +24749,22 @@ const app = {
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
               <div class="form-group">
-                <label>Branch / Campus *</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <label style="margin: 0;">Branch / Campus *</label>
+                  <button type="button" class="btn btn-sm btn-outline" style="padding: 1px 7px; font-size: 0.72rem; line-height: 1.4;" onclick="app.showAddBranchModal('wiz-branch-id')">
+                    <i class="fa-solid fa-plus"></i> New Branch
+                  </button>
+                </div>
                 <select id="wiz-branch-id" class="form-select" required onchange="app.onWizardBranchOrSportChange(); app.clearWizardFieldError('wiz-branch-id');">
                   <option value="">-- Select Branch --</option>
-                  ${s.branches.map(b => `<option value="${b.id}" ${String(d.branch_id) === String(b.id) ? 'selected' : ''}>${this.escapeHtml(b.name)}</option>`).join('')}
+                  ${s.branches.map(b => `<option value="${b.id}" ${String(d.branch_id) === String(b.id) || s.branches.length === 1 ? 'selected' : ''}>${this.escapeHtml(b.name)}</option>`).join('')}
                 </select>
+                ${s.branches.length === 0 ? `
+                  <div style="margin-top: 6px; padding: 8px 12px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); border-radius: 4px; font-size: 0.8rem; color: #dc2626; display: flex; align-items: center; justify-content: space-between;">
+                    <span><i class="fa-solid fa-triangle-exclamation"></i> No branches found. Click <strong>+ New Branch</strong> to create one.</span>
+                    <button type="button" class="btn btn-sm btn-primary" style="padding: 2px 8px; font-size: 0.75rem;" onclick="app.showAddBranchModal('wiz-branch-id')">Create Branch</button>
+                  </div>
+                ` : ''}
               </div>
               <div class="form-group">
                 <label>Sport / Discipline (Optional)</label>
@@ -24878,7 +24943,7 @@ const app = {
     // Step 6
     if (document.getElementById('wiz-branch-id')) {
       const bVal = getVal('wiz-branch-id');
-      s.formData.branch_id = bVal ? Number(bVal) : null;
+      s.formData.branch_id = bVal ? Number(bVal) : (s.branches && s.branches.length === 1 ? Number(s.branches[0].id) : null);
     }
     if (document.getElementById('wiz-sport-id')) {
       const spVal = getVal('wiz-sport-id');
@@ -24977,6 +25042,13 @@ const app = {
     } else if (stepNum === 6) {
       const branch = document.getElementById('wiz-branch-id');
       const startDate = document.getElementById('wiz-start-date');
+
+      // Auto-select fallback if only 1 branch exists and field value is empty
+      if (s.branches && s.branches.length === 1 && branch && !branch.value) {
+        branch.value = String(s.branches[0].id);
+        if (s.formData) s.formData.branch_id = Number(s.branches[0].id);
+      }
+
       if (!branch || !branch.value) {
         this.setWizardFieldError('wiz-branch-id', 'Please select an academy branch/campus');
         isValid = false;
@@ -25069,6 +25141,16 @@ const app = {
 
   jumpToWizardStep(stepNum) {
     if (!this._wizardState) return;
+    const s = this._wizardState;
+    if (stepNum > s.currentStep) {
+      for (let i = s.currentStep; i < stepNum; i++) {
+        this.collectWizardFormData();
+        if (!this.validateWizardStep(i)) {
+          this.switchWizardStep(i);
+          return;
+        }
+      }
+    }
     this.switchWizardStep(stepNum);
   },
 
@@ -25144,7 +25226,13 @@ const app = {
 
   async submitAdmissionWizard() {
     this.collectWizardFormData();
-    if (!this.validateWizardStep(7)) return;
+    // Sequentially validate all required steps (1: personal, 2: guardian, 5: medical consent, 6: branch & date, 7: fee)
+    for (const stepNum of [1, 2, 5, 6, 7]) {
+      if (!this.validateWizardStep(stepNum)) {
+        this.switchWizardStep(stepNum);
+        return;
+      }
+    }
 
     const submitBtn = document.getElementById('btn-submit-wizard');
     if (submitBtn) {
