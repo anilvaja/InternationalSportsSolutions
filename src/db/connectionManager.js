@@ -35,7 +35,7 @@ export function getTenantDbById(academyId) {
     if (cached && cached.open && cached.name === expectedPath) {
       return cached;
     }
-    try { cached.close(); } catch (_) {}
+    try { cached.close(); } catch (_) { }
     tenantDbMap.delete(id);
   }
 
@@ -52,7 +52,7 @@ export function getTenantDbById(academyId) {
           INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
           VALUES (1, 'pratik-karate-academy.internationalsportssolutions.test', 1, 0, 'active')
         `).run();
-      } catch (_) {}
+      } catch (_) { }
       academy = centralDb.prepare('SELECT * FROM academies WHERE id = 1').get();
     } else if (id === 2) {
       centralDb.prepare(`
@@ -64,7 +64,7 @@ export function getTenantDbById(academyId) {
           INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
           VALUES (2, 'phoenix-martial-arts.internationalsportssolutions.test', 1, 0, 'active')
         `).run();
-      } catch (_) {}
+      } catch (_) { }
       academy = centralDb.prepare('SELECT * FROM academies WHERE id = 2').get();
     }
   }
@@ -141,15 +141,13 @@ export function getTenantDbById(academyId) {
     // ignore if tables not yet created
   }
 
-  if (process.env.NODE_ENV === 'test') {
-    if (id === 1 || id === 2) {
-      try {
-        const b = db.prepare("SELECT name FROM branches WHERE id = 1").get();
-        if (!b || (id === 2 && b.name === 'Main Campus - West Wing')) {
-          seedUnitTestFixtures(db, id);
-        }
-      } catch (_) {}
-    }
+  if (process.env.NODE_ENV === 'test' && id === 1) {
+    try {
+      const kataCount = db.prepare("SELECT count(*) as c FROM syllabus_categories WHERE name = 'Kata'").get()?.c || 0;
+      if (kataCount === 0) {
+        seedUnitTestFixtures(db, 1);
+      }
+    } catch (_) { }
   }
 
   tenantDbMap.set(id, db);
@@ -290,7 +288,7 @@ export function provisionAcademyDb({
     if (hsn_sac_code) setTenantSetting.run('hsn_sac_code', hsn_sac_code.trim());
     if (gst_state_code) setTenantSetting.run('gst_state_code', gst_state_code.trim());
     if (logo_url) setTenantSetting.run('logo_url', logo_url);
-  } catch (e) {}
+  } catch (e) { }
 
   // Seed default roles: exactly the standard 8 operational roles
   const seedRoles = tenantDb.transaction(() => {

@@ -123,7 +123,7 @@ export class PratikKarateAcademyDemoSeeder {
           actorUserId: options.actorUserId || 1,
           stats: results.stats,
         }));
-      } catch (_) {}
+      } catch (_) { }
 
       return results;
     } catch (err) {
@@ -232,9 +232,6 @@ export class PratikKarateAcademyDemoSeeder {
       { catName: 'Intermediate Kata & Kumite (Green - Brown)', name: 'Gyaku-Zuki (Reverse Punch)', level: 3, code: 'TECH-GYA-ZUK' },
       { catName: 'Intermediate Kata & Kumite (Green - Brown)', name: 'Mawashi-Geri (Roundhouse Kick)', level: 4, code: 'TECH-MAW-GER' },
       { catName: 'Black Belt Dan Master Curriculum', name: 'Bassai Dai (Storm the Fortress)', level: 5, code: 'TECH-BAS-DAI' },
-      { catName: 'Black Belt Dan Master Curriculum', name: 'Kanku Dai (Viewing the Sky)', level: 5, code: 'TECH-KAN-DAI' },
-      { catName: 'Bunkai (Practical Application & Self-Defense)', name: 'Bunkai Heian Shodan (Practical Counters)', level: 2, code: 'TECH-BUN-SHO' },
-      { catName: 'Bunkai (Practical Application & Self-Defense)', name: 'Bunkai Bassai Dai (Joint Defense & Locks)', level: 5, code: 'TECH-BUN-BAS' },
     ];
 
     for (const t of techniques) {
@@ -876,7 +873,7 @@ export class PratikKarateAcademyDemoSeeder {
         );
         results.stats.attendanceAdjustmentsCreated++;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // Test Case 2: Approved Employee Adjustment
     // Vikram had a missing punch on 2026-09-18; 2-day late rule triggered; requested present; approved.
@@ -911,7 +908,7 @@ export class PratikKarateAcademyDemoSeeder {
         );
         results.stats.attendanceAdjustmentsCreated++;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // Test Case 3: Pending Adjustment (awaiting admin review)
     try {
@@ -937,7 +934,7 @@ export class PratikKarateAcademyDemoSeeder {
         );
         results.stats.attendanceAdjustmentsCreated++;
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   /**
