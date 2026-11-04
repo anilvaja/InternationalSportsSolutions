@@ -192,6 +192,10 @@ export class UserService {
       certifications,
       compensation_mode = 'monthly',
       salary_amount = 0,
+      salary_divisor,
+      custom_divisor_value,
+      paid_leave_policy,
+      short_attendance_policy,
       effective_from,
     } = data;
 
@@ -282,19 +286,34 @@ export class UserService {
       );
 
       // Synchronize staff_salary_profiles
+      const resolvedDivisor = (salary_divisor && salary_divisor !== 'academy_default') ? salary_divisor : 'academy_default';
+      const resolvedCustomDiv = custom_divisor_value !== undefined && custom_divisor_value !== null ? Number(custom_divisor_value) : null;
+      const resolvedPaidLeave = (paid_leave_policy && paid_leave_policy !== 'academy_default') ? paid_leave_policy : null;
+      const resolvedShortAtt = (short_attendance_policy && short_attendance_policy !== 'academy_default') ? short_attendance_policy : null;
+
       const existingProfile = db.prepare('SELECT id FROM staff_salary_profiles WHERE user_id = ?').get(userId);
       if (existingProfile) {
         db.prepare(`
           UPDATE staff_salary_profiles 
-          SET salary_mode = ?, base_rate = ?, currency = 'INR', effective_from = ?, updated_at = CURRENT_TIMESTAMP 
+          SET salary_mode = ?, base_rate = ?, currency = 'INR', effective_from = ?,
+              deduction_policy = ?, salary_divisor = ?, custom_divisor_value = ?, paid_leave_policy = ?, short_attendance_policy = ?,
+              updated_at = CURRENT_TIMESTAMP 
           WHERE id = ?
-        `).run(compensation_mode, Number(salary_amount), effectiveDate, existingProfile.id);
+        `).run(
+          compensation_mode, Number(salary_amount), effectiveDate,
+          resolvedDivisor, resolvedDivisor, resolvedCustomDiv, resolvedPaidLeave, resolvedShortAtt,
+          existingProfile.id
+        );
       } else {
         db.prepare(`
           INSERT INTO staff_salary_profiles (
-            academy_id, user_id, salary_mode, base_rate, currency, effective_from, is_active
-          ) VALUES (?, ?, ?, ?, 'INR', ?, 1)
-        `).run(academyId, userId, compensation_mode, Number(salary_amount), effectiveDate);
+            academy_id, user_id, salary_mode, base_rate, currency, effective_from, is_active,
+            deduction_policy, salary_divisor, custom_divisor_value, paid_leave_policy, short_attendance_policy
+          ) VALUES (?, ?, ?, ?, 'INR', ?, 1, ?, ?, ?, ?, ?)
+        `).run(
+          academyId, userId, compensation_mode, Number(salary_amount), effectiveDate,
+          resolvedDivisor, resolvedDivisor, resolvedCustomDiv, resolvedPaidLeave, resolvedShortAtt
+        );
       }
     }
 

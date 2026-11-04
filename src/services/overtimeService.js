@@ -10,7 +10,16 @@ export class OvertimeService {
    */
   static getAcademyPolicy(db, academyId = 1) {
     const settings = db.prepare('SELECT * FROM academy_policy_settings WHERE academy_id = ?').get(academyId);
-    return settings || {
+    if (settings) {
+      return {
+        ...settings,
+        default_salary_divisor: settings.default_salary_divisor || 'actual_scheduled_minutes',
+        custom_divisor_value: settings.custom_divisor_value !== undefined && settings.custom_divisor_value !== null ? Number(settings.custom_divisor_value) : null,
+        paid_leave_policy: settings.paid_leave_policy || 'credit_scheduled_minutes',
+        short_attendance_policy: settings.short_attendance_policy || 'deduct_proportionate_minutes',
+      };
+    }
+    return {
       academy_id: academyId,
       attendance_cutoff_days: 2,
       overtime_threshold_minutes: 30,
@@ -20,6 +29,10 @@ export class OvertimeService {
       timezone: 'Asia/Kolkata',
       allow_future_attendance: 0,
       default_color_theme: 'blue',
+      default_salary_divisor: 'actual_scheduled_minutes',
+      custom_divisor_value: null,
+      paid_leave_policy: 'credit_scheduled_minutes',
+      short_attendance_policy: 'deduct_proportionate_minutes',
     };
   }
 

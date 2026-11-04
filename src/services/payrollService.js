@@ -30,9 +30,103 @@ export class PayrollService {
   }
 
   /**
+   * Retrieves academy-level default payroll calculation settings (with safe recommended defaults)
+   */
+  static getAcademyPayrollSettings(db, academyId = 1) {
+    let settings = null;
+    try {
+      settings = db.prepare('SELECT * FROM academy_policy_settings WHERE academy_id = ?').get(academyId);
+    } catch (_) {}
+
+    return {
+      academy_id: academyId,
+      monthly_salary_divisor: (settings && settings.default_salary_divisor) || 'actual_scheduled_minutes',
+      custom_divisor_value: (settings && settings.custom_divisor_value) !== null && (settings && settings.custom_divisor_value) !== undefined ? Number(settings.custom_divisor_value) : null,
+      paid_leave_policy: (settings && settings.paid_leave_policy) || 'credit_scheduled_minutes',
+      short_attendance_policy: (settings && settings.short_attendance_policy) || 'deduct_proportionate_minutes',
+      attendance_cutoff_days: settings && settings.attendance_cutoff_days !== undefined ? settings.attendance_cutoff_days : 2,
+      overtime_threshold_minutes: settings && settings.overtime_threshold_minutes !== undefined ? settings.overtime_threshold_minutes : 30,
+      statement_visibility_day: settings && settings.statement_visibility_day !== undefined ? settings.statement_visibility_day : 25,
+      expected_payday: settings && settings.expected_payday !== undefined ? settings.expected_payday : 1,
+      overtime_compensation_mode: (settings && settings.overtime_compensation_mode) || 'standard_rate',
+      timezone: (settings && settings.timezone) || 'Asia/Kolkata',
+      allow_future_attendance: settings && settings.allow_future_attendance ? 1 : 0,
+      default_color_theme: (settings && settings.default_color_theme) || 'blue',
+    };
+  }
+
+  /**
+   * Updates academy-level default payroll calculation settings
+   */
+  static updateAcademyPayrollSettings(db, academyId = 1, data = {}, actorId = null) {
+    const validDivisors = [
+      'actual_scheduled_minutes',
+      'actual_scheduled_days',
+      'working_days',
+      'fixed_26',
+      'calendar_days',
+      'custom',
+      'academy_defined'
+    ];
+    const validPaidLeave = ['credit_scheduled_minutes', 'employee_policy'];
+    const validShortAttendance = ['deduct_proportionate_minutes', 'daily_deduction', 'employee_policy'];
+
+    const monthlySalaryDivisor = data.monthly_salary_divisor || data.default_salary_divisor || 'actual_scheduled_minutes';
+    if (!validDivisors.includes(monthlySalaryDivisor)) {
+      throw new Error(`Invalid monthly salary divisor: ${monthlySalaryDivisor}. Allowed: ${validDivisors.join(', ')}`);
+    }
+
+    const isCustom = monthlySalaryDivisor === 'custom' || monthlySalaryDivisor === 'academy_defined';
+    const customDivisorValue = isCustom
+      ? (data.custom_divisor_value !== undefined && data.custom_divisor_value !== null ? Number(data.custom_divisor_value) : null)
+      : null;
+
+    if (isCustom && (!customDivisorValue || customDivisorValue <= 0 || isNaN(customDivisorValue))) {
+      throw new Error('Academy-defined divisor requires a positive custom_divisor_value.');
+    }
+
+    const paidLeavePolicy = data.paid_leave_policy || 'credit_scheduled_minutes';
+    if (!validPaidLeave.includes(paidLeavePolicy)) {
+      throw new Error(`Invalid paid leave policy: ${paidLeavePolicy}. Allowed: ${validPaidLeave.join(', ')}`);
+    }
+
+    const shortAttendancePolicy = data.short_attendance_policy || 'deduct_proportionate_minutes';
+    if (!validShortAttendance.includes(shortAttendancePolicy)) {
+      throw new Error(`Invalid short attendance policy: ${shortAttendancePolicy}. Allowed: ${validShortAttendance.join(', ')}`);
+    }
+
+    db.prepare(`
+      INSERT INTO academy_policy_settings (
+        academy_id, default_salary_divisor, custom_divisor_value, paid_leave_policy, short_attendance_policy, updated_at
+      ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(academy_id) DO UPDATE SET
+        default_salary_divisor = excluded.default_salary_divisor,
+        custom_divisor_value = excluded.custom_divisor_value,
+        paid_leave_policy = excluded.paid_leave_policy,
+        short_attendance_policy = excluded.short_attendance_policy,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(academyId, monthlySalaryDivisor, customDivisorValue, paidLeavePolicy, shortAttendancePolicy);
+
+    // Record audit log
+    try {
+      db.prepare(`
+        INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, details, created_at)
+        VALUES (?, 'Administrator', 'academy_admin', 'UPDATE_PAYROLL_SETTINGS', 'academy_policy_settings', ?, CURRENT_TIMESTAMP)
+      `).run(actorId || 1, JSON.stringify({
+        default_salary_divisor: monthlySalaryDivisor,
+        custom_divisor_value: customDivisorValue,
+        paid_leave_policy: paidLeavePolicy,
+        short_attendance_policy: shortAttendancePolicy,
+      }));
+    } catch (_) {}
+
+    return this.getAcademyPayrollSettings(db, academyId);
+  }
+
+  /**
    * Retrieves effective salary profile for a staff user on a given date
    */
-  static getEffectiveSalaryProfile(db, userId, dateStr = new Date().toISOString().split('T')[0]) {
+  static getEffectiveSalaryProfile(db, userId, dateStr = new Date().toISOString().split('T')[0], academyId = 1) {
     const profile = db.prepare(`
       SELECT * FROM staff_salary_profiles
       WHERE user_id = ?
@@ -43,10 +137,29 @@ export class PayrollService {
       LIMIT 1
     `).get(userId, dateStr, dateStr);
 
+    const academySettings = this.getAcademyPayrollSettings(db, profile ? (profile.academy_id || academyId) : academyId);
+
     if (profile) {
+      let effectiveDivisor = profile.salary_divisor;
+      if (profile.deduction_policy && !['academy_default', 'inherit', 'default', ''].includes(profile.deduction_policy)) {
+        if (!effectiveDivisor || ['academy_default', 'inherit', 'default', ''].includes(effectiveDivisor) || effectiveDivisor === 'actual_scheduled_minutes') {
+          effectiveDivisor = profile.deduction_policy;
+        }
+      }
+
+      const hasDivisorOverride = Boolean(effectiveDivisor && !['academy_default', 'inherit', 'default', ''].includes(effectiveDivisor));
+      const hasPaidLeaveOverride = Boolean(profile.paid_leave_policy && !['academy_default', 'inherit', 'default', ''].includes(profile.paid_leave_policy));
+      const hasShortAttOverride = Boolean(profile.short_attendance_policy && !['academy_default', 'inherit', 'default', ''].includes(profile.short_attendance_policy));
+
       return {
         ...profile,
-        salary_divisor: profile.salary_divisor || profile.deduction_policy || 'actual_scheduled_minutes',
+        salary_divisor: hasDivisorOverride ? effectiveDivisor : academySettings.monthly_salary_divisor,
+        custom_divisor_value: hasDivisorOverride ? profile.custom_divisor_value : academySettings.custom_divisor_value,
+        salary_divisor_source: hasDivisorOverride ? 'employee_override' : 'academy_default',
+        paid_leave_policy: hasPaidLeaveOverride ? profile.paid_leave_policy : academySettings.paid_leave_policy,
+        paid_leave_policy_source: hasPaidLeaveOverride ? 'employee_override' : 'academy_default',
+        short_attendance_policy: hasShortAttOverride ? profile.short_attendance_policy : academySettings.short_attendance_policy,
+        short_attendance_policy_source: hasShortAttOverride ? 'employee_override' : 'academy_default',
         overtime_grace_minutes: profile.overtime_grace_minutes !== undefined && profile.overtime_grace_minutes !== null ? Number(profile.overtime_grace_minutes) : 30,
         min_present_percent: Number(profile.min_present_percent || 75.0),
         min_halfday_percent: Number(profile.min_halfday_percent || 25.0),
@@ -76,7 +189,13 @@ export class PayrollService {
           overtime_eligible: 1,
           overtime_rate_multiplier: 1.0,
           deduction_policy: 'working_days',
-          salary_divisor: 'working_days',
+          salary_divisor: academySettings.monthly_salary_divisor,
+          custom_divisor_value: academySettings.custom_divisor_value,
+          salary_divisor_source: 'academy_default',
+          paid_leave_policy: academySettings.paid_leave_policy,
+          paid_leave_policy_source: 'academy_default',
+          short_attendance_policy: academySettings.short_attendance_policy,
+          short_attendance_policy_source: 'academy_default',
           overtime_grace_minutes: 30,
           min_present_percent: 75.0,
           min_halfday_percent: 25.0,
@@ -104,7 +223,13 @@ export class PayrollService {
         overtime_eligible: 1,
         overtime_rate_multiplier: 1.0,
         deduction_policy: 'working_days',
-        salary_divisor: 'working_days',
+        salary_divisor: academySettings.monthly_salary_divisor,
+        custom_divisor_value: academySettings.custom_divisor_value,
+        salary_divisor_source: 'academy_default',
+        paid_leave_policy: academySettings.paid_leave_policy,
+        paid_leave_policy_source: 'academy_default',
+        short_attendance_policy: academySettings.short_attendance_policy,
+        short_attendance_policy_source: 'academy_default',
         overtime_grace_minutes: 30,
         min_present_percent: 75.0,
         min_halfday_percent: 25.0,
@@ -126,7 +251,13 @@ export class PayrollService {
       overtime_eligible: 1,
       overtime_rate_multiplier: 1.0,
       deduction_policy: 'working_days',
-      salary_divisor: 'working_days',
+      salary_divisor: academySettings.monthly_salary_divisor,
+      custom_divisor_value: academySettings.custom_divisor_value,
+      salary_divisor_source: 'academy_default',
+      paid_leave_policy: academySettings.paid_leave_policy,
+      paid_leave_policy_source: 'academy_default',
+      short_attendance_policy: academySettings.short_attendance_policy,
+      short_attendance_policy_source: 'academy_default',
       overtime_grace_minutes: 30,
       min_present_percent: 75.0,
       min_halfday_percent: 25.0,
@@ -183,21 +314,27 @@ export class PayrollService {
       return existingStatement;
     }
 
-    const profile = this.getEffectiveSalaryProfile(db, userId, period.end_date);
+    const profile = this.getEffectiveSalaryProfile(db, userId, period.end_date, academyId);
     const mode = profile.salary_mode;
     const rate = this.round(profile.base_rate);
     const currency = profile.currency || 'INR';
 
+    // Fetch academy-level payroll defaults
+    const academySettings = this.getAcademyPayrollSettings(db, academyId);
+
     // Resolve salary calculation divisor:
-    // Priority: explicit profile.salary_divisor override, then explicit profile.deduction_policy, else actual_scheduled_minutes
-    let salaryDivisor = 'actual_scheduled_minutes';
-    if (profile.salary_divisor && !['actual_scheduled_minutes', 'working_days'].includes(profile.salary_divisor)) {
-      salaryDivisor = profile.salary_divisor;
-    } else if (profile.deduction_policy) {
-      salaryDivisor = profile.deduction_policy;
-    } else if (profile.salary_divisor) {
-      salaryDivisor = profile.salary_divisor;
-    }
+    // Priority: explicit employee-level override, else academy-level default (already determined by getEffectiveSalaryProfile)
+    let salaryDivisor = profile.salary_divisor || academySettings.monthly_salary_divisor || 'actual_scheduled_minutes';
+    let customDivisorValue = profile.custom_divisor_value !== undefined && profile.custom_divisor_value !== null ? profile.custom_divisor_value : academySettings.custom_divisor_value;
+    let divisorSource = profile.salary_divisor_source || 'academy_default';
+
+    // Resolve approved paid leave policy:
+    let paidLeavePolicy = profile.paid_leave_policy || academySettings.paid_leave_policy || 'credit_scheduled_minutes';
+    let paidLeavePolicySource = profile.paid_leave_policy_source || 'academy_default';
+
+    // Resolve short attendance policy:
+    let shortAttendancePolicy = profile.short_attendance_policy || academySettings.short_attendance_policy || 'deduct_proportionate_minutes';
+    let shortAttendancePolicySource = profile.short_attendance_policy_source || 'academy_default';
 
     const overtimeGraceMinutes = Number(profile.overtime_grace_minutes !== undefined && profile.overtime_grace_minutes !== null ? profile.overtime_grace_minutes : 30);
     const minPresentPercent = Number(profile.min_present_percent || 75.0);
@@ -644,6 +781,24 @@ export class PayrollService {
         const halfUnpaidDays = (scheduleSummary.halfDayLeaveDays || 0) * 0.5;
         const totalUnpaidDays = fullUnpaidDays + halfUnpaidDays;
         absenceDeductions = this.round(totalUnpaidDays * perDayRate);
+
+      } else if (salaryDivisor === 'custom' || salaryDivisor === 'academy_defined') {
+        const customDiv = Number(customDivisorValue || 26);
+        divisorLabel = `Academy-Defined Divisor (${customDiv} days)`;
+        calculationFormula = `M / ${customDiv}`;
+        const perDayRate = this.round(grossEarnings / customDiv);
+        const creditDays = actualDaysWorked + (scheduleSummary.paidLeaveDays || 0) + (scheduleSummary.holidayDays || 0);
+        const missingDays = isClosedOrFinalized
+          ? Math.max(0, customDiv - creditDays)
+          : Math.max(0, Math.min(customDiv, scheduleSummary.elapsedScheduledDays || 0) - actualDaysWorked);
+        absenceDeductions = this.round(missingDays * perDayRate);
+      }
+
+      // If configured for proportionate minute deduction on non-minute divisor, deduct under-attended deficit
+      if (shortAttendancePolicy === 'deduct_proportionate_minutes' && underAttendedMinutes > 0 && salaryDivisor !== 'actual_scheduled_minutes' && salaryDivisor !== 'minutes') {
+        const minRate = totalScheduledMinutes > 0 ? (grossEarnings / totalScheduledMinutes) : 0;
+        const deficitDeduction = this.round(underAttendedMinutes * minRate);
+        absenceDeductions = this.round(absenceDeductions + deficitDeduction);
       }
 
     } else if (mode === 'per_day' || mode === 'daily') {
@@ -793,6 +948,12 @@ export class PayrollService {
       salary_divisor: salaryDivisor,
       divisor_method: salaryDivisor,
       divisor_label: divisorLabel,
+      divisor_source: divisorSource,
+      custom_divisor_value: customDivisorValue,
+      paid_leave_policy: paidLeavePolicy,
+      paid_leave_policy_source: paidLeavePolicySource,
+      short_attendance_policy: shortAttendancePolicy,
+      short_attendance_policy_source: shortAttendancePolicySource,
       calculation_formula: calculationFormula,
       is_provisional: !isPeriodFinalized,
       under_attended_minutes: underAttendedMinutes,
@@ -836,7 +997,20 @@ export class PayrollService {
       statementId = ins.lastInsertRowid;
     }
 
-    return db.prepare('SELECT * FROM staff_salary_statements WHERE id = ?').get(statementId);
+    const row = db.prepare('SELECT * FROM staff_salary_statements WHERE id = ?').get(statementId);
+    return {
+      ...row,
+      salary_divisor: salaryDivisor,
+      divisor_method: salaryDivisor,
+      divisor_label: divisorLabel,
+      divisor_source: divisorSource,
+      custom_divisor_value: customDivisorValue,
+      paid_leave_policy: paidLeavePolicy,
+      paid_leave_policy_source: paidLeavePolicySource,
+      short_attendance_policy: shortAttendancePolicy,
+      short_attendance_policy_source: shortAttendancePolicySource,
+      calculation_formula: calculationFormula,
+    };
   }
 
   /**
@@ -1179,6 +1353,12 @@ export class PayrollService {
       projectedNet: snapshot.projected_net !== undefined ? snapshot.projected_net : statement.net_earnings,
       divisorMethod: snapshot.divisor_method || 'actual_scheduled_minutes',
       divisorLabel: snapshot.divisor_label || 'Actual Scheduled Minutes',
+      divisorSource: snapshot.divisor_source || 'academy_default',
+      customDivisorValue: snapshot.custom_divisor_value !== undefined ? snapshot.custom_divisor_value : null,
+      paidLeavePolicy: snapshot.paid_leave_policy || 'credit_scheduled_minutes',
+      paidLeavePolicySource: snapshot.paid_leave_policy_source || 'academy_default',
+      shortAttendancePolicy: snapshot.short_attendance_policy || 'deduct_proportionate_minutes',
+      shortAttendancePolicySource: snapshot.short_attendance_policy_source || 'academy_default',
       calculationFormula: snapshot.calculation_formula || 'M × min(1, (A + P + O) / S)',
       visibility: {
         currentDay,

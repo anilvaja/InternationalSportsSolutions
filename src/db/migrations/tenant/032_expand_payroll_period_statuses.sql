@@ -39,3 +39,4 @@ DROP TABLE staff_payroll_periods;
 ALTER TABLE staff_payroll_periods_new RENAME TO staff_payroll_periods;
 
 PRAGMA foreign_keys=on;
+

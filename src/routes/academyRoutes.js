@@ -6570,6 +6570,44 @@ academyRouter.post('/payroll/statements/:id/payments', requirePermission(['recor
 });
 
 /**
+ * GET /api/academy/payroll/settings
+ * Retrieves academy-level default payroll calculation settings
+ */
+academyRouter.get('/payroll/settings', requirePermission(['view_payroll', 'manage_staff_payroll', 'view_academy_settings']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const settings = PayrollService.getAcademyPayrollSettings(db, req.academy.id);
+    res.json({ success: true, settings });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/academy/payroll/settings
+ * Updates academy-level default payroll calculation settings
+ */
+academyRouter.put('/payroll/settings', (req, res, next) => {
+  if (req.user.role === 'academy_admin' || req.user.isSuperAdmin) {
+    return next();
+  }
+  requirePermission('manage_staff_payroll')(req, res, next);
+}, (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const updated = PayrollService.updateAcademyPayrollSettings(db, req.academy.id, req.body, req.user.userId);
+    res.json({
+      success: true,
+      message: 'Academy-level payroll calculation settings updated successfully',
+      settings: updated,
+    });
+  } catch (err) {
+    const isValidationError = err.message.includes('Invalid') || err.message.includes('requires');
+    res.status(isValidationError ? 400 : 500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/academy/payroll/profiles
  * Lists staff salary profiles
  */
@@ -6607,6 +6645,10 @@ academyRouter.post('/payroll/profiles', requirePermission('manage_staff_payroll'
       overtime_eligible,
       overtime_rate_multiplier,
       deduction_policy,
+      salary_divisor,
+      custom_divisor_value,
+      paid_leave_policy,
+      short_attendance_policy,
       effective_from,
       effective_to,
       notes,
@@ -6631,12 +6673,18 @@ academyRouter.post('/payroll/profiles', requirePermission('manage_staff_payroll'
       }
     }
 
+    const cleanDivisor = (salary_divisor === 'academy_default' || salary_divisor === 'inherit' || !salary_divisor) ? null : salary_divisor;
+    const cleanPaidLeave = (paid_leave_policy === 'academy_default' || paid_leave_policy === 'inherit' || !paid_leave_policy) ? null : paid_leave_policy;
+    const cleanShortAtt = (short_attendance_policy === 'academy_default' || short_attendance_policy === 'inherit' || !short_attendance_policy) ? null : short_attendance_policy;
+    const cleanCustomDiv = custom_divisor_value !== undefined && custom_divisor_value !== null ? Number(custom_divisor_value) : null;
+
     const ins = db.prepare(`
       INSERT INTO staff_salary_profiles (
         academy_id, user_id, salary_mode, base_rate, currency, scheduled_daily_hours,
         scheduled_days_per_week, overtime_eligible, overtime_rate_multiplier,
-        deduction_policy, effective_from, effective_to, is_active, notes, created_by, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+        deduction_policy, salary_divisor, custom_divisor_value, paid_leave_policy, short_attendance_policy,
+        effective_from, effective_to, is_active, notes, created_by, updated_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
     `).run(
       req.academy.id,
       Number(user_id),
@@ -6648,6 +6696,10 @@ academyRouter.post('/payroll/profiles', requirePermission('manage_staff_payroll'
       overtime_eligible !== undefined ? (overtime_eligible ? 1 : 0) : 1,
       overtime_rate_multiplier !== undefined ? Number(overtime_rate_multiplier) : 1.0,
       deduction_policy || 'working_days',
+      cleanDivisor,
+      cleanCustomDiv,
+      cleanPaidLeave,
+      cleanShortAtt,
       effFrom,
       effTo,
       notes || null,
@@ -6938,12 +6990,16 @@ academyRouter.post('/compensation/employee/:userId', (req, res) => {
       overtime_eligible,
       overtime_rate_multiplier,
       deduction_policy,
+      salary_divisor,
+      custom_divisor_value,
+      paid_leave_policy,
+      short_attendance_policy,
       effective_from,
       effective_to,
       notes,
     } = req.body;
 
-    const validModes = ['monthly', 'hourly', 'per_day', 'per_session', 'per_minute'];
+    const validModes = ['monthly', 'hourly', 'per_day', 'daily', 'per_session', 'per_minute', 'per_batch', 'hybrid'];
     if (!salary_mode || !validModes.includes(salary_mode)) {
       return res.status(400).json({
         success: false,
@@ -6975,12 +7031,18 @@ academyRouter.post('/compensation/employee/:userId', (req, res) => {
       }
     }
 
+    const cleanDivisor = (salary_divisor === 'academy_default' || salary_divisor === 'inherit' || !salary_divisor) ? null : salary_divisor;
+    const cleanPaidLeave = (paid_leave_policy === 'academy_default' || paid_leave_policy === 'inherit' || !paid_leave_policy) ? null : paid_leave_policy;
+    const cleanShortAtt = (short_attendance_policy === 'academy_default' || short_attendance_policy === 'inherit' || !short_attendance_policy) ? null : short_attendance_policy;
+    const cleanCustomDiv = custom_divisor_value !== undefined && custom_divisor_value !== null ? Number(custom_divisor_value) : null;
+
     const ins = db.prepare(`
       INSERT INTO staff_salary_profiles (
         academy_id, user_id, salary_mode, base_rate, currency, scheduled_daily_hours,
         scheduled_days_per_week, overtime_eligible, overtime_rate_multiplier,
-        deduction_policy, effective_from, effective_to, is_active, notes, created_by, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+        deduction_policy, salary_divisor, custom_divisor_value, paid_leave_policy, short_attendance_policy,
+        effective_from, effective_to, is_active, notes, created_by, updated_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
     `).run(
       req.academy.id,
       targetUserId,
@@ -6992,6 +7054,10 @@ academyRouter.post('/compensation/employee/:userId', (req, res) => {
       overtime_eligible !== undefined ? (overtime_eligible ? 1 : 0) : 1,
       overtime_rate_multiplier !== undefined ? Number(overtime_rate_multiplier) : 1.0,
       deduction_policy || 'working_days',
+      cleanDivisor,
+      cleanCustomDiv,
+      cleanPaidLeave,
+      cleanShortAtt,
       effFrom,
       effTo,
       notes || null,
@@ -7890,14 +7956,22 @@ academyRouter.put('/settings/policy', (req, res) => {
       timezone,
       allow_future_attendance,
       default_color_theme,
+      default_salary_divisor,
+      monthly_salary_divisor,
+      custom_divisor_value,
+      paid_leave_policy,
+      short_attendance_policy,
     } = req.body;
+
+    const resolvedDivisor = default_salary_divisor || monthly_salary_divisor || undefined;
 
     db.prepare(`
       INSERT INTO academy_policy_settings (
         academy_id, attendance_cutoff_days, overtime_threshold_minutes,
         statement_visibility_day, expected_payday, overtime_compensation_mode,
-        timezone, allow_future_attendance, default_color_theme, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        timezone, allow_future_attendance, default_color_theme,
+        default_salary_divisor, custom_divisor_value, paid_leave_policy, short_attendance_policy, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(academy_id) DO UPDATE SET
         attendance_cutoff_days = COALESCE(excluded.attendance_cutoff_days, attendance_cutoff_days),
         overtime_threshold_minutes = COALESCE(excluded.overtime_threshold_minutes, overtime_threshold_minutes),
@@ -7907,6 +7981,10 @@ academyRouter.put('/settings/policy', (req, res) => {
         timezone = COALESCE(excluded.timezone, timezone),
         allow_future_attendance = COALESCE(excluded.allow_future_attendance, allow_future_attendance),
         default_color_theme = COALESCE(excluded.default_color_theme, default_color_theme),
+        default_salary_divisor = COALESCE(excluded.default_salary_divisor, default_salary_divisor),
+        custom_divisor_value = COALESCE(excluded.custom_divisor_value, custom_divisor_value),
+        paid_leave_policy = COALESCE(excluded.paid_leave_policy, paid_leave_policy),
+        short_attendance_policy = COALESCE(excluded.short_attendance_policy, short_attendance_policy),
         updated_at = CURRENT_TIMESTAMP
     `).run(
       req.academy.id,
@@ -7917,7 +7995,11 @@ academyRouter.put('/settings/policy', (req, res) => {
       overtime_compensation_mode || 'standard_rate',
       timezone || 'Asia/Kolkata',
       allow_future_attendance !== undefined ? (allow_future_attendance ? 1 : 0) : 0,
-      default_color_theme || 'blue'
+      default_color_theme || 'blue',
+      resolvedDivisor || 'actual_scheduled_minutes',
+      custom_divisor_value !== undefined && custom_divisor_value !== null ? Number(custom_divisor_value) : null,
+      paid_leave_policy || 'credit_scheduled_minutes',
+      short_attendance_policy || 'deduct_proportionate_minutes'
     );
 
     const updated = OvertimeService.getAcademyPolicy(db, req.academy.id);

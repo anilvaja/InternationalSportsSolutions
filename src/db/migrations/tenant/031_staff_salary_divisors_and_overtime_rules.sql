@@ -9,3 +9,4 @@ ALTER TABLE staff_salary_profiles ADD COLUMN custom_divisor_value REAL DEFAULT N
 
 -- 2. Index for divisor queries
 CREATE INDEX IF NOT EXISTS idx_salary_profiles_divisor ON staff_salary_profiles(salary_divisor);
+

@@ -21461,6 +21461,9 @@ const app = {
             </p>
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-outline-secondary btn-sm" onclick="app.showPayrollSettingsModal()">
+              <i class="fa-solid fa-sliders"></i> Monthly Salary Settings
+            </button>
             <button class="btn btn-outline-primary btn-sm" onclick="app.showPayrollProfilesModal()">
               <i class="fa-solid fa-id-card"></i> Staff Salary Profiles
             </button>
@@ -22407,6 +22410,193 @@ const app = {
             </div>
           </div>
 
+          <!-- SECTION 3.5: MONTHLY SALARY CALCULATION SETTINGS (ACADEMY DEFAULTS) -->
+          <div class="policy-section-card" style="margin-bottom: 22px;">
+            <div class="policy-section-header">
+              <div class="policy-section-title">
+                <div class="policy-section-icon" style="background: rgba(99, 102, 241, 0.12); color: #6366f1;">
+                  <i class="fa-solid fa-calculator"></i>
+                </div>
+                <div>
+                  <div>Monthly Salary Calculation Settings</div>
+                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
+                    Configure academy-level defaults for monthly salary divisor, paid leave crediting, and short attendance deductions.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="policy-section-body">
+              
+              <!-- 1. Monthly Salary Divisor -->
+              <div style="margin-bottom: 20px;">
+                <label style="font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 6px;">
+                  Monthly Salary Divisor <span class="badge badge-primary" style="font-size: 11px; margin-left: 6px;">Academy Default</span>
+                </label>
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                  Select the mathematical basis used to calculate daily and per-minute salary equivalents from monthly fixed compensation.
+                </div>
+
+                <div class="policy-choices-grid" style="grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));">
+                  
+                  <div class="policy-choice-card ${(!p.default_salary_divisor || p.default_salary_divisor === 'actual_scheduled_minutes') ? 'active' : ''}" onclick="app.selectSalaryDivisor('actual_scheduled_minutes')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-clock" style="color: var(--primary);"></i> Actual Scheduled Working Minutes
+                      </span>
+                      <input type="radio" name="salary_divisor_radio" value="actual_scheduled_minutes" class="policy-choice-radio" ${(!p.default_salary_divisor || p.default_salary_divisor === 'actual_scheduled_minutes') ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      <strong style="color: var(--primary);">(Recommended)</strong> Derives exact scheduled minutes from employee working calendar. Gross Base = M × min(1, (A+P+O)/S).
+                    </div>
+                  </div>
+
+                  <div class="policy-choice-card ${p.default_salary_divisor === 'working_days' || p.default_salary_divisor === 'actual_scheduled_days' ? 'active' : ''}" onclick="app.selectSalaryDivisor('working_days')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-calendar-days" style="color: #10b981;"></i> Actual Scheduled Working Days
+                      </span>
+                      <input type="radio" name="salary_divisor_radio" value="working_days" class="policy-choice-radio" ${p.default_salary_divisor === 'working_days' || p.default_salary_divisor === 'actual_scheduled_days' ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Divides monthly salary by actual scheduled days in the calendar month excluding weekly offs and holidays.
+                    </div>
+                  </div>
+
+                  <div class="policy-choice-card ${p.default_salary_divisor === 'fixed_26' ? 'active' : ''}" onclick="app.selectSalaryDivisor('fixed_26')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-building" style="color: #f59e0b;"></i> Fixed 26 Days
+                      </span>
+                      <input type="radio" name="salary_divisor_radio" value="fixed_26" class="policy-choice-radio" ${p.default_salary_divisor === 'fixed_26' ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Industrial standard divisor: M / 26 regardless of calendar month length.
+                    </div>
+                  </div>
+
+                  <div class="policy-choice-card ${p.default_salary_divisor === 'calendar_days' ? 'active' : ''}" onclick="app.selectSalaryDivisor('calendar_days')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-calendar" style="color: #8b5cf6;"></i> Calendar Days
+                      </span>
+                      <input type="radio" name="salary_divisor_radio" value="calendar_days" class="policy-choice-radio" ${p.default_salary_divisor === 'calendar_days' ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Uses full calendar month count (28, 29, 30, or 31 days).
+                    </div>
+                  </div>
+
+                  <div class="policy-choice-card ${p.default_salary_divisor === 'custom' || p.default_salary_divisor === 'academy_defined' ? 'active' : ''}" onclick="app.selectSalaryDivisor('custom')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-sliders" style="color: #ec4899;"></i> Academy-Defined Divisor
+                      </span>
+                      <input type="radio" name="salary_divisor_radio" value="custom" class="policy-choice-radio" ${p.default_salary_divisor === 'custom' || p.default_salary_divisor === 'academy_defined' ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Custom fixed divisor value specified by academy administration.
+                    </div>
+                  </div>
+
+                </div>
+
+                <div id="custom-divisor-input-wrap" style="margin-top: 10px; display: ${p.default_salary_divisor === 'custom' || p.default_salary_divisor === 'academy_defined' ? 'block' : 'none'};">
+                  <label style="font-size: 12px; font-weight: 700;">Custom Divisor Value (Days/Units):</label>
+                  <input type="number" id="setting-custom-divisor-val" class="form-input" min="1" max="365" step="0.5" value="${p.custom_divisor_value || 26}" style="width: 140px; margin-top: 4px;">
+                </div>
+                <input type="hidden" id="setting-salary-divisor" value="${p.default_salary_divisor || 'actual_scheduled_minutes'}">
+              </div>
+
+              <!-- 2. Approved Paid Leave Policy -->
+              <div style="margin-bottom: 20px; border-top: 1px solid var(--border); padding-top: 16px;">
+                <label style="font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 6px;">
+                  Approved Paid Leave
+                </label>
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                  How approved paid leaves are credited towards base payable compensation.
+                </div>
+
+                <div class="policy-choices-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+                  <div class="policy-choice-card ${(!p.paid_leave_policy || p.paid_leave_policy === 'credit_scheduled_minutes') ? 'active' : ''}" onclick="app.selectPaidLeavePolicy('credit_scheduled_minutes')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-circle-check" style="color: #10b981;"></i> Credit Scheduled Minutes as Payable
+                      </span>
+                      <input type="radio" name="paid_leave_radio" value="credit_scheduled_minutes" class="policy-choice-radio" ${(!p.paid_leave_policy || p.paid_leave_policy === 'credit_scheduled_minutes') ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Full credit for scheduled shift duration during approved paid leave. Zero salary deduction.
+                    </div>
+                  </div>
+
+                  <div class="policy-choice-card ${p.paid_leave_policy === 'employee_policy' ? 'active' : ''}" onclick="app.selectPaidLeavePolicy('employee_policy')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-user-shield" style="color: #6366f1;"></i> Follow Employee-Specific Leave Policy
+                      </span>
+                      <input type="radio" name="paid_leave_radio" value="employee_policy" class="policy-choice-radio" ${p.paid_leave_policy === 'employee_policy' ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Enforces individual leave quotas, accrued balance limits, and contract-specific rules.
+                    </div>
+                  </div>
+                </div>
+                <input type="hidden" id="setting-paid-leave-policy" value="${p.paid_leave_policy || 'credit_scheduled_minutes'}">
+              </div>
+
+              <!-- 3. Short Attendance Policy -->
+              <div style="border-top: 1px solid var(--border); padding-top: 16px;">
+                <label style="font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 6px;">
+                  Short Attendance
+                </label>
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                  Determines how partially attended shifts, late arrivals, and early departures are penalized.
+                </div>
+
+                <div class="policy-choices-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+                  <div class="policy-choice-card ${(!p.short_attendance_policy || p.short_attendance_policy === 'deduct_proportionate_minutes') ? 'active' : ''}" onclick="app.selectShortAttendancePolicy('deduct_proportionate_minutes')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-percent" style="color: var(--primary);"></i> Deduct Proportionately by Missing Minutes
+                      </span>
+                      <input type="radio" name="short_attendance_radio" value="deduct_proportionate_minutes" class="policy-choice-radio" ${(!p.short_attendance_policy || p.short_attendance_policy === 'deduct_proportionate_minutes') ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Exact minute proration: deducts proportional salary for under-worked shift duration (M × deficit / S).
+                    </div>
+                  </div>
+
+                  <div class="policy-choice-card ${p.short_attendance_policy === 'daily_deduction' ? 'active' : ''}" onclick="app.selectShortAttendancePolicy('daily_deduction')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-calendar-xmark" style="color: #ef4444;"></i> Apply Configured Daily Deduction
+                      </span>
+                      <input type="radio" name="short_attendance_radio" value="daily_deduction" class="policy-choice-radio" ${p.short_attendance_policy === 'daily_deduction' ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Threshold-based deduction: &lt;25% shift attended marks full absence; 25%–75% marks half day.
+                    </div>
+                  </div>
+
+                  <div class="policy-choice-card ${p.short_attendance_policy === 'employee_policy' ? 'active' : ''}" onclick="app.selectShortAttendancePolicy('employee_policy')">
+                    <div class="policy-choice-header">
+                      <span class="policy-choice-title">
+                        <i class="fa-solid fa-user-gear" style="color: #f59e0b;"></i> Follow Employee-Specific Deduction Policy
+                      </span>
+                      <input type="radio" name="short_attendance_radio" value="employee_policy" class="policy-choice-radio" ${p.short_attendance_policy === 'employee_policy' ? 'checked' : ''}>
+                    </div>
+                    <div class="policy-choice-desc">
+                      Follows individual employee threshold percentages and configured grace periods.
+                    </div>
+                  </div>
+                </div>
+                <input type="hidden" id="setting-short-attendance-policy" value="${p.short_attendance_policy || 'deduct_proportionate_minutes'}">
+              </div>
+
+            </div>
+          </div>
+
           <!-- SECTION 4: TIMEZONE & LOCALIZATION -->
           <div class="policy-section-card" style="margin-bottom: 24px;">
             <div class="policy-section-header">
@@ -22762,6 +22952,11 @@ const app = {
     const allow_future_attendance = futureToggle ? (futureToggle.checked ? 1 : 0) : 0;
     const default_color_theme = document.getElementById('setting-default-theme')?.value || 'blue';
 
+    const default_salary_divisor = document.getElementById('setting-salary-divisor')?.value || 'actual_scheduled_minutes';
+    const custom_divisor_value = Number(document.getElementById('setting-custom-divisor-val')?.value) || null;
+    const paid_leave_policy = document.getElementById('setting-paid-leave-policy')?.value || 'credit_scheduled_minutes';
+    const short_attendance_policy = document.getElementById('setting-short-attendance-policy')?.value || 'deduct_proportionate_minutes';
+
     const res = await this.apiRequest('/api/academy/settings/policy', {
       method: 'PUT',
       body: JSON.stringify({
@@ -22773,6 +22968,10 @@ const app = {
         timezone,
         allow_future_attendance,
         default_color_theme,
+        default_salary_divisor,
+        custom_divisor_value,
+        paid_leave_policy,
+        short_attendance_policy,
       }),
     });
 
@@ -22786,6 +22985,145 @@ const app = {
       this.renderPolicySettings();
     } else {
       this.showToast(res.error || 'Failed to update policy settings', 'danger');
+    }
+  },
+
+  selectSalaryDivisor(mode) {
+    const hidden = document.getElementById('setting-salary-divisor');
+    if (hidden) hidden.value = mode;
+    document.querySelectorAll('input[name="salary_divisor_radio"]').forEach(radio => {
+      radio.checked = radio.value === mode;
+      const card = radio.closest('.policy-choice-card');
+      if (card) {
+        card.classList.toggle('active', radio.value === mode);
+      }
+    });
+    const wrap = document.getElementById('custom-divisor-input-wrap');
+    if (wrap) {
+      wrap.style.display = (mode === 'custom' || mode === 'academy_defined') ? 'block' : 'none';
+    }
+  },
+
+  selectPaidLeavePolicy(mode) {
+    const hidden = document.getElementById('setting-paid-leave-policy');
+    if (hidden) hidden.value = mode;
+    document.querySelectorAll('input[name="paid_leave_radio"]').forEach(radio => {
+      radio.checked = radio.value === mode;
+      const card = radio.closest('.policy-choice-card');
+      if (card) {
+        card.classList.toggle('active', radio.value === mode);
+      }
+    });
+  },
+
+  selectShortAttendancePolicy(mode) {
+    const hidden = document.getElementById('setting-short-attendance-policy');
+    if (hidden) hidden.value = mode;
+    document.querySelectorAll('input[name="short_attendance_radio"]').forEach(radio => {
+      radio.checked = radio.value === mode;
+      const card = radio.closest('.policy-choice-card');
+      if (card) {
+        card.classList.toggle('active', radio.value === mode);
+      }
+    });
+  },
+
+  async showPayrollSettingsModal() {
+    this.openModal(
+      'Monthly Salary Calculation Settings',
+      '<div style="padding: 24px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>'
+    );
+
+    try {
+      const res = await this.apiRequest('/api/academy/payroll/settings');
+      const s = res.settings || {};
+
+      const bodyHtml = `
+        <div style="font-size: 13px;">
+          <p style="color: var(--text-muted); margin-bottom: 16px;">
+            Configure the academy-wide defaults for monthly salary calculation, paid leave crediting, and short attendance deductions. Individual employees may override these settings in their compensation profiles.
+          </p>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label style="font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 6px;">
+              Monthly Salary Divisor (Academy Default)
+            </label>
+            <select id="modal-salary-divisor" class="form-select" onchange="document.getElementById('modal-custom-div-wrap').style.display = (this.value === 'custom') ? 'block' : 'none'">
+              <option value="actual_scheduled_minutes" ${s.monthly_salary_divisor === 'actual_scheduled_minutes' ? 'selected' : ''}>Actual scheduled working minutes (recommended)</option>
+              <option value="actual_scheduled_days" ${s.monthly_salary_divisor === 'actual_scheduled_days' || s.monthly_salary_divisor === 'working_days' ? 'selected' : ''}>Actual scheduled working days</option>
+              <option value="fixed_26" ${s.monthly_salary_divisor === 'fixed_26' ? 'selected' : ''}>Fixed 26 days</option>
+              <option value="calendar_days" ${s.monthly_salary_divisor === 'calendar_days' ? 'selected' : ''}>Calendar days</option>
+              <option value="custom" ${s.monthly_salary_divisor === 'custom' || s.monthly_salary_divisor === 'academy_defined' ? 'selected' : ''}>Academy-defined divisor</option>
+            </select>
+          </div>
+
+          <div id="modal-custom-div-wrap" class="form-group" style="margin-bottom: 16px; display: ${s.monthly_salary_divisor === 'custom' || s.monthly_salary_divisor === 'academy_defined' ? 'block' : 'none'};">
+            <label style="font-weight: 700; color: var(--text-heading);">Custom Divisor Value (Days/Units):</label>
+            <input type="number" id="modal-custom-divisor-val" class="form-input" min="1" max="365" step="0.5" value="${s.custom_divisor_value || 26}">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label style="font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 6px;">
+              Approved Paid Leave
+            </label>
+            <select id="modal-paid-leave-policy" class="form-select">
+              <option value="credit_scheduled_minutes" ${s.paid_leave_policy === 'credit_scheduled_minutes' ? 'selected' : ''}>Credit scheduled minutes as payable</option>
+              <option value="employee_policy" ${s.paid_leave_policy === 'employee_policy' ? 'selected' : ''}>Follow employee-specific leave policy</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label style="font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 6px;">
+              Short Attendance
+            </label>
+            <select id="modal-short-att-policy" class="form-select">
+              <option value="deduct_proportionate_minutes" ${s.short_attendance_policy === 'deduct_proportionate_minutes' ? 'selected' : ''}>Deduct proportionately by missing scheduled minutes</option>
+              <option value="daily_deduction" ${s.short_attendance_policy === 'daily_deduction' ? 'selected' : ''}>Apply configured daily deduction</option>
+              <option value="employee_policy" ${s.short_attendance_policy === 'employee_policy' ? 'selected' : ''}>Follow employee-specific deduction policy</option>
+            </select>
+          </div>
+        </div>
+      `;
+
+      const footerHtml = `
+        <button class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="app.savePayrollSettingsModal()">
+          <i class="fa-solid fa-floppy-disk"></i> Save Calculation Settings
+        </button>
+      `;
+
+      this.openModal('Monthly Salary Calculation Settings', bodyHtml, footerHtml);
+    } catch (err) {
+      this.openModal('Error', `<div class="toast danger">${err.message}</div>`);
+    }
+  },
+
+  async savePayrollSettingsModal() {
+    const monthly_salary_divisor = document.getElementById('modal-salary-divisor')?.value || 'actual_scheduled_minutes';
+    const custom_divisor_value = Number(document.getElementById('modal-custom-divisor-val')?.value) || null;
+    const paid_leave_policy = document.getElementById('modal-paid-leave-policy')?.value || 'credit_scheduled_minutes';
+    const short_attendance_policy = document.getElementById('modal-short-att-policy')?.value || 'deduct_proportionate_minutes';
+
+    try {
+      const res = await this.apiRequest('/api/academy/payroll/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          monthly_salary_divisor,
+          custom_divisor_value,
+          paid_leave_policy,
+          short_attendance_policy
+        })
+      });
+
+      if (res.success) {
+        this.showToast('Monthly salary calculation settings updated successfully', 'success');
+        this.closeModal();
+        if (this.currentTab === 'payroll') this.renderPayroll();
+      } else {
+        this.showToast(res.error || 'Failed to update payroll settings', 'danger');
+      }
+    } catch (err) {
+      this.showToast(`Error saving settings: ${err.message}`, 'danger');
     }
   },
 
@@ -26435,13 +26773,52 @@ const app = {
             </div>
           </div>
 
-          <div class="form-group" style="margin-bottom: 16px;">
-            <label>Deduction & Proration Policy</label>
-            <select id="staff-comp-deduction-policy" class="form-select">
-              <option value="pro_rata_daily" ${comp.deduction_policy === 'pro_rata_daily' ? 'selected' : ''}>Pro-rata Daily (Standard)</option>
-              <option value="pro_rata_hourly" ${comp.deduction_policy === 'pro_rata_hourly' ? 'selected' : ''}>Pro-rata Hourly</option>
-              <option value="no_deduction" ${comp.deduction_policy === 'no_deduction' ? 'selected' : ''}>No Deduction (Fixed Honorarium)</option>
-            </select>
+          <!-- Monthly Salary Calculation Settings (Employee-Level Overrides) -->
+          <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+            <div style="font-weight: 700; font-size: 13px; color: var(--text-heading); margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-calculator" style="color: var(--primary);"></i> Monthly Salary Calculation Settings
+            </div>
+            <div style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 12px;">
+              Specify employee-specific calculation rules, or inherit academy defaults.
+            </div>
+
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label style="font-size: 12px; font-weight: 600;">Monthly Salary Divisor Override</label>
+              <select id="staff-comp-salary-divisor" class="form-select" style="font-size: 12.5px;" onchange="document.getElementById('staff-comp-custom-div-wrap').style.display = (this.value === 'custom') ? 'block' : 'none'">
+                <option value="academy_default" ${!comp.salary_divisor || comp.salary_divisor === 'academy_default' || comp.salary_divisor_source === 'academy_default' ? 'selected' : ''}>— Inherit Academy Default —</option>
+                <option value="actual_scheduled_minutes" ${comp.salary_divisor === 'actual_scheduled_minutes' && comp.salary_divisor_source !== 'academy_default' ? 'selected' : ''}>Actual scheduled working minutes (recommended)</option>
+                <option value="working_days" ${comp.salary_divisor === 'working_days' && comp.salary_divisor_source !== 'academy_default' ? 'selected' : ''}>Actual scheduled working days</option>
+                <option value="fixed_26" ${comp.salary_divisor === 'fixed_26' ? 'selected' : ''}>Fixed 26 days</option>
+                <option value="calendar_days" ${comp.salary_divisor === 'calendar_days' ? 'selected' : ''}>Calendar days</option>
+                <option value="custom" ${comp.salary_divisor === 'custom' || comp.salary_divisor === 'academy_defined' ? 'selected' : ''}>Academy-defined divisor (Custom)</option>
+              </select>
+            </div>
+
+            <div id="staff-comp-custom-div-wrap" class="form-group" style="margin-bottom: 12px; display: ${comp.salary_divisor === 'custom' || comp.salary_divisor === 'academy_defined' ? 'block' : 'none'};">
+              <label style="font-size: 11.5px; font-weight: 600;">Custom Divisor Value (Days/Units):</label>
+              <input type="number" id="staff-comp-custom-divisor-val" class="form-input" min="1" max="365" step="0.5" value="${comp.custom_divisor_value || 26}">
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group">
+                <label style="font-size: 12px; font-weight: 600;">Approved Paid Leave</label>
+                <select id="staff-comp-paid-leave" class="form-select" style="font-size: 12.5px;">
+                  <option value="academy_default" ${!comp.paid_leave_policy || comp.paid_leave_policy === 'academy_default' || comp.paid_leave_policy_source === 'academy_default' ? 'selected' : ''}>— Inherit Academy Default —</option>
+                  <option value="credit_scheduled_minutes" ${comp.paid_leave_policy === 'credit_scheduled_minutes' && comp.paid_leave_policy_source !== 'academy_default' ? 'selected' : ''}>Credit scheduled minutes as payable</option>
+                  <option value="employee_policy" ${comp.paid_leave_policy === 'employee_policy' ? 'selected' : ''}>Follow employee-specific leave policy</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label style="font-size: 12px; font-weight: 600;">Short Attendance</label>
+                <select id="staff-comp-short-att" class="form-select" style="font-size: 12.5px;">
+                  <option value="academy_default" ${!comp.short_attendance_policy || comp.short_attendance_policy === 'academy_default' || comp.short_attendance_policy_source === 'academy_default' ? 'selected' : ''}>— Inherit Academy Default —</option>
+                  <option value="deduct_proportionate_minutes" ${comp.short_attendance_policy === 'deduct_proportionate_minutes' && comp.short_attendance_policy_source !== 'academy_default' ? 'selected' : ''}>Deduct proportionately by missing minutes</option>
+                  <option value="daily_deduction" ${comp.short_attendance_policy === 'daily_deduction' ? 'selected' : ''}>Apply configured daily deduction</option>
+                  <option value="employee_policy" ${comp.short_attendance_policy === 'employee_policy' ? 'selected' : ''}>Follow employee-specific deduction policy</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           <div style="border-top: 1px solid var(--border); padding-top: 14px; margin-bottom: 16px;">
@@ -26532,9 +26909,13 @@ const app = {
     const days = Number(document.getElementById('staff-comp-days')?.value) || 6;
     const overtime = Boolean(document.getElementById('staff-comp-overtime')?.checked);
     const multiplier = Number(document.getElementById('staff-comp-multiplier')?.value) || 1.5;
-    const deductionPolicy = document.getElementById('staff-comp-deduction-policy')?.value || 'pro_rata_daily';
     const shiftStart = document.getElementById('staff-shift-start')?.value || '07:00';
     const shiftEnd = document.getElementById('staff-shift-end')?.value || '13:00';
+
+    const salaryDivisor = document.getElementById('staff-comp-salary-divisor')?.value || 'academy_default';
+    const customDivisorVal = Number(document.getElementById('staff-comp-custom-divisor-val')?.value) || null;
+    const paidLeavePolicy = document.getElementById('staff-comp-paid-leave')?.value || 'academy_default';
+    const shortAttPolicy = document.getElementById('staff-comp-short-att')?.value || 'academy_default';
 
     try {
       const [compRes, schedRes, profileRes] = await Promise.all([
@@ -26548,7 +26929,10 @@ const app = {
             scheduled_days_per_week: days,
             overtime_eligible: overtime,
             overtime_rate_multiplier: multiplier,
-            deduction_policy: deductionPolicy
+            salary_divisor: salaryDivisor,
+            custom_divisor_value: customDivisorVal,
+            paid_leave_policy: paidLeavePolicy,
+            short_attendance_policy: shortAttPolicy,
           })
         }),
         this.apiRequest(`/api/academy/schedules/employee/${userId}`, {
@@ -26575,7 +26959,10 @@ const app = {
             scheduled_days_per_week: days,
             overtime_eligible: overtime,
             overtime_rate_multiplier: multiplier,
-            deduction_policy: deductionPolicy
+            salary_divisor: salaryDivisor,
+            custom_divisor_value: customDivisorVal,
+            paid_leave_policy: paidLeavePolicy,
+            short_attendance_policy: shortAttPolicy,
           })
         })
       ]);
