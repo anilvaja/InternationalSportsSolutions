@@ -17,6 +17,9 @@ export class LeaveService {
    * Ensures standard default leave policies exist for an academy
    */
   static ensureDefaultPolicies(db, academyId = 1) {
+    const existing = db.prepare('SELECT COUNT(*) as cnt FROM leave_policies WHERE academy_id = ? AND is_active = 1').get(academyId);
+    if (existing && existing.cnt > 0) return;
+
     const insert = db.prepare(`
       INSERT OR IGNORE INTO leave_policies (
         academy_id, branch_id, leave_type, name, annual_quota, monthly_accrual,
@@ -153,14 +156,19 @@ export class LeaveService {
       for (const p of policies) {
         if (!existingMap.has(p.leave_type)) {
           const quota = Number(p.annual_quota || 0);
-          insert.run(academyId, userId, p.leave_type, year, quota, quota, quota);
+          insert.run(academyId, userId, p.leave_type, year, quota, 0, quota);
         }
       }
 
       return db.prepare(`
-        SELECT b.*, p.name as policy_name, p.is_paid, p.allow_half_day
+        SELECT b.*, p.name as policy_name, p.name as leave_name, p.is_paid, p.allow_half_day
         FROM employee_leave_balances b
-        LEFT JOIN leave_policies p ON p.academy_id = b.academy_id AND p.leave_type = b.leave_type
+        LEFT JOIN (
+          SELECT academy_id, leave_type, name, is_paid, allow_half_day
+          FROM leave_policies
+          WHERE is_active = 1
+          GROUP BY academy_id, leave_type
+        ) p ON p.academy_id = b.academy_id AND p.leave_type = b.leave_type
         WHERE b.user_id = ? AND b.year = ?
         ORDER BY b.leave_type ASC
       `).all(userId, year);

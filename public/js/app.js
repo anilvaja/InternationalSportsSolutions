@@ -16204,22 +16204,169 @@ const app = {
     const totalCount = data?.total !== undefined ? data.total : leaves.length;
     const balances = balancesData?.balances || [];
 
+    const LEAVE_CONFIG = {
+      casual: {
+        name: 'Casual Leave',
+        code: 'CL',
+        icon: 'fa-solid fa-umbrella-beach',
+        color: '#2563eb',
+        lightBg: 'rgba(37, 99, 235, 0.08)',
+        borderHover: 'rgba(37, 99, 235, 0.4)'
+      },
+      sick: {
+        name: 'Sick Leave',
+        code: 'SL',
+        icon: 'fa-solid fa-notes-medical',
+        color: '#dc2626',
+        lightBg: 'rgba(220, 38, 38, 0.08)',
+        borderHover: 'rgba(220, 38, 38, 0.4)'
+      },
+      earned: {
+        name: 'Earned / Annual',
+        code: 'EL',
+        icon: 'fa-solid fa-award',
+        color: '#059669',
+        lightBg: 'rgba(5, 150, 105, 0.08)',
+        borderHover: 'rgba(5, 150, 105, 0.4)'
+      },
+      half_day: {
+        name: 'Half-Day Leave',
+        code: 'HDL',
+        icon: 'fa-solid fa-hourglass-half',
+        color: '#7c3aed',
+        lightBg: 'rgba(124, 58, 237, 0.08)',
+        borderHover: 'rgba(124, 58, 237, 0.4)'
+      },
+      unpaid: {
+        name: 'Leave Without Pay',
+        code: 'LWP',
+        icon: 'fa-solid fa-calendar-xmark',
+        color: '#475569',
+        lightBg: 'rgba(71, 85, 105, 0.08)',
+        borderHover: 'rgba(71, 85, 105, 0.4)'
+      }
+    };
+
     content.innerHTML = `
       ${balances.length > 0 ? `
-        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px;">
-          ${balances.map(b => `
-            <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px;">
-              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
-                ${b.leave_name || b.leave_type.toUpperCase()}
-              </div>
-              <div style="font-size: 22px; font-weight: 800; color: var(--primary); margin-top: 4px;">
-                ${b.remaining} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">/ ${b.opening_balance + (b.accrued || 0)}</span>
-              </div>
-              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-                ${b.used} used • ${b.remaining} remaining
-              </div>
+        <div class="leave-balance-panel" style="margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <h3 style="font-size: 16px; font-weight: 700; color: var(--text-heading); margin: 0; display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-umbrella-beach" style="color: var(--primary);"></i> My Annual Leave Entitlement (${new Date().getFullYear()})
+              </h3>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 3px 0 0 0;">
+                Annual quotas, accrued days, and real-time available balances for current calendar year
+              </p>
             </div>
-          `).join('')}
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="badge badge-success" style="font-size: 11px;">
+                <i class="fa-solid fa-shield-halved"></i> Active Policies
+              </span>
+              <span style="font-size: 12px; color: var(--text-muted);">
+                Employee: <strong>${this.escapeHtml(this.user?.name || 'Staff')}</strong>
+              </span>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+            ${balances.map(b => {
+              const conf = LEAVE_CONFIG[b.leave_type] || {
+                name: b.policy_name || b.leave_name || b.leave_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                code: b.leave_type.toUpperCase(),
+                icon: 'fa-solid fa-calendar-check',
+                color: '#4f46e5',
+                lightBg: 'rgba(79, 70, 229, 0.08)',
+                borderHover: 'rgba(79, 70, 229, 0.4)'
+              };
+              const isUnpaid = b.leave_type === 'unpaid' || b.is_paid === 0;
+              let totalQuota = Number(b.opening_balance || 0);
+              if (Number(b.accrued || 0) > 0 && Number(b.accrued) !== Number(b.opening_balance)) {
+                totalQuota += Number(b.accrued);
+              }
+              const used = Number(b.used || 0);
+              const remaining = Number(b.remaining !== undefined ? b.remaining : Math.max(0, totalQuota - used));
+              const usedPercent = totalQuota > 0 ? Math.min(100, Math.round((used / totalQuota) * 100)) : 0;
+              const remainPercent = Math.max(0, 100 - usedPercent);
+
+              return `
+                <div class="leave-card-widget" style="
+                  background: var(--bg-card);
+                  border: 1px solid var(--border);
+                  border-radius: var(--radius-md);
+                  padding: 18px 20px;
+                  display: flex;
+                  flex-direction: column;
+                  justify-content: space-between;
+                  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+                  position: relative;
+                  overflow: hidden;
+                ">
+                  <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: ${conf.color};"></div>
+                  <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <div style="
+                        width: 38px; height: 38px; border-radius: 10px;
+                        background: ${conf.lightBg}; color: ${conf.color};
+                        display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0;
+                      ">
+                        <i class="${conf.icon}"></i>
+                      </div>
+                      <div>
+                        <div style="font-weight: 700; font-size: 14px; color: var(--text-heading); line-height: 1.2;">
+                          ${b.policy_name || conf.name}
+                        </div>
+                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; margin-top: 2px;">
+                          ${conf.code} &bull; ${isUnpaid ? 'Unpaid Policy' : 'Paid Quota'}
+                        </div>
+                      </div>
+                    </div>
+                    <span class="badge ${isUnpaid ? 'badge-secondary' : 'badge-success'}" style="font-size: 10px; font-weight: 600; padding: 2px 7px;">
+                      ${isUnpaid ? 'Unpaid' : 'Paid'}
+                    </span>
+                  </div>
+
+                  <div style="margin-bottom: 12px;">
+                    ${isUnpaid ? `
+                      <div style="display: flex; align-items: baseline; gap: 6px;">
+                        <span style="font-size: 28px; font-weight: 800; color: var(--text-heading); line-height: 1;">
+                          ${used}
+                        </span>
+                        <span style="font-size: 12px; font-weight: 600; color: var(--text-muted);">
+                          days taken (LWP)
+                        </span>
+                      </div>
+                      <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                        Deducted proportionately in payroll
+                      </div>
+                    ` : `
+                      <div style="display: flex; align-items: baseline; gap: 6px;">
+                        <span style="font-size: 28px; font-weight: 800; color: ${conf.color}; line-height: 1;">
+                          ${remaining}
+                        </span>
+                        <span style="font-size: 13px; font-weight: 600; color: var(--text-muted);">
+                          / ${totalQuota} days remaining
+                        </span>
+                      </div>
+                      <div style="width: 100%; height: 6px; background: rgba(0,0,0,0.06); border-radius: 3px; overflow: hidden; margin-top: 8px;">
+                        <div style="height: 100%; width: ${remainPercent}%; background: ${conf.color}; border-radius: 3px; transition: width 0.3s ease;"></div>
+                      </div>
+                    `}
+                  </div>
+
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 10px; margin-top: auto;">
+                    <span><i class="fa-solid fa-circle-check" style="color: #10b981; margin-right: 3px;"></i> <strong>${used}</strong> used</span>
+                    ${!isUnpaid ? `
+                      <span><i class="fa-solid fa-clock" style="color: ${conf.color}; margin-right: 3px;"></i> <strong>${remaining}</strong> avail</span>
+                      <span><i class="fa-solid fa-layer-group" style="color: var(--text-muted); margin-right: 3px;"></i> Total: <strong>${totalQuota}</strong></span>
+                    ` : `
+                      <span style="color: var(--text-muted);"><i class="fa-solid fa-infinity" style="margin-right: 3px;"></i> No annual cap</span>
+                    `}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
         </div>
       ` : ''}
 
@@ -16291,8 +16438,8 @@ const app = {
                 <tr>
                   <td><strong>${this.escapeHtml(l.applicant_name)}</strong></td>
                   <td>
-                    <span class="badge badge-info">${this.escapeHtml(l.applicant_type)}</span>
-                    ${l.leave_type ? `<span class="badge badge-purple" style="margin-left: 4px;">${this.escapeHtml(l.leave_type)}</span>` : ''}
+                    <span class="badge badge-info" style="font-size: 11px; text-transform: capitalize;">${this.escapeHtml(l.applicant_type)}</span>
+                    ${l.leave_type ? `<span class="badge badge-purple" style="margin-left: 4px; font-size: 11px;">${this.escapeHtml(LEAVE_CONFIG[l.leave_type]?.name || l.leave_type)}</span>` : ''}
                   </td>
                   <td>${this.formatDate(l.start_date)} to ${this.formatDate(l.end_date)}</td>
                   <td><strong>${l.days_count !== undefined ? l.days_count : 1}</strong></td>
