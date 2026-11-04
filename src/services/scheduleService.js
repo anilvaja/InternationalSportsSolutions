@@ -370,6 +370,7 @@ export class ScheduleService {
           (end_date IS NULL AND holiday_date = ?) OR
           (end_date IS NOT NULL AND holiday_date <= ? AND end_date >= ?)
         )
+          AND branch_id IS NULL
           AND (status IS NULL OR status = 'approved')
         ORDER BY holiday_date DESC
         LIMIT 1
@@ -463,6 +464,9 @@ export class ScheduleService {
 
     scheduledHours = Number(scheduledHours.toFixed(2));
 
+    let baseScheduledHours = scheduledHours;
+    let baseScheduledMinutes = Math.round(baseScheduledHours * 60);
+
     const isHalfDay = leave && (leave.day_part === 'first_half' || leave.day_part === 'second_half' || leave.leave_type === 'half_day');
     if (isHalfDay) {
       scheduledHours = Number((scheduledHours / 2).toFixed(2));
@@ -481,6 +485,22 @@ export class ScheduleService {
       }
     }
 
+    const effectiveScheduledHours = (!isWorkingDay && !workException) ? 0 : scheduledHours;
+    const effectiveScheduledMinutes = Math.round(effectiveScheduledHours * 60);
+
+    // Attach scheduled_minutes to each individual shift for slot reconciliation
+    const enrichedShifts = dayShifts.map(s => {
+      let gMin = this.timeToMinutes(s.end_time) - this.timeToMinutes(s.start_time);
+      if (gMin < 0) gMin += 1440;
+      const bDeduct = s.is_break_paid ? 0 : (s.break_duration_minutes || 0);
+      const sNet = Math.max(0, gMin - bDeduct);
+      return {
+        ...s,
+        scheduledMinutes: sNet,
+        scheduled_minutes: sNet
+      };
+    });
+
     return {
       date: dateStr,
       dayOfWeek,
@@ -493,12 +513,16 @@ export class ScheduleService {
       isHolidayPaid: holiday ? (holiday.is_paid !== 0) : false,
       isLeave: !!leave,
       leaveType: leave ? (leave.leave_type || 'casual') : null,
+      isLeavePaid: leave ? (leave.is_paid !== 0 && leave.leave_type !== 'unpaid') : false,
       isHalfDay: !!isHalfDay,
       halfDayPart: isHalfDay ? leave.day_part : null,
       hasWorkException: !!workException,
       workExceptionType: workException ? workException.exception_type : null,
-      scheduledHours: (!isWorkingDay && !workException) ? 0 : scheduledHours,
-      shifts: dayShifts,
+      scheduledHours: effectiveScheduledHours,
+      scheduledMinutes: effectiveScheduledMinutes,
+      baseShiftHours: baseScheduledHours,
+      baseShiftMinutes: baseScheduledMinutes,
+      shifts: enrichedShifts,
       scheduleId: schedule.id || null,
       scheduleName: schedule.schedule_name,
       scheduleSource: schedule.source || 'default'
@@ -510,14 +534,26 @@ export class ScheduleService {
    */
   static calculateExpectedHoursForPeriod(db, userId, startDate, endDate, joiningDate = null, exitDate = null) {
     let totalScheduledHours = 0;
+    let totalScheduledMinutes = 0;
     let scheduledWorkingDays = 0;
     let weeklyOffDays = 0;
     let holidayDays = 0;
     let paidLeaveDays = 0;
     let unpaidLeaveDays = 0;
     let halfDayLeaveDays = 0;
+    let halfDayPaidLeaveDays = 0;
+    let halfDayUnpaidLeaveDays = 0;
     let offDaysWorked = 0;
+    let paidHolidayMinutes = 0;
+    let paidLeaveMinutes = 0;
+    let unpaidLeaveMinutes = 0;
+    let halfDayLeaveMinutes = 0;
+    let elapsedScheduledMinutes = 0;
+    let upcomingScheduledMinutes = 0;
+    let elapsedScheduledDays = 0;
+    let upcomingScheduledDays = 0;
     const dayBreakdown = [];
+    const todayStr = new Date().toISOString().slice(0, 10);
 
     let effectiveJoining = joiningDate;
     let effectiveExit = exitDate;
@@ -525,14 +561,12 @@ export class ScheduleService {
     if (!effectiveJoining || !effectiveExit) {
       try {
         const emp = db.prepare('SELECT joining_date, exit_date FROM employment_records WHERE user_id = ? AND effective_to IS NULL ORDER BY effective_from DESC LIMIT 1').get(userId);
-        const coach = db.prepare('SELECT joining_date, created_at FROM coaches WHERE user_id = ?').get(userId);
-        const u = db.prepare('SELECT created_at FROM users WHERE id = ?').get(userId);
+        const coach = db.prepare('SELECT joining_date FROM coaches WHERE user_id = ?').get(userId);
         
         if (!effectiveJoining) {
           effectiveJoining = (emp && emp.joining_date)
             || (coach && coach.joining_date)
-            || (coach && coach.created_at ? coach.created_at.slice(0, 10) : null)
-            || (u && u.created_at ? u.created_at.slice(0, 10) : null);
+            || null;
         }
         if (!effectiveExit && emp && emp.exit_date) {
           effectiveExit = emp.exit_date;
@@ -595,19 +629,72 @@ export class ScheduleService {
         offDaysWorked++;
         scheduledWorkingDays++;
         totalScheduledHours += dayExp.scheduledHours;
+        totalScheduledMinutes += dayExp.scheduledMinutes;
+        if (dateStr <= todayStr) {
+          elapsedScheduledMinutes += dayExp.scheduledMinutes;
+          elapsedScheduledDays++;
+        } else {
+          upcomingScheduledMinutes += dayExp.scheduledMinutes;
+          upcomingScheduledDays++;
+        }
       } else if (dayExp.dayType === 'paid_holiday') {
         holidayDays++;
+        paidHolidayMinutes += (dayExp.baseShiftMinutes || 0);
       } else if (dayExp.dayType === 'paid_leave') {
         paidLeaveDays++;
+        scheduledWorkingDays++;
+        totalScheduledHours += (dayExp.baseShiftHours || dayExp.scheduledHours || 0);
+        totalScheduledMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+        paidLeaveMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+        if (dateStr <= todayStr) {
+          elapsedScheduledMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+          elapsedScheduledDays++;
+        } else {
+          upcomingScheduledMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+          upcomingScheduledDays++;
+        }
       } else if (dayExp.dayType === 'half_day_leave') {
         halfDayLeaveDays++;
-        scheduledWorkingDays += 0.5;
-        totalScheduledHours += dayExp.scheduledHours;
+        if (dayExp.isLeavePaid) {
+          halfDayPaidLeaveDays++;
+        } else {
+          halfDayUnpaidLeaveDays++;
+        }
+        scheduledWorkingDays++;
+        totalScheduledHours += (dayExp.baseShiftHours || dayExp.scheduledHours || 0);
+        totalScheduledMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+        halfDayLeaveMinutes += Math.round((dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0) / 2);
+        if (dateStr <= todayStr) {
+          elapsedScheduledMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+          elapsedScheduledDays++;
+        } else {
+          upcomingScheduledMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+          upcomingScheduledDays++;
+        }
       } else if (dayExp.dayType === 'unpaid_leave') {
         unpaidLeaveDays++;
+        scheduledWorkingDays++;
+        totalScheduledHours += (dayExp.baseShiftHours || dayExp.scheduledHours || 0);
+        totalScheduledMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+        unpaidLeaveMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+        if (dateStr <= todayStr) {
+          elapsedScheduledMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+          elapsedScheduledDays++;
+        } else {
+          upcomingScheduledMinutes += (dayExp.baseShiftMinutes || dayExp.scheduledMinutes || 0);
+          upcomingScheduledDays++;
+        }
       } else {
         scheduledWorkingDays++;
         totalScheduledHours += dayExp.scheduledHours;
+        totalScheduledMinutes += dayExp.scheduledMinutes;
+        if (dateStr <= todayStr) {
+          elapsedScheduledMinutes += dayExp.scheduledMinutes;
+          elapsedScheduledDays++;
+        } else {
+          upcomingScheduledMinutes += dayExp.scheduledMinutes;
+          upcomingScheduledDays++;
+        }
       }
     }
 
@@ -615,13 +702,24 @@ export class ScheduleService {
 
     return {
       totalScheduledHours,
+      totalScheduledMinutes,
       scheduledWorkingDays,
       weeklyOffDays,
       holidayDays,
       paidLeaveDays,
       unpaidLeaveDays,
       halfDayLeaveDays,
+      halfDayPaidLeaveDays,
+      halfDayUnpaidLeaveDays,
       offDaysWorked,
+      paidHolidayMinutes,
+      paidLeaveMinutes,
+      unpaidLeaveMinutes,
+      halfDayLeaveMinutes,
+      elapsedScheduledMinutes,
+      upcomingScheduledMinutes,
+      elapsedScheduledDays,
+      upcomingScheduledDays,
       totalCalendarDays: dayBreakdown.length,
       joiningDate: effectiveJoining || null,
       exitDate: effectiveExit || null,

@@ -20846,15 +20846,34 @@ const app = {
             `}
           </div>
 
+          <!-- Divisor & Calculation Engine Policy Banner -->
+          <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px;">
+              <span style="font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-calculator" style="color: var(--primary);"></i> Divisor:
+              </span>
+              <span class="badge badge-purple" style="font-weight: 600;">${res.divisorLabel || 'Actual Scheduled Minutes'}</span>
+              <span style="color: var(--text-muted);">&bull;</span>
+              <span style="font-size: 12px; color: var(--text-muted);">
+                Formula: <code style="background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 4px; font-weight: 600;">${res.calculationFormula || 'M × min(1, (A + P + O) / S)'}</code>
+              </span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted);">
+              Cycle Bounds: <strong>${period.start_date}</strong> to <strong>${period.end_date}</strong>
+            </div>
+          </div>
+
           <!-- 4 KPI Metrics Cards -->
           <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-bottom: 24px;">
             <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
-              <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Base Gross Earnings</span>
+              <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
+                ${visibility.isProvisional ? 'Accrued MTD Earned' : 'Base Gross Earnings'}
+              </span>
               <div style="font-size: 26px; font-weight: 800; color: var(--text-heading); margin-top: 4px;">
-                ₹${Number(statement.gross_earnings || 0).toLocaleString()}
+                ₹${Number(visibility.isProvisional && res.accruedMtdEarned !== undefined ? res.accruedMtdEarned : (statement.gross_earnings || 0)).toLocaleString()}
               </div>
               <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-                Mode: <span class="badge badge-purple">${statement.salary_mode}</span> &bull; Rate: ₹${statement.applicable_rate}
+                ${visibility.isProvisional ? `Earned for ${attendanceSummary.totalActualWorkedHours || 0}h worked to date` : `Mode: <span class="badge badge-purple">${statement.salary_mode}</span> &bull; Rate: ₹${statement.applicable_rate}`}
               </div>
             </div>
 
@@ -20869,22 +20888,24 @@ const app = {
             </div>
 
             <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
-              <span style="font-size: 11px; text-transform: uppercase; color: #ef4444; font-weight: 600;">Deductions (Unpaid Leave)</span>
+              <span style="font-size: 11px; text-transform: uppercase; color: #ef4444; font-weight: 600;">Deductions (Absence / Leave)</span>
               <div style="font-size: 26px; font-weight: 800; color: #ef4444; margin-top: 4px;">
                 -₹${Number(statement.total_deductions || 0).toLocaleString()}
               </div>
               <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-                Authorized policy adjustments
+                Under-work & policy adjustments
               </div>
             </div>
 
             <div class="stat-card" style="background: var(--bg-card); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 18px;">
-              <span style="font-size: 11px; text-transform: uppercase; color: #10b981; font-weight: 700;">Net Payable Salary</span>
+              <span style="font-size: 11px; text-transform: uppercase; color: #10b981; font-weight: 700;">
+                ${visibility.isProvisional ? 'Projected Month-End Pay' : 'Net Payable Salary'}
+              </span>
               <div style="font-size: 26px; font-weight: 800; color: #10b981; margin-top: 4px;">
-                ₹${Number(statement.net_earnings || 0).toLocaleString()}
+                ₹${Number(visibility.isProvisional && res.projectedNet !== undefined ? res.projectedNet : (statement.net_earnings || 0)).toLocaleString()}
               </div>
               <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-                Outstanding: <strong>₹${Number(statement.balance_amount || 0).toLocaleString()}</strong> &bull; Status: <span class="badge ${statement.payment_status === 'paid' ? 'badge-success' : 'badge-warning'}">${statement.payment_status}</span>
+                ${visibility.isProvisional ? `Estimated if remaining ${Math.max(0, (attendanceSummary.totalScheduledHours || 0) - (attendanceSummary.totalActualWorkedHours || 0)).toFixed(1)}h attended` : `Outstanding: <strong>₹${Number(statement.balance_amount || 0).toLocaleString()}</strong> &bull; <span class="badge ${statement.payment_status === 'paid' ? 'badge-success' : 'badge-warning'}">${statement.payment_status}</span>`}
               </div>
             </div>
           </div>

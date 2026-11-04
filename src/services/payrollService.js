@@ -44,7 +44,13 @@ export class PayrollService {
     `).get(userId, dateStr, dateStr);
 
     if (profile) {
-      return profile;
+      return {
+        ...profile,
+        salary_divisor: profile.salary_divisor || profile.deduction_policy || 'actual_scheduled_minutes',
+        overtime_grace_minutes: profile.overtime_grace_minutes !== undefined && profile.overtime_grace_minutes !== null ? Number(profile.overtime_grace_minutes) : 30,
+        min_present_percent: Number(profile.min_present_percent || 75.0),
+        min_halfday_percent: Number(profile.min_halfday_percent || 25.0),
+      };
     }
 
     // Check recent compensation history
@@ -70,6 +76,10 @@ export class PayrollService {
           overtime_eligible: 1,
           overtime_rate_multiplier: 1.0,
           deduction_policy: 'working_days',
+          salary_divisor: 'working_days',
+          overtime_grace_minutes: 30,
+          min_present_percent: 75.0,
+          min_halfday_percent: 25.0,
           effective_from: comp.effective_from,
           effective_to: comp.effective_to,
           payment_frequency: 'monthly',
@@ -94,6 +104,10 @@ export class PayrollService {
         overtime_eligible: 1,
         overtime_rate_multiplier: 1.0,
         deduction_policy: 'working_days',
+        salary_divisor: 'working_days',
+        overtime_grace_minutes: 30,
+        min_present_percent: 75.0,
+        min_halfday_percent: 25.0,
         effective_from: '2026-01-01',
         payment_frequency: 'monthly',
         scheduled_payday: 1,
@@ -112,6 +126,10 @@ export class PayrollService {
       overtime_eligible: 1,
       overtime_rate_multiplier: 1.0,
       deduction_policy: 'working_days',
+      salary_divisor: 'working_days',
+      overtime_grace_minutes: 30,
+      min_present_percent: 75.0,
+      min_halfday_percent: 25.0,
       effective_from: '2026-01-01',
       payment_frequency: 'monthly',
       scheduled_payday: 1,
@@ -170,10 +188,34 @@ export class PayrollService {
     const rate = this.round(profile.base_rate);
     const currency = profile.currency || 'INR';
 
+    // Resolve salary calculation divisor:
+    // Priority: explicit profile.salary_divisor override, then explicit profile.deduction_policy, else actual_scheduled_minutes
+    let salaryDivisor = 'actual_scheduled_minutes';
+    if (profile.salary_divisor && !['actual_scheduled_minutes', 'working_days'].includes(profile.salary_divisor)) {
+      salaryDivisor = profile.salary_divisor;
+    } else if (profile.deduction_policy) {
+      salaryDivisor = profile.deduction_policy;
+    } else if (profile.salary_divisor) {
+      salaryDivisor = profile.salary_divisor;
+    }
+
+    const overtimeGraceMinutes = Number(profile.overtime_grace_minutes !== undefined && profile.overtime_grace_minutes !== null ? profile.overtime_grace_minutes : 30);
+    const minPresentPercent = Number(profile.min_present_percent || 75.0);
+    const minHalfdayPercent = Number(profile.min_halfday_percent || 25.0);
+
     // 1. Calculate Expected Hours & Schedule from employee's assigned schedule
     const scheduleSummary = ScheduleService.calculateExpectedHoursForPeriod(
       db, userId, period.start_date, period.end_date
     );
+
+    const totalScheduledHours = Number(scheduleSummary.totalScheduledHours || 0);
+    const totalScheduledMinutes = Number(scheduleSummary.totalScheduledMinutes || Math.round(totalScheduledHours * 60));
+    const scheduledWorkingDays = Number(scheduleSummary.scheduledWorkingDays || 0);
+    const totalCalendarDays = Number(scheduleSummary.totalCalendarDays || 30);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const isPeriodFinalized = period.status === 'finalized';
+    const isPeriodPast = period.end_date < todayStr;
+    const isClosedOrFinalized = isPeriodFinalized || isPeriodPast;
 
     // 2. Query verified batch sessions in this period (for coaches / session pay)
     const coach = db.prepare('SELECT id FROM coaches WHERE user_id = ?').get(userId);
@@ -202,22 +244,6 @@ export class PayrollService {
       ORDER BY punch_date ASC
     `).all(userId, period.start_date, period.end_date);
 
-    let punchMinutes = 0;
-    let punchOvertimeMinutes = 0;
-    const punchDates = new Set();
-    for (const p of punches) {
-      punchMinutes += (p.duration_minutes || 0);
-      punchOvertimeMinutes += (p.overtime_minutes || 0);
-      if (p.punch_date) punchDates.add(p.punch_date);
-    }
-
-    let sessionMinutes = 0;
-    const sessionDates = new Set();
-    for (const s of sessions) {
-      sessionMinutes += this.getDurationMinutes(s.start_time, s.end_time);
-      if (s.scheduled_date) sessionDates.add(s.scheduled_date);
-    }
-
     // 3.5 Query independent staff slot attendance in this period
     let slotRecords = [];
     try {
@@ -229,36 +255,135 @@ export class PayrollService {
       `).all(userId, period.start_date, period.end_date);
     } catch (_) {}
 
+    const dayAttendanceMap = new Map();
+    let slotCompletedSessions = 0;
+    let slotApprovedOvertimeMinutes = 0;
     let slotAttendedMinutes = 0;
     let slotApprovedMinutes = 0;
-    let slotApprovedOvertimeMinutes = 0;
-    let slotCompletedSessions = 0;
-    const slotWorkedDates = new Set();
 
     for (const sa of slotRecords) {
+      if (!dayAttendanceMap.has(sa.attendance_date)) {
+        dayAttendanceMap.set(sa.attendance_date, { minutes: 0, overtimeMinutes: 0, slots: [] });
+      }
+      const dayData = dayAttendanceMap.get(sa.attendance_date);
       if (['present', 'late', 'early_checkout', 'partial'].includes(sa.status)) {
+        const attended = sa.approved_payable_minutes || sa.attended_minutes || 0;
+        dayData.minutes += attended;
         slotAttendedMinutes += (sa.attended_minutes || 0);
-        slotApprovedMinutes += (sa.approved_payable_minutes || sa.attended_minutes || 0);
-        slotWorkedDates.add(sa.attendance_date);
+        slotApprovedMinutes += attended;
+        dayData.slots.push(sa);
         if (sa.batch_id || ['regular', 'morning', 'evening', 'special_training'].includes(sa.shift_type)) {
           slotCompletedSessions++;
         }
       }
       if (sa.overtime_minutes > 0 && (sa.status === 'approved_overtime' || sa.approved_by)) {
         slotApprovedOvertimeMinutes += sa.overtime_minutes;
+        dayData.overtimeMinutes += sa.overtime_minutes;
       }
     }
 
-    const allWorkedDates = new Set([...punchDates, ...sessionDates, ...slotWorkedDates]);
-    const actualDaysWorked = allWorkedDates.size;
+    let punchMinutes = 0;
+    let punchOvertimeMinutes = 0;
+    for (const p of punches) {
+      punchMinutes += (p.duration_minutes || 0);
+      punchOvertimeMinutes += (p.overtime_minutes || 0);
+      if (!dayAttendanceMap.has(p.punch_date)) {
+        dayAttendanceMap.set(p.punch_date, { minutes: 0, overtimeMinutes: 0, slots: [] });
+      }
+      const dayData = dayAttendanceMap.get(p.punch_date);
+      if (dayData.slots.length === 0) {
+        dayData.minutes += (p.duration_minutes || 0);
+        dayData.overtimeMinutes += (p.overtime_minutes || 0);
+      }
+    }
 
-    const totalActualMinutes = slotRecords.length > 0
-      ? slotAttendedMinutes
-      : (Math.max(punchMinutes, sessionMinutes) > 0 
-        ? (punchMinutes > 0 ? punchMinutes : sessionMinutes)
-        : (scheduleSummary.scheduledWorkingDays > 0 && punches.length === 0 && sessions.length === 0 ? 0 : 0));
+    for (const s of sessions) {
+      const dur = this.getDurationMinutes(s.start_time, s.end_time);
+      if (!dayAttendanceMap.has(s.scheduled_date)) {
+        dayAttendanceMap.set(s.scheduled_date, { minutes: 0, overtimeMinutes: 0, slots: [] });
+      }
+      const dayData = dayAttendanceMap.get(s.scheduled_date);
+      if (dayData.slots.length === 0 && dayData.minutes === 0) {
+        dayData.minutes += dur;
+      }
+    }
+
+    let actualDaysWorked = 0;
+    let totalActualMinutes = 0;
+    let elapsedActualMinutes = 0;
+    let fullDaysCount = 0;
+    let halfDaysCount = 0;
+    let partialDaysCount = 0;
+    let underAttendedMinutes = 0;
+
+    for (const dayExp of (scheduleSummary.dayBreakdown || [])) {
+      if (dayExp.isPriorToJoining || dayExp.isPostExit) continue;
+
+      const dateStr = dayExp.date;
+      const dayData = dayAttendanceMap.get(dateStr);
+      const attendedMin = dayData ? dayData.minutes : 0;
+      const scheduledMin = dayExp.scheduledMinutes || Math.round((dayExp.scheduledHours || 0) * 60);
+
+      totalActualMinutes += attendedMin;
+      if (dateStr <= todayStr) {
+        elapsedActualMinutes += attendedMin;
+      }
+
+      if (dayExp.isWorkingDay && scheduledMin > 0) {
+        if (dayData && dayData.slots && dayData.slots.length > 0) {
+          const allPresent = dayData.slots.every(s => s.status === 'present');
+          const anyHalf = dayData.slots.some(s => s.status === 'half_day');
+          const anyPartial = dayData.slots.some(s => s.status === 'partial');
+          if (allPresent) {
+            actualDaysWorked += 1.0;
+            fullDaysCount++;
+          } else if (anyHalf) {
+            actualDaysWorked += 0.5;
+            halfDaysCount++;
+            if (dateStr <= todayStr || isClosedOrFinalized) {
+              underAttendedMinutes += Math.max(0, scheduledMin - attendedMin);
+            }
+          } else if (anyPartial) {
+            partialDaysCount++;
+            if (dateStr <= todayStr || isClosedOrFinalized) {
+              underAttendedMinutes += Math.max(0, scheduledMin - attendedMin);
+            }
+          } else if (attendedMin >= scheduledMin * (minPresentPercent / 100)) {
+            actualDaysWorked += 1.0;
+            fullDaysCount++;
+          } else if (attendedMin >= scheduledMin * (minHalfdayPercent / 100)) {
+            actualDaysWorked += 0.5;
+            halfDaysCount++;
+          } else {
+            partialDaysCount++;
+          }
+        } else {
+          const ratio = attendedMin / scheduledMin;
+          if (ratio >= (minPresentPercent / 100)) {
+            actualDaysWorked += 1.0;
+            fullDaysCount++;
+          } else if (ratio >= (minHalfdayPercent / 100)) {
+            actualDaysWorked += 0.5;
+            halfDaysCount++;
+            if (dateStr <= todayStr || isClosedOrFinalized) {
+              underAttendedMinutes += Math.max(0, scheduledMin - attendedMin);
+            }
+          } else if (attendedMin > 0) {
+            partialDaysCount++;
+            if (dateStr <= todayStr || isClosedOrFinalized) {
+              underAttendedMinutes += Math.max(0, scheduledMin - attendedMin);
+            }
+          }
+        }
+      } else if (!dayExp.isWorkingDay && attendedMin > 0) {
+        actualDaysWorked += 1.0;
+      }
+    }
 
     const actualHoursWorked = this.round(totalActualMinutes / 60);
+    const paidLeaveMinutes = Number(scheduleSummary.paidLeaveMinutes || 0);
+    const paidHolidayMinutes = Number(scheduleSummary.paidHolidayMinutes || 0);
+    const totalPayableMinutes = totalActualMinutes + paidLeaveMinutes + paidHolidayMinutes;
 
     // 4. Compute compensation according to mode
     let payableUnits = 0;
@@ -266,11 +391,27 @@ export class PayrollService {
     let unitLabel = '';
     let absenceDeductions = 0;
     let salarySplits = [];
+    let divisorLabel = '';
+    let calculationFormula = '';
 
-    if (mode === 'hourly') {
+    // Zero-hour / zero-rate guard
+    const isZeroRate = rate <= 0;
+    const isZeroScheduled = (mode === 'monthly' || mode === 'contract') && totalScheduledMinutes <= 0 && scheduledWorkingDays <= 0;
+
+    if (isZeroRate || isZeroScheduled) {
+      payableUnits = 0;
+      grossEarnings = 0;
+      absenceDeductions = 0;
+      unitLabel = mode === 'hourly' ? 'hours' : (mode === 'per_minute' ? 'minutes' : 'month');
+      divisorLabel = 'Zero Scheduled Minutes / Rate';
+      calculationFormula = '0';
+
+    } else if (mode === 'hourly') {
       unitLabel = 'hours';
-      payableUnits = actualHoursWorked > 0 ? actualHoursWorked : (punches.length > 0 ? this.round(punchMinutes / 60) : this.round(sessionMinutes / 60));
+      payableUnits = actualHoursWorked > 0 ? actualHoursWorked : (punches.length > 0 ? this.round(punchMinutes / 60) : this.round(totalActualMinutes / 60));
       grossEarnings = this.round(payableUnits * rate);
+      divisorLabel = 'Hourly Actual Worked Hours';
+      calculationFormula = 'Payable Hours × Hourly Rate';
 
     } else if (mode === 'per_batch') {
       unitLabel = 'batches';
@@ -281,6 +422,8 @@ export class PayrollService {
       `).get(coachId, coachId) : { count: 0 };
       payableUnits = assigned.count || 0;
       grossEarnings = this.round(payableUnits * batchRate);
+      divisorLabel = 'Assigned Active Batches';
+      calculationFormula = 'Batches × Batch Rate';
 
     } else if (mode === 'hybrid') {
       unitLabel = 'hybrid';
@@ -311,20 +454,12 @@ export class PayrollService {
 
       grossEarnings = this.round(baseProrated + sessionEarnings + extraHoursEarnings + batchEarnings);
       payableUnits = 1;
+      divisorLabel = 'Hybrid Structure (Base + Sessions + Hours + Batches)';
+      calculationFormula = 'Base + Session Pay + Extra Hours + Batch Pay';
 
     } else if (mode === 'monthly') {
       unitLabel = 'month';
       payableUnits = 1;
-
-      // Deduction basis policy: 'working_days' (default), 'calendar_days', or 'fixed_30'
-      const deductionPolicy = profile.deduction_policy || 'working_days';
-      let deductionBasis = Math.max(1, scheduleSummary.scheduledWorkingDays);
-      if (deductionPolicy === 'calendar_days') {
-        deductionBasis = Math.max(1, scheduleSummary.totalCalendarDays);
-      } else if (deductionPolicy === 'fixed_30') {
-        deductionBasis = 30;
-      }
-      const perDayRate = this.round(rate / deductionBasis);
 
       // Check for mid-month salary revision
       let hasMidMonthRevision = false;
@@ -413,7 +548,6 @@ export class PayrollService {
       } catch (_) {}
 
       if (!hasMidMonthRevision) {
-        // Prorate base salary if employee joined mid-month or resigned mid-month
         const isMidMonthJoiner = scheduleSummary.joiningDate && scheduleSummary.joiningDate > period.start_date;
         const isMidMonthExit = scheduleSummary.exitDate && scheduleSummary.exitDate < period.end_date;
 
@@ -421,9 +555,10 @@ export class PayrollService {
           const effectiveStart = isMidMonthJoiner ? scheduleSummary.joiningDate : period.start_date;
           const effectiveEnd = isMidMonthExit ? scheduleSummary.exitDate : period.end_date;
 
-          if (deductionPolicy === 'calendar_days') {
+          if (salaryDivisor === 'calendar_days') {
             const activeCalendarDays = DateUtils.getDateRange(effectiveStart, effectiveEnd).length;
-            grossEarnings = this.round(activeCalendarDays * perDayRate);
+            const calDays = Math.max(1, scheduleSummary.totalCalendarDays);
+            grossEarnings = this.round(activeCalendarDays * (rate / calDays));
           } else {
             const fullMonthDays = (scheduleSummary.dayBreakdown || []).filter(d => d.dayType !== 'weekly_off' && !d.isWeeklyOff).length || 26;
             const fullMonthDayRate = this.round(rate / fullMonthDays);
@@ -434,20 +569,45 @@ export class PayrollService {
         }
       }
 
-      // Compute unpaid leave deductions (Full day + Half day)
-      const fullUnpaidDays = scheduleSummary.unpaidLeaveDays || 0;
-      const halfUnpaidDays = (scheduleSummary.halfDayLeaveDays || 0) * 0.5;
-      const totalUnpaidDays = fullUnpaidDays + halfUnpaidDays;
-      const unpaidLeaveDeduction = this.round(totalUnpaidDays * perDayRate);
+      // Calculate absence deductions based on configured divisor
+      if (salaryDivisor === 'actual_scheduled_minutes' || salaryDivisor === 'minutes') {
+        divisorLabel = `Actual Scheduled Minutes (${totalScheduledMinutes.toLocaleString()}m)`;
+        calculationFormula = 'M × min(1, (A + P + O) / S)';
 
-      // Unauthorized absences calculation
-      const todayStr = new Date().toISOString().slice(0, 10);
-      const isPeriodPast = period.end_date < todayStr;
-      const scheduledWorkDays = Math.max(1, scheduleSummary.scheduledWorkingDays);
+        if (totalScheduledMinutes <= 0) {
+          absenceDeductions = 0;
+        } else if (isClosedOrFinalized) {
+          // Finalized/Closed period: full period minute proration
+          const grossBaseEarned = this.round(grossEarnings * Math.min(1, totalPayableMinutes / totalScheduledMinutes));
+          absenceDeductions = this.round(Math.max(0, grossEarnings - grossBaseEarned));
+        } else {
+          // Open/provisional period mid-month: deduct for under-attended elapsed scheduled minutes
+          const elapsedScheduled = scheduleSummary.elapsedScheduledMinutes || 0;
+          const elapsedPayable = elapsedActualMinutes + (scheduleSummary.paidLeaveMinutes || 0) + (scheduleSummary.paidHolidayMinutes || 0);
+          const elapsedDeficit = Math.max(0, elapsedScheduled - elapsedPayable);
+          absenceDeductions = this.round(grossEarnings * (elapsedDeficit / totalScheduledMinutes));
+        }
 
-      const pastScheduledWorkDays = isPeriodPast
-        ? scheduledWorkDays
-        : (scheduleSummary.dayBreakdown || []).filter(d => 
+      } else if (salaryDivisor === 'working_days' || salaryDivisor === 'actual_scheduled_days') {
+        const scheduledWorkDays = Math.max(1, scheduleSummary.scheduledWorkingDays);
+        divisorLabel = `Actual Scheduled Working Days (${scheduledWorkDays} days)`;
+        calculationFormula = 'M / Scheduled Working Days';
+        const perDayRate = this.round(grossEarnings / scheduledWorkDays);
+
+        const fullUnpaidDays = scheduleSummary.unpaidLeaveDays || 0;
+        const halfUnpaidDays = (scheduleSummary.halfDayUnpaidLeaveDays !== undefined 
+          ? scheduleSummary.halfDayUnpaidLeaveDays 
+          : scheduleSummary.halfDayLeaveDays || 0) * 0.5;
+        const halfPaidDays = (scheduleSummary.halfDayPaidLeaveDays || 0) * 0.5;
+        const totalUnpaidDays = fullUnpaidDays + halfUnpaidDays;
+        const unpaidLeaveDeduction = this.round(totalUnpaidDays * perDayRate);
+
+        let unauthorizedAbsences = 0;
+        if (isClosedOrFinalized) {
+          const eligibleCreditDays = actualDaysWorked + (scheduleSummary.paidLeaveDays || 0) + halfPaidDays + (scheduleSummary.holidayDays || 0);
+          unauthorizedAbsences = Math.max(0, scheduledWorkDays - eligibleCreditDays - totalUnpaidDays);
+        } else {
+          const pastScheduledWorkDays = (scheduleSummary.dayBreakdown || []).filter(d => 
             !d.isPriorToJoining && 
             !d.isPostExit &&
             d.dayType !== 'not_employed' && 
@@ -458,30 +618,54 @@ export class PayrollService {
             !d.isHoliday && 
             !d.isWeeklyOff
           ).length;
+          if (actualDaysWorked < pastScheduledWorkDays) {
+            unauthorizedAbsences = Math.max(0, pastScheduledWorkDays - actualDaysWorked - fullUnpaidDays);
+          }
+        }
+        const unauthorizedDeduction = this.round(unauthorizedAbsences * perDayRate);
+        absenceDeductions = this.round(unpaidLeaveDeduction + unauthorizedDeduction);
 
-      let unauthorizedAbsences = 0;
-      if (actualDaysWorked < pastScheduledWorkDays) {
-        unauthorizedAbsences = Math.max(0, pastScheduledWorkDays - actualDaysWorked - fullUnpaidDays);
+      } else if (salaryDivisor === 'fixed_26') {
+        divisorLabel = 'Fixed 26 Days Divisor';
+        calculationFormula = 'M / 26';
+        const perDayRate = this.round(grossEarnings / 26);
+        const creditDays = actualDaysWorked + (scheduleSummary.paidLeaveDays || 0) + (scheduleSummary.holidayDays || 0);
+        const missingDays = isClosedOrFinalized
+          ? Math.max(0, 26 - creditDays)
+          : Math.max(0, Math.min(26, scheduleSummary.elapsedScheduledDays || 0) - actualDaysWorked);
+        absenceDeductions = this.round(missingDays * perDayRate);
+
+      } else if (salaryDivisor === 'calendar_days') {
+        const calDays = Math.max(1, scheduleSummary.totalCalendarDays);
+        divisorLabel = `Calendar Days (${calDays} days)`;
+        calculationFormula = 'M / Calendar Days';
+        const perDayRate = this.round(grossEarnings / calDays);
+        const fullUnpaidDays = scheduleSummary.unpaidLeaveDays || 0;
+        const halfUnpaidDays = (scheduleSummary.halfDayLeaveDays || 0) * 0.5;
+        const totalUnpaidDays = fullUnpaidDays + halfUnpaidDays;
+        absenceDeductions = this.round(totalUnpaidDays * perDayRate);
       }
-      const unauthorizedDeduction = this.round(unauthorizedAbsences * perDayRate);
-
-      absenceDeductions = this.round(unpaidLeaveDeduction + unauthorizedDeduction);
 
     } else if (mode === 'per_day' || mode === 'daily') {
       unitLabel = 'days';
-      // Payable units = actual days worked
       payableUnits = actualDaysWorked > 0 ? actualDaysWorked : scheduleSummary.scheduledWorkingDays;
       grossEarnings = this.round(payableUnits * rate);
+      divisorLabel = 'Completed Daily Working Shifts';
+      calculationFormula = 'Days Worked × Daily Rate';
 
     } else if (mode === 'per_session') {
       unitLabel = 'sessions';
       payableUnits = sessions.length > 0 ? sessions.length : slotCompletedSessions;
       grossEarnings = this.round(payableUnits * rate);
+      divisorLabel = 'Completed & Approved Sessions';
+      calculationFormula = 'Sessions × Session Rate';
 
     } else if (mode === 'per_minute') {
       unitLabel = 'minutes';
       payableUnits = totalActualMinutes;
       grossEarnings = this.round(payableUnits * rate);
+      divisorLabel = 'Actual Attended Minutes';
+      calculationFormula = 'Attended Minutes × Per-Minute Rate';
     }
 
     // 5. Query approved overtime
@@ -500,17 +684,21 @@ export class PayrollService {
       const otMultiplier = Number(profile.overtime_rate_multiplier || 1.0);
       const baseHourlyRate = (mode === 'hourly' || mode === 'hybrid') 
         ? (profile.hourly_rate || rate) 
-        : (scheduleSummary.totalScheduledHours > 0 ? (rate / scheduleSummary.totalScheduledHours) : 150);
+        : (totalScheduledHours > 0 ? (rate / totalScheduledHours) : 150);
       approvedOvertimeAmount += this.round(otHours * baseHourlyRate * otMultiplier);
     }
 
+    // Overtime rule: <= 30 mins (overtimeGraceMinutes) does not require explicit approval if overtime eligible.
+    // > 30 mins strictly requires explicit administrative approval.
     if (profile.overtime_eligible && punchOvertimeMinutes > 0 && approvedOvertime.length === 0 && slotApprovedOvertimeMinutes === 0) {
-      const otHours = punchOvertimeMinutes / 60;
-      const otMultiplier = Number(profile.overtime_rate_multiplier || 1.0);
-      const baseHourlyRate = mode === 'hourly' 
-        ? rate 
-        : (scheduleSummary.totalScheduledHours > 0 ? (rate / scheduleSummary.totalScheduledHours) : 150);
-      approvedOvertimeAmount += this.round(otHours * baseHourlyRate * otMultiplier);
+      if (punchOvertimeMinutes <= overtimeGraceMinutes) {
+        const otHours = punchOvertimeMinutes / 60;
+        const otMultiplier = Number(profile.overtime_rate_multiplier || 1.0);
+        const baseHourlyRate = mode === 'hourly' 
+          ? rate 
+          : (totalScheduledHours > 0 ? (rate / totalScheduledHours) : 150);
+        approvedOvertimeAmount += this.round(otHours * baseHourlyRate * otMultiplier);
+      }
     }
     approvedOvertimeAmount = this.round(approvedOvertimeAmount);
 
@@ -579,7 +767,8 @@ export class PayrollService {
       currency,
       unit_label: unitLabel,
       payable_units: payableUnits,
-      scheduled_hours: scheduleSummary.totalScheduledHours,
+      scheduled_hours: totalScheduledHours,
+      scheduled_minutes: totalScheduledMinutes,
       scheduled_working_days: scheduleSummary.scheduledWorkingDays,
       weekly_offs: scheduleSummary.weeklyOffDays,
       paid_holidays: scheduleSummary.holidayDays,
@@ -589,6 +778,24 @@ export class PayrollService {
       absence_deductions: absenceDeductions,
       actual_hours_worked: actualHoursWorked,
       actual_days_worked: actualDaysWorked,
+      actual_attended_minutes: totalActualMinutes,
+      paid_leave_minutes: paidLeaveMinutes,
+      paid_holiday_minutes: paidHolidayMinutes,
+      total_payable_minutes: totalPayableMinutes,
+      accrued_mtd_earned: (totalScheduledMinutes > 0 
+        ? this.round(grossEarnings * Math.min((scheduleSummary.elapsedScheduledMinutes || totalScheduledMinutes) / totalScheduledMinutes, (elapsedActualMinutes + paidLeaveMinutes + paidHolidayMinutes) / totalScheduledMinutes))
+        : 0),
+      accrued_mtd_deductions: absenceDeductions,
+      accrued_mtd_net: this.round(Math.max(0, (totalScheduledMinutes > 0 
+        ? this.round(grossEarnings * Math.min((scheduleSummary.elapsedScheduledMinutes || totalScheduledMinutes) / totalScheduledMinutes, (elapsedActualMinutes + paidLeaveMinutes + paidHolidayMinutes) / totalScheduledMinutes))
+        : 0) + totalAdditions - profileDeductions)),
+      projected_net: this.round(Math.max(0, grossEarnings + totalAdditions - totalDeductions)),
+      salary_divisor: salaryDivisor,
+      divisor_method: salaryDivisor,
+      divisor_label: divisorLabel,
+      calculation_formula: calculationFormula,
+      is_provisional: !isPeriodFinalized,
+      under_attended_minutes: underAttendedMinutes,
       verified_sessions_count: sessions.length,
       slot_attendance_count: slotRecords.length,
       slot_attended_minutes: slotAttendedMinutes,
@@ -949,6 +1156,13 @@ export class PayrollService {
 
     const { calendarDays, attendanceSummary } = this.getEmployeeAttendanceCalendar(db, userId, period, statement);
 
+    let snapshot = {};
+    if (statement && statement.calculation_snapshot) {
+      try {
+        snapshot = JSON.parse(statement.calculation_snapshot);
+      } catch (_) {}
+    }
+
     return {
       statement,
       user,
@@ -959,6 +1173,13 @@ export class PayrollService {
       pendingOvertime,
       calendarDays,
       attendanceSummary,
+      snapshot,
+      accruedMtdEarned: snapshot.accrued_mtd_earned !== undefined ? snapshot.accrued_mtd_earned : statement.gross_earnings,
+      accruedMtdNet: snapshot.accrued_mtd_net !== undefined ? snapshot.accrued_mtd_net : statement.net_earnings,
+      projectedNet: snapshot.projected_net !== undefined ? snapshot.projected_net : statement.net_earnings,
+      divisorMethod: snapshot.divisor_method || 'actual_scheduled_minutes',
+      divisorLabel: snapshot.divisor_label || 'Actual Scheduled Minutes',
+      calculationFormula: snapshot.calculation_formula || 'M × min(1, (A + P + O) / S)',
       visibility: {
         currentDay,
         visibilityDay,
@@ -1099,7 +1320,14 @@ export class PayrollService {
         badgeClass = 'badge-primary';
         financialImpact = 'Duty Active';
       } else if (workedMinutes > 0) {
-        if (scheduledMinutes > 0 && workedMinutes < scheduledMinutes * 0.5) {
+        if (scheduledMinutes > 0 && workedMinutes < scheduledMinutes * 0.25) {
+          status = 'partial';
+          statusLabel = 'Short Attendance';
+          badgeClass = 'badge-danger';
+          financialImpact = statement?.salary_mode === 'hourly'
+            ? `₹${this.round((workedMinutes / 60) * (statement?.applicable_rate || 0))}`
+            : `Short Attendance (${workedMinutes}m / ${scheduledMinutes}m)`;
+        } else if (scheduledMinutes > 0 && workedMinutes < scheduledMinutes * 0.75) {
           status = 'half_day';
           statusLabel = 'Half Day';
           badgeClass = 'badge-warning';

@@ -150,13 +150,13 @@ describe('Automatic Employee Shift Checkout & Policy Workflow', () => {
   });
 
   it('5. Auto-closed punches are correctly included in monthly payroll statement calculations', () => {
-    const period = PayrollService.getOrCreatePeriod(db, ACADEMY_ID, '2026-10');
+    const period = PayrollService.getOrCreatePeriod(db, ACADEMY_ID, '2026-08');
 
     // Insert an auto_closed punch
     const ins = db.prepare(`
       INSERT INTO staff_time_punches (
         academy_id, user_id, punch_date, punch_in_time, punch_out_time, duration_minutes, status, punch_type
-      ) VALUES (?, ?, '2026-10-12', '2026-10-12 09:00:00', '2026-10-12 18:00:00', 540, 'auto_closed', 'duty')
+      ) VALUES (?, ?, '2026-08-12', '2026-08-12 09:00:00', '2026-08-12 18:00:00', 540, 'auto_closed', 'duty')
     `).run(ACADEMY_ID, 2);
     const punchId = ins.lastInsertRowid;
 
@@ -166,6 +166,7 @@ describe('Automatic Employee Shift Checkout & Policy Workflow', () => {
 
     // Clean up
     db.prepare('DELETE FROM staff_time_punches WHERE id = ?').run(punchId);
+    db.prepare('DELETE FROM staff_salary_statements WHERE payroll_period_id = ? AND user_id = ?').run(period.id, 2);
   });
 });
 

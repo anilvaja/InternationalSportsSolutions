@@ -270,7 +270,7 @@ export class UserService {
     }
 
     // 5. Initial Compensation History
-    if (salary_amount !== undefined && salary_amount !== null && Number(salary_amount) > 0) {
+    if (salary_amount !== undefined && salary_amount !== null && Number(salary_amount) >= 0) {
       db.prepare(`
         INSERT INTO employee_compensation_history (
           academy_id, user_id, employment_record_id, compensation_mode, previous_amount,
@@ -301,6 +301,7 @@ export class UserService {
     // 6. Backward-Compatible Coach Record
     let coachId = null;
     if (['coach', 'head_coach'].includes(cleanRole) || sport_id) {
+      const legacyCoachSalaryType = ['monthly', 'per_session', 'contract'].includes(compensation_mode) ? compensation_mode : 'monthly';
       const coachRes = db.prepare(`
         INSERT INTO coaches (
           user_id, name, email, phone, sport_id, branch_id, specializations,
@@ -312,7 +313,7 @@ export class UserService {
         branch_id ? Number(branch_id) : null,
         specializations || null,
         Number(experience_years) || 0,
-        compensation_mode || 'monthly',
+        legacyCoachSalaryType,
         Number(salary_amount) || 0,
         joining_date || effectiveDate
       );
