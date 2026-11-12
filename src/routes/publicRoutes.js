@@ -3,7 +3,6 @@ import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById } from '../db/connectionManager.js';
 import { extractSubdomain, extractHost } from '../middleware/tenantResolver.js';
 import { runSeed } from '../db/seed.js';
-import { AcademyLifecycleService } from '../services/academyLifecycleService.js';
 
 export const publicRouter = express.Router();
 
@@ -314,36 +313,6 @@ publicRouter.all('/setup', (req, res) => {
     });
   } catch (err) {
     console.error('[Public Setup Error]', err);
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-/**
- * GET & POST /api/public/reset-everything
- * Completely wipes everything from scratch:
- * - Purges all databases, academies, uploads, and data
- * - Seeds ONLY 1 Super Admin: anilvaja.007@gmail.com
- * - Seeds ONLY 1 Academy: Pratik Karate Academy
- * - Seeds ONLY 1 Role: Academy Admin with all permissions assigned
- */
-publicRouter.all(['/reset-everything', '/clean-slate'], (req, res) => {
-  try {
-    const confirm = req.query.confirm || req.body?.confirm;
-    // Allow direct execution or require confirmation if explicitly passed
-    if (confirm && confirm !== 'RESET_EVERYTHING' && confirm !== 'RESET_CLEAN_SLATE' && confirm !== 'true') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid confirmation token. Pass ?confirm=RESET_EVERYTHING to wipe and reset everything.',
-      });
-    }
-
-    const result = AcademyLifecycleService.resetPlatformToCleanState();
-    return res.json({
-      ...result,
-      loginUrl: '/',
-    });
-  } catch (err) {
-    console.error('[Reset Everything Error]', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });

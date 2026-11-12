@@ -1066,98 +1066,10 @@ const app = {
       this.showToast('Logged in successfully', 'success');
       await this.checkAuth();
     } else {
-      if (res.error && (res.error.includes('not initialized') || res.error.includes('academy not found'))) {
-        const initDbContainer = document.getElementById('init-db-container');
-        if (initDbContainer) initDbContainer.style.display = 'flex';
-        this.showToast('Database is not initialized yet. Click "Setup Platform" below to initialize.', 'warning');
+      if (res.error && (res.error.includes('not initialized') || res.error.includes('academy not found') || res.error.includes('Account or academy not found'))) {
+        this.showToast('Platform is not initialized. Please visit /setup to run initial setup.', 'warning');
       } else {
         this.showToast(res.error || 'Login failed', 'danger');
-      }
-    }
-  },
-
-  async initializeDatabase() {
-    const btn = document.getElementById('btn-init-db');
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Setting Up Platform...';
-    }
-
-    try {
-      const data = await this.apiRequest('/api/public/setup');
-      if (data && data.success) {
-        this.showToast('Platform initialized successfully!', 'success');
-
-        // Show success alert above form
-        const form = document.getElementById('login-form');
-        let banner = document.getElementById('init-success-banner');
-        if (!banner && form) {
-          banner = document.createElement('div');
-          banner.id = 'init-success-banner';
-          banner.style.cssText = 'background: rgba(16, 185, 129, 0.12); border: 1px solid #10b981; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 13px; color: #10b981;';
-          form.parentNode.insertBefore(banner, form);
-        }
-        if (banner) {
-          banner.innerHTML = `
-            <div style="font-weight: 700; margin-bottom: 4px;"><i class="fa-solid fa-circle-check"></i> Platform Ready!</div>
-            <div>Super Admin and default academy have been initialized. Please sign in with your credentials.</div>
-          `;
-        }
-      } else {
-        this.showToast((data && data.error) || 'Failed to initialize database', 'danger');
-      }
-    } catch (err) {
-      this.showToast('Setup error: ' + err.message, 'danger');
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-database"></i> Setup Platform (Super Admin & Pratik Karate Academy)';
-      }
-    }
-  },
-
-  async resetEverythingFromScratch() {
-    if (!confirm("⚠️ DANGER: RESET EVERYTHING FROM SCRATCH\n\nThis will completely wipe ALL databases, demo academies, uploaded files, and tenant accounts.\n\nIt will re-seed ONLY:\n1. Super Admin: anilvaja.007@gmail.com\n2. Pratik Karate Academy (admin@pratikkarate.com)\n3. Exactly 8 Standard Operational Roles\n\nAre you sure you want to proceed?")) {
-      return;
-    }
-
-    const btn = document.getElementById('btn-reset-everything');
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Resetting Everything...';
-    }
-
-    try {
-      const data = await this.apiRequest('/api/public/reset-everything?confirm=RESET_EVERYTHING', { method: 'POST' });
-      if (data && data.success) {
-        this.showToast('Platform reset from scratch successfully!', 'success');
-
-        const form = document.getElementById('login-form');
-        let banner = document.getElementById('init-success-banner');
-        if (!banner && form) {
-          banner = document.createElement('div');
-          banner.id = 'init-success-banner';
-          banner.style.cssText = 'background: rgba(16, 185, 129, 0.12); border: 1px solid #10b981; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 13px; color: #10b981;';
-          form.parentNode.insertBefore(banner, form);
-        }
-        if (banner) {
-          banner.innerHTML = `
-            <div style="font-weight: 700; margin-bottom: 4px;"><i class="fa-solid fa-circle-check"></i> Platform Reset Cleanly!</div>
-            <div>All previous data wiped. Only Super Admin & Pratik Karate Academy exist. Please sign in with your credentials.</div>
-          `;
-        }
-        if (this.user) {
-          await this.checkAuth();
-        }
-      } else {
-        this.showToast(data.error || 'Failed to reset platform', 'danger');
-      }
-    } catch (err) {
-      this.showToast('Reset error: ' + err.message, 'danger');
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Reset Everything (Wipe & Re-Seed from Scratch)';
       }
     }
   },
@@ -1175,39 +1087,6 @@ const app = {
     this.showLogin();
   },
 
-  checkDebugOrSetupMode() {
-    const search = window.location.search || '';
-    const hash = window.location.hash || '';
-    const combined = search + (hash.includes('?') ? '&' + hash.split('?')[1] : '&' + hash.replace(/^#/, ''));
-    const params = new URLSearchParams(combined);
-
-    let explicitDebug = null;
-    for (const [key, val] of params.entries()) {
-      const lowerKey = key.toLowerCase().trim();
-      const lowerVal = (val || '').toLowerCase().trim();
-
-      if (lowerKey === 'debug' || lowerKey === 'setup' || lowerKey === 'reset') {
-        if (['on', 'true', '1', 'yes', 'show', 'enable'].includes(lowerVal) || lowerVal === '') {
-          explicitDebug = 'on';
-        } else if (['off', 'false', '0', 'no', 'hide', 'disable'].includes(lowerVal)) {
-          explicitDebug = 'off';
-        }
-      }
-    }
-
-    if (explicitDebug === 'on') {
-      localStorage.setItem('iss_debug_tools', 'on');
-      return true;
-    }
-    if (explicitDebug === 'off') {
-      localStorage.setItem('iss_debug_tools', 'off');
-      return false;
-    }
-
-    // Default when no URL override is provided: check stored preference
-    return localStorage.getItem('iss_debug_tools') === 'on';
-  },
-
   showLogin() {
     const loginView = document.getElementById('login-view');
     loginView.style.display = 'flex';
@@ -1217,12 +1096,6 @@ const app = {
     const passwordInput = document.getElementById('login-password');
     if (emailInput) emailInput.value = '';
     if (passwordInput) passwordInput.value = '';
-
-    // Only show setup/reset database buttons when debug=on or setup=on in URL or stored in browser
-    const initDbContainer = document.getElementById('init-db-container');
-    if (initDbContainer) {
-      initDbContainer.style.display = this.checkDebugOrSetupMode() ? 'flex' : 'none';
-    }
 
     // If on a tenant subdomain, customize branding
     if (this.tenantAcademy) {
@@ -2143,11 +2016,6 @@ const app = {
             <button class="btn btn-warning btn-sm" onclick="app.confirmRunPratikDemoSeeder()" title="Run dedicated Pratik Karate Academy demo seeder" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; font-weight: 600; border: none; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.25);">
               <i class="fa-solid fa-bolt"></i> Run Pratik Karate Demo Seeder
             </button>
-            ${this.checkDebugOrSetupMode() ? `
-              <button class="btn btn-outline-danger btn-sm" onclick="app.resetEverythingFromScratch()" title="Reset Platform From Scratch (Wipe & Re-Seed)">
-                <i class="fa-solid fa-triangle-exclamation"></i> Reset Everything
-              </button>
-            ` : ''}
             <button class="btn btn-primary btn-sm" onclick="app.showProvisionAcademyModal()">
               <i class="fa-solid fa-plus"></i> Provision New Academy
             </button>

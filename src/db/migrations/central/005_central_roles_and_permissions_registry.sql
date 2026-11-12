@@ -23,3 +23,4 @@ CREATE TABLE IF NOT EXISTS central_role_templates (
 
 CREATE INDEX IF NOT EXISTS idx_central_permissions_key ON central_permissions(permission_key);
 CREATE INDEX IF NOT EXISTS idx_central_role_templates_name ON central_role_templates(name);
+
