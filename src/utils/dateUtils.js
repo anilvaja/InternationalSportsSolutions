@@ -373,3 +373,28 @@ export class DateUtils {
     }
   }
 }
+
+/**
+ * Convenience helper: returns current IST date formatted as YYYY-MM-DD
+ */
+export function getISTDateString() {
+  return DateUtils.getTodayDate('Asia/Kolkata');
+}
+
+/**
+ * Convenience helper: returns current IST time formatted as HH:mm
+ */
+export function getISTTimeString() {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    return formatter.format(new Date());
+  } catch (_) {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+}

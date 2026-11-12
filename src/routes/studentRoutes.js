@@ -4,6 +4,7 @@ import { resolveTenant } from '../middleware/tenantResolver.js';
 import { SyllabusService } from '../services/syllabusService.js';
 import { EventService } from '../services/eventService.js';
 import { DateUtils } from '../utils/dateUtils.js';
+import { QrAttendanceService } from '../services/qrAttendanceService.js';
 
 export const studentRouter = express.Router();
 
@@ -117,6 +118,31 @@ studentRouter.get('/attendance', (req, res) => {
     `).all(studentId);
 
     res.json({ success: true, records });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/student/id-card
+ * Self-service digital ID pass with QR code
+ */
+studentRouter.get('/id-card', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    let studentId = req.user.role === 'student' ? req.user.userId : Number(req.query.student_id);
+
+    if (!studentId || isNaN(studentId)) {
+      const firstStudent = db.prepare('SELECT id FROM students WHERE status = "active" LIMIT 1').get();
+      studentId = firstStudent?.id;
+    }
+
+    if (!studentId) {
+      return res.status(404).json({ success: false, error: 'Student profile not found' });
+    }
+
+    const cardData = QrAttendanceService.getStudentIdCardData(db, req.academy.id, studentId, req.academy);
+    res.json({ success: true, ...cardData });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

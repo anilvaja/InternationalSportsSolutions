@@ -22,6 +22,7 @@ import { AttendanceAdjustmentService } from '../services/attendanceAdjustmentSer
 import { ShiftCheckoutService } from '../services/shiftCheckoutService.js';
 import { StaffAvailabilityService } from '../services/staffAvailabilityService.js';
 import { SecurityGuardService } from '../services/securityGuardService.js';
+import { smartAttendanceRouter } from './smartAttendanceRoutes.js';
 
 export const academyRouter = express.Router();
 
@@ -68,6 +69,9 @@ academyRouter.use((req, res, next) => {
   }
   next();
 });
+
+// Smart Attendance Engine sub-router
+academyRouter.use('/smart-attendance', smartAttendanceRouter);
 
 /**
  * Middleware factory requiring specific permission(s)

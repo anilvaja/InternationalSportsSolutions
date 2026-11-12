@@ -527,6 +527,8 @@ export class PayrollService {
     let grossEarnings = 0;
     let unitLabel = '';
     let absenceDeductions = 0;
+    let unpaidLeaveDeduction = 0;
+    let unauthorizedDeduction = 0;
     let salarySplits = [];
     let divisorLabel = '';
     let calculationFormula = '';
@@ -737,7 +739,7 @@ export class PayrollService {
           : scheduleSummary.halfDayLeaveDays || 0) * 0.5;
         const halfPaidDays = (scheduleSummary.halfDayPaidLeaveDays || 0) * 0.5;
         const totalUnpaidDays = fullUnpaidDays + halfUnpaidDays;
-        const unpaidLeaveDeduction = this.round(totalUnpaidDays * perDayRate);
+        unpaidLeaveDeduction = this.round(totalUnpaidDays * perDayRate);
 
         let unauthorizedAbsences = 0;
         if (isClosedOrFinalized) {
@@ -759,7 +761,7 @@ export class PayrollService {
             unauthorizedAbsences = Math.max(0, pastScheduledWorkDays - actualDaysWorked - fullUnpaidDays);
           }
         }
-        const unauthorizedDeduction = this.round(unauthorizedAbsences * perDayRate);
+        unauthorizedDeduction = this.round(unauthorizedAbsences * perDayRate);
         absenceDeductions = this.round(unpaidLeaveDeduction + unauthorizedDeduction);
 
       } else if (salaryDivisor === 'fixed_26') {
@@ -931,6 +933,8 @@ export class PayrollService {
       unpaid_leaves: scheduleSummary.unpaidLeaveDays,
       half_day_leaves: scheduleSummary.halfDayLeaveDays || 0,
       absence_deductions: absenceDeductions,
+      unpaid_leave_deduction: unpaidLeaveDeduction,
+      unauthorized_absence_deduction: unauthorizedDeduction,
       actual_hours_worked: actualHoursWorked,
       actual_days_worked: actualDaysWorked,
       actual_attended_minutes: totalActualMinutes,

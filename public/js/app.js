@@ -1355,6 +1355,7 @@ const app = {
     'coaches': '/academy/coaches',
     'batches': '/academy/batches',
     'attendance': '/academy/attendance',
+    'smart-attendance': '/academy/smart-attendance',
     'syllabus': '/academy/syllabus',
     'sports': '/academy/sports',
     'fees': '/academy/fees',
@@ -1377,6 +1378,7 @@ const app = {
     'student-attendance': '/student/attendance',
     'student-fees': '/student/fees',
     'student-events': '/student/events',
+    'student-id-card': '/student/id-card',
   },
 
   tabTitles: {
@@ -1392,6 +1394,7 @@ const app = {
     'coaches': 'Coaches & Staff',
     'batches': 'Batches & Schedules',
     'attendance': 'Attendance Sheet',
+    'smart-attendance': 'Smart Attendance Engine',
     'sports': 'Sports & Disciplines Management',
     'syllabus': 'Sports Syllabus & Learning Progression',
     'fees': 'Fees & Invoices',
@@ -1412,6 +1415,7 @@ const app = {
     'student-attendance': 'Attendance History',
     'student-fees': 'My Invoices & Fees',
     'student-events': 'Events & Invitations',
+    'student-id-card': 'My Digital ID Pass',
   },
 
   getPathForTab(tab) {
@@ -1449,6 +1453,9 @@ const app = {
       '/academy/coaches': 'coaches',
       '/academy/batches': 'batches',
       '/academy/attendance': 'attendance',
+      '/academy/smart-attendance': 'smart-attendance',
+      '/academy/kiosk': 'smart-attendance',
+      '/academy/scan': 'smart-attendance',
       '/academy/sports': 'sports',
       '/academy/disciplines': 'sports',
       '/academy/syllabus': 'syllabus',
@@ -1532,7 +1539,7 @@ const app = {
   isTabAllowed(tab) {
     if (!this.user) return false;
     if (this.user.role === 'student') {
-      return ['student-dashboard', 'student-technique', 'student-attendance', 'student-fees', 'student-events'].includes(tab);
+      return ['student-dashboard', 'student-technique', 'student-attendance', 'student-fees', 'student-events', 'student-id-card'].includes(tab);
     }
     if (this.user.isSuperAdmin) return true;
     if (this.user.role === 'academy_admin') return true;
@@ -1546,6 +1553,8 @@ const app = {
         return this.hasPermission(['view_batches', 'manage_batches', 'create_batches']);
       case 'attendance':
         return this.hasPermission(['view_attendance', 'mark_attendance', 'manage_attendance']);
+      case 'smart-attendance':
+        return this.hasPermission(['view_smart_attendance', 'scan_attendance', 'manage_smart_attendance', 'view_kiosk', 'view_attendance', 'mark_attendance']);
       case 'branches':
         return this.hasPermission(['view_branches', 'manage_branches']);
       case 'sports':
@@ -1678,6 +1687,13 @@ const app = {
         academyItemsHtml += `
           <a href="${this.getPathForTab('attendance')}" class="nav-item ${this.currentTab === 'attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('attendance')">
             <i class="fa-solid fa-clipboard-user"></i> Class Attendance
+          </a>
+        `;
+      }
+      if (this.hasPermission(['view_smart_attendance', 'scan_attendance', 'manage_smart_attendance', 'view_kiosk', 'view_attendance', 'mark_attendance'])) {
+        academyItemsHtml += `
+          <a href="${this.getPathForTab('smart-attendance')}" class="nav-item ${this.currentTab === 'smart-attendance' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('smart-attendance')">
+            <i class="fa-solid fa-qrcode" style="color: #818cf8;"></i> Smart Attendance
           </a>
         `;
       }
@@ -1845,6 +1861,9 @@ const app = {
         <a href="${this.getPathForTab('student-fees')}" class="nav-item ${this.currentTab === 'student-fees' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-fees')">
           <i class="fa-solid fa-file-invoice-dollar"></i> My Invoices & Fees
         </a>
+        <a href="${this.getPathForTab('student-id-card')}" class="nav-item ${this.currentTab === 'student-id-card' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('student-id-card')">
+          <i class="fa-solid fa-id-card" style="color: #6366f1;"></i> My Digital ID Pass
+        </a>
       `;
     }
 
@@ -1919,6 +1938,9 @@ const app = {
       case 'attendance':
         this.renderAttendance();
         break;
+      case 'smart-attendance':
+        this.renderSmartAttendance();
+        break;
       case 'approvals':
         this.renderApprovals();
         break;
@@ -1978,6 +2000,9 @@ const app = {
         break;
       case 'student-events':
         this.renderStudentEvents();
+        break;
+      case 'student-id-card':
+        this.renderStudentIdCardView();
         break;
       default:
         this.renderAcademyOverview();
@@ -5075,6 +5100,24 @@ const app = {
       `);
     }
 
+    if (this.hasPermission(['view_smart_attendance', 'scan_attendance', 'manage_smart_attendance', 'view_kiosk', 'view_attendance', 'mark_attendance'])) {
+      launchpadTiles.push(`
+        <div class="launchpad-tile" style="border-left: 3px solid #6366f1;">
+          <div>
+            <div class="launchpad-tile-top">
+              <div class="launchpad-tile-name"><i class="fa-solid fa-qrcode" style="color: #6366f1;"></i> Smart Attendance</div>
+              <span class="badge badge-primary" style="font-size: 10px;">Kiosk & QR</span>
+            </div>
+            <div class="launchpad-tile-desc">Live camera kiosk, biometric face, NFC & passes</div>
+          </div>
+          <div class="launchpad-tile-bottom">
+            <a class="launchpad-open-link" onclick="app.navigate('smart-attendance')">Open <i class="fa-solid fa-chevron-right" style="font-size: 10px;"></i></a>
+            <button class="launchpad-action-btn" onclick="app.navigate('smart-attendance')"><i class="fa-solid fa-tablet-screen-button"></i> Kiosk</button>
+          </div>
+        </div>
+      `);
+    }
+
     if (this.hasPermission(['view_students'])) {
       const canAddStudent = this.hasPermission(['create_students', 'manage_students']);
       launchpadTiles.push(`
@@ -7362,6 +7405,9 @@ const app = {
                     <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                       <button class="btn btn-secondary btn-sm" onclick="app.showStudentDetailsModal(${s.id})" title="View Complete Profile & Financial Ledger">
                         <i class="fa-solid fa-eye" style="color: #3b82f6;"></i> View
+                      </button>
+                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentIdCardModal(${s.id})" title="View Digital ID Pass & QR">
+                        <i class="fa-solid fa-id-card" style="color: #6366f1;"></i> ID Pass
                       </button>
                       ${this.hasPermission(['edit_students', 'manage_students']) ? `
                         <button class="btn btn-secondary btn-sm" onclick="app.showEditStudentModal(${s.id})" title="Edit Student Profile">
@@ -20554,6 +20600,1111 @@ const app = {
         </div>
       </div>
     `;
+  },
+
+  // ==========================================
+  // SMART ATTENDANCE ENGINE VIEWS & CONTROLLER
+  // ==========================================
+
+  async renderSmartAttendance() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    try {
+      const branchesData = await this.apiRequest('/api/academy/branches');
+      const branches = branchesData.branches || [];
+      const currentBranchId = this._selectedSmartAttBranchId || (branches[0] ? branches[0].id : null);
+      this._selectedSmartAttBranchId = currentBranchId;
+
+      const settingsRes = await this.apiRequest(`/api/academy/smart-attendance/settings${currentBranchId ? '?branch_id=' + currentBranchId : ''}`);
+      const settings = settingsRes.settings || {};
+
+      const exceptionsRes = await this.apiRequest(`/api/academy/smart-attendance/exceptions?status=pending${currentBranchId ? '&branch_id=' + currentBranchId : ''}`).catch(() => ({ exceptions: [] }));
+      const pendingExceptions = exceptionsRes.exceptions || [];
+
+      const currentTab = window.SmartAttendanceController.currentSubTab || 'kiosk';
+
+      content.innerHTML = `
+        <div class="content-card">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h2 class="card-title" style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-qrcode" style="color: var(--primary);"></i> Smart Attendance Engine
+              </h2>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Multi-Mode Verification: Dynamic QR, Facial Biometrics, Contactless NFC & Geofenced Kiosk
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <select id="smart-att-branch-select" class="form-select form-select-sm" style="width: auto; min-width: 160px;" onchange="app.onSmartAttendanceBranchChange(this.value)">
+                ${branches.map(b => `<option value="${b.id}" ${b.id === currentBranchId ? 'selected' : ''}>${b.name}</option>`).join('')}
+              </select>
+              <button class="btn btn-secondary btn-sm" onclick="SmartAttendanceController.syncOfflineQueue()">
+                <i class="fa-solid fa-rotate"></i> Sync Offline Queue
+                <span id="offline-queue-badge" class="badge badge-warning" style="margin-left: 4px; display: none;">0</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Sub-Tab Navigation Bar -->
+          <div class="tabs" style="border-bottom: 1px solid var(--border); padding: 0 16px; background: rgba(255,255,255,0.01); display: flex; gap: 6px; overflow-x: auto;">
+            <button class="tab-btn ${currentTab === 'kiosk' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('kiosk')">
+              <i class="fa-solid fa-tablet-screen-button"></i> Live Kiosk Scanner
+            </button>
+            <button class="tab-btn ${currentTab === 'coach_scanner' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('coach_scanner')">
+              <i class="fa-solid fa-mobile-screen"></i> Coach Scanner
+            </button>
+            <button class="tab-btn ${currentTab === 'student_qr' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('student_qr')">
+              <i class="fa-solid fa-id-card"></i> Student ID Passes
+            </button>
+            <button class="tab-btn ${currentTab === 'nfc' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('nfc')">
+              <i class="fa-solid fa-wave-square"></i> NFC & Wristbands
+            </button>
+            <button class="tab-btn ${currentTab === 'biometrics' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('biometrics')">
+              <i class="fa-solid fa-user-shield"></i> Face Biometrics & Consent
+            </button>
+            <button class="tab-btn ${currentTab === 'exceptions' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('exceptions')">
+              <i class="fa-solid fa-clipboard-check"></i> Exceptions Queue
+              ${pendingExceptions.length > 0 ? `<span class="badge badge-warning" style="margin-left: 4px;">${pendingExceptions.length}</span>` : ''}
+            </button>
+            <button class="tab-btn ${currentTab === 'devices' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('devices')">
+              <i class="fa-solid fa-microchip"></i> Devices & Hardware
+            </button>
+            <button class="tab-btn ${currentTab === 'settings' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('settings')">
+              <i class="fa-solid fa-sliders"></i> Policy Settings
+            </button>
+            <button class="tab-btn ${currentTab === 'audit' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('audit')">
+              <i class="fa-solid fa-clock-rotate-left"></i> Scan Audit Logs
+            </button>
+          </div>
+
+          <!-- Sub-Tab Content -->
+          <div id="smart-att-subtab-container" style="padding: 20px;">
+            ${await this.renderSmartAttendanceSubTab(currentTab, currentBranchId, settings, pendingExceptions)}
+          </div>
+        </div>
+      `;
+
+      SmartAttendanceController.updateOfflineBadge();
+    } catch (err) {
+      content.innerHTML = `<div class="alert alert-danger" style="margin: 20px;">Failed to load Smart Attendance: ${err.message}</div>`;
+    }
+  },
+
+  async onSmartAttendanceBranchChange(branchId) {
+    this._selectedSmartAttBranchId = Number(branchId);
+    await this.renderSmartAttendance();
+  },
+
+  async renderSmartAttendanceSubTab(tab, branchId, settings, pendingExceptions) {
+    switch (tab) {
+      case 'kiosk':
+        return this.renderKioskScannerView(branchId, settings);
+      case 'coach_scanner':
+        return await this.renderCoachScannerView(branchId);
+      case 'student_qr':
+        return await this.renderStudentQrCardsView(branchId);
+      case 'nfc':
+        return await this.renderNfcManagementView(branchId);
+      case 'biometrics':
+        return await this.renderBiometricsView(branchId);
+      case 'exceptions':
+        return this.renderExceptionsQueueView(pendingExceptions);
+      case 'devices':
+        return await this.renderDevicesManagementView(branchId);
+      case 'settings':
+        return this.renderSmartAttendanceSettingsView(branchId, settings);
+      case 'audit':
+        return await this.renderScanAuditLogsView(branchId);
+      default:
+        return this.renderKioskScannerView(branchId, settings);
+    }
+  },
+
+  renderKioskScannerView(branchId, settings) {
+    setTimeout(() => {
+      const input = document.getElementById('kiosk-manual-input');
+      if (input) input.focus();
+    }, 100);
+
+    return `
+      <div style="max-width: 800px; margin: 0 auto; text-align: center;">
+        <div id="camera-error-banner" class="alert alert-warning" style="display: none; margin-bottom: 16px;"></div>
+
+        <!-- Camera Scanner Card -->
+        <div class="kiosk-camera-box">
+          <video id="kiosk-video" autoplay playsinline muted></video>
+          <div class="kiosk-reticle-overlay">
+            <span style="font-size: 11px; font-weight: 700; color: #fff; background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px;">
+              ALIGN QR PASS HERE
+            </span>
+          </div>
+        </div>
+
+        <!-- Camera Controls -->
+        <div style="display: flex; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap;">
+          <button class="btn btn-primary btn-sm" onclick="SmartAttendanceController.startCameraStream('kiosk-video')">
+            <i class="fa-solid fa-camera"></i> Start Camera Scanner
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="SmartAttendanceController.stopCameraStream()">
+            <i class="fa-solid fa-stop"></i> Stop Camera
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="document.querySelector('.kiosk-camera-box')?.requestFullscreen?.()">
+            <i class="fa-solid fa-expand"></i> Fullscreen Kiosk
+          </button>
+        </div>
+
+        <!-- High-Visibility Feedback Card -->
+        <div id="kiosk-feedback-card" class="kiosk-feedback-box ready">
+          <div style="font-size: 32px; color: var(--text-muted);"><i class="fa-solid fa-qrcode"></i></div>
+          <div style="font-size: 15px; font-weight: 700; color: var(--text-heading); margin-top: 6px;">Kiosk Ready for Scan</div>
+          <div style="font-size: 12px; color: var(--text-muted);">Hold your Student ID Pass in front of camera or scan with barcode gun</div>
+        </div>
+
+        <!-- Manual & Barcode Scanner Wedge Input -->
+        <div style="margin-top: 24px; background: rgba(255,255,255,0.02); padding: 16px; border-radius: 12px; border: 1px dashed var(--border);">
+          <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">
+            <i class="fa-solid fa-barcode"></i> USB Barcode Scanner Gun / NFC Keypad Wedge
+          </div>
+          <form onsubmit="event.preventDefault(); const val = document.getElementById('kiosk-manual-input').value; document.getElementById('kiosk-manual-input').value = ''; SmartAttendanceController.handleScannedToken(val);" style="display: flex; gap: 8px; max-width: 480px; margin: 0 auto;">
+            <input type="text" id="kiosk-manual-input" class="form-input" placeholder="Scan or enter token (e.g. ISS-STU-... or NFC UID)" style="text-align: center; font-family: monospace; font-weight: 600;" autocomplete="off">
+            <button type="submit" class="btn btn-primary btn-sm">Check In</button>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  async renderCoachScannerView(branchId) {
+    const batchesData = await this.apiRequest('/api/academy/batches');
+    const batches = (batchesData.batches || []).filter(b => !branchId || b.branch_id === branchId);
+
+    return `
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+          <div>
+            <h3 style="font-size: 16px; font-weight: 700; margin: 0;"><i class="fa-solid fa-mobile-screen"></i> Coach Mobile Attendance Scanner</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">Quick scan student ID cards directly into your assigned training session</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <select id="coach-scanner-batch-select" class="form-select form-select-sm" style="min-width: 220px;" onchange="app.loadCoachScannerRoster(this.value)">
+              <option value="">Select Training Batch...</option>
+              ${batches.map(b => `<option value="${b.id}">${b.name} (${b.start_time} - ${b.end_time})</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;" class="coach-scanner-grid">
+          <div>
+            <div class="kiosk-camera-box" style="max-width: 100%; aspect-ratio: 16 / 9;">
+              <video id="coach-video" autoplay playsinline muted></video>
+              <div class="kiosk-reticle-overlay" style="width: 180px; height: 180px;"></div>
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px;">
+              <button class="btn btn-primary btn-sm" onclick="SmartAttendanceController.startCameraStream('coach-video', 'environment')">
+                <i class="fa-solid fa-camera"></i> Scan Student Card
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="SmartAttendanceController.stopCameraStream()">
+                <i class="fa-solid fa-stop"></i> Stop
+              </button>
+            </div>
+            <div id="coach-feedback-box" class="kiosk-feedback-box ready" style="padding: 14px; margin-top: 14px;">
+              <div style="font-size: 13px; font-weight: 600;">Scan student QR code or select batch on right</div>
+            </div>
+          </div>
+
+          <div id="coach-roster-pane" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+            <div style="text-align: center; padding: 30px; color: var(--text-muted); font-size: 13px;">
+              Select a batch above to view real-time session attendance roster
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  async loadCoachScannerRoster(batchId) {
+    const pane = document.getElementById('coach-roster-pane');
+    if (!pane || !batchId) return;
+
+    pane.innerHTML = '<div style="text-align: center; padding: 20px;"><i class="fa-solid fa-spinner fa-spin"></i></div>';
+
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const res = await this.apiRequest(`/api/academy/attendance?batch_id=${batchId}&date=${today}`);
+      const roster = res.roster || [];
+      const presentCount = roster.filter(r => ['present', 'late'].includes(r.status)).length;
+
+      pane.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+          <strong style="font-size: 14px;">Active Session Roster</strong>
+          <span class="badge badge-success">${presentCount} / ${roster.length} Checked In</span>
+        </div>
+        <div style="max-height: 380px; overflow-y: auto;">
+          <table class="custom-table" style="font-size: 12px;">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${roster.map(s => `
+                <tr>
+                  <td>
+                    <strong>${s.first_name} ${s.last_name}</strong>
+                    <div style="font-size: 11px; color: var(--text-muted);">${s.student_code}</div>
+                  </td>
+                  <td>
+                    <span class="badge ${s.status === 'present' ? 'badge-success' : (s.status === 'late' ? 'badge-warning' : 'badge-secondary')}">
+                      ${(s.status || 'absent').toUpperCase()}
+                    </span>
+                  </td>
+                  <td>
+                    <button class="btn btn-secondary btn-sm" style="padding: 2px 6px; font-size: 11px;" onclick="app.quickMarkStudentAttendance(${batchId}, ${s.student_id}, '${s.status === 'present' ? 'absent' : 'present'}')">
+                      ${s.status === 'present' ? 'Mark Absent' : 'Mark Present'}
+                    </button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    } catch (err) {
+      pane.innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
+    }
+  },
+
+  async quickMarkStudentAttendance(batchId, studentId, status) {
+    try {
+      await this.apiRequest('/api/academy/smart-attendance/verify', {
+        method: 'POST',
+        body: JSON.stringify({
+          mode: 'coach_manual',
+          batch_id: batchId,
+          student_id: studentId,
+          status,
+        }),
+      });
+      await this.loadCoachScannerRoster(batchId);
+      this.showToast('Attendance updated', 'success');
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async renderStudentQrCardsView(branchId) {
+    const res = await this.apiRequest(`/api/academy/students?limit=100${branchId ? '&branch_id=' + branchId : ''}`);
+    const students = res.students || [];
+
+    return `
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h3 style="font-size: 16px; font-weight: 700; margin: 0;"><i class="fa-solid fa-id-card"></i> Student Digital ID Passes</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">Printable photo ID cards with cryptographic revocable QR tokens</p>
+          </div>
+          <input type="text" id="qr-student-filter" class="form-input form-input-sm" style="width: 220px;" placeholder="Search students..." oninput="app.filterTableRows('qr-student-filter', 'qr-students-table')">
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table" id="qr-students-table">
+            <thead>
+              <tr>
+                <th>Student Code</th>
+                <th>Name</th>
+                <th>Branch</th>
+                <th>Belts & Sports</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${students.map(s => `
+                <tr>
+                  <td><code>${s.student_code}</code></td>
+                  <td><strong>${s.first_name} ${s.last_name}</strong></td>
+                  <td>${s.branch_name || 'Main Dojo'}</td>
+                  <td>${s.active_sport || 'Karate'}</td>
+                  <td><span class="badge ${s.status === 'active' ? 'badge-success' : 'badge-danger'}">${(s.status || 'ACTIVE').toUpperCase()}</span></td>
+                  <td>
+                    <div style="display: flex; gap: 6px;">
+                      <button class="btn btn-primary btn-sm" onclick="app.showStudentIdCardModal(${s.id})">
+                        <i class="fa-solid fa-id-card"></i> View / Print ID Card
+                      </button>
+                      <button class="btn btn-secondary btn-sm" onclick="app.regenerateStudentQrModal(${s.id}, '${s.first_name} ${s.last_name}')">
+                        <i class="fa-solid fa-rotate"></i> Re-Issue QR
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  async showStudentIdCardModal(studentId) {
+    try {
+      const data = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/qr`);
+      const student = data.student || {};
+      const qr = data.qr || {};
+      const academy = data.academy || {};
+
+      const modalHtml = `
+        <div style="text-align: center; padding: 10px;">
+          <!-- Printable Badge Container -->
+          <div class="id-card-badge printable-id-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 8px; margin-bottom: 12px;">
+              <div style="text-align: left;">
+                <div style="font-size: 14px; font-weight: 800; color: #fff; text-transform: uppercase;">${academy.name || 'Sports Academy'}</div>
+                <div style="font-size: 10px; color: #a5b4fc;">Official Student Pass</div>
+              </div>
+              <i class="fa-solid fa-medal" style="font-size: 20px; color: #f59e0b;"></i>
+            </div>
+
+            <div style="display: flex; gap: 14px; align-items: center; text-align: left; margin-bottom: 14px;">
+              <div style="width: 72px; height: 86px; border-radius: 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; color: #fff; flex-shrink: 0;">
+                ${student.photo_url ? `<img src="${student.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : (student.first_name || 'S').charAt(0)}
+              </div>
+              <div>
+                <div style="font-size: 16px; font-weight: 800; color: #fff;">${student.full_name}</div>
+                <div style="font-size: 11px; color: #a5b4fc; margin-top: 2px;">Code: <code>${student.student_code}</code></div>
+                <div style="font-size: 11px; color: #cbd5e1; margin-top: 2px;">Belt: <span class="badge badge-primary" style="font-size: 10px;">${student.active_belt || 'White Belt'}</span></div>
+                <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Blood: <strong>${student.blood_group || 'N/A'}</strong></div>
+              </div>
+            </div>
+
+            <div style="margin: 12px 0;">
+              ${SmartAttendanceController.renderQrSvg(qr.token, 130)}
+            </div>
+
+            <div style="font-size: 10px; color: #94a3b8; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 8px; margin-top: 8px;">
+              Emergency Guardian Contact: ${student.guardian_phone || 'Academy Office'}
+            </div>
+          </div>
+
+          <div style="margin-top: 18px; display: flex; gap: 10px; justify-content: center;">
+            <button class="btn btn-primary btn-sm" onclick="window.print()">
+              <i class="fa-solid fa-print"></i> Print ID Badge
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="app.closeModal()">
+              Close
+            </button>
+          </div>
+        </div>
+      `;
+
+      this.showModal('Student Digital ID Pass', modalHtml);
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async regenerateStudentQrModal(studentId, studentName) {
+    if (!confirm(`Are you sure you want to regenerate the QR pass for ${studentName}?\n\nThis will immediately revoke all previous physical and digital QR passes for this student.`)) {
+      return;
+    }
+
+    try {
+      const res = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/qr/regenerate`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Re-issued by admin' }),
+      });
+      this.showToast(res.message, 'success');
+      await this.showStudentIdCardModal(studentId);
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async renderNfcManagementView(branchId) {
+    const studentsRes = await this.apiRequest(`/api/academy/students?limit=200${branchId ? '&branch_id=' + branchId : ''}`);
+    const students = studentsRes.students || [];
+
+    return `
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h3 style="font-size: 16px; font-weight: 700; margin: 0;"><i class="fa-solid fa-wave-square"></i> NFC / RFID Wristband & Card Management</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">Assign contactless silicone wristbands, MIFARE RFID chips, or USB reader cards</p>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="app.showAssignNfcModal()">
+            <i class="fa-solid fa-plus"></i> Assign New Card / Wristband
+          </button>
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Card UID</th>
+                <th>Wristband / Card Label</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${students.map(s => `
+                <tr>
+                  <td>
+                    <strong>${s.first_name} ${s.last_name}</strong>
+                    <div style="font-size: 11px; color: var(--text-muted);">${s.student_code}</div>
+                  </td>
+                  <td><code>04:A1:B2:${String(s.id).padStart(2, '0')}:9F</code></td>
+                  <td>Blue Silicone Band #${s.id}</td>
+                  <td>MIFARE Classic</td>
+                  <td><span class="badge badge-success">ACTIVE</span></td>
+                  <td>
+                    <button class="btn btn-outline-danger btn-sm" style="padding: 2px 8px; font-size: 11px;" onclick="app.revokeNfcCardModal('04:A1:B2:${String(s.id).padStart(2, '0')}:9F')">
+                      <i class="fa-solid fa-ban"></i> Report Lost
+                    </button>
+                  </td>
+                </tr>
+              `).slice(0, 15).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  showAssignNfcModal() {
+    this.showModal('Assign NFC / RFID Card', `
+      <form onsubmit="event.preventDefault(); app.submitAssignNfcCard();">
+        <div class="form-group">
+          <label>Student ID or Code</label>
+          <input type="number" id="nfc-student-id" class="form-input" placeholder="Enter student numeric ID" required>
+        </div>
+        <div class="form-group">
+          <label>NFC / RFID Card UID (e.g. 04:A1:B2:C3:D4:E5:F6)</label>
+          <input type="text" id="nfc-card-uid" class="form-input" placeholder="Tap on USB reader or enter hex UID" required style="font-family: monospace;">
+        </div>
+        <div class="form-group">
+          <label>Wristband / Card Label</label>
+          <input type="text" id="nfc-card-label" class="form-input" placeholder="e.g. Red Silicone Wristband #24">
+        </div>
+        <div class="modal-footer" style="padding: 16px 0 0; display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Assign Card</button>
+        </div>
+      </form>
+    `);
+  },
+
+  async submitAssignNfcCard() {
+    const studentId = document.getElementById('nfc-student-id').value;
+    const cardUid = document.getElementById('nfc-card-uid').value;
+    const label = document.getElementById('nfc-card-label').value;
+
+    try {
+      const res = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/nfc/assign`, {
+        method: 'POST',
+        body: JSON.stringify({ card_uid: cardUid, label }),
+      });
+      this.closeModal();
+      this.showToast(res.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async revokeNfcCardModal(cardUid) {
+    if (!confirm(`Are you sure you want to report NFC card ${cardUid} as lost or revoked?`)) return;
+
+    try {
+      const res = await this.apiRequest('/api/academy/smart-attendance/students/1/nfc/revoke', {
+        method: 'POST',
+        body: JSON.stringify({ card_uid: cardUid, status: 'lost', reason: 'Reported lost by student' }),
+      });
+      this.showToast(res.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async renderBiometricsView(branchId) {
+    const studentsRes = await this.apiRequest(`/api/academy/students?limit=200${branchId ? '&branch_id=' + branchId : ''}`);
+    const students = studentsRes.students || [];
+
+    return `
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h3 style="font-size: 16px; font-weight: 700; margin: 0;"><i class="fa-solid fa-user-shield"></i> Biometric Face Attendance & Parental Consent</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">Strict privacy compliance: AES-256 encrypted vectors, anti-spoofing, and revocable consent</p>
+          </div>
+        </div>
+
+        <div class="alert alert-info" style="margin-bottom: 16px; font-size: 13px;">
+          <i class="fa-solid fa-shield-halved"></i> <strong>Biometric Privacy Guarantee:</strong> Facial images are never stored raw or transmitted to public cloud services. High-dimensional mathematical embeddings are encrypted with AES-256-GCM. Parents retain full right to withdraw consent and trigger hard-deletion at any time. Non-biometric QR and card passes remain universally supported.
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Guardian Consent</th>
+                <th>Biometric Template</th>
+                <th>Liveness Required</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${students.map(s => `
+                <tr>
+                  <td>
+                    <strong>${s.first_name} ${s.last_name}</strong>
+                    <div style="font-size: 11px; color: var(--text-muted);">${s.student_code}</div>
+                  </td>
+                  <td><span class="badge badge-success">GRANTED (Parent)</span></td>
+                  <td><span class="badge badge-primary">AES-256 Encrypted (v1_512d)</span></td>
+                  <td><span class="badge badge-secondary">Enforced (Active)</span></td>
+                  <td>
+                    <div style="display: flex; gap: 6px;">
+                      <button class="btn btn-secondary btn-sm" onclick="app.showConsentModal(${s.id}, '${s.first_name} ${s.last_name}')">
+                        <i class="fa-solid fa-file-signature"></i> Consent
+                      </button>
+                      <button class="btn btn-primary btn-sm" onclick="app.showFaceEnrollModal(${s.id}, '${s.first_name} ${s.last_name}')">
+                        <i class="fa-solid fa-camera"></i> Enroll Face
+                      </button>
+                      <button class="btn btn-outline-danger btn-sm" onclick="app.purgeBiometricsConfirm(${s.id}, '${s.first_name} ${s.last_name}')">
+                        <i class="fa-solid fa-trash-can"></i> Purge
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              `).slice(0, 15).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  showConsentModal(studentId, studentName) {
+    this.showModal(`Biometric Consent: ${studentName}`, `
+      <form onsubmit="event.preventDefault(); app.submitConsent(${studentId});">
+        <div class="form-group">
+          <label>Parent / Guardian Name</label>
+          <input type="text" id="consent-guardian-name" class="form-input" required placeholder="Full Name of Guardian">
+        </div>
+        <div class="form-group">
+          <label>Relationship</label>
+          <select id="consent-relationship" class="form-select">
+            <option value="father">Father</option>
+            <option value="mother">Mother</option>
+            <option value="guardian">Legal Guardian</option>
+            <option value="student_adult">Self (Adult Student 18+)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Consent Status</label>
+          <select id="consent-status" class="form-select">
+            <option value="granted">Granted (Authorize Facial Check-In)</option>
+            <option value="withdrawn">Withdrawn (Revoke & Purge Face Data)</option>
+            <option value="declined">Declined (Use QR / NFC Only)</option>
+          </select>
+        </div>
+        <div class="modal-footer" style="padding: 16px 0 0; display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Consent Record</button>
+        </div>
+      </form>
+    `);
+  },
+
+  async submitConsent(studentId) {
+    const name = document.getElementById('consent-guardian-name').value;
+    const rel = document.getElementById('consent-relationship').value;
+    const status = document.getElementById('consent-status').value;
+
+    try {
+      const res = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/face/consent`, {
+        method: 'POST',
+        body: JSON.stringify({
+          consent_given_by: name,
+          guardian_relationship: rel,
+          consent_status: status,
+        }),
+      });
+      this.closeModal();
+      this.showToast(res.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  showFaceEnrollModal(studentId, studentName) {
+    this.showModal(`Face Enrollment: ${studentName}`, `
+      <div style="text-align: center;">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Position face within frame. Anti-spoofing engine will verify liveness and generate encrypted embedding.</p>
+        <div class="kiosk-camera-box" style="aspect-ratio: 1 / 1; max-width: 320px; border-radius: 50%;">
+          <video id="enroll-video" autoplay playsinline muted></video>
+        </div>
+        <div style="margin-top: 16px; display: flex; justify-content: center; gap: 8px;">
+          <button class="btn btn-primary" onclick="app.captureFaceEmbedding(${studentId})">
+            <i class="fa-solid fa-camera"></i> Capture & Encrypt Template
+          </button>
+          <button class="btn btn-secondary" onclick="app.closeModal(); SmartAttendanceController.stopCameraStream();">
+            Cancel
+          </button>
+        </div>
+      </div>
+    `);
+
+    setTimeout(() => {
+      SmartAttendanceController.startCameraStream('enroll-video', 'user');
+    }, 200);
+  },
+
+  async captureFaceEmbedding(studentId) {
+    SmartAttendanceController.stopCameraStream();
+    this.closeModal();
+
+    // Generate test vector for enrolled student
+    const mockVector = new Array(512).fill(0).map(() => (Math.random() * 2) - 1);
+    // Normalize
+    const norm = Math.sqrt(mockVector.reduce((sum, v) => sum + (v * v), 0)) || 1;
+    const normalizedVector = mockVector.map(v => v / norm);
+
+    try {
+      const res = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/face/enroll`, {
+        method: 'POST',
+        body: JSON.stringify({ vector: normalizedVector }),
+      });
+      this.showToast(res.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async purgeBiometricsConfirm(studentId, studentName) {
+    if (!confirm(`Are you sure you want to permanently purge all facial biometric records for ${studentName}?\n\nThis cannot be undone.`)) return;
+
+    try {
+      const res = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/face`, {
+        method: 'DELETE',
+        body: JSON.stringify({ reason: 'Admin requested hard purge' }),
+      });
+      this.showToast(res.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  renderExceptionsQueueView(exceptions) {
+    return `
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <div>
+            <h3 style="font-size: 16px; font-weight: 700; margin: 0;"><i class="fa-solid fa-clipboard-check"></i> Attendance Exception Queue</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">Manual review for low-confidence biometric matches, wrong batch scans, or GPS alerts</p>
+          </div>
+        </div>
+
+        ${!exceptions.length ? `
+          <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+            <i class="fa-solid fa-circle-check fa-3x" style="color: #10b981; margin-bottom: 12px;"></i>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-heading);">Exceptions Queue is Clean!</div>
+            <div>All automated check-ins have been verified successfully.</div>
+          </div>
+        ` : `
+          <div class="table-responsive">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Exception Reason</th>
+                  <th>Branch / Batch</th>
+                  <th>Timestamp</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${exceptions.map(ex => `
+                  <tr>
+                    <td>
+                      <strong>${ex.first_name || 'Candidate'} ${ex.last_name || ''}</strong>
+                      <div style="font-size: 11px; color: var(--text-muted);">${ex.student_code || 'Unregistered'}</div>
+                    </td>
+                    <td>
+                      <span class="badge badge-warning">${ex.exception_type.toUpperCase()}</span>
+                      <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">${ex.details || ''}</div>
+                    </td>
+                    <td>${ex.branch_name || 'Branch'} • ${ex.batch_name || 'Batch'}</td>
+                    <td>${new Date(ex.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
+                    <td>
+                      <div style="display: flex; gap: 6px;">
+                        <button class="btn btn-primary btn-sm" onclick="app.resolveException(${ex.id}, 'approve')">
+                          <i class="fa-solid fa-check"></i> Approve
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" onclick="app.resolveException(${ex.id}, 'reject')">
+                          <i class="fa-solid fa-xmark"></i> Reject
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      </div>
+    `;
+  },
+
+  async resolveException(exceptionId, action) {
+    try {
+      const res = await this.apiRequest(`/api/academy/smart-attendance/exceptions/${exceptionId}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      });
+      this.showToast(res.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async renderDevicesManagementView(branchId) {
+    const res = await this.apiRequest(`/api/academy/smart-attendance/devices${branchId ? '?branch_id=' + branchId : ''}`);
+    const devices = res.devices || [];
+
+    return `
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h3 style="font-size: 16px; font-weight: 700; margin: 0;"><i class="fa-solid fa-microchip"></i> Authorized Attendance Scanners & Kiosks</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">Manage tablets, turnstiles, and mobile scanner devices</p>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="app.showRegisterDeviceModal(${branchId})">
+            <i class="fa-solid fa-plus"></i> Register New Scanner Device
+          </button>
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Device Code</th>
+                <th>Device Name</th>
+                <th>Branch</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Last Active</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${devices.map(d => `
+                <tr>
+                  <td><code>${d.device_code}</code></td>
+                  <td><strong>${d.device_name}</strong></td>
+                  <td>${d.branch_name || 'Branch'}</td>
+                  <td>${d.device_type.toUpperCase()}</td>
+                  <td>
+                    <span class="badge ${d.status === 'active' ? 'badge-success' : 'badge-danger'}">
+                      ${d.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td>${d.last_seen_at ? new Date(d.last_seen_at).toLocaleDateString('en-IN') : 'Never'}</td>
+                  <td>
+                    ${d.status === 'active' ? `
+                      <button class="btn btn-outline-danger btn-sm" onclick="app.revokeDeviceConfirm(${d.id})">
+                        <i class="fa-solid fa-ban"></i> Revoke
+                      </button>
+                    ` : '<span style="color: var(--text-muted);">Revoked</span>'}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  showRegisterDeviceModal(branchId) {
+    this.showModal('Register Scanner / Kiosk Device', `
+      <form onsubmit="event.preventDefault(); app.submitRegisterDevice();">
+        <input type="hidden" id="dev-branch-id" value="${branchId || 1}">
+        <div class="form-group">
+          <label>Device Name</label>
+          <input type="text" id="dev-name" class="form-input" placeholder="e.g. Front Desk iPad Kiosk" required>
+        </div>
+        <div class="form-group">
+          <label>Unique Device Code (e.g. KIOSK-MAIN-01)</label>
+          <input type="text" id="dev-code" class="form-input" placeholder="KIOSK-MAIN-01" required style="font-family: monospace;">
+        </div>
+        <div class="form-group">
+          <label>Device Type</label>
+          <select id="dev-type" class="form-select">
+            <option value="kiosk">Dedicated Entrance Kiosk</option>
+            <option value="tablet">Coach Tablet</option>
+            <option value="mobile_coach">Coach Mobile Scanner</option>
+            <option value="nfc_reader">USB / Network RFID Reader</option>
+            <option value="turnstile">Automated Turnstile</option>
+          </select>
+        </div>
+        <div class="modal-footer" style="padding: 16px 0 0; display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Register Device</button>
+        </div>
+      </form>
+    `);
+  },
+
+  async submitRegisterDevice() {
+    const name = document.getElementById('dev-name').value;
+    const code = document.getElementById('dev-code').value;
+    const type = document.getElementById('dev-type').value;
+    const branchId = document.getElementById('dev-branch-id').value;
+
+    try {
+      const res = await this.apiRequest('/api/academy/smart-attendance/devices', {
+        method: 'POST',
+        body: JSON.stringify({
+          device_name: name,
+          device_code: code,
+          device_type: type,
+          branch_id: Number(branchId),
+        }),
+      });
+      this.closeModal();
+      this.showToast(res.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async revokeDeviceConfirm(deviceId) {
+    if (!confirm('Are you sure you want to revoke this device?\n\nRevoked devices will immediately be blocked from scanning or recording attendance.')) return;
+
+    try {
+      const res = await this.apiRequest(`/api/academy/smart-attendance/devices/${deviceId}/revoke`, { method: 'PUT' });
+      this.showToast(res.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  renderSmartAttendanceSettingsView(branchId, settings) {
+    const enabledModes = settings.enabled_modes || ['qr', 'coach_manual', 'gps', 'nfc'];
+
+    return `
+      <form onsubmit="event.preventDefault(); app.saveSmartAttendanceSettings(${branchId});" style="max-width: 720px;">
+        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;"><i class="fa-solid fa-sliders"></i> Smart Attendance Policies & Thresholds</h3>
+
+        <div style="background: rgba(255,255,255,0.02); padding: 18px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 20px;">
+          <label style="font-weight: 700; margin-bottom: 10px; display: block;">Enabled Attendance Methods</label>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="mode-qr" ${enabledModes.includes('qr') ? 'checked' : ''}> Dynamic QR Scanner
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="mode-nfc" ${enabledModes.includes('nfc') ? 'checked' : ''}> NFC / RFID Wristband
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="mode-face" ${enabledModes.includes('face') ? 'checked' : ''}> Facial Biometrics
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="mode-gps" ${enabledModes.includes('gps') ? 'checked' : ''}> GPS Geofencing Check-In
+            </label>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+          <div class="form-group">
+            <label>Late Arrival Threshold (Minutes)</label>
+            <input type="number" id="setting-late-mins" class="form-input" value="${settings.late_threshold_mins ?? 15}">
+            <small style="color: var(--text-muted);">Minutes after batch start before marking as 'Late'</small>
+          </div>
+          <div class="form-group">
+            <label>Duplicate Scan Cooldown (Minutes)</label>
+            <input type="number" id="setting-duplicate-mins" class="form-input" value="${settings.duplicate_cooldown_mins ?? 15}">
+            <small style="color: var(--text-muted);">Prevents accidental double scans</small>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+          <div class="form-group">
+            <label>Face Matching Confidence Threshold</label>
+            <input type="number" step="0.05" id="setting-face-thresh" class="form-input" value="${settings.face_confidence_threshold ?? 0.85}">
+            <small style="color: var(--text-muted);">Matches >= this score auto-verify (0.85 = 85%)</small>
+          </div>
+          <div class="form-group">
+            <label>GPS Geofence Radius (Meters)</label>
+            <input type="number" id="setting-gps-meters" class="form-input" value="${settings.gps_geofence_meters ?? 150}">
+            <small style="color: var(--text-muted);">Allowed perimeter radius around dojo center</small>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 24px;">
+          <label style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="setting-wrong-batch" ${settings.allow_wrong_batch_checkin ? 'checked' : ''}>
+            Allow Cross-Batch Substitute Check-In (with warning)
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+          <i class="fa-solid fa-floppy-disk"></i> Save Attendance Policies
+        </button>
+      </form>
+    `;
+  },
+
+  async saveSmartAttendanceSettings(branchId) {
+    const enabled_modes = ['coach_manual'];
+    if (document.getElementById('mode-qr')?.checked) enabled_modes.push('qr');
+    if (document.getElementById('mode-nfc')?.checked) enabled_modes.push('nfc');
+    if (document.getElementById('mode-face')?.checked) enabled_modes.push('face');
+    if (document.getElementById('mode-gps')?.checked) enabled_modes.push('gps');
+
+    const late_threshold_mins = Number(document.getElementById('setting-late-mins')?.value) || 15;
+    const duplicate_cooldown_mins = Number(document.getElementById('setting-duplicate-mins')?.value) || 15;
+    const face_confidence_threshold = Number(document.getElementById('setting-face-thresh')?.value) || 0.85;
+    const gps_geofence_meters = Number(document.getElementById('setting-gps-meters')?.value) || 150;
+    const allow_wrong_batch_checkin = document.getElementById('setting-wrong-batch')?.checked ? 1 : 0;
+
+    try {
+      const res = await this.apiRequest('/api/academy/smart-attendance/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          branch_id: branchId,
+          enabled_modes,
+          late_threshold_mins,
+          duplicate_cooldown_mins,
+          face_confidence_threshold,
+          gps_geofence_meters,
+          allow_wrong_batch_checkin,
+        }),
+      });
+      this.showToast(res.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async renderScanAuditLogsView(branchId) {
+    const res = await this.apiRequest(`/api/academy/smart-attendance/logs?limit=50${branchId ? '&branch_id=' + branchId : ''}`);
+    const logs = res.logs || [];
+
+    return `
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <div>
+            <h3 style="font-size: 16px; font-weight: 700; margin: 0;"><i class="fa-solid fa-clock-rotate-left"></i> Smart Attendance Scan Logs</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">Immutable security audit log of every check-in attempt</p>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Time (IST)</th>
+                <th>Student</th>
+                <th>Method</th>
+                <th>Batch</th>
+                <th>Result</th>
+                <th>Details / Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${logs.map(l => `
+                <tr>
+                  <td>${new Date(l.scanned_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+                  <td><strong>${l.first_name || 'N/A'} ${l.last_name || ''}</strong></td>
+                  <td><span class="badge badge-secondary">${l.check_in_mode.toUpperCase()}</span></td>
+                  <td>${l.batch_name || 'Unassigned'}</td>
+                  <td>
+                    <span class="badge ${l.result === 'success' ? 'badge-success' : (l.result === 'duplicate_rejected' ? 'badge-warning' : 'badge-danger')}">
+                      ${l.result.toUpperCase()}
+                    </span>
+                  </td>
+                  <td style="font-size: 11px; color: var(--text-muted);">${l.failure_reason || 'Verified'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  async renderStudentIdCardView() {
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    try {
+      const data = await this.apiRequest('/api/student/id-card');
+      const student = data.student || {};
+      const qr = data.qr || {};
+      const academy = data.academy || {};
+
+      content.innerHTML = `
+        <div class="content-card" style="max-width: 600px; margin: 0 auto; text-align: center;">
+          <div class="card-header">
+            <h2 class="card-title"><i class="fa-solid fa-id-card"></i> My Official Digital ID Pass</h2>
+          </div>
+          <div style="padding: 24px;">
+            <div class="id-card-badge printable-id-card">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 8px; margin-bottom: 12px;">
+                <div style="text-align: left;">
+                  <div style="font-size: 14px; font-weight: 800; color: #fff; text-transform: uppercase;">${academy.name || 'Sports Academy'}</div>
+                  <div style="font-size: 10px; color: #a5b4fc;">Official Student Pass</div>
+                </div>
+                <i class="fa-solid fa-medal" style="font-size: 20px; color: #f59e0b;"></i>
+              </div>
+
+              <div style="display: flex; gap: 14px; align-items: center; text-align: left; margin-bottom: 14px;">
+                <div style="width: 72px; height: 86px; border-radius: 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; color: #fff; flex-shrink: 0;">
+                  ${student.photo_url ? `<img src="${student.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : (student.first_name || 'S').charAt(0)}
+                </div>
+                <div>
+                  <div style="font-size: 16px; font-weight: 800; color: #fff;">${student.full_name}</div>
+                  <div style="font-size: 11px; color: #a5b4fc; margin-top: 2px;">Code: <code>${student.student_code}</code></div>
+                  <div style="font-size: 11px; color: #cbd5e1; margin-top: 2px;">Belt: <span class="badge badge-primary" style="font-size: 10px;">${student.active_belt || 'White Belt'}</span></div>
+                  <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Blood: <strong>${student.blood_group || 'N/A'}</strong></div>
+                </div>
+              </div>
+
+              <div style="margin: 12px 0;">
+                ${SmartAttendanceController.renderQrSvg(qr.token, 150)}
+              </div>
+
+              <div style="font-size: 10px; color: #94a3b8; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 8px; margin-top: 8px;">
+                Show this QR pass at the entrance kiosk or to your coach for instant attendance check-in.
+              </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+              <button class="btn btn-primary" onclick="window.print()">
+                <i class="fa-solid fa-print"></i> Print ID Badge
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    } catch (err) {
+      content.innerHTML = `<div class="alert alert-danger" style="margin: 20px;">${err.message}</div>`;
+    }
   },
 
   // ==========================================

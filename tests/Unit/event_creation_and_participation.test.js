@@ -128,8 +128,8 @@ describe('Event Creation and Student Participation (Full Specification & Lifecyc
     const payload = {
       title: 'Inter-Branch Karate Tournament',
       event_type: 'tournament',
-      event_date: '2026-11-15',
-      rsvp_deadline: '2026-11-05',
+      event_date: '2026-12-15',
+      rsvp_deadline: '2026-12-05',
       location: null, // Initial specification: Venue not specified yet
       registration_approval_required: 1, // Configurable approval required
       description: 'Annual inter-branch karate kumite and kata tournament.',
@@ -192,8 +192,8 @@ describe('Event Creation and Student Participation (Full Specification & Lifecyc
       body: JSON.stringify({
         title: 'Inter-Branch Karate Tournament',
         event_type: 'tournament',
-        event_date: '2026-11-15',
-        rsvp_deadline: '2026-11-20', // Invalid: after event date!
+        event_date: '2026-12-15',
+        rsvp_deadline: '2026-12-20', // Invalid: after event date!
         location: 'Main Dojo Arena',
         registration_approval_required: 1,
         eligible_student_ids: [student1Id],
@@ -216,8 +216,8 @@ describe('Event Creation and Student Participation (Full Specification & Lifecyc
       body: JSON.stringify({
         title: 'Inter-Branch Karate Tournament',
         event_type: 'tournament',
-        event_date: '2026-11-15',
-        rsvp_deadline: '2026-11-05',
+        event_date: '2026-12-15',
+        rsvp_deadline: '2026-12-05',
         location: 'Main Dojo Arena, North Campus',
         registration_approval_required: 1,
         eligible_student_ids: [student1Id, student2Id],
@@ -382,7 +382,7 @@ describe('Event Creation and Student Participation (Full Specification & Lifecyc
     assert.ok(lateRes.data.error.includes('Response deadline has passed'), `Expected deadline error, got ${lateRes.data.error}`);
 
     // Restore valid deadline
-    academy1Db.prepare("UPDATE events SET rsvp_deadline = '2026-11-05' WHERE id = ?").run(createdEventId);
+    academy1Db.prepare("UPDATE events SET rsvp_deadline = '2026-12-05' WHERE id = ?").run(createdEventId);
   });
 
   // =========================================================================
@@ -419,8 +419,8 @@ describe('Event Creation and Student Participation (Full Specification & Lifecyc
       body: JSON.stringify({
         title: 'Inter-Branch Karate Tournament',
         event_type: 'tournament',
-        event_date: '2026-11-15',
-        rsvp_deadline: '2026-11-05',
+        event_date: '2026-12-15',
+        rsvp_deadline: '2026-12-05',
         location: 'Main Dojo Arena, North Campus',
         registration_approval_required: 1,
         eligible_student_ids: [student1Id, student2Id, uninvitedStudentId], // Adding student 3

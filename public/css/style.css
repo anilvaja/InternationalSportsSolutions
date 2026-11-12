@@ -4224,3 +4224,149 @@ button, .btn, .nav-item, .action-btn {
     flex: 1 1 100%;
   }
 }
+
+
+/* ==========================================================================
+   Smart Attendance Engine & Kiosk UI
+   ========================================================================== */
+.kiosk-wrapper {
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+}
+
+.kiosk-camera-box {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  aspect-ratio: 4 / 3;
+}
+
+.kiosk-camera-box video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kiosk-reticle-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 240px;
+  height: 240px;
+  border: 2px dashed rgba(99, 102, 241, 0.75);
+  border-radius: 20px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kiosk-reticle-overlay::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #6366f1, #a855f7, transparent);
+  animation: kioskScanLine 2.2s infinite ease-in-out;
+}
+
+@keyframes kioskScanLine {
+  0% { top: 10%; opacity: 0.2; }
+  50% { top: 90%; opacity: 1; }
+  100% { top: 10%; opacity: 0.2; }
+}
+
+.kiosk-feedback-box {
+  padding: 24px;
+  border-radius: 14px;
+  text-align: center;
+  transition: all 0.3s ease;
+  margin-top: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+}
+
+.kiosk-feedback-box.ready {
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.kiosk-feedback-box.processing {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.kiosk-feedback-box.success {
+  border-color: #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.05));
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+}
+
+.kiosk-feedback-box.warning {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.05));
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
+}
+
+.kiosk-feedback-box.error {
+  border-color: #ef4444;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.05));
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+}
+
+/* Digital ID Card Badge Preview */
+.id-card-badge {
+  width: 320px;
+  background: linear-gradient(145deg, #1e1b4b, #0f172a);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  padding: 20px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  margin: 0 auto;
+  position: relative;
+  overflow: hidden;
+}
+
+.id-card-badge::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .printable-id-card, .printable-id-card * {
+    visibility: visible;
+  }
+  .printable-id-card {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 85.6mm;
+    height: 53.98mm;
+    margin: 0;
+    padding: 10px;
+    box-sizing: border-box;
+    box-shadow: none;
+    border: 1px solid #ccc;
+    background: #fff !important;
+    color: #000 !important;
+  }
+}

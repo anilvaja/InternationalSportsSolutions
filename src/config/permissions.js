@@ -191,6 +191,18 @@ export const ALL_ACADEMY_PERMISSIONS = [
   'approve_payroll',
   'export_shift_reports',
 
+  // 22. Smart Attendance Engine & Biometrics
+  'manage_smart_attendance',
+  'view_smart_attendance',
+  'manage_attendance_devices',
+  'manage_student_qr',
+  'manage_face_enrollment',
+  'manage_nfc_cards',
+  'approve_attendance_exceptions',
+  'view_kiosk',
+  'scan_attendance',
+  'export_smart_attendance',
+
   // Universal super capability
   'all'
 ];
@@ -227,6 +239,11 @@ export const DEFAULT_ACADEMY_ROLES = [
       'view_batches',
       'view_attendance',
       'mark_attendance',
+      'view_smart_attendance',
+      'view_kiosk',
+      'scan_attendance',
+      'manage_student_qr',
+      'manage_nfc_cards',
       'view_fees',
       'collect_fees'
     ],
@@ -247,6 +264,11 @@ export const DEFAULT_ACADEMY_ROLES = [
       'edit_batches',
       'view_attendance',
       'mark_attendance',
+      'view_smart_attendance',
+      'view_kiosk',
+      'scan_attendance',
+      'manage_student_qr',
+      'approve_attendance_exceptions',
       'view_syllabus',
       'manage_syllabus',
       'view_sports',
@@ -270,6 +292,11 @@ export const DEFAULT_ACADEMY_ROLES = [
       'view_batches',
       'view_attendance',
       'mark_attendance',
+      'view_smart_attendance',
+      'view_kiosk',
+      'scan_attendance',
+      'manage_student_qr',
+      'manage_nfc_cards',
       'view_fees',
       'collect_fees',
       'view_sports',
@@ -295,6 +322,8 @@ export const DEFAULT_ACADEMY_ROLES = [
       'manage_students',
       'view_attendance',
       'mark_attendance',
+      'view_smart_attendance',
+      'scan_attendance',
       'view_fees',
       'collect_fees',
       'view_batches'
@@ -310,6 +339,8 @@ export const DEFAULT_ACADEMY_ROLES = [
       'view_batches',
       'view_students',
       'mark_attendance',
+      'view_smart_attendance',
+      'scan_attendance',
       'apply_leaves'
     ],
     is_system: 1,

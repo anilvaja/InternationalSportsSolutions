@@ -163,7 +163,6 @@ export class LeaveService {
       return db.prepare(`
         SELECT b.*, p.name as policy_name, p.name as leave_name, p.is_paid, p.allow_half_day
         FROM employee_leave_balances b
-        LEFT JOIN leave_policies p ON p.academy_id = b.academy_id AND p.leave_type = b.leave_type
         LEFT JOIN (
           SELECT academy_id, leave_type, name, is_paid, allow_half_day
           FROM leave_policies

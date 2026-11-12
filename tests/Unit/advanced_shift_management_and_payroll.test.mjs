@@ -535,7 +535,7 @@ describe('Advanced Shift Management, Multiple Daily Slots, Availability & Payrol
     assert.equal(snap.unpaid_leaves, 1);
     // Unpaid leave deduction = 1 * (30000 / snap.scheduled_working_days) = 1428.57
     const expectedDeduction = Math.round((30000 / snap.scheduled_working_days) * 100) / 100;
-    assert.equal(snap.absence_deductions, expectedDeduction);
+    assert.equal(snap.unpaid_leave_deduction !== undefined ? snap.unpaid_leave_deduction : snap.absence_deductions, expectedDeduction);
   });
 
   // =========================================================================

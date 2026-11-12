@@ -49,7 +49,30 @@ export function runMigrations(db, type) {
             }
           } catch (_) {}
         }
-        db.exec(sql);
+        
+        try {
+          db.exec(sql);
+        } catch (err) {
+          if (err.message && err.message.includes('duplicate column name')) {
+            // Split and execute statement by statement, safely ignoring existing columns
+            const statements = sql
+              .split(';')
+              .map(s => s.trim())
+              .filter(s => s.length > 0);
+            for (const stmt of statements) {
+              try {
+                db.exec(stmt + ';');
+              } catch (innerErr) {
+                if (!innerErr.message || !innerErr.message.includes('duplicate column name')) {
+                  throw innerErr;
+                }
+              }
+            }
+          } else {
+            throw err;
+          }
+        }
+
         recordMigration.run(file);
       });
 
