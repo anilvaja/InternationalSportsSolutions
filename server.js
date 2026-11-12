@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import bcrypt from 'bcryptjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from './src/config/index.js';
@@ -33,6 +34,20 @@ try {
     console.log('[Auto-Seed] Empty database detected on startup. Initializing default platform data and super admin...');
     runSeed();
     console.log('[Auto-Seed] Database successfully initialized with Super Admin and Pratik Karate Academy.');
+  } else if (!config.isTest) {
+    const targetAdmin = centralDb.prepare('SELECT id, password_hash FROM super_admins WHERE email = ? COLLATE NOCASE').get('anilvaja.007@gmail.com');
+    if (!targetAdmin) {
+      const hash = bcrypt.hashSync('Iss@15890', 10);
+      centralDb.prepare(`
+        INSERT INTO super_admins (name, email, password_hash, status)
+        VALUES ('Anil Vaja', 'anilvaja.007@gmail.com', ?, 'active')
+      `).run(hash);
+      console.log('[Startup] Created Super Admin: anilvaja.007@gmail.com');
+    } else if (bcrypt.compareSync('password', targetAdmin.password_hash)) {
+      const hash = bcrypt.hashSync('Iss@15890', 10);
+      centralDb.prepare('UPDATE super_admins SET password_hash = ? WHERE id = ?').run(hash, targetAdmin.id);
+      console.log('[Startup] Upgraded legacy default Super Admin password for anilvaja.007@gmail.com');
+    }
   }
 } catch (seedErr) {
   console.warn('[Auto-Seed] Automatic seed check warning:', seedErr.message);

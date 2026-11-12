@@ -1087,7 +1087,6 @@ const app = {
       const data = await this.apiRequest('/api/public/setup');
       if (data && data.success) {
         this.showToast('Platform initialized successfully!', 'success');
-        this.quickFill('anilvaja.007@gmail.com', 'password');
 
         // Show success alert above form
         const form = document.getElementById('login-form');
@@ -1101,9 +1100,7 @@ const app = {
         if (banner) {
           banner.innerHTML = `
             <div style="font-weight: 700; margin-bottom: 4px;"><i class="fa-solid fa-circle-check"></i> Platform Ready!</div>
-            <div>Default credentials:</div>
-            <div style="font-family: monospace; font-size: 12px; margin-top: 4px;">Super Admin: anilvaja.007@gmail.com / password</div>
-            <div style="font-family: monospace; font-size: 12px; margin-top: 2px;">Academy Admin: admin@pratikkarate.com / password123 (Pratik Karate Academy)</div>
+            <div>Super Admin and default academy have been initialized. Please sign in with your credentials.</div>
           `;
         }
       } else {
@@ -1134,7 +1131,6 @@ const app = {
       const data = await this.apiRequest('/api/public/reset-everything?confirm=RESET_EVERYTHING', { method: 'POST' });
       if (data && data.success) {
         this.showToast('Platform reset from scratch successfully!', 'success');
-        this.quickFill('anilvaja.007@gmail.com', 'password');
 
         const form = document.getElementById('login-form');
         let banner = document.getElementById('init-success-banner');
@@ -1147,9 +1143,7 @@ const app = {
         if (banner) {
           banner.innerHTML = `
             <div style="font-weight: 700; margin-bottom: 4px;"><i class="fa-solid fa-circle-check"></i> Platform Reset Cleanly!</div>
-            <div>All previous data wiped. Only Super Admin & Pratik Karate Academy exist:</div>
-            <div style="font-family: monospace; font-size: 12px; margin-top: 4px;">Super Admin: anilvaja.007@gmail.com / password</div>
-            <div style="font-family: monospace; font-size: 12px; margin-top: 2px;">Academy Admin: admin@pratikkarate.com / password123 (Pratik Karate Academy)</div>
+            <div>All previous data wiped. Only Super Admin & Pratik Karate Academy exist. Please sign in with your credentials.</div>
           `;
         }
         if (this.user) {
@@ -1219,16 +1213,10 @@ const app = {
     loginView.style.display = 'flex';
     document.getElementById('app-view').style.display = 'none';
 
-    // Show demo pickers on localhost, .test, preview URLs, or if demo mode
-    const demoPicker = document.getElementById('demo-login-picker-container');
-    if (demoPicker) {
-      const isDevOrPreview = window.location.hostname === 'localhost' ||
-                            window.location.hostname === '127.0.0.1' ||
-                            window.location.hostname.endsWith('.test') ||
-                            window.location.hostname.includes('preview') ||
-                            window.location.hostname.includes('airoapp.ai');
-      demoPicker.style.display = isDevOrPreview ? 'block' : 'none';
-    }
+    const emailInput = document.getElementById('login-email');
+    const passwordInput = document.getElementById('login-password');
+    if (emailInput) emailInput.value = '';
+    if (passwordInput) passwordInput.value = '';
 
     // Only show setup/reset database buttons when debug=on or setup=on in URL or stored in browser
     const initDbContainer = document.getElementById('init-db-container');

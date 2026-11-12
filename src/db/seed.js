@@ -15,18 +15,18 @@ export function runSeed() {
   const centralDb = getCentralDb();
 
   // 1. Seed Super Admin (ensure primary super admin exists)
-  const defaultPasswordHash = bcrypt.hashSync('password', 10);
+  const superAdminPasswordHash = bcrypt.hashSync('Iss@15890', 10);
   const existingSuperAdmin = centralDb.prepare('SELECT id FROM super_admins WHERE email = ?').get('anilvaja.007@gmail.com');
   if (!existingSuperAdmin) {
     centralDb.prepare(`
       INSERT INTO super_admins (name, email, password_hash, status)
       VALUES (?, ?, ?, 'active')
-    `).run('Anil Vaja', 'anilvaja.007@gmail.com', defaultPasswordHash);
+    `).run('Anil Vaja', 'anilvaja.007@gmail.com', superAdminPasswordHash);
     console.log('[Seed] Created Super Admin: anilvaja.007@gmail.com');
   } else {
     centralDb.prepare(`
       UPDATE super_admins SET name = ?, password_hash = ?, status = 'active' WHERE id = ?
-    `).run('Anil Vaja', defaultPasswordHash, existingSuperAdmin.id);
+    `).run('Anil Vaja', superAdminPasswordHash, existingSuperAdmin.id);
   }
 
   // 2. Central Settings

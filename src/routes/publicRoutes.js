@@ -265,10 +265,6 @@ publicRouter.all('/setup', (req, res) => {
         message: 'Platform database is already active and initialized.',
         initialized: true,
         superAdminEmail: existingSuperAdmin.email,
-        loginCredentials: {
-          superAdmin: { email: 'anilvaja.007@gmail.com', password: 'password' },
-          academyAdmin: { academy: 'Pratik Karate Academy', slug: 'pratik-karate-academy', email: 'admin@pratikkarate.com', password: 'password123' },
-        },
         loginUrl: '/',
       });
     }
@@ -280,10 +276,6 @@ publicRouter.all('/setup', (req, res) => {
       success: true,
       message: 'Platform successfully initialized with 1 Super Admin and 1 Academy (Pratik Karate Academy) with Academy Admin role (all permissions).',
       initialized: true,
-      loginCredentials: {
-        superAdmin: { email: 'anilvaja.007@gmail.com', password: 'password' },
-        academyAdmin: { academy: 'Pratik Karate Academy', slug: 'pratik-karate-academy', email: 'admin@pratikkarate.com', password: 'password123' },
-      },
       loginUrl: '/',
     });
   } catch (err) {
@@ -314,10 +306,6 @@ publicRouter.all(['/reset-everything', '/clean-slate'], (req, res) => {
     const result = AcademyLifecycleService.resetPlatformToCleanState();
     return res.json({
       ...result,
-      loginCredentials: {
-        superAdmin: { email: 'anilvaja.007@gmail.com', password: 'password' },
-        academyAdmin: { academy: 'Pratik Karate Academy', slug: 'pratik-karate-academy', email: 'admin@pratikkarate.com', password: 'password123' },
-      },
       loginUrl: '/',
     });
   } catch (err) {
