@@ -20,3 +20,4 @@ SA-EVT-01,Event Pass,Event Ticket QR Isolation,EventPassService,Scan tournament 
 SA-EXC-01,Exceptions,Manual Review Queue & Authorization,SmartAttendanceEngine,Admin reviews low-confidence biometric or late arrival exception,Admin approves or rejects; updates status with audit log,Approved and resolved in queue with audit trail,PASS
 SA-UI-01,Kiosk Scanner,Visual Feedback Reticle & Web Audio Synthesis,SmartAttendanceUI,Student scans QR token at kiosk,Plays confirmation chime; displays green badge with student name,Visual badge and audio chime feedback rendered,PASS
 SA-UI-02,ID Card,Digital Badge & Printable SVG Layout,SmartAttendanceUI,Open student digital ID pass modal,Renders photo, QR code, student code, emergency contacts, and @media print,ID card rendered with crisp print styling,PASS
+

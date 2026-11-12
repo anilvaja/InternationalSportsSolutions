@@ -20731,6 +20731,16 @@ const app = {
       <div style="max-width: 800px; margin: 0 auto; text-align: center;">
         <div id="camera-error-banner" class="alert alert-warning" style="display: none; margin-bottom: 16px;"></div>
 
+        <!-- Mode Switcher: QR / Card Scan vs Face Biometrics -->
+        <div style="display: flex; justify-content: center; gap: 8px; margin-bottom: 16px;">
+          <button id="btn-scanmode-qr" class="btn btn-primary btn-sm" onclick="SmartAttendanceController.setScanMode('qr')">
+            <i class="fa-solid fa-qrcode"></i> QR / Card Scanner
+          </button>
+          <button id="btn-scanmode-face" class="btn btn-secondary btn-sm" onclick="SmartAttendanceController.setScanMode('face')">
+            <i class="fa-solid fa-face-smile"></i> Face Biometrics
+          </button>
+        </div>
+
         <!-- Camera Scanner Card -->
         <div class="kiosk-camera-box">
           <video id="kiosk-video" autoplay playsinline muted></video>
@@ -20744,7 +20754,7 @@ const app = {
         <!-- Camera Controls -->
         <div style="display: flex; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap;">
           <button class="btn btn-primary btn-sm" onclick="SmartAttendanceController.startCameraStream('kiosk-video')">
-            <i class="fa-solid fa-camera"></i> Start Camera Scanner
+            <i class="fa-solid fa-camera"></i> Start Camera
           </button>
           <button class="btn btn-secondary btn-sm" onclick="SmartAttendanceController.stopCameraStream()">
             <i class="fa-solid fa-stop"></i> Stop Camera
@@ -20754,11 +20764,30 @@ const app = {
           </button>
         </div>
 
+        <!-- Card Photo Upload & Actions (QR Mode) -->
+        <div id="kiosk-qr-actions" style="display: flex; justify-content: center; gap: 10px; margin-top: 12px; flex-wrap: wrap;">
+          <label class="btn btn-outline-primary btn-sm" style="cursor: pointer; margin: 0;">
+            <i class="fa-solid fa-file-image"></i> Scan / Upload Card Photo
+            <input type="file" accept="image/*" style="display: none;" onchange="if(this.files[0]) SmartAttendanceController.scanCardPhoto(this.files[0]); this.value='';">
+          </label>
+        </div>
+
+        <!-- Face Biometrics Actions (Face Mode) -->
+        <div id="kiosk-face-actions" style="display: none; justify-content: center; gap: 10px; margin-top: 12px; flex-wrap: wrap;">
+          <button class="btn btn-primary btn-sm" onclick="SmartAttendanceController.captureAndVerifyFace('kiosk-video', false)">
+            <i class="fa-solid fa-camera"></i> Capture Face Snapshot
+          </button>
+          <label class="btn btn-outline-primary btn-sm" style="cursor: pointer; margin: 0;">
+            <i class="fa-solid fa-upload"></i> Upload Face Photo
+            <input type="file" accept="image/*" style="display: none;" onchange="if(this.files[0]) SmartAttendanceController.captureAndVerifyFace(this.files[0], false); this.value='';">
+          </label>
+        </div>
+
         <!-- High-Visibility Feedback Card -->
         <div id="kiosk-feedback-card" class="kiosk-feedback-box ready">
           <div style="font-size: 32px; color: var(--text-muted);"><i class="fa-solid fa-qrcode"></i></div>
           <div style="font-size: 15px; font-weight: 700; color: var(--text-heading); margin-top: 6px;">Kiosk Ready for Scan</div>
-          <div style="font-size: 12px; color: var(--text-muted);">Hold your Student ID Pass in front of camera or scan with barcode gun</div>
+          <div style="font-size: 12px; color: var(--text-muted);">Hold your Student ID Pass in front of camera, upload card photo, or face camera</div>
         </div>
 
         <!-- Manual & Barcode Scanner Wedge Input -->
@@ -20800,9 +20829,16 @@ const app = {
               <video id="coach-video" autoplay playsinline muted></video>
               <div class="kiosk-reticle-overlay" style="width: 180px; height: 180px;"></div>
             </div>
-            <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px;">
+            <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap;">
               <button class="btn btn-primary btn-sm" onclick="SmartAttendanceController.startCameraStream('coach-video', 'environment')">
-                <i class="fa-solid fa-camera"></i> Scan Student Card
+                <i class="fa-solid fa-camera"></i> Live Camera
+              </button>
+              <label class="btn btn-outline-primary btn-sm" style="cursor: pointer; margin: 0;">
+                <i class="fa-solid fa-file-image"></i> Card Photo
+                <input type="file" accept="image/*" style="display: none;" onchange="if(this.files[0]) SmartAttendanceController.scanCardPhoto(this.files[0]); this.value='';">
+              </label>
+              <button class="btn btn-secondary btn-sm" onclick="SmartAttendanceController.captureAndVerifyFace('coach-video', false)" title="Match student face">
+                <i class="fa-solid fa-face-smile"></i> Face Scan
               </button>
               <button class="btn btn-secondary btn-sm" onclick="SmartAttendanceController.stopCameraStream()">
                 <i class="fa-solid fa-stop"></i> Stop
@@ -21142,6 +21178,9 @@ const app = {
             <h3 style="font-size: 16px; font-weight: 700; margin: 0;"><i class="fa-solid fa-user-shield"></i> Biometric Face Attendance & Parental Consent</h3>
             <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">Strict privacy compliance: AES-256 encrypted vectors, anti-spoofing, and revocable consent</p>
           </div>
+          <button class="btn btn-primary btn-sm" onclick="app.autoEnrollAllStudentsFaces()">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Enroll from Student Photos
+          </button>
         </div>
 
         <div class="alert alert-info" style="margin-bottom: 16px; font-size: 13px;">
@@ -21248,15 +21287,19 @@ const app = {
   showFaceEnrollModal(studentId, studentName) {
     this.showModal(`Face Enrollment: ${studentName}`, `
       <div style="text-align: center;">
-        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Position face within frame. Anti-spoofing engine will verify liveness and generate encrypted embedding.</p>
-        <div class="kiosk-camera-box" style="aspect-ratio: 1 / 1; max-width: 320px; border-radius: 50%;">
-          <video id="enroll-video" autoplay playsinline muted></video>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Position face within frame or upload a portrait photo. Biometric engine will extract and AES-256 encrypt the vector template.</p>
+        <div class="kiosk-camera-box" style="aspect-ratio: 1 / 1; max-width: 280px; margin: 0 auto; border-radius: 50%; overflow: hidden; border: 3px solid var(--primary);">
+          <video id="enroll-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover;"></video>
         </div>
-        <div style="margin-top: 16px; display: flex; justify-content: center; gap: 8px;">
-          <button class="btn btn-primary" onclick="app.captureFaceEmbedding(${studentId})">
-            <i class="fa-solid fa-camera"></i> Capture & Encrypt Template
+        <div style="margin-top: 16px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-primary btn-sm" onclick="app.captureFaceEmbeddingFromVideo(${studentId})">
+            <i class="fa-solid fa-camera"></i> Capture Face from Camera
           </button>
-          <button class="btn btn-secondary" onclick="app.closeModal(); SmartAttendanceController.stopCameraStream();">
+          <label class="btn btn-outline-primary btn-sm" style="cursor: pointer; margin: 0;">
+            <i class="fa-solid fa-upload"></i> Upload Face Photo
+            <input type="file" accept="image/*" style="display: none;" onchange="if(this.files[0]) app.enrollFaceFromPhotoFile(${studentId}, this.files[0]); this.value='';">
+          </label>
+          <button class="btn btn-secondary btn-sm" onclick="app.closeModal(); SmartAttendanceController.stopCameraStream();">
             Cancel
           </button>
         </div>
@@ -21268,20 +21311,72 @@ const app = {
     }, 200);
   },
 
-  async captureFaceEmbedding(studentId) {
+  async captureFaceEmbeddingFromVideo(studentId) {
+    const video = document.getElementById('enroll-video');
+    if (!video || video.readyState < 2 || video.videoWidth === 0) {
+      this.showToast('Camera feed not ready yet. Please wait a moment.', 'warning');
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.min(640, video.videoWidth);
+    canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth));
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageBase64 = canvas.toDataURL('image/jpeg', 0.9);
+
     SmartAttendanceController.stopCameraStream();
     this.closeModal();
 
-    // Generate test vector for enrolled student
-    const mockVector = new Array(512).fill(0).map(() => (Math.random() * 2) - 1);
-    // Normalize
-    const norm = Math.sqrt(mockVector.reduce((sum, v) => sum + (v * v), 0)) || 1;
-    const normalizedVector = mockVector.map(v => v / norm);
+    try {
+      this.showToast('Extracting and encrypting biometric template...', 'info');
+      const res = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/face/enroll-photo`, {
+        method: 'POST',
+        body: JSON.stringify({ image_base64: imageBase64 }),
+      });
+      this.showToast(res.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async enrollFaceFromPhotoFile(studentId, file) {
+    SmartAttendanceController.stopCameraStream();
+    this.closeModal();
+
+    const formData = new FormData();
+    formData.append('photo', file);
 
     try {
-      const res = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/face/enroll`, {
+      this.showToast('Extracting and encrypting biometric template from photo...', 'info');
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/academy/smart-attendance/students/${studentId}/face/enroll-photo`, {
         method: 'POST',
-        body: JSON.stringify({ vector: normalizedVector }),
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Failed to enroll face');
+      this.showToast(data.message, 'success');
+      await this.renderSmartAttendance();
+    } catch (err) {
+      this.showToast(err.message, 'danger');
+    }
+  },
+
+  async autoEnrollAllStudentsFaces() {
+    if (!confirm('Auto-enroll all students with existing profile photos in this academy?\n\nThis will extract and encrypt 512-d facial biometric templates for all students who have profile photos.')) {
+      return;
+    }
+
+    try {
+      this.showToast('Auto-enrolling student facial biometrics...', 'info');
+      const res = await this.apiRequest('/api/academy/smart-attendance/face/auto-enroll-all', {
+        method: 'POST',
+        body: JSON.stringify({}),
       });
       this.showToast(res.message, 'success');
       await this.renderSmartAttendance();

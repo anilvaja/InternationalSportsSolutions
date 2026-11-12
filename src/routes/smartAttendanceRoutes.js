@@ -1,4 +1,7 @@
 import express from 'express';
+import multer from 'multer';
+import sharp from 'sharp';
+import jsQR from 'jsqr';
 import { SmartAttendanceEngine } from '../services/smartAttendanceEngine.js';
 import { QrAttendanceService } from '../services/qrAttendanceService.js';
 import { FaceBiometricsService } from '../services/faceBiometricsService.js';
@@ -6,6 +9,7 @@ import { NfcReaderAdapter } from '../services/nfcReaderAdapter.js';
 import { EventPassService } from '../services/eventPassService.js';
 
 export const smartAttendanceRouter = express.Router();
+const memoryUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 function checkPermission(req, perm) {
   if (!req.user) return false;
@@ -79,16 +83,120 @@ smartAttendanceRouter.put('/settings', requirePerm(['manage_smart_attendance', '
  * POST /api/academy/smart-attendance/verify
  * Central attendance verification and recording endpoint
  */
-smartAttendanceRouter.post('/verify', requirePerm(['scan_attendance', 'mark_attendance', 'view_kiosk', 'all']), (req, res) => {
+smartAttendanceRouter.post('/verify', requirePerm(['scan_attendance', 'mark_attendance', 'view_kiosk', 'all']), async (req, res) => {
   try {
     const db = req.tenantDb;
+    let payload = { ...req.body };
+
+    // If face mode with image_base64 provided, extract probe vector using sharp
+    if (payload.mode === 'face' && payload.image_base64 && !payload.probe_vector) {
+      try {
+        const extracted = await FaceBiometricsService.extractVectorFromImage(payload.image_base64);
+        payload.probe_vector = extracted.vector;
+        payload.liveness_score = payload.liveness_score ?? extracted.livenessScore;
+      } catch (extractErr) {
+        return res.status(400).json({
+          success: false,
+          error: 'Face processing error: ' + extractErr.message,
+          message: 'Could not extract facial features from image. Ensure face is clearly visible.',
+        });
+      }
+    }
+
     const outcome = SmartAttendanceEngine.verifyAndRecordAttendance(db, req.academy.id, {
-      ...req.body,
+      ...payload,
       operator_user_id: req.user?.userId || null,
       ip_address: req.ip,
       user_agent: req.get('user-agent'),
     });
     res.json(outcome);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/smart-attendance/scan-card-photo
+ * Decodes QR code or identifies student from an uploaded/captured card photo
+ */
+smartAttendanceRouter.post('/scan-card-photo', requirePerm(['scan_attendance', 'mark_attendance', 'view_kiosk', 'all']), memoryUpload.single('photo'), async (req, res) => {
+  try {
+    const db = req.tenantDb;
+    let imageBuffer = req.file ? req.file.buffer : null;
+
+    if (!imageBuffer && req.body.image_base64) {
+      const base64Data = req.body.image_base64.includes('base64,')
+        ? req.body.image_base64.split('base64,')[1]
+        : req.body.image_base64;
+      imageBuffer = Buffer.from(base64Data, 'base64');
+    }
+
+    if (!imageBuffer) {
+      return res.status(400).json({ success: false, error: 'Card image or photo is required' });
+    }
+
+    // 1. Try decoding QR code from card image using sharp + jsQR
+    let qrToken = null;
+    try {
+      const { data, info } = await sharp(imageBuffer)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+      const code = jsQR(new Uint8ClampedArray(data), info.width, info.height);
+      if (code && code.data) {
+        qrToken = code.data.trim();
+      }
+    } catch (_) {}
+
+    // If QR code found, process as QR check-in
+    if (qrToken) {
+      const outcome = SmartAttendanceEngine.verifyAndRecordAttendance(db, req.academy.id, {
+        mode: 'qr',
+        qr_token: qrToken,
+        branch_id: req.body.branch_id ? Number(req.body.branch_id) : null,
+        batch_id: req.body.batch_id ? Number(req.body.batch_id) : null,
+        operator_user_id: req.user?.userId || null,
+        ip_address: req.ip,
+        user_agent: req.get('user-agent'),
+      });
+      return res.json({ success: outcome.success, method: 'qr_from_card_photo', token: qrToken, ...outcome });
+    }
+
+    // 2. If no QR code found, attempt matching student from face on card photo
+    try {
+      const extracted = await FaceBiometricsService.extractVectorFromImage(imageBuffer);
+      const faceMatch = FaceBiometricsService.matchFace(db, req.academy.id, {
+        probeVector: extracted.vector,
+        livenessScore: 1.0,
+        branchId: req.body.branch_id ? Number(req.body.branch_id) : null,
+      });
+
+      if (faceMatch.matched && faceMatch.student) {
+        const outcome = SmartAttendanceEngine.verifyAndRecordAttendance(db, req.academy.id, {
+          mode: 'face',
+          probe_vector: extracted.vector,
+          liveness_score: 1.0,
+          student_id: faceMatch.student.studentId,
+          branch_id: req.body.branch_id ? Number(req.body.branch_id) : null,
+          batch_id: req.body.batch_id ? Number(req.body.batch_id) : null,
+          operator_user_id: req.user?.userId || null,
+          ip_address: req.ip,
+          user_agent: req.get('user-agent'),
+        });
+        return res.json({
+          success: outcome.success,
+          method: 'face_from_card_photo',
+          message: `Identified student ${faceMatch.student.first_name} ${faceMatch.student.last_name} from card photo`,
+          ...outcome,
+        });
+      }
+    } catch (_) {}
+
+    return res.status(422).json({
+      success: false,
+      error: 'Could not detect a readable QR code or enrolled student face from this card photo. Please ensure good lighting and clear alignment, or enter student code manually.',
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -350,6 +458,60 @@ smartAttendanceRouter.post('/students/:id/face/enroll', requirePerm(['manage_fac
     res.json({ success: true, ...outcome, message: 'Facial biometric template encrypted and enrolled successfully' });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/smart-attendance/students/:id/face/enroll-photo
+ * Enrolls face directly from webcam photo or uploaded image
+ */
+smartAttendanceRouter.post('/students/:id/face/enroll-photo', requirePerm(['manage_face_enrollment', 'manage_smart_attendance', 'all']), memoryUpload.single('photo'), async (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const studentId = Number(req.params.id);
+    let imageBuffer = req.file ? req.file.buffer : null;
+
+    if (!imageBuffer && req.body.image_base64) {
+      const base64Data = req.body.image_base64.includes('base64,')
+        ? req.body.image_base64.split('base64,')[1]
+        : req.body.image_base64;
+      imageBuffer = Buffer.from(base64Data, 'base64');
+    }
+
+    if (!imageBuffer) {
+      return res.status(400).json({ success: false, error: 'Face photo image is required' });
+    }
+
+    const outcome = await FaceBiometricsService.enrollFaceProfileFromImage(db, req.academy.id, studentId, {
+      image_buffer: imageBuffer,
+      enrolled_by: req.user.userId,
+    });
+
+    res.json({
+      success: true,
+      ...outcome,
+      message: 'Student facial biometric template extracted, AES-256 encrypted, and enrolled successfully',
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/academy/smart-attendance/face/auto-enroll-all
+ * Batch auto-enrolls all students with photos in the academy
+ */
+smartAttendanceRouter.post('/face/auto-enroll-all', requirePerm(['manage_face_enrollment', 'manage_smart_attendance', 'all']), async (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const outcome = await FaceBiometricsService.autoEnrollFromProfilePhotos(db, req.academy.id, req.user.userId);
+    res.json({
+      success: true,
+      ...outcome,
+      message: `Enrolled ${outcome.enrolledCount} of ${outcome.totalCandidates} eligible student photo profiles`,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

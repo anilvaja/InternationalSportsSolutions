@@ -219,3 +219,4 @@ CREATE TABLE IF NOT EXISTS event_passes (
 
 CREATE INDEX IF NOT EXISTS idx_event_passes_code ON event_passes(pass_code);
 CREATE INDEX IF NOT EXISTS idx_event_passes_event ON event_passes(event_id, status);
+

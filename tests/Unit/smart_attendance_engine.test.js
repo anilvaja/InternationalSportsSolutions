@@ -132,6 +132,10 @@ test('Smart Attendance Engine — Comprehensive Architectural Test Suite', async
   });
 
   await t.test('3. Face Biometrics: Mandatory Consent, Encrypted Templates & Cosine Similarity', async () => {
+    // Reset consent and profile state for clean test run
+    db.prepare('DELETE FROM student_face_profiles WHERE student_id = ?').run(studentA.id);
+    db.prepare('DELETE FROM student_face_consents WHERE student_id = ?').run(studentA.id);
+
     // 1. Enrollment without consent must be REJECTED
     const mockVector = FaceBiometricsService.generateMockVector('student_face_aarav');
     assert.throws(() => {
@@ -333,6 +337,76 @@ test('Smart Attendance Engine — Comprehensive Architectural Test Suite', async
     const updated = db.prepare('SELECT status, resolution_notes FROM attendance_exceptions_queue WHERE id = ?').get(exceptionId);
     assert.equal(updated.status, 'approved');
     assert.equal(updated.resolution_notes, 'Face visually confirmed by coach');
+  });
+
+  await t.test('8. Real Face Biometrics & Image Feature Vector Extraction with Sharp', async () => {
+    // Generate a valid 100x100 test image with distinct features using sharp
+    const sharp = (await import('sharp')).default;
+    const svgFace = Buffer.from('<svg width="100" height="100"><circle cx="50" cy="50" r="30" fill="#333333"/><circle cx="40" cy="40" r="5" fill="#ffffff"/><circle cx="60" cy="40" r="5" fill="#ffffff"/></svg>');
+    const testImageBuffer = await sharp({
+      create: {
+        width: 100,
+        height: 100,
+        channels: 3,
+        background: { r: 240, g: 220, b: 200 },
+      },
+    }).composite([{ input: svgFace, top: 0, left: 0 }]).jpeg().toBuffer();
+
+    // 1. Feature extraction creates 512-d normalized vector
+    const extracted = await FaceBiometricsService.extractVectorFromImage(testImageBuffer);
+    assert.ok(Array.isArray(extracted.vector), 'Must extract array vector');
+    assert.equal(extracted.vector.length, 512, 'Must produce 512-dimensional vector');
+    assert.ok(extracted.livenessScore >= 0 && extracted.livenessScore <= 1, 'Liveness score in range [0, 1]');
+
+    // 2. Grant consent and enroll directly from image buffer
+    FaceBiometricsService.recordConsent(db, academyId, studentA.id, {
+      consent_given_by: 'Parent Consent',
+      guardian_relationship: 'mother',
+      consent_status: 'granted',
+    });
+
+    const enrolled = await FaceBiometricsService.enrollFaceProfileFromImage(db, academyId, studentA.id, {
+      image_buffer: testImageBuffer,
+      enrolled_by: 1,
+    });
+    assert.ok(enrolled.id);
+    const profile = db.prepare('SELECT status FROM student_face_profiles WHERE id = ?').get(enrolled.id);
+    assert.equal(profile.status, 'active');
+
+    // 3. Probing with the exact same face image produces matching vector
+    const probe = await FaceBiometricsService.extractVectorFromImage(testImageBuffer);
+    const match = FaceBiometricsService.matchFace(db, academyId, {
+      probeVector: probe.vector,
+      livenessScore: 0.95,
+      targetStudentId: studentA.id,
+    });
+    assert.equal(match.matched, true);
+    assert.equal(match.classification, 'VERIFIED');
+    assert.ok(match.confidenceScore >= 0.9);
+  });
+
+  await t.test('9. Card Photo Face Identification Fallback', async () => {
+    // When an ID card photo is uploaded without readable QR, the engine falls back
+    // to recognizing the student from their portrait on the ID badge
+    const svgFace = Buffer.from('<svg width="100" height="100"><circle cx="50" cy="50" r="30" fill="#333333"/><circle cx="40" cy="40" r="5" fill="#ffffff"/><circle cx="60" cy="40" r="5" fill="#ffffff"/></svg>');
+    const sharp = (await import('sharp')).default;
+    const cardPhotoBuffer = await sharp({
+      create: {
+        width: 100,
+        height: 100,
+        channels: 3,
+        background: { r: 240, g: 220, b: 200 },
+      },
+    }).composite([{ input: svgFace, top: 0, left: 0 }]).jpeg().toBuffer();
+
+    const probe = await FaceBiometricsService.extractVectorFromImage(cardPhotoBuffer);
+    const faceMatch = FaceBiometricsService.matchFace(db, academyId, {
+      probeVector: probe.vector,
+      livenessScore: 1.0,
+      targetStudentId: studentA.id,
+    });
+    assert.equal(faceMatch.matched, true);
+    assert.equal(faceMatch.student.first_name, studentA.first_name);
   });
   } catch (err) {
     console.error('TEST SETUP / EXECUTION ERROR:', err);

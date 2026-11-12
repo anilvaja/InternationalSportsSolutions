@@ -85,3 +85,4 @@ Schema migration [`035_smart_attendance_engine.sql`](file:///c:/Users/ANIL%20VAJ
 2. **Zero PII in QR Tokens:** QR codes contain only cryptographically random, revocable session tokens (`ISS-STU-...`). Database IDs, student phone numbers, email addresses, and date of birth are never stored in QR payloads.
 3. **Strict Separation of Concerns:** Student attendance check-ins write exclusively to `student_attendance` and `smart_attendance_logs`. They never touch `staff_punches`, `staff_slot_attendance`, or employee payroll engines.
 4. **Offline Resilience:** The client-side scanner queue caches offline scans with local timestamps and synchronizes idempotently when connectivity resumes.
+

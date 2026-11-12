@@ -220,3 +220,4 @@ export class EventPassService {
     return tx();
   }
 }
+

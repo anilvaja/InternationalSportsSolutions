@@ -8,9 +8,13 @@ window.SmartAttendanceController = {
   currentSubTab: 'kiosk',
   activeStream: null,
   isScanning: false,
+  scanMode: 'qr', // 'qr' | 'face'
   offlineQueueKey: 'iss_smart_att_offline_queue',
   barcodeDetector: null,
   audioContext: null,
+  detectionCanvas: null,
+  lastFaceScanTime: 0,
+  isProcessingScan: false,
 
   init() {
     if ('BarcodeDetector' in window) {
@@ -134,25 +138,252 @@ window.SmartAttendanceController = {
     }
   },
 
+  setScanMode(mode) {
+    this.scanMode = mode; // 'qr' | 'face'
+    const reticle = document.querySelector('.kiosk-reticle-overlay');
+    const btnQr = document.getElementById('btn-scanmode-qr');
+    const btnFace = document.getElementById('btn-scanmode-face');
+    const faceActions = document.getElementById('kiosk-face-actions');
+    const qrActions = document.getElementById('kiosk-qr-actions');
+
+    if (btnQr && btnFace) {
+      if (mode === 'face') {
+        btnFace.className = 'btn btn-primary btn-sm';
+        btnQr.className = 'btn btn-secondary btn-sm';
+      } else {
+        btnQr.className = 'btn btn-primary btn-sm';
+        btnFace.className = 'btn btn-secondary btn-sm';
+      }
+    }
+
+    if (faceActions && qrActions) {
+      faceActions.style.display = mode === 'face' ? 'flex' : 'none';
+      qrActions.style.display = mode === 'qr' ? 'flex' : 'none';
+    }
+
+    if (reticle) {
+      if (mode === 'face') {
+        reticle.style.borderRadius = '50% / 60%';
+        reticle.style.width = '200px';
+        reticle.style.height = '260px';
+        reticle.innerHTML = '<span style="font-size: 11px; font-weight: 700; color: #fff; background: rgba(0,0,0,0.65); padding: 4px 8px; border-radius: 4px;">ALIGN FACE IN OVAL</span>';
+      } else {
+        reticle.style.borderRadius = '16px';
+        reticle.style.width = '240px';
+        reticle.style.height = '240px';
+        reticle.innerHTML = '<span style="font-size: 11px; font-weight: 700; color: #fff; background: rgba(0,0,0,0.65); padding: 4px 8px; border-radius: 4px;">ALIGN QR PASS HERE</span>';
+      }
+    }
+  },
+
   async runDetectionLoop(video) {
     if (!this.isScanning || !video) return;
 
-    if (this.barcodeDetector && video.readyState >= 2) {
-      try {
-        const barcodes = await this.barcodeDetector.detect(video);
-        if (barcodes && barcodes.length > 0) {
-          const rawValue = barcodes[0].rawValue;
-          if (rawValue) {
-            this.handleScannedToken(rawValue);
-            // Brief pause to prevent multiple scans of same card
-            await new Promise(r => setTimeout(r, 1800));
+    if (this.scanMode === 'face') {
+      const now = Date.now();
+      // Auto-scan face every 1400ms when video is active and not already processing
+      if (now - this.lastFaceScanTime > 1400 && !this.isProcessingScan && video.readyState >= 2) {
+        this.lastFaceScanTime = now;
+        this.captureAndVerifyFace(video, true);
+      }
+    } else {
+      let detectedCode = null;
+
+      // 1. Native BarcodeDetector (Chrome/Edge with support)
+      if (this.barcodeDetector && video.readyState >= 2) {
+        try {
+          const barcodes = await this.barcodeDetector.detect(video);
+          if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+            detectedCode = barcodes[0].rawValue;
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
+
+      // 2. Pure JS canvas jsQR fallback (100% universal across all browsers)
+      if (!detectedCode && window.jsQR && video.readyState >= 2 && video.videoWidth > 0) {
+        try {
+          if (!this.detectionCanvas) this.detectionCanvas = document.createElement('canvas');
+          const canvas = this.detectionCanvas;
+          const scale = Math.min(1.0, 640 / video.videoWidth);
+          canvas.width = Math.round(video.videoWidth * scale);
+          canvas.height = Math.round(video.videoHeight * scale);
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const qr = window.jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'dontInvert',
+          });
+          if (qr && qr.data) {
+            detectedCode = qr.data;
+          }
+        } catch (_) {}
+      }
+
+      if (detectedCode && !this.isProcessingScan) {
+        await this.handleScannedToken(detectedCode);
+        await new Promise(r => setTimeout(r, 1800));
+      }
     }
 
     if (this.isScanning) {
       requestAnimationFrame(() => this.runDetectionLoop(video));
+    }
+  },
+
+  /**
+   * Upload or capture photo of an ID card and decode QR or student face
+   */
+  async scanCardPhoto(file) {
+    if (!file) return;
+    this.isProcessingScan = true;
+
+    const feedbackCard = document.getElementById('kiosk-feedback-card') || document.getElementById('coach-feedback-box');
+    if (feedbackCard) {
+      feedbackCard.className = 'kiosk-feedback-box processing';
+      feedbackCard.innerHTML = `
+        <div style="font-size: 28px; color: var(--primary);"><i class="fa-solid fa-spinner fa-spin"></i></div>
+        <div style="font-size: 16px; font-weight: 700; margin-top: 8px;">Scanning Card Photo...</div>
+        <div style="font-size: 12px; color: var(--text-muted);">Decoding QR code & student identity</div>
+      `;
+    }
+
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      let decodedToken = null;
+
+      // 1. Client-side fast jsQR canvas decode
+      if (window.jsQR) {
+        const img = new Image();
+        img.src = dataUrl;
+        await new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
+
+        if (img.width > 0) {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(img, 0, 0);
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const qr = window.jsQR(imgData.data, imgData.width, imgData.height, {
+            inversionAttempts: 'attemptBoth',
+          });
+          if (qr && qr.data) {
+            decodedToken = qr.data.trim();
+          }
+        }
+      }
+
+      if (decodedToken) {
+        this.isProcessingScan = false;
+        return await this.handleScannedToken(decodedToken);
+      }
+
+      // 2. Server-side dual fallback with sharp + jsQR + face match
+      const branchSelect = document.getElementById('kiosk-branch-select') || document.getElementById('smart-att-branch-select');
+      const batchSelect = document.getElementById('kiosk-batch-select') || document.getElementById('coach-scanner-batch-select');
+
+      const formData = new FormData();
+      formData.append('photo', file);
+      if (branchSelect && branchSelect.value) formData.append('branch_id', branchSelect.value);
+      if (batchSelect && batchSelect.value) formData.append('batch_id', batchSelect.value);
+
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/academy/smart-attendance/scan-card-photo', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const outcome = await res.json();
+      this.isProcessingScan = false;
+      this.displayScanResult(outcome);
+    } catch (err) {
+      this.isProcessingScan = false;
+      this.displayScanResult({
+        success: false,
+        message: 'Could not decode card photo: ' + err.message,
+      });
+    }
+  },
+
+  /**
+   * Captures or uploads a face photo and matches against biometric profiles
+   */
+  async captureAndVerifyFace(source = null, isSilentAuto = false) {
+    if (this.isProcessingScan) return;
+
+    let base64Image = null;
+
+    if (source instanceof Blob || source instanceof File) {
+      base64Image = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(source);
+      });
+    } else {
+      const video = typeof source === 'string' ? document.getElementById(source) : (source || document.getElementById('kiosk-video') || document.getElementById('coach-video'));
+      if (!video || video.readyState < 2 || video.videoWidth === 0) {
+        if (!isSilentAuto) window.app?.showToast?.('Camera video feed not ready. Please ensure camera is on.', 'warning');
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.min(640, video.videoWidth);
+      canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth));
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      base64Image = canvas.toDataURL('image/jpeg', 0.85);
+    }
+
+    if (!base64Image) return;
+
+    this.isProcessingScan = true;
+    const feedbackCard = document.getElementById('kiosk-feedback-card') || document.getElementById('coach-feedback-box');
+    if (feedbackCard && !isSilentAuto) {
+      feedbackCard.className = 'kiosk-feedback-box processing';
+      feedbackCard.innerHTML = `
+        <div style="font-size: 28px; color: var(--primary);"><i class="fa-solid fa-spinner fa-spin"></i></div>
+        <div style="font-size: 16px; font-weight: 700; margin-top: 8px;">Scanning Facial Biometrics...</div>
+        <div style="font-size: 12px; color: var(--text-muted);">Comparing with encrypted academy face templates</div>
+      `;
+    }
+
+    const branchSelect = document.getElementById('kiosk-branch-select') || document.getElementById('smart-att-branch-select');
+    const batchSelect = document.getElementById('kiosk-batch-select') || document.getElementById('coach-scanner-batch-select');
+
+    try {
+      const outcome = await window.app.apiRequest('/api/academy/smart-attendance/verify', {
+        method: 'POST',
+        body: JSON.stringify({
+          mode: 'face',
+          image_base64: base64Image,
+          branch_id: branchSelect && branchSelect.value ? Number(branchSelect.value) : null,
+          batch_id: batchSelect && batchSelect.value ? Number(batchSelect.value) : null,
+          device_code: localStorage.getItem('iss_kiosk_device_code') || 'KIOSK-FACE-01',
+        }),
+      });
+
+      this.isProcessingScan = false;
+      if (outcome.success || !isSilentAuto) {
+        this.displayScanResult(outcome);
+      }
+    } catch (err) {
+      this.isProcessingScan = false;
+      if (!isSilentAuto) {
+        this.displayScanResult({
+          success: false,
+          message: err.message || 'Face verification failed',
+        });
+      }
     }
   },
 
@@ -352,3 +583,4 @@ window.SmartAttendanceController = {
 };
 
 window.SmartAttendanceController.init();
+

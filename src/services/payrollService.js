@@ -36,7 +36,7 @@ export class PayrollService {
     let settings = null;
     try {
       settings = db.prepare('SELECT * FROM academy_policy_settings WHERE academy_id = ?').get(academyId);
-    } catch (_) {}
+    } catch (_) { }
 
     return {
       academy_id: academyId,
@@ -118,7 +118,7 @@ export class PayrollService {
         paid_leave_policy: paidLeavePolicy,
         short_attendance_policy: shortAttendancePolicy,
       }));
-    } catch (_) {}
+    } catch (_) { }
 
     return this.getAcademyPayrollSettings(db, academyId);
   }
@@ -205,7 +205,7 @@ export class PayrollService {
           scheduled_payday: 1,
         };
       }
-    } catch (_) {}
+    } catch (_) { }
 
     const sched = ScheduleService.getEffectiveSchedule(db, userId, dateStr);
 
@@ -390,7 +390,7 @@ export class PayrollService {
           AND attendance_date BETWEEN ? AND ?
         ORDER BY attendance_date ASC, scheduled_start_time ASC
       `).all(userId, period.start_date, period.end_date);
-    } catch (_) {}
+    } catch (_) { }
 
     const dayAttendanceMap = new Map();
     let slotCompletedSessions = 0;
@@ -684,7 +684,7 @@ export class PayrollService {
             });
           }
         }
-      } catch (_) {}
+      } catch (_) { }
 
       if (!hasMidMonthRevision) {
         const isMidMonthJoiner = scheduleSummary.joiningDate && scheduleSummary.joiningDate > period.start_date;
@@ -734,8 +734,8 @@ export class PayrollService {
         const perDayRate = this.round(grossEarnings / scheduledWorkDays);
 
         const fullUnpaidDays = scheduleSummary.unpaidLeaveDays || 0;
-        const halfUnpaidDays = (scheduleSummary.halfDayUnpaidLeaveDays !== undefined 
-          ? scheduleSummary.halfDayUnpaidLeaveDays 
+        const halfUnpaidDays = (scheduleSummary.halfDayUnpaidLeaveDays !== undefined
+          ? scheduleSummary.halfDayUnpaidLeaveDays
           : scheduleSummary.halfDayLeaveDays || 0) * 0.5;
         const halfPaidDays = (scheduleSummary.halfDayPaidLeaveDays || 0) * 0.5;
         const totalUnpaidDays = fullUnpaidDays + halfUnpaidDays;
@@ -746,15 +746,15 @@ export class PayrollService {
           const eligibleCreditDays = actualDaysWorked + (scheduleSummary.paidLeaveDays || 0) + halfPaidDays + (scheduleSummary.holidayDays || 0);
           unauthorizedAbsences = Math.max(0, scheduledWorkDays - eligibleCreditDays - totalUnpaidDays);
         } else {
-          const pastScheduledWorkDays = (scheduleSummary.dayBreakdown || []).filter(d => 
-            !d.isPriorToJoining && 
+          const pastScheduledWorkDays = (scheduleSummary.dayBreakdown || []).filter(d =>
+            !d.isPriorToJoining &&
             !d.isPostExit &&
-            d.dayType !== 'not_employed' && 
+            d.dayType !== 'not_employed' &&
             d.dayType !== 'resigned' &&
-            d.isWorkingDay && 
-            d.date < todayStr && 
-            !d.isLeave && 
-            !d.isHoliday && 
+            d.isWorkingDay &&
+            d.date < todayStr &&
+            !d.isLeave &&
+            !d.isHoliday &&
             !d.isWeeklyOff
           ).length;
           if (actualDaysWorked < pastScheduledWorkDays) {
@@ -839,8 +839,8 @@ export class PayrollService {
     if (slotApprovedOvertimeMinutes > 0) {
       const otHours = slotApprovedOvertimeMinutes / 60;
       const otMultiplier = Number(profile.overtime_rate_multiplier || 1.0);
-      const baseHourlyRate = (mode === 'hourly' || mode === 'hybrid') 
-        ? (profile.hourly_rate || rate) 
+      const baseHourlyRate = (mode === 'hourly' || mode === 'hybrid')
+        ? (profile.hourly_rate || rate)
         : (totalScheduledHours > 0 ? (rate / totalScheduledHours) : 150);
       approvedOvertimeAmount += this.round(otHours * baseHourlyRate * otMultiplier);
     }
@@ -851,8 +851,8 @@ export class PayrollService {
       if (punchOvertimeMinutes <= overtimeGraceMinutes) {
         const otHours = punchOvertimeMinutes / 60;
         const otMultiplier = Number(profile.overtime_rate_multiplier || 1.0);
-        const baseHourlyRate = mode === 'hourly' 
-          ? rate 
+        const baseHourlyRate = mode === 'hourly'
+          ? rate
           : (totalScheduledHours > 0 ? (rate / totalScheduledHours) : 150);
         approvedOvertimeAmount += this.round(otHours * baseHourlyRate * otMultiplier);
       }
@@ -873,7 +873,7 @@ export class PayrollService {
         const perDay = mode === 'monthly' ? this.round(rate / Math.max(1, scheduleSummary.scheduledWorkingDays)) : rate;
         workExceptionAmount += this.round(perDay * Number(ex.comp_off_days || 1.0));
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // 7. Configured Allowances & Deductions from profile
     let profileAllowances = 0;
@@ -891,7 +891,7 @@ export class PayrollService {
           for (const item of arr) profileDeductions += Number(item.amount || 0);
         }
       }
-    } catch (_) {}
+    } catch (_) { }
 
     profileAllowances = this.round(profileAllowances);
     profileDeductions = this.round(profileDeductions);
@@ -941,11 +941,11 @@ export class PayrollService {
       paid_leave_minutes: paidLeaveMinutes,
       paid_holiday_minutes: paidHolidayMinutes,
       total_payable_minutes: totalPayableMinutes,
-      accrued_mtd_earned: (totalScheduledMinutes > 0 
+      accrued_mtd_earned: (totalScheduledMinutes > 0
         ? this.round(grossEarnings * Math.min((scheduleSummary.elapsedScheduledMinutes || totalScheduledMinutes) / totalScheduledMinutes, (elapsedActualMinutes + paidLeaveMinutes + paidHolidayMinutes) / totalScheduledMinutes))
         : 0),
       accrued_mtd_deductions: absenceDeductions,
-      accrued_mtd_net: this.round(Math.max(0, (totalScheduledMinutes > 0 
+      accrued_mtd_net: this.round(Math.max(0, (totalScheduledMinutes > 0
         ? this.round(grossEarnings * Math.min((scheduleSummary.elapsedScheduledMinutes || totalScheduledMinutes) / totalScheduledMinutes, (elapsedActualMinutes + paidLeaveMinutes + paidHolidayMinutes) / totalScheduledMinutes))
         : 0) + totalAdditions - profileDeductions)),
       projected_net: this.round(Math.max(0, grossEarnings + totalAdditions - totalDeductions)),
@@ -1338,7 +1338,7 @@ export class PayrollService {
     if (statement && statement.calculation_snapshot) {
       try {
         snapshot = JSON.parse(statement.calculation_snapshot);
-      } catch (_) {}
+      } catch (_) { }
     }
 
     return {

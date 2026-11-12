@@ -782,6 +782,7 @@ async function run() {
       evidence: shot
     });
 
+    // 9.4 Direct Route Access Protection (Student attempting to access /admin/academies)
     // 9.4 Student Digital ID Pass View
     await page.goto(`${BASE_URL}/student`, { waitUntil: 'networkidle' }).catch(() => {});
     await page.waitForTimeout(500);
