@@ -2041,8 +2041,8 @@ const app = {
             <button class="btn btn-warning btn-sm" onclick="app.confirmRunPratikDemoSeeder()" title="Run dedicated Pratik Karate Academy demo seeder" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; font-weight: 600; border: none; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.25);">
               <i class="fa-solid fa-bolt"></i> Run Pratik Karate Demo Seeder
             </button>
-            <button class="btn btn-primary btn-sm" onclick="app.showProvisionAcademyModal()">
-              <i class="fa-solid fa-plus"></i> Provision New Academy
+            <button class="btn btn-primary btn-sm" onclick="SetupWizardController.open()">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Guided Academy Setup Wizard
             </button>
           </div>
         </div>
@@ -2054,6 +2054,7 @@ const app = {
                 <th>ID</th>
                 <th>Academy Name & Slug</th>
                 <th>Plan & Limits</th>
+                <th>Setup Health</th>
                 <th>Database File</th>
                 <th>Live Metrics</th>
                 <th>Status</th>
@@ -2063,6 +2064,7 @@ const app = {
             <tbody>
               ${data.academies.map(ac => {
                 const primaryDomain = (ac.domains || []).find(d => d.is_primary) || (ac.domains || [])[0];
+                const setupScore = ac.setup_score !== undefined ? ac.setup_score : (ac.metrics.branches > 0 && ac.metrics.batches > 0 ? 100 : 45);
                 return `
                 <tr>
                   <td>#${ac.id}</td>
@@ -2096,6 +2098,16 @@ const app = {
                     <span class="badge badge-info">${ac.plan}</span>
                     <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">
                       Max: ${ac.max_students} students, ${ac.max_coaches} coaches
+                    </div>
+                  </td>
+                  <td>
+                    <div style="font-size: 12px; margin-bottom: 4px;">
+                      <span class="badge ${setupScore >= 80 ? 'badge-success' : (setupScore >= 50 ? 'badge-warning' : 'badge-danger')}" style="cursor: pointer;" onclick="app.showSetupCompletenessModal(${ac.id}, '${ac.name.replace(/'/g, "\\'")}')" title="Click to view setup checklist">
+                        <i class="fa-solid ${setupScore >= 80 ? 'fa-check' : 'fa-triangle-exclamation'}"></i> ${setupScore}% Ready
+                      </span>
+                    </div>
+                    <div style="font-size: 10px; color: var(--text-dim);">
+                      ${ac.metrics.branches || 0} branches &bull; ${ac.metrics.batches || 0} batches
                     </div>
                   </td>
                   <td>
@@ -3243,328 +3255,82 @@ const app = {
   },
 
   showProvisionAcademyModal() {
-    this._slugManuallyEdited = false;
-    this._emailManuallyEdited = false;
+    if (window.SetupWizardController) {
+      window.SetupWizardController.open();
+    } else {
+      this.showToast('Setup Wizard initializing...', 'info');
+    }
+  },
 
-    this.openModal(
-      'Provision New Academy Database',
-      `
-        <form id="provision-academy-form" onsubmit="event.preventDefault(); app.submitProvisionAcademy();">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Academy Name *</label>
-              <input type="text" id="prov-name" class="form-input" style="width: 100%;" required placeholder="e.g. Apex Martial Arts Academy" oninput="app.onAcademyNameInput(this.value)">
-            </div>
-            <div class="form-group">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <label style="margin: 0;">Slug / Subdomain *</label>
-                <span id="slug-autofill-badge" style="font-size: 10px; background: rgba(37,99,235,0.1); color: var(--primary); padding: 2px 7px; border-radius: 4px; font-weight: 600;">
-                  <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-fill active
-                </span>
+  async showSetupCompletenessModal(academyId, academyName) {
+    this.showToast('Auditing academy configuration completeness...', 'info');
+    try {
+      const res = await this.apiRequest(`/api/central/academies/${academyId}/setup-status`);
+      if (!res.success) {
+        this.showToast(res.error || 'Failed to audit academy', 'danger');
+        return;
+      }
+
+      const { score, isFullyConfigured, completedItems = [], missingItems = [] } = res;
+      const badgeClass = score >= 80 ? 'badge-success' : (score >= 50 ? 'badge-warning' : 'badge-danger');
+
+      const bodyHtml = `
+        <div style="padding: 10px 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; background: var(--surface-hover); padding: 14px 18px; border-radius: 8px; border: 1px solid var(--border);">
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Setup Health Score</div>
+              <div style="font-size: 26px; font-weight: 800; color: var(--text-heading); margin-top: 2px;">
+                ${score}% <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Configured</span>
               </div>
-              <input type="text" id="prov-slug" class="form-input" style="width: 100%; font-family: monospace; font-weight: 600;" required placeholder="apex-martial-arts" oninput="app.onAcademySlugInput(this.value)">
-              <div id="prov-slug-preview" style="font-size: 11px; color: var(--primary); margin-top: 5px; display: flex; align-items: center; gap: 5px;">
-                <i class="fa-solid fa-globe"></i> Subdomain URL: <strong><span id="prov-slug-display">apex-martial-arts</span>.internationalsportssolutions.test</strong>
-              </div>
             </div>
-          </div>
-
-          <div class="form-grid">
-            <div class="form-group">
-              <label>City *</label>
-              <input type="text" id="prov-city" class="form-input" style="width: 100%;" required placeholder="e.g. Mumbai, Ahmedabad">
-            </div>
-            <div class="form-group">
-              <label>Subscription Plan *</label>
-              <select id="prov-plan" class="form-select" style="width: 100%;">
-                <option value="starter">Starter (1 Branch, 75 Students) — ₹999/mo</option>
-                <option value="standard">Standard (3 Branches, 250 Students) — ₹2,499/mo</option>
-                <option value="professional" selected>Professional (8 Branches, 800 Students) — ₹4,999/mo</option>
-                <option value="enterprise">Enterprise (25 Branches, 3,000 Students) — ₹9,999/mo</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-group" style="margin-top: 10px;">
-            <label>Branded Custom Domain (Optional)</label>
-            <input type="text" id="prov-custom-domain" class="form-input" style="width: 100%;" placeholder="e.g. apexmartialarts.com">
-            <span style="font-size: 11px; color: var(--text-dim); margin-top: 3px; display: block;">
-              Base domain route: <code>http://internationalsportssolutions.test/</code> &bull; Subdomain: <code>&lt;slug&gt;.internationalsportssolutions.test</code>
+            <span class="badge ${badgeClass}" style="font-size: 13px; padding: 6px 12px;">
+              <i class="fa-solid ${isFullyConfigured ? 'fa-check-circle' : 'fa-triangle-exclamation'}"></i> ${isFullyConfigured ? 'Fully Operational' : (score >= 75 ? 'Ready with Warnings' : 'Setup Incomplete')}
             </span>
           </div>
 
-          <!-- Academy Logo Upload -->
-          <div class="form-group" style="margin-top: 10px;">
-            <label style="display: flex; align-items: center; justify-content: space-between;">
-              <span><i class="fa-solid fa-image" style="color: var(--primary);"></i> Academy Official Logo (Optional)</span>
-              <span style="font-size: 11px; color: var(--text-dim);">PNG, JPG, SVG, WebP up to 5MB</span>
-            </label>
-            <div style="display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: 8px; padding: 12px;">
-              <div id="prov-logo-preview-box" style="width: 52px; height: 52px; border-radius: 8px; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; border: 1px solid var(--border);">
-                <i class="fa-solid fa-building-columns" id="prov-logo-placeholder-icon" style="font-size: 20px; color: var(--text-dim);"></i>
-                <img id="prov-logo-img" src="" alt="Preview" style="display: none; width: 100%; height: 100%; object-fit: contain;">
-              </div>
-              <div style="flex: 1;">
-                <input type="file" id="prov-logo-file" accept="image/*" class="form-input" style="width: 100%; font-size: 12px; padding: 6px 10px;" onchange="app.handleProvLogoPreview(event)">
-                <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
-                  Upload your academy emblem/crest. It will appear on all dashboards, PDF invoices, and student portals.
-                </div>
-              </div>
-            </div>
+          <div style="background: rgba(255,255,255,0.06); border-radius: 6px; height: 10px; overflow: hidden; margin-bottom: 20px; border: 1px solid var(--border);">
+            <div style="width: ${score}%; height: 100%; background: ${score >= 80 ? '#10b981' : (score >= 50 ? '#f59e0b' : '#ef4444')}; transition: width 0.4s ease;"></div>
           </div>
 
-          <!-- GST & Tax Compliance Section -->
-          <div style="border: 1px solid rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.04); border-radius: 6px; padding: 12px; margin-top: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; font-weight: 600; color: var(--text-heading); font-size: 13px;">
-                <input type="checkbox" id="prov-is-gst" onchange="app.toggleGstFields(this.checked)" style="width: 16px; height: 16px; accent-color: var(--primary);">
-                <span><i class="fa-solid fa-receipt" style="color: #10b981;"></i> Enable GST Billing & Tax Compliance (India GSTIN)</span>
-              </label>
-              <span class="badge badge-success" style="font-size: 10px;">GST Ready</span>
-            </div>
-
-            <div id="prov-gst-container" style="display: none; margin-top: 10px;">
-              <div class="form-grid">
-                <div class="form-group">
-                  <label>GSTIN Number (15-Digit) *</label>
-                  <input type="text" id="prov-gst-number" class="form-input" maxlength="15" placeholder="e.g. 24AAAAA0000A1Z5" style="text-transform: uppercase; font-family: monospace;" oninput="this.value = this.value.toUpperCase(); app.autoExtractGstState(this.value)">
-                  <span style="font-size: 11px; color: var(--text-muted);">State code (first 2 digits) + PAN + Entity number</span>
+          <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 10px;"><i class="fa-solid fa-list-check" style="color: var(--primary);"></i> Configuration Checklist (${completedItems.length} of ${completedItems.length + missingItems.length} Tasks Complete)</h4>
+          <div style="display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px;">
+            ${completedItems.map(item => `
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <i class="fa-solid fa-circle-check" style="color: #10b981; font-size: 16px;"></i>
+                  <div>
+                    <div style="font-size: 13px; font-weight: 600; color: var(--text-heading);">${item.label}</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${item.description}</div>
+                  </div>
                 </div>
-                <div class="form-group">
-                  <label>Applicable GST Rate (%)</label>
-                  <select id="prov-gst-rate" class="form-select" style="width: 100%;">
-                    <option value="18" selected>18% Standard (9% CGST + 9% SGST)</option>
-                    <option value="12">12% Concessional Sports Training</option>
-                    <option value="5">5% Basic Sports Activities</option>
-                    <option value="0">0% Non-Taxable / Exempted</option>
-                  </select>
-                </div>
+                <span class="badge badge-success" style="font-size: 10px;">+${item.weight}%</span>
               </div>
+            `).join('')}
 
-              <div class="form-grid" style="margin-top: 8px;">
-                <div class="form-group">
-                  <label>Legal Business Name (Registered on GST)</label>
-                  <input type="text" id="prov-legal-name" class="form-input" style="width: 100%;" placeholder="e.g. Apex Sports & Fitness Pvt Ltd">
+            ${missingItems.map(item => `
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <i class="fa-solid fa-circle-xmark" style="color: #ef4444; font-size: 16px;"></i>
+                  <div>
+                    <div style="font-size: 13px; font-weight: 600; color: #ef4444;">${item.label} (Action Needed)</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${item.description}</div>
+                  </div>
                 </div>
-                <div class="form-group">
-                  <label>SAC / HSN Service Code</label>
-                  <input type="text" id="prov-sac-code" class="form-input" style="width: 100%;" value="999293" placeholder="999293 (Sports Training & Coaching)">
-                </div>
+                <span class="badge badge-danger" style="font-size: 10px;">Missing (${item.weight}%)</span>
               </div>
-            </div>
+            `).join('')}
           </div>
+        </div>
+      `;
 
-          <!-- Initial Administrator Account -->
-          <div style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 14px;">
-            <p style="font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;"><i class="fa-solid fa-user-shield"></i> Initial Academy Administrator Account</p>
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Admin Email *</label>
-                <input type="email" id="prov-admin-email" class="form-input" style="width: 100%;" required placeholder="admin@apexmartialarts.com" oninput="app._emailManuallyEdited = true">
-              </div>
-              <div class="form-group">
-                <label>Admin Password *</label>
-                <input type="password" id="prov-admin-password" class="form-input" style="width: 100%;" required placeholder="••••••••">
-              </div>
-            </div>
-          </div>
-        </form>
-      `,
-      `
-        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="app.submitProvisionAcademy()"><i class="fa-solid fa-plus"></i> Create Database & Provision</button>
-      `
-    );
-  },
-
-  onAcademyNameInput(name) {
-    const slugInput = document.getElementById('prov-slug');
-    if (!slugInput) return;
-    if (this._slugManuallyEdited && slugInput.value.trim().length > 0) {
-      return;
-    }
-    const autoSlug = (name || '')
-      .toLowerCase()
-      .trim()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/[\s_-]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-
-    slugInput.value = autoSlug;
-    this.updateAcademySlugPreview(autoSlug);
-  },
-
-  onAcademySlugInput(val) {
-    this._slugManuallyEdited = true;
-    const badge = document.getElementById('slug-autofill-badge');
-    if (badge) {
-      badge.innerHTML = `<a href="javascript:void(0)" onclick="app.resetSlugAutofill()" style="color: var(--primary); text-decoration: none;"><i class="fa-solid fa-rotate-left"></i> Re-sync with name</a>`;
-    }
-    const clean = (val || '')
-      .toLowerCase()
-      .replace(/[^\w-]/g, '');
-    const slugInput = document.getElementById('prov-slug');
-    if (slugInput && slugInput.value !== clean) {
-      slugInput.value = clean;
-    }
-    this.updateAcademySlugPreview(clean);
-  },
-
-  resetSlugAutofill() {
-    this._slugManuallyEdited = false;
-    const badge = document.getElementById('slug-autofill-badge');
-    if (badge) {
-      badge.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> Auto-fill active`;
-    }
-    const nameInput = document.getElementById('prov-name');
-    if (nameInput) {
-      this.onAcademyNameInput(nameInput.value);
-    }
-  },
-
-  updateAcademySlugPreview(slug) {
-    const display = document.getElementById('prov-slug-display');
-    if (display) {
-      display.innerText = slug || 'your-academy';
-    }
-    const emailInput = document.getElementById('prov-admin-email');
-    if (emailInput && !this._emailManuallyEdited) {
-      emailInput.placeholder = slug ? `admin@${slug}.com` : 'admin@apexmartialarts.com';
-    }
-    const legalNameInput = document.getElementById('prov-legal-name');
-    const nameInput = document.getElementById('prov-name');
-    if (legalNameInput && !legalNameInput.value && nameInput) {
-      legalNameInput.placeholder = nameInput.value.trim() ? `${nameInput.value.trim()} LLP / Pvt Ltd` : 'Legal entity name';
-    }
-  },
-
-  toggleGstFields(isChecked) {
-    const container = document.getElementById('prov-gst-container');
-    if (container) {
-      container.style.display = isChecked ? 'block' : 'none';
-      const numInput = document.getElementById('prov-gst-number');
-      if (numInput) {
-        numInput.required = isChecked;
-        if (isChecked) numInput.focus();
-      }
-    }
-  },
-
-  autoExtractGstState(gstin) {
-    if (!gstin || gstin.length < 2) return;
-    const statePrefix = gstin.substring(0, 2);
-    const stateMap = {
-      '01': 'Jammu & Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh',
-      '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan', '09': 'Uttar Pradesh',
-      '10': 'Bihar', '19': 'West Bengal', '23': 'Madhya Pradesh', '24': 'Gujarat',
-      '27': 'Maharashtra', '29': 'Karnataka', '32': 'Kerala', '33': 'Tamil Nadu', '36': 'Telangana',
-    };
-    if (stateMap[statePrefix]) {
-      const cityInput = document.getElementById('prov-city');
-      if (cityInput && !cityInput.value.trim()) {
-        cityInput.value = stateMap[statePrefix];
-      }
-    }
-  },
-
-  handleProvLogoPreview(event) {
-    const file = event.target.files && event.target.files[0];
-    const previewImg = document.getElementById('prov-logo-img');
-    const placeholder = document.getElementById('prov-logo-placeholder-icon');
-    if (!previewImg || !placeholder) return;
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        previewImg.src = e.target.result;
-        previewImg.style.display = 'block';
-        placeholder.style.display = 'none';
-      };
-      reader.readAsDataURL(file);
-    } else {
-      previewImg.src = '';
-      previewImg.style.display = 'none';
-      placeholder.style.display = 'block';
-    }
-  },
-
-  async submitProvisionAcademy() {
-    const name = document.getElementById('prov-name')?.value?.trim();
-    const slug = document.getElementById('prov-slug')?.value?.trim();
-    const city = document.getElementById('prov-city')?.value?.trim();
-    const plan = document.getElementById('prov-plan')?.value || 'professional';
-    const custom_domain = document.getElementById('prov-custom-domain')?.value?.trim() || null;
-    const admin_email = document.getElementById('prov-admin-email')?.value?.trim();
-    const admin_password = document.getElementById('prov-admin-password')?.value;
-
-    // GST fields
-    const is_gst_registered = document.getElementById('prov-is-gst')?.checked ? 1 : 0;
-    const gst_number = document.getElementById('prov-gst-number')?.value?.trim()?.toUpperCase() || null;
-    const gst_rate = Number(document.getElementById('prov-gst-rate')?.value || 18);
-    const legal_business_name = document.getElementById('prov-legal-name')?.value?.trim() || null;
-    const hsn_sac_code = document.getElementById('prov-sac-code')?.value?.trim() || '999293';
-
-    if (!name) {
-      this.showToast('Academy name is required', 'danger');
-      return;
-    }
-    if (!slug) {
-      this.showToast('Slug / subdomain is required', 'danger');
-      return;
-    }
-    if (!city) {
-      this.showToast('City is required', 'danger');
-      return;
-    }
-    if (!admin_email || !admin_password) {
-      this.showToast('Initial administrator email and password are required', 'danger');
-      return;
-    }
-
-    if (is_gst_registered && (!gst_number || gst_number.length < 15)) {
-      this.showToast('Please enter a valid 15-character GSTIN number', 'danger');
-      return;
-    }
-
-    const payload = {
-      name,
-      slug,
-      city,
-      plan,
-      custom_domain,
-      admin_email,
-      admin_password,
-      is_gst_registered,
-      gst_number,
-      gst_rate,
-      legal_business_name,
-      hsn_sac_code,
-    };
-
-    const res = await this.apiRequest('/api/central/academies', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-
-    if (res.success) {
-      const logoInput = document.getElementById('prov-logo-file');
-      if (logoInput && logoInput.files && logoInput.files[0] && res.academy && res.academy.id) {
-        try {
-          const formData = new FormData();
-          formData.append('logo', logoInput.files[0]);
-          await this.apiRequest(`/api/central/academies/${res.academy.id}/logo`, {
-            method: 'POST',
-            body: formData,
-          });
-        } catch (logoErr) {
-          console.error('Failed to upload initial logo:', logoErr);
-        }
-      }
-      this.showToast(res.message || 'Academy provisioned successfully with logo!', 'success');
-      this.closeModal();
-      await this.checkAuth();
-      this.renderCentralAcademies();
-    } else {
-      this.showToast(res.error || 'Failed to provision academy', 'danger');
+      this.openModal(
+        `<i class="fa-solid fa-clipboard-check" style="color: var(--primary);"></i> Setup Completeness — ${academyName || 'Academy'}`,
+        bodyHtml,
+        `<button class="btn btn-secondary" onclick="app.closeModal()">Close</button>`,
+        '640px'
+      );
+    } catch (err) {
+      this.showToast(err.message, 'danger');
     }
   },
 
@@ -4649,9 +4415,10 @@ const app = {
 
   async renderAcademyOverview() {
     try {
-      const [data, upcomingRes] = await Promise.all([
+      const [data, upcomingRes, setupRes] = await Promise.all([
         this.apiRequest('/api/academy/dashboard'),
-        this.apiRequest('/api/academy/dashboard/upcoming-events')
+        this.apiRequest('/api/academy/dashboard/upcoming-events'),
+        this.apiRequest('/api/academy/setup-status').catch(() => ({ success: false }))
       ]);
       const content = document.getElementById('page-content');
 
@@ -5312,6 +5079,29 @@ const app = {
           </a>
         </div>
       </div>
+
+      ${setupRes && setupRes.success && setupRes.score < 100 ? `
+        <!-- Academy Setup Health & Completeness Banner -->
+        <div class="setup-health-banner" style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.25); border-radius: 8px; padding: 14px 18px; margin: 14px 0 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="width: 44px; height: 44px; border-radius: 8px; background: rgba(99,102,241,0.15); display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--primary);">
+              <i class="fa-solid fa-list-check"></i>
+            </div>
+            <div>
+              <div style="font-size: 14px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+                <span>Academy Setup: ${setupRes.score}% Complete</span>
+                <span class="badge ${setupRes.score >= 75 ? 'badge-warning' : 'badge-danger'}" style="font-size: 10px;">${setupRes.score >= 75 ? 'Operational Warnings' : 'Action Required'}</span>
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">
+                ${setupRes.completedCount} of ${setupRes.totalCount} setup requirements configured. Complete missing setup items for full operational readiness.
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="app.showSetupCompletenessModal(${this.tenantAcademy?.id || (data.academy && data.academy.id) || 1}, '${((data.academy && data.academy.name) || '').replace(/'/g, "\\'")}')">
+            <i class="fa-solid fa-clipboard-check"></i> View Setup Checklist
+          </button>
+        </div>
+      ` : ''}
 
       <!-- Hero Operational Priority Row (Filtered by Permissions) -->
       <div class="hero-pipeline-grid">
@@ -20625,8 +20415,8 @@ const app = {
       const currentTab = window.SmartAttendanceController.currentSubTab || 'kiosk';
 
       content.innerHTML = `
-        <div class="content-card">
-          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div id="smart-attendance-view" class="content-card">
+          <div class="card-header smart-hub-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
             <div>
               <h2 class="card-title" style="margin: 0; display: flex; align-items: center; gap: 8px;">
                 <i class="fa-solid fa-qrcode" style="color: var(--primary);"></i> Smart Attendance Engine

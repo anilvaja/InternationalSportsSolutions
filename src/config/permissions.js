@@ -245,7 +245,12 @@ export const DEFAULT_ACADEMY_ROLES = [
       'manage_student_qr',
       'manage_nfc_cards',
       'view_fees',
-      'collect_fees'
+      'collect_fees',
+      'view_inquiries',
+      'create_inquiries',
+      'edit_inquiries',
+      'convert_inquiries',
+      'manage_inquiries'
     ],
     is_system: 0,
     theme_color: 'teal'
@@ -300,7 +305,12 @@ export const DEFAULT_ACADEMY_ROLES = [
       'view_fees',
       'collect_fees',
       'view_sports',
-      'apply_leave'
+      'apply_leave',
+      'view_inquiries',
+      'create_inquiries',
+      'edit_inquiries',
+      'convert_inquiries',
+      'manage_inquiries'
     ],
     is_system: 1,
     theme_color: 'blue'

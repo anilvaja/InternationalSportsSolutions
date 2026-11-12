@@ -12,6 +12,7 @@ import { StorageService } from '../services/storageService.js';
 import { AcademyLifecycleService } from '../services/academyLifecycleService.js';
 import { PratikKarateAcademyDemoSeeder } from '../db/pratikKarateAcademyDemoSeeder.js';
 import { SecurityGuardService } from '../services/securityGuardService.js';
+import { AcademySetupWizardService } from '../services/academySetupWizardService.js';
 
 export const centralRouter = express.Router();
 const uploadLogoMiddleware = StorageService.getLogoUploadMiddleware().single('logo');
@@ -82,6 +83,9 @@ centralRouter.get('/academies', (req, res) => {
       let studentCount = 0;
       let coachCount = 0;
       let branchCount = 0;
+      let batchCount = 0;
+      let setupScore = 0;
+      let isFullyConfigured = false;
 
       if (ac.status !== 'suspended') {
         try {
@@ -89,6 +93,10 @@ centralRouter.get('/academies', (req, res) => {
           studentCount = tenantDb.prepare('SELECT COUNT(*) as c FROM students').get().c;
           coachCount = tenantDb.prepare('SELECT COUNT(*) as c FROM coaches').get().c;
           branchCount = tenantDb.prepare('SELECT COUNT(*) as c FROM branches').get().c;
+          batchCount = tenantDb.prepare('SELECT COUNT(*) as c FROM batches').get()?.c || 0;
+          const audit = AcademySetupWizardService.getAcademySetupCompleteness(tenantDb, ac.id);
+          setupScore = audit.score;
+          isFullyConfigured = audit.isFullyConfigured;
         } catch (e) {
           // ignore error
         }
@@ -108,15 +116,61 @@ centralRouter.get('/academies', (req, res) => {
       return {
         ...ac,
         domains,
+        setup_score: setupScore,
+        is_fully_configured: isFullyConfigured,
         metrics: {
           students: studentCount,
           coaches: coachCount,
           branches: branchCount,
+          batches: batchCount,
         },
       };
     });
 
     res.json({ success: true, academies: enriched });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/central/setup-wizard/defaults
+ * Provides reference data for 10-step guided onboarding wizard
+ */
+centralRouter.get('/setup-wizard/defaults', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const defaults = AcademySetupWizardService.getSetupDefaults(centralDb);
+    res.json({ success: true, ...defaults });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/central/setup-wizard/create
+ * Transactionally creates fully configured academy with branches, sports, staff, batches & policies
+ */
+centralRouter.post('/setup-wizard/create', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const result = AcademySetupWizardService.createAcademyThroughWizard(centralDb, req.body, req.user?.userId || 1);
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/central/academies/:id/setup-status
+ * Audits completeness of an academy's setup
+ */
+centralRouter.get('/academies/:id/setup-status', (req, res) => {
+  try {
+    const academyId = Number(req.params.id);
+    const tenantDb = getTenantDbById(academyId);
+    const completeness = AcademySetupWizardService.getAcademySetupCompleteness(tenantDb, academyId);
+    res.json({ success: true, ...completeness });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

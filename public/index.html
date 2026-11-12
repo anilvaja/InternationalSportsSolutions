@@ -25,6 +25,13 @@
 
   <!-- Custom Stylesheet -->
   <link rel="stylesheet" href="/css/style.css?v=2.6.3">
+
+  <!-- Web App Manifest & PWA Meta -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ISS Sports">
 </head>
 <body>
 
@@ -183,7 +190,23 @@
   <script src="/js/jsQR.js"></script>
   <script src="/js/smartAttendance.js?v=1.0.0"></script>
 
+  <!-- Academy Setup Wizard Controller -->
+  <script src="/js/setupWizard.js?v=1.0.0"></script>
+
   <!-- Application Logic -->
   <script src="/js/app.js?v=2.6.4"></script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then((reg) => {
+          console.log('[PWA] Service Worker registered successfully with scope:', reg.scope);
+        }).catch((err) => {
+          console.warn('[PWA] Service Worker registration failed:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

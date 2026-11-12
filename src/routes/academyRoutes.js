@@ -23,6 +23,7 @@ import { ShiftCheckoutService } from '../services/shiftCheckoutService.js';
 import { StaffAvailabilityService } from '../services/staffAvailabilityService.js';
 import { SecurityGuardService } from '../services/securityGuardService.js';
 import { smartAttendanceRouter } from './smartAttendanceRoutes.js';
+import { AcademySetupWizardService } from '../services/academySetupWizardService.js';
 
 export const academyRouter = express.Router();
 
@@ -72,6 +73,19 @@ academyRouter.use((req, res, next) => {
 
 // Smart Attendance Engine sub-router
 academyRouter.use('/smart-attendance', smartAttendanceRouter);
+
+/**
+ * GET /api/academy/setup-status
+ * Returns academy setup completeness checklist & score (0-100%)
+ */
+academyRouter.get('/setup-status', (req, res) => {
+  try {
+    const completeness = AcademySetupWizardService.getAcademySetupCompleteness(req.tenantDb, req.academy.id);
+    res.json({ success: true, ...completeness });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 /**
  * Middleware factory requiring specific permission(s)

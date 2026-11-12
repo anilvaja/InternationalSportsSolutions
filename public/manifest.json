@@ -1,0 +1,46 @@
+{
+  "short_name": "ISS Sports",
+  "name": "International Sports Solutions — Multi-Tenant Sports SaaS",
+  "description": "Comprehensive Sports Academy Management & Smart Attendance SaaS Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["sports", "education", "business", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Smart Attendance Scanner",
+      "short_name": "Scanner",
+      "description": "Launch QR & Face Smart Attendance Scanner",
+      "url": "/#smart-attendance",
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Quick Pay Portal",
+      "short_name": "Pay",
+      "description": "Pay sports academy fees online",
+      "url": "/pay.html",
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
+    }
+  ]
+}

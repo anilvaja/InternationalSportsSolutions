@@ -1,11 +1,23 @@
 import bcrypt from 'bcryptjs';
 import { getCentralDb } from '../src/db/centralDb.js';
 import { getTenantDbById } from '../src/db/connectionManager.js';
+import { DEFAULT_ACADEMY_ROLES } from '../src/config/permissions.js';
 
 export function prepareQaRoleAccounts() {
   console.log('🔄 Preparing dedicated test accounts for every configured role...');
   const centralDb = getCentralDb();
   const tenantDb = getTenantDbById(1);
+
+  // Sync latest role definitions and permissions to tenant 1
+  for (const r of DEFAULT_ACADEMY_ROLES) {
+    try {
+      tenantDb.prepare(`
+        INSERT INTO academy_roles (name, display_name, description, permissions, is_system)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET permissions = excluded.permissions, display_name = excluded.display_name
+      `).run(r.name, r.display_name, r.description, JSON.stringify(r.permissions), r.is_system !== undefined ? r.is_system : 0);
+    } catch (_) {}
+  }
 
   const hashPassword = (pw) => bcrypt.hashSync(pw, 10);
 

@@ -768,7 +768,7 @@ async function run() {
 
     // 9.3 Invoices & Fees
     await page.click('a[href="/student/fees"]');
-    await page.waitForSelector('table', { state: 'visible' });
+    await page.waitForSelector('.student-fees-container, table', { state: 'visible' });
     shot = await captureScreenshot(page, 'stu_04_fees.png');
     recordTest({
       testId: 'QA-STUDENT-04',
