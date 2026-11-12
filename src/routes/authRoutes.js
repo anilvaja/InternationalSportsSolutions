@@ -57,6 +57,12 @@ authRouter.post('/login', (req, res) => {
           user: payload,
         });
       }
+
+      // Only fall through if the same email is also registered as an academy user
+      const alsoAcademyUser = centralDb.prepare('SELECT id FROM academy_users_lookup WHERE email = ? COLLATE NOCASE').get(trimmedEmail);
+      if (!alsoAcademyUser && !academy_slug) {
+        return res.status(401).json({ success: false, error: 'Invalid email or password' });
+      }
     }
 
     // 2. Resolve Academy for non-super admins
@@ -76,7 +82,11 @@ authRouter.post('/login', (req, res) => {
     }
 
     if (!targetAcademyId) {
-      return res.status(401).json({ success: false, error: 'Invalid credentials or academy not found' });
+      const hasAnyAdmin = centralDb.prepare('SELECT id FROM super_admins LIMIT 1').get();
+      if (!hasAnyAdmin) {
+        return res.status(401).json({ success: false, error: 'Database is not initialized yet (academy not found). Please run setup.' });
+      }
+      return res.status(401).json({ success: false, error: 'Invalid email or password' });
     }
 
     const academy = centralDb.prepare('SELECT * FROM academies WHERE id = ?').get(targetAcademyId);

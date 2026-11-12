@@ -1066,8 +1066,10 @@ const app = {
       this.showToast('Logged in successfully', 'success');
       await this.checkAuth();
     } else {
-      if (res.error && res.error.includes('academy not found')) {
-        this.showToast('Login failed: Account or academy not found. If this is a fresh deployment, click "Initialize / Seed Database" below.', 'warning');
+      if (res.error && (res.error.includes('not initialized') || res.error.includes('academy not found'))) {
+        const initDbContainer = document.getElementById('init-db-container');
+        if (initDbContainer) initDbContainer.style.display = 'flex';
+        this.showToast('Database is not initialized yet. Click "Setup Platform" below to initialize.', 'warning');
       } else {
         this.showToast(res.error || 'Login failed', 'danger');
       }
