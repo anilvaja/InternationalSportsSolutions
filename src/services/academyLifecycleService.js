@@ -174,25 +174,21 @@ export class AcademyLifecycleService {
     try { centralDb.prepare('DELETE FROM academies').run(); } catch (e) {}
     try { centralDb.prepare("DELETE FROM sqlite_sequence WHERE name = 'academies'").run(); } catch (e) {}
 
-    // 5. Run seeder: Seeds exactly 1 Super Admin (anilvaja.007@gmail.com) and 1 Academy (Pratik Karate Academy)
-    runSeed();
+    // 5. Run seeder: Seeds Super Admin (anilvaja.007@gmail.com), central plans, roles, and permissions (0 academies)
+    const seedResult = runSeed({ includeDefaultAcademy: false });
 
-    console.log('[Clean Slate] Platform is now clean with Super Admin and Pratik Karate Academy.');
+    console.log('[Clean Slate] Platform is now clean with Super Admin, roles, and permissions.');
     return {
       success: true,
-      message: 'Platform successfully reset from scratch. All previous academies and data wiped. Pratik Karate Academy and Super Admin initialized.',
+      message: 'Platform successfully reset to clean state. All previous academies, databases, and uploaded data wiped. Super Admin, standard roles, and permissions ready.',
       superAdmin: {
         email: 'anilvaja.007@gmail.com',
         role: 'Super Admin',
-        password: 'password',
       },
-      academy: {
-        name: 'Pratik Karate Academy',
-        slug: 'pratik-karate-academy',
-        admin_email: 'admin@pratikkarate.com',
-        password: 'password123',
-        role: 'Academy Admin',
-      },
+      rolesCount: seedResult.rolesCount,
+      permissionsCount: seedResult.permissionsCount,
+      academiesCount: 0,
+      loginUrl: '/',
     };
   }
 }

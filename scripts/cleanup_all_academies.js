@@ -145,9 +145,9 @@ if (lockedFiles.length > 0) {
   }
 }
 
-// 6. Run Platform Seeder to create/verify fresh central.db and default Pratik Karate Academy
-console.log('\n5. Re-initializing clean baseline platform data...');
-runSeed();
+// 6. Run Platform Seeder to create/verify fresh central.db (Clean state: 0 academies)
+console.log('\n5. Re-initializing clean baseline platform data (Super Admin & Roles)...');
+runSeed({ includeDefaultAcademy: false });
 
 // 7. Verify fresh state
 console.log('\n6. Verifying clean database state...');

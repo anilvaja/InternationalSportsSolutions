@@ -32,7 +32,7 @@ export function runMigrations(db, type) {
 
   const getExecuted = db.prepare('SELECT name FROM _migrations');
   const executedSet = new Set(getExecuted.all().map(r => r.name));
-  const recordMigration = db.prepare('INSERT INTO _migrations (name) VALUES (?)');
+  const recordMigration = db.prepare('INSERT OR IGNORE INTO _migrations (name) VALUES (?)');
 
   for (const file of files) {
     if (!executedSet.has(file)) {

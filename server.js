@@ -90,6 +90,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Dedicated Platform Setup Route (https://internationalsportssolutions.com/setup)
+app.get(['/setup', '/setup.html'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'setup.html'));
+});
+
 // Single Page Application Fallback
 app.get('*', (req, res, next) => {
   // If it's an API route or file with extension, don't serve index.html

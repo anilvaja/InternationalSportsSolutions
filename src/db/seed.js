@@ -5,12 +5,13 @@ import { ALL_ACADEMY_PERMISSIONS, DEFAULT_ACADEMY_ROLES } from '../config/permis
 
 /**
  * Platform Database Seeder
- * - Exactly 1 Super Admin: anilvaja.007@gmail.com
- * - Exactly 1 Academy: Pratik Karate Academy
- * - Standard 8 Operational Roles (Finance & Fee Manager, Front Desk, Head Coach, Receptionist, Academy Admin, Staff, Coach, Student)
- * - Clean state without dummy students, batches, or demo records.
+ * - Primary Super Admin: anilvaja.007@gmail.com (Password: Iss@15890)
+ * - Central System Settings & Subscription Tiers (Starter, Standard, Professional, Enterprise)
+ * - Standard 8 Operational Academy Roles with Granular Permission Assignments
+ * - Clean state: Zero academies or dummy users created by default.
  */
-export function runSeed() {
+export function runSeed(options = {}) {
+  const { includeDefaultAcademy = false } = options;
   console.log('--- Starting Platform Database Seed ---');
   const centralDb = getCentralDb();
 
@@ -115,128 +116,157 @@ export function runSeed() {
     console.log('[Seed] Seeded subscription plans: Starter, Standard, Professional, Enterprise');
   }
 
-  // 4. Exactly 1 Academy: Pratik Karate Academy
-  const pratikAcademyData = {
-    id: 1,
-    name: 'Pratik Karate Academy',
-    slug: 'pratik-karate-academy',
-    contact_email: 'admin@pratikkarate.com',
-    contact_phone: '+91 98250 12345',
-    address: 'Dojo 1, Sports Complex',
-    city: 'Ahmedabad',
-    plan: 'enterprise',
-    max_branches: 10,
-    max_students: 1500,
-    max_coaches: 80,
-    admin_name: 'Pratik Karate Admin',
-    admin_email: 'admin@pratikkarate.com',
-    admin_password: 'password123',
-  };
-
-  let pratikAc = centralDb.prepare('SELECT id FROM academies WHERE slug = ? OR id = ?').get(pratikAcademyData.slug, pratikAcademyData.id);
-  let academyId;
-
-  if (!pratikAc) {
-    console.log(`[Seed] Provisioning academy database for: ${pratikAcademyData.name} (${pratikAcademyData.slug})`);
-    const provisioned = provisionAcademyDb(pratikAcademyData);
-    academyId = provisioned.id;
-  } else {
-    academyId = pratikAc.id;
-    centralDb.prepare(`
-      UPDATE academies SET
-        name = ?, slug = ?, contact_email = ?, contact_phone = ?, address = ?, city = ?, plan = ?
-      WHERE id = ?
-    `).run(
-      pratikAcademyData.name,
-      pratikAcademyData.slug,
-      pratikAcademyData.contact_email,
-      pratikAcademyData.contact_phone,
-      pratikAcademyData.address,
-      pratikAcademyData.city,
-      pratikAcademyData.plan,
-      academyId
-    );
-  }
-
-  // 5. Ensure tenant DB has exactly the standard 8 operational roles
-  const tenantDb = getTenantDbById(academyId);
-
-  // Ensure tenant DB has the standard 8 operational roles
-  const insertRole = tenantDb.prepare(`
-    INSERT OR REPLACE INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-
-  for (const role of DEFAULT_ACADEMY_ROLES) {
-    insertRole.run(
-      role.name,
-      role.display_name,
-      role.description,
-      JSON.stringify(role.permissions),
-      role.is_system,
-      role.theme_color
-    );
-  }
-
-  // Ensure Admin user exists with role academy_admin
-  const adminPassHash = bcrypt.hashSync(pratikAcademyData.admin_password, 10);
-  const existingAdmin = tenantDb.prepare('SELECT id FROM users WHERE email = ?').get(pratikAcademyData.admin_email);
-  if (!existingAdmin) {
-    tenantDb.prepare(`
-      INSERT INTO users (name, email, password_hash, role, phone, status)
-      VALUES (?, ?, ?, 'academy_admin', ?, 'active')
-    `).run(
-      pratikAcademyData.admin_name,
-      pratikAcademyData.admin_email,
-      adminPassHash,
-      pratikAcademyData.contact_phone
-    );
-  } else {
-    tenantDb.prepare(`
-      UPDATE users SET name = ?, password_hash = ?, role = 'academy_admin', status = 'active'
-      WHERE id = ?
-    `).run(
-      pratikAcademyData.admin_name,
-      adminPassHash,
-      existingAdmin.id
-    );
-  }
-
-  // Ensure central users lookup
-  centralDb.prepare(`
-    INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role)
-    VALUES (?, ?, 'academy_admin')
-  `).run(pratikAcademyData.admin_email, academyId);
-
-  // 5b. Ensure baseline branch exists in tenant DB so branch selection is ready immediately
-  const branchCount = tenantDb.prepare('SELECT count(*) as c FROM branches').get().c;
-  if (branchCount === 0) {
-    tenantDb.prepare(`
-      INSERT INTO branches (id, name, city, is_active, academy_id, geofence_radius_meters, is_geofence_enforced)
-      VALUES (1, 'Main Campus Dojo', ?, 1, ?, 100, 1)
-    `).run(pratikAcademyData.city || 'Ahmedabad', academyId);
-    console.log('[Seed] Seeded default branch: Main Campus Dojo (ID: 1)');
-  }
-
-  // 6. Register domains for Pratik Karate Academy
+  // 4. Seed Central Permissions Catalog & Academy Role Templates
   try {
-    const insertDomain = centralDb.prepare(`
-      INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
-      VALUES (?, ?, ?, ?, 'active')
+    const insertCentralPerm = centralDb.prepare(`
+      INSERT OR REPLACE INTO central_permissions (permission_key, category, description)
+      VALUES (?, ?, ?)
     `);
 
-    // Primary subdomain
-    insertDomain.run(academyId, `${pratikAcademyData.slug}.internationalsportssolutions.test`, 1, 0);
-    // Localhost subdomain
-    insertDomain.run(academyId, `${pratikAcademyData.slug}.localhost`, 0, 0);
-    // Custom domain alias
-    insertDomain.run(academyId, 'pratikkarate.com', 0, 1);
+    for (const perm of ALL_ACADEMY_PERMISSIONS) {
+      const category = perm.split('_')[1] || 'general';
+      const description = `Permission to ${perm.replace(/_/g, ' ')}`;
+      insertCentralPerm.run(perm, category, description);
+    }
+
+    const insertCentralRole = centralDb.prepare(`
+      INSERT OR REPLACE INTO central_role_templates (name, display_name, description, permissions, is_system, theme_color)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const role of DEFAULT_ACADEMY_ROLES) {
+      insertCentralRole.run(
+        role.name,
+        role.display_name,
+        role.description,
+        JSON.stringify(role.permissions),
+        role.is_system,
+        role.theme_color
+      );
+    }
+    console.log(`[Seed] Seeded ${ALL_ACADEMY_PERMISSIONS.length} central permissions and ${DEFAULT_ACADEMY_ROLES.length} role templates with assigned permissions.`);
   } catch (err) {
-    console.warn('[Seed] Warning registering domains:', err.message);
+    console.warn('[Seed] Warning seeding central roles/permissions:', err.message);
   }
 
-  console.log(`[Seed] Successfully seeded: Super Admin (${'anilvaja.007@gmail.com'}) & Academy (${pratikAcademyData.name}) with standard 8 operational roles.`);
+  // 5. Optional Academy Seeding (only if explicitly requested)
+  if (includeDefaultAcademy) {
+    const pratikAcademyData = {
+      id: 1,
+      name: 'Pratik Karate Academy',
+      slug: 'pratik-karate-academy',
+      contact_email: 'admin@pratikkarate.com',
+      contact_phone: '+91 98250 12345',
+      address: 'Dojo 1, Sports Complex',
+      city: 'Ahmedabad',
+      plan: 'enterprise',
+      max_branches: 10,
+      max_students: 1500,
+      max_coaches: 80,
+      admin_name: 'Pratik Karate Admin',
+      admin_email: 'admin@pratikkarate.com',
+      admin_password: 'password123',
+    };
+
+    let pratikAc = centralDb.prepare('SELECT id FROM academies WHERE slug = ? OR id = ?').get(pratikAcademyData.slug, pratikAcademyData.id);
+    let academyId;
+
+    if (!pratikAc) {
+      console.log(`[Seed] Provisioning academy database for: ${pratikAcademyData.name} (${pratikAcademyData.slug})`);
+      const provisioned = provisionAcademyDb(pratikAcademyData);
+      academyId = provisioned.id;
+    } else {
+      academyId = pratikAc.id;
+      centralDb.prepare(`
+        UPDATE academies SET
+          name = ?, slug = ?, contact_email = ?, contact_phone = ?, address = ?, city = ?, plan = ?
+        WHERE id = ?
+      `).run(
+        pratikAcademyData.name,
+        pratikAcademyData.slug,
+        pratikAcademyData.contact_email,
+        pratikAcademyData.contact_phone,
+        pratikAcademyData.address,
+        pratikAcademyData.city,
+        pratikAcademyData.plan,
+        academyId
+      );
+    }
+
+    const tenantDb = getTenantDbById(academyId);
+    const insertRole = tenantDb.prepare(`
+      INSERT OR REPLACE INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const role of DEFAULT_ACADEMY_ROLES) {
+      insertRole.run(
+        role.name,
+        role.display_name,
+        role.description,
+        JSON.stringify(role.permissions),
+        role.is_system,
+        role.theme_color
+      );
+    }
+
+    const adminPassHash = bcrypt.hashSync(pratikAcademyData.admin_password, 10);
+    const existingAdmin = tenantDb.prepare('SELECT id FROM users WHERE email = ?').get(pratikAcademyData.admin_email);
+    if (!existingAdmin) {
+      tenantDb.prepare(`
+        INSERT INTO users (name, email, password_hash, role, phone, status)
+        VALUES (?, ?, ?, 'academy_admin', ?, 'active')
+      `).run(
+        pratikAcademyData.admin_name,
+        pratikAcademyData.admin_email,
+        adminPassHash,
+        pratikAcademyData.contact_phone
+      );
+    } else {
+      tenantDb.prepare(`
+        UPDATE users SET name = ?, password_hash = ?, role = 'academy_admin', status = 'active'
+        WHERE id = ?
+      `).run(
+        pratikAcademyData.admin_name,
+        adminPassHash,
+        existingAdmin.id
+      );
+    }
+
+    centralDb.prepare(`
+      INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role)
+      VALUES (?, ?, 'academy_admin')
+    `).run(pratikAcademyData.admin_email, academyId);
+
+    const branchCount = tenantDb.prepare('SELECT count(*) as c FROM branches').get().c;
+    if (branchCount === 0) {
+      tenantDb.prepare(`
+        INSERT INTO branches (id, name, city, is_active, academy_id, geofence_radius_meters, is_geofence_enforced)
+        VALUES (1, 'Main Campus Dojo', ?, 1, ?, 100, 1)
+      `).run(pratikAcademyData.city || 'Ahmedabad', academyId);
+    }
+
+    try {
+      const insertDomain = centralDb.prepare(`
+        INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
+        VALUES (?, ?, ?, ?, 'active')
+      `);
+      insertDomain.run(academyId, `${pratikAcademyData.slug}.internationalsportssolutions.test`, 1, 0);
+      insertDomain.run(academyId, `${pratikAcademyData.slug}.localhost`, 0, 0);
+      insertDomain.run(academyId, 'pratikkarate.com', 0, 1);
+    } catch (_) {}
+  }
+
+  const academiesCount = centralDb.prepare('SELECT COUNT(*) as c FROM academies').get()?.c || 0;
+  console.log(`[Seed] Seeded: Super Admin (anilvaja.007@gmail.com), ${DEFAULT_ACADEMY_ROLES.length} roles, ${ALL_ACADEMY_PERMISSIONS.length} permissions. Academies in DB: ${academiesCount}`);
   console.log('--- Database Seed Finished Successfully ---');
+
+  return {
+    superAdmin: 'anilvaja.007@gmail.com',
+    rolesCount: DEFAULT_ACADEMY_ROLES.length,
+    permissionsCount: ALL_ACADEMY_PERMISSIONS.length,
+    academiesCount,
+  };
 }
 
 // Execute if run directly from CLI

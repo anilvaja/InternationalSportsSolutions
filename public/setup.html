@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Platform Setup — International Sports Solutions</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%232563eb'><path d='M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z'/></svg>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-body, #f8fafc);
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .setup-container {
+      background: var(--bg-card, #ffffff);
+      border: 1px solid var(--border, #e2e8f0);
+      border-radius: 16px;
+      max-width: 620px;
+      width: 100%;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+      overflow: hidden;
+    }
+    .setup-header {
+      padding: 32px 32px 24px;
+      text-align: center;
+      border-bottom: 1px solid var(--border, #e2e8f0);
+      background: linear-gradient(to bottom, #ffffff, #fcfcfd);
+    }
+    .setup-logo {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #2563eb, #0ea5e9);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-size: 26px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    }
+    .setup-body {
+      padding: 28px 32px;
+    }
+    .item-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px;
+      border: 1px solid var(--border, #e2e8f0);
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #fafbfc;
+      transition: all 0.2s ease;
+    }
+    .item-card:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .item-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 16px;
+    }
+    .item-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: #0f172a;
+      margin-bottom: 2px;
+    }
+    .item-desc {
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.4;
+    }
+    .setup-actions {
+      padding: 20px 32px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .btn-setup {
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      border-radius: 10px;
+      padding: 14px 20px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: background 0.2s ease, transform 0.1s ease;
+      width: 100%;
+    }
+    .btn-setup:hover {
+      background: #1d4ed8;
+      transform: translateY(-1px);
+    }
+    .btn-setup:active {
+      transform: translateY(0);
+    }
+    .btn-setup:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .status-alert {
+      padding: 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .status-alert.success {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid #10b981;
+      color: #065f46;
+    }
+    .status-alert.info {
+      background: rgba(37, 99, 235, 0.08);
+      border: 1px solid #3b82f6;
+      color: #1e40af;
+    }
+    .status-alert.error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid #ef4444;
+      color: #991b1b;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="setup-container">
+    <div class="setup-header">
+      <div class="setup-logo">
+        <i class="fa-solid fa-trophy"></i>
+      </div>
+      <h1 style="font-size: 22px; font-weight: 800; color: #0f172a; margin: 0 0 6px;">
+        Platform Initial Setup
+      </h1>
+      <p style="font-size: 13px; color: #64748b; margin: 0;">
+        International Sports Solutions — Multi-Tenant Architecture
+      </p>
+    </div>
+
+    <div class="setup-body">
+      <div id="status-box" class="status-alert"></div>
+
+      <p style="font-size: 13px; color: #334155; margin: 0 0 16px; line-height: 1.5;">
+        This automated wizard sets up the initial platform environment and database catalogs. No demo academies or dummy students will be created:
+      </p>
+
+      <div class="item-card">
+        <div class="item-icon" style="background: rgba(245, 158, 11, 0.12); color: #d97706;">
+          <i class="fa-solid fa-shield-halved"></i>
+        </div>
+        <div>
+          <div class="item-title">1. Super Admin Account</div>
+          <div class="item-desc">Creates or verifies primary Super Admin account (<code>anilvaja.007@gmail.com</code>) with full platform governance permissions.</div>
+        </div>
+      </div>
+
+      <div class="item-card">
+        <div class="item-icon" style="background: rgba(37, 99, 235, 0.12); color: #2563eb;">
+          <i class="fa-solid fa-user-shield"></i>
+        </div>
+        <div>
+          <div class="item-title">2. Operational Roles & Permissions</div>
+          <div class="item-desc">Registers the standard 8 academy operational roles (Finance Manager, Front Desk, Head Coach, Receptionist, Academy Admin, Staff, Coach, Student) and assigns modules & permissions.</div>
+        </div>
+      </div>
+
+      <div class="item-card">
+        <div class="item-icon" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">
+          <i class="fa-solid fa-layer-group"></i>
+        </div>
+        <div>
+          <div class="item-title">3. Subscription Tiers & System Quotas</div>
+          <div class="item-desc">Sets up subscription plans (Starter, Standard, Professional, Enterprise) with branch, coach, batch, and student quota limits.</div>
+        </div>
+      </div>
+
+      <div class="item-card">
+        <div class="item-icon" style="background: rgba(100, 116, 139, 0.12); color: #475569;">
+          <i class="fa-solid fa-broom"></i>
+        </div>
+        <div>
+          <div class="item-title">4. 100% Clean Tenant Slate</div>
+          <div class="item-desc">Zero academies or dummy records generated. You can create fresh academies anytime from the Super Admin portal.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="setup-actions">
+      <button type="button" id="btn-run-setup" class="btn-setup" onclick="runPlatformSetup()">
+        <i class="fa-solid fa-play"></i> Initialize Platform Setup
+      </button>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+        <label style="font-size: 12px; color: #64748b; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+          <input type="checkbox" id="chk-force"> Force re-initialization
+        </label>
+        <a href="/" style="font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 600;">
+          Back to Login →
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function checkCurrentStatus() {
+      try {
+        const res = await fetch('/api/public/setup?check=true');
+        const data = await res.json();
+        const box = document.getElementById('status-box');
+        if (data.success && data.initialized) {
+          box.className = 'status-alert info';
+          box.style.display = 'block';
+          box.innerHTML = `
+            <div style="font-weight: 700; margin-bottom: 4px;">
+              <i class="fa-solid fa-circle-check" style="color: #2563eb;"></i> Platform is Already Initialized
+            </div>
+            <div>Super Admin <strong>${data.superAdminEmail}</strong> is active. Subscription plans (${data.plansCount}) and academy role templates (${data.rolesCount}) are registered.</div>
+            <div style="margin-top: 8px;">
+              <a href="/" style="display: inline-block; background: #2563eb; color: #fff; padding: 6px 14px; border-radius: 6px; font-weight: 600; text-decoration: none; font-size: 12px;">Sign In to Portal &rarr;</a>
+            </div>
+          `;
+          document.getElementById('btn-run-setup').innerHTML = '<i class="fa-solid fa-rotate-right"></i> Re-Run Platform Setup';
+        }
+      } catch (_) {}
+    }
+
+    async function runPlatformSetup() {
+      const btn = document.getElementById('btn-run-setup');
+      const box = document.getElementById('status-box');
+      const force = document.getElementById('chk-force').checked;
+
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Initializing Platform...';
+      box.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/public/setup' + (force ? '?force=true' : ''), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          box.className = 'status-alert success';
+          box.style.display = 'block';
+          box.innerHTML = `
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px;">
+              <i class="fa-solid fa-circle-check"></i> Platform Initialized Successfully!
+            </div>
+            <div style="margin-bottom: 8px;">${data.message}</div>
+            <ul style="margin: 0 0 12px 18px; padding: 0; font-size: 12px;">
+              <li>Super Admin: <strong>${data.superAdminEmail || data.superAdmin || 'anilvaja.007@gmail.com'}</strong></li>
+              <li>Standard Academy Roles: <strong>${data.rolesCount || 8} roles registered</strong></li>
+              <li>Module Permissions: <strong>${data.permissionsCount || 'All'} permissions assigned</strong></li>
+              <li>Registered Academies: <strong>${data.academiesCount || 0} (Clean Slate)</strong></li>
+            </ul>
+            <div>
+              <a href="/" style="display: inline-block; background: #10b981; color: #fff; padding: 8px 16px; border-radius: 6px; font-weight: 700; text-decoration: none; font-size: 13px;">
+                Proceed to Sign In &rarr;
+              </a>
+            </div>
+          `;
+          btn.innerHTML = '<i class="fa-solid fa-check"></i> Setup Completed';
+        } else {
+          box.className = 'status-alert error';
+          box.style.display = 'block';
+          box.innerHTML = `<strong>Error during setup:</strong> ${data.error || 'Failed to initialize database'}`;
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-play"></i> Retry Setup';
+        }
+      } catch (err) {
+        box.className = 'status-alert error';
+        box.style.display = 'block';
+        box.innerHTML = `<strong>Network or Server Error:</strong> ${err.message}`;
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-play"></i> Retry Setup';
+      }
+    }
+
+    // Auto-check on load
+    checkCurrentStatus();
+  </script>
+</body>
+</html>

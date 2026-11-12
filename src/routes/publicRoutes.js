@@ -250,32 +250,66 @@ publicRouter.post('/pay', (req, res) => {
 
 /**
  * GET & POST /api/public/setup
- * Initializes the platform: Super Admin (anilvaja.007@gmail.com) and Pratik Karate Academy.
- * Only 1 role (Academy Admin) with all permissions assigned.
+ * Initializes the platform:
+ * - Creates primary Super Admin: anilvaja.007@gmail.com
+ * - Auto-generates standard 8 academy operational roles and assigns all module permissions
+ * - Sets up subscription plans (Starter, Standard, Professional, Enterprise)
+ * - Zero academies or users created (clean state)
  */
 publicRouter.all('/setup', (req, res) => {
   try {
     const centralDb = getCentralDb();
     const existingSuperAdmin = centralDb.prepare('SELECT email FROM super_admins LIMIT 1').get();
     const force = req.query.force === 'true' || req.body?.force === true;
+    const checkOnly = req.query.check === 'true' || req.query.status === 'true';
 
-    if (existingSuperAdmin && !force) {
+    const academiesCount = centralDb.prepare('SELECT COUNT(*) as c FROM academies').get()?.c || 0;
+    const plansCount = centralDb.prepare('SELECT COUNT(*) as c FROM subscription_plans').get()?.c || 0;
+    let rolesCount = 0;
+    let permsCount = 0;
+    try {
+      rolesCount = centralDb.prepare('SELECT COUNT(*) as c FROM central_role_templates').get()?.c || 0;
+      permsCount = centralDb.prepare('SELECT COUNT(*) as c FROM central_permissions').get()?.c || 0;
+    } catch (_) {}
+
+    if (checkOnly) {
       return res.json({
         success: true,
-        message: 'Platform database is already active and initialized.',
-        initialized: true,
-        superAdminEmail: existingSuperAdmin.email,
+        initialized: !!existingSuperAdmin,
+        superAdminEmail: existingSuperAdmin?.email || null,
+        plansCount,
+        rolesCount,
+        permissionsCount: permsCount,
+        academiesCount,
         loginUrl: '/',
       });
     }
 
-    // Run clean seeder
-    runSeed();
+    if (existingSuperAdmin && !force) {
+      return res.json({
+        success: true,
+        message: 'Platform database is already active and initialized with Super Admin, standard roles, and permissions.',
+        initialized: true,
+        superAdminEmail: existingSuperAdmin.email,
+        plansCount,
+        rolesCount,
+        permissionsCount: permsCount,
+        academiesCount,
+        loginUrl: '/',
+      });
+    }
+
+    // Run clean seeder (DO NOT create academy or users; only Super Admin, subscription plans, roles & permissions)
+    const seedResult = runSeed({ includeDefaultAcademy: false });
 
     return res.json({
       success: true,
-      message: 'Platform successfully initialized with 1 Super Admin and 1 Academy (Pratik Karate Academy) with Academy Admin role (all permissions).',
+      message: 'Platform successfully initialized with Super Admin (anilvaja.007@gmail.com), central plans, and standard academy roles with assigned permissions.',
       initialized: true,
+      superAdminEmail: 'anilvaja.007@gmail.com',
+      rolesCount: seedResult.rolesCount,
+      permissionsCount: seedResult.permissionsCount,
+      academiesCount: 0,
       loginUrl: '/',
     });
   } catch (err) {
