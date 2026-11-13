@@ -103,3 +103,4 @@ graph TD
 - **Thresholds:**
   - Score >= 85%: `isOperationallyReady = true` (Academy ready to admit students and collect fees)
   - Score = 100%: `isFullyConfigured = true`
+

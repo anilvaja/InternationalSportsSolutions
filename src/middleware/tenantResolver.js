@@ -93,12 +93,7 @@ export function resolveTenant(req, res, next) {
       }
     }
 
-    // 2. User token context (if not already resolved by domain)
-    if (!academyRecord && req.user && req.user.academyId) {
-      academyId = req.user.academyId;
-    }
-
-    // 3. Request headers override (allowed for SuperAdmin or explicitly declared by frontend)
+    // 2. Request headers override (allowed for SuperAdmin, client queries, or cross-tenant inspection)
     if (!academyRecord) {
       const headerAcademyId = req.headers['x-academy-id'] || req.headers['x-tenant-id'];
       const headerAcademySlug = req.headers['x-academy-slug'] || req.headers['x-tenant-slug'];
@@ -108,6 +103,11 @@ export function resolveTenant(req, res, next) {
       } else if (headerAcademySlug) {
         academySlug = headerAcademySlug.toString().trim();
       }
+    }
+
+    // 3. User token context for authenticated tenant staff (when header not explicitly specified)
+    if (!academyRecord && !academyId && !academySlug && req.user && !req.user.isSuperAdmin && req.user.academyId) {
+      academyId = req.user.academyId;
     }
 
     // 4. Query params override
@@ -129,19 +129,23 @@ export function resolveTenant(req, res, next) {
 
     // 6. Host / Super Admin / Cloud Preview fallback (localhost, 127.0.0.1, internationalsportssolutions.test, airoapp.ai preview)
     if (!academyRecord && !academyId && !academySlug) {
-      const host = extractHost(req);
-      const isDefaultHost = (
-        host === 'localhost' ||
-        host === '127.0.0.1' ||
-        host === 'internationalsportssolutions.test' ||
-        isCloudPreviewHost ||
-        (req.user && req.user.isSuperAdmin)
-      );
+      if (req.user && !req.user.isSuperAdmin && req.user.academyId) {
+        academyId = req.user.academyId;
+      } else {
+        const host = extractHost(req);
+        const isDefaultHost = (
+          host === 'localhost' ||
+          host === '127.0.0.1' ||
+          host === 'internationalsportssolutions.test' ||
+          isCloudPreviewHost ||
+          (req.user && req.user.isSuperAdmin)
+        );
 
-      if (isDefaultHost) {
-        const defaultAcademy = centralDb.prepare("SELECT id FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
-        if (defaultAcademy) {
-          academyId = defaultAcademy.id;
+        if (isDefaultHost) {
+          const defaultAcademy = centralDb.prepare("SELECT id FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
+          if (defaultAcademy) {
+            academyId = defaultAcademy.id;
+          }
         }
       }
     }

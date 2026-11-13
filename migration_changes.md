@@ -151,3 +151,4 @@ END;
 2. **Idempotency:** All DDL statements use `CREATE INDEX IF NOT EXISTS` and `CREATE TRIGGER IF NOT EXISTS`. Re-running the migration runner produces no errors.
 3. **Data Preservation:** Zero tables or columns were dropped or altered destructively. All existing records were preserved intact.
 4. **Automated Test Coverage:** Verified via `tests/Unit/database_schema_and_relationship_integrity.test.mjs` (13 tests) and full unit test suite (428 tests).
+

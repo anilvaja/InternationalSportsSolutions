@@ -210,7 +210,6 @@ const SetupWizardController = {
             <label>Subscription Plan *</label>
             <select id="wiz-plan" class="form-select">
               <option value="starter" ${d.plan === 'starter' ? 'selected' : ''}>Starter (1 Branch, 75 Students, 3 Coaches) — ₹999/mo</option>
-              <option value="standard" ${d.plan === 'standard' ? 'selected' : ''}>Standard (3 Branches, 250 Students, 10 Coaches) — ₹2,499/mo</option>
               <option value="professional" ${d.plan === 'professional' ? 'selected' : ''}>Professional (8 Branches, 800 Students, 25 Coaches) — ₹4,999/mo</option>
               <option value="enterprise" ${d.plan === 'enterprise' ? 'selected' : ''}>Enterprise (25 Branches, 3,000 Students, 100 Coaches) — ₹9,999/mo</option>
             </select>

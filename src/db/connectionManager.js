@@ -76,7 +76,7 @@ export function getTenantDbById(academyId) {
     throw new Error(`Academy '${academy.name}' is currently suspended`);
   }
 
-  const dbPath = config.isTest ? getAcademyDbPath(id) : (academy.db_path || getAcademyDbPath(id));
+  const dbPath = (config.isTest || process.env.DATA_DIR) ? getAcademyDbPath(id) : (academy.db_path || getAcademyDbPath(id));
 
   // Ensure directory exists
   const parentDir = path.dirname(dbPath);

@@ -1008,7 +1008,10 @@ const app = {
         this.applyColorTheme(this.colorTheme);
       }
 
-      if (this.tenantAcademy && this.tenantAcademy.id) {
+      if (this.user && !this.user.isSuperAdmin && this.user.academyId) {
+        this.selectedAcademyId = this.user.academyId;
+        localStorage.setItem('selectedAcademyId', this.selectedAcademyId);
+      } else if (this.tenantAcademy && this.tenantAcademy.id) {
         this.selectedAcademyId = this.tenantAcademy.id;
         localStorage.setItem('selectedAcademyId', this.selectedAcademyId);
       } else if (this.accessibleAcademies && this.accessibleAcademies.length > 0) {
@@ -1078,6 +1081,7 @@ const app = {
     this.user = null;
     this.token = null;
     this.selectedAcademyId = null;
+    this.tenantAcademy = null;
     localStorage.removeItem('token');
     localStorage.removeItem('selectedAcademyId');
     fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
@@ -3271,29 +3275,56 @@ const app = {
         return;
       }
 
-      const { score, isFullyConfigured, completedItems = [], missingItems = [] } = res;
-      const badgeClass = score >= 80 ? 'badge-success' : (score >= 50 ? 'badge-warning' : 'badge-danger');
+      const { score, isFullyConfigured, readinessTier, tierLabel, tierDescription, completedItems = [], missingItems = [] } = res;
+      let badgeClass = 'badge-secondary';
+      if (readinessTier === 'operational') badgeClass = 'badge-success';
+      else if (readinessTier === 'setup_completed') badgeClass = 'badge-primary';
+      else if (readinessTier === 'setup_in_progress') badgeClass = 'badge-warning';
+      else badgeClass = 'badge-danger';
 
       const bodyHtml = `
         <div style="padding: 10px 0;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; background: var(--surface-hover); padding: 14px 18px; border-radius: 8px; border: 1px solid var(--border);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; background: var(--surface-hover); padding: 14px 18px; border-radius: 8px; border: 1px solid var(--border);">
             <div>
               <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Setup Health Score</div>
               <div style="font-size: 26px; font-weight: 800; color: var(--text-heading); margin-top: 2px;">
                 ${score}% <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Configured</span>
               </div>
             </div>
-            <span class="badge ${badgeClass}" style="font-size: 13px; padding: 6px 12px;">
-              <i class="fa-solid ${isFullyConfigured ? 'fa-check-circle' : 'fa-triangle-exclamation'}"></i> ${isFullyConfigured ? 'Fully Operational' : (score >= 75 ? 'Ready with Warnings' : 'Setup Incomplete')}
-            </span>
+            <div style="text-align: right;">
+              <span class="badge ${badgeClass}" style="font-size: 12px; padding: 6px 12px; display: inline-block;">
+                <i class="fa-solid ${readinessTier === 'operational' ? 'fa-check-circle' : 'fa-gauge-high'}"></i> ${tierLabel || (isFullyConfigured ? 'Operational Academy' : 'Setup Incomplete')}
+              </span>
+              <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; max-width: 200px;">
+                ${tierDescription || ''}
+              </div>
+            </div>
           </div>
 
           <div style="background: rgba(255,255,255,0.06); border-radius: 6px; height: 10px; overflow: hidden; margin-bottom: 20px; border: 1px solid var(--border);">
-            <div style="width: ${score}%; height: 100%; background: ${score >= 80 ? '#10b981' : (score >= 50 ? '#f59e0b' : '#ef4444')}; transition: width 0.4s ease;"></div>
+            <div style="width: ${score}%; height: 100%; background: ${score >= 90 ? '#10b981' : (score >= 75 ? '#3b82f6' : (score >= 40 ? '#f59e0b' : '#ef4444'))}; transition: width 0.4s ease;"></div>
           </div>
 
           <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 10px;"><i class="fa-solid fa-list-check" style="color: var(--primary);"></i> Configuration Checklist (${completedItems.length} of ${completedItems.length + missingItems.length} Tasks Complete)</h4>
           <div style="display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px;">
+            ${missingItems.map(item => `
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <i class="fa-solid fa-circle-xmark" style="color: #ef4444; font-size: 16px;"></i>
+                  <div>
+                    <div style="font-size: 13px; font-weight: 600; color: #ef4444;">${item.label} ${item.isMandatory ? '<span class="badge badge-danger" style="font-size: 9px; padding: 2px 4px;">MANDATORY</span>' : ''}</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${item.description}</div>
+                  </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="badge badge-danger" style="font-size: 10px;">Missing (${item.weight}%)</span>
+                  <button type="button" class="btn btn-sm btn-outline-primary" style="font-size: 11px; padding: 4px 8px;" onclick="app.closeModal(); app.switchAcademy(${academyId}); app.navigate('${item.navTab || 'overview'}');">
+                    Configure <i class="fa-solid fa-arrow-right"></i>
+                  </button>
+                </div>
+              </div>
+            `).join('')}
+
             ${completedItems.map(item => `
               <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
@@ -3303,20 +3334,12 @@ const app = {
                     <div style="font-size: 11px; color: var(--text-muted);">${item.description}</div>
                   </div>
                 </div>
-                <span class="badge badge-success" style="font-size: 10px;">+${item.weight}%</span>
-              </div>
-            `).join('')}
-
-            ${missingItems.map(item => `
-              <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px;">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                  <i class="fa-solid fa-circle-xmark" style="color: #ef4444; font-size: 16px;"></i>
-                  <div>
-                    <div style="font-size: 13px; font-weight: 600; color: #ef4444;">${item.label} (Action Needed)</div>
-                    <div style="font-size: 11px; color: var(--text-muted);">${item.description}</div>
-                  </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="badge badge-success" style="font-size: 10px;">+${item.weight}%</span>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" style="font-size: 11px; padding: 4px 8px;" onclick="app.closeModal(); app.switchAcademy(${academyId}); app.navigate('${item.navTab || 'overview'}');">
+                    View <i class="fa-solid fa-eye"></i>
+                  </button>
                 </div>
-                <span class="badge badge-danger" style="font-size: 10px;">Missing (${item.weight}%)</span>
               </div>
             `).join('')}
           </div>

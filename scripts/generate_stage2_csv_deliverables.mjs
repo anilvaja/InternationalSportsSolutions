@@ -354,3 +354,4 @@ for (const t of testResults) {
 const testCsv = testRows.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
 fs.writeFileSync('stage2_test_results.csv', testCsv, 'utf8');
 console.log(`Generated stage2_test_results.csv (${testRows.length - 1} test scenarios)`);
+

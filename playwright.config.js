@@ -19,10 +19,11 @@ const systemExecutablePath = CHROME_PATHS.find(p => fs.existsSync(p));
  */
 const IS_HEADED = process.argv.includes('--headed') || process.env.HEADED === 'true';
 const SLOW_MO = parseInt(process.env.SLOW_MO || (IS_HEADED ? '400' : '0'), 10);
-const BASE_URL = process.env.BASE_URL || 'http://internationalsportssolutions.com';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3005';
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testMatch: '**/*.spec.{js,mjs}',
   timeout: 60 * 1000,
   expect: {
     timeout: 10 * 1000

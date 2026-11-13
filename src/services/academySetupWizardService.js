@@ -260,7 +260,7 @@ export class AcademySetupWizardService {
     `);
 
     const insCat = db.prepare(`
-      INSERT INTO syllabus_categories (academy_id, sport_id, name, display_order)
+      INSERT OR IGNORE INTO syllabus_categories (academy_id, sport_id, name, display_order)
       VALUES (?, ?, ?, ?)
     `);
 
@@ -279,8 +279,8 @@ export class AcademySetupWizardService {
       }
       sportMap.set(sName.toLowerCase(), sportId);
 
-      // Seed standard categories for this sport
-      const cats = sp.defaultCategories || ['Beginner Fundamentals', 'Intermediate Techniques', 'Advanced Mastery'];
+      // Seed standard categories for this sport (namespaced by sport to ensure unique names per academy)
+      const cats = sp.defaultCategories || [`${sName} Fundamentals`, `${sName} Intermediate`, `${sName} Advanced`];
       for (let cIdx = 0; cIdx < cats.length; cIdx++) {
         insCat.run(academyId, sportId, cats[cIdx], cIdx + 1);
       }
@@ -426,6 +426,9 @@ export class AcademySetupWizardService {
         category: 'Administration',
         label: 'Academy Administrator Account',
         description: 'Designated user account with academy_admin role',
+        configUrl: '/academy/users',
+        navTab: 'users',
+        isMandatory: true,
         weight: 15,
         test: () => {
           const row = db.prepare("SELECT count(*) as c FROM users WHERE role = 'academy_admin' AND status = 'active'").get();
@@ -437,6 +440,9 @@ export class AcademySetupWizardService {
         category: 'Infrastructure',
         label: 'Operational Training Branches',
         description: 'At least one physical training facility or dojo configured',
+        configUrl: '/academy/branches',
+        navTab: 'branches',
+        isMandatory: true,
         weight: 15,
         test: () => {
           const row = db.prepare("SELECT count(*) as c FROM branches WHERE is_active = 1").get();
@@ -448,6 +454,9 @@ export class AcademySetupWizardService {
         category: 'Curriculum',
         label: 'Sports & Disciplines',
         description: 'Sports disciplines with syllabus categories attached',
+        configUrl: '/academy/sports',
+        navTab: 'sports',
+        isMandatory: true,
         weight: 15,
         test: () => {
           const row = db.prepare("SELECT count(*) as c FROM sports WHERE is_active = 1").get();
@@ -459,6 +468,9 @@ export class AcademySetupWizardService {
         category: 'Staffing',
         label: 'Coaches & Instructors',
         description: 'Instructors onboarded with assigned roles and salary structures',
+        configUrl: '/academy/users',
+        navTab: 'users',
+        isMandatory: true,
         weight: 15,
         test: () => {
           const row = db.prepare("SELECT count(*) as c FROM users WHERE role IN ('coach', 'head_coach', 'trainer') AND status = 'active'").get();
@@ -470,6 +482,9 @@ export class AcademySetupWizardService {
         category: 'Operations',
         label: 'Batches & Timetable',
         description: 'Training batches linked to branch, sport, and coach',
+        configUrl: '/academy/batches',
+        navTab: 'batches',
+        isMandatory: true,
         weight: 15,
         test: () => {
           const row = db.prepare("SELECT count(*) as c FROM batches WHERE is_active = 1").get();
@@ -481,6 +496,9 @@ export class AcademySetupWizardService {
         category: 'Attendance Engine',
         label: 'Smart Attendance Policies',
         description: 'Rules for QR scanning, duplicate cooldowns, and grace periods',
+        configUrl: '/academy/smart-attendance',
+        navTab: 'smart-attendance',
+        isMandatory: false,
         weight: 10,
         test: () => {
           const row = db.prepare("SELECT count(*) as c FROM smart_attendance_settings").get();
@@ -492,6 +510,9 @@ export class AcademySetupWizardService {
         category: 'Finance',
         label: 'Salary & Payroll Policy',
         description: 'Configured working days divisor, leave policies, and overtime rules',
+        configUrl: '/academy/payroll',
+        navTab: 'payroll',
+        isMandatory: false,
         weight: 10,
         test: () => {
           const row = db.prepare("SELECT count(*) as c FROM tenant_settings WHERE key = 'payroll_salary_divisor_mode'").get();
@@ -503,6 +524,9 @@ export class AcademySetupWizardService {
         category: 'Billing',
         label: 'Fee Plans & Billing Structure',
         description: 'Tuition fees, installments, and admission fee policies',
+        configUrl: '/academy/fees',
+        navTab: 'fees',
+        isMandatory: false,
         weight: 5,
         test: () => {
           const row = db.prepare("SELECT count(*) as c FROM fee_structures WHERE is_active = 1").get();
@@ -514,6 +538,7 @@ export class AcademySetupWizardService {
     let totalScore = 0;
     const completedItems = [];
     const missingItems = [];
+    let allMandatoryPassed = true;
 
     for (const check of checks) {
       let isPassed = false;
@@ -523,12 +548,19 @@ export class AcademySetupWizardService {
         isPassed = false;
       }
 
+      if (check.isMandatory && !isPassed) {
+        allMandatoryPassed = false;
+      }
+
       const itemResult = {
         id: check.id,
         category: check.category,
         label: check.label,
         description: check.description,
         weight: check.weight,
+        isMandatory: check.isMandatory,
+        configUrl: check.configUrl,
+        navTab: check.navTab,
         isCompleted: isPassed,
       };
 
@@ -540,10 +572,37 @@ export class AcademySetupWizardService {
       }
     }
 
+    // Determine Explicit Readiness Tier
+    // 1. Draft Academy: Score < 40% (bare tenant shell)
+    // 2. Setup in Progress: Score 40-74% (partial configuration)
+    // 3. Setup Completed: Score 75-89% (prerequisites provisioned, advanced tuning pending)
+    // 4. Operational Academy: Score >= 90% AND all mandatory items passed
+    let readinessTier = 'draft';
+    let tierLabel = 'Draft Academy';
+    let tierDescription = 'Initial profile registered; infrastructure setup pending.';
+
+    if (totalScore >= 90 && allMandatoryPassed) {
+      readinessTier = 'operational';
+      tierLabel = 'Operational Academy';
+      tierDescription = 'All core and operational parameters verified. Ready for student admissions, scheduling, and billing.';
+    } else if (totalScore >= 75) {
+      readinessTier = 'setup_completed';
+      tierLabel = 'Setup Completed';
+      tierDescription = 'Core infrastructure and curriculum provisioned. Fine-tuning of billing or attendance policies remaining.';
+    } else if (totalScore >= 40) {
+      readinessTier = 'setup_in_progress';
+      tierLabel = 'Setup in Progress';
+      tierDescription = 'Partial configuration in progress. Training batches or coach assignments required.';
+    }
+
     return {
       score: totalScore,
+      readinessTier,
+      tierLabel,
+      tierDescription,
       isFullyConfigured: totalScore === 100,
-      isOperationallyReady: totalScore >= 75,
+      isOperationallyReady: readinessTier === 'operational' || readinessTier === 'setup_completed',
+      allMandatoryPassed,
       completedItems,
       missingItems,
       completedCount: completedItems.length,

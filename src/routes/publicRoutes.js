@@ -1,10 +1,27 @@
 import express from 'express';
+import path from 'path';
+import { config } from '../config/index.js';
 import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById } from '../db/connectionManager.js';
 import { extractSubdomain, extractHost } from '../middleware/tenantResolver.js';
 import { runSeed } from '../db/seed.js';
 
 export const publicRouter = express.Router();
+
+/**
+ * GET /api/public/system-mode
+ * Reports active database directory and test isolation mode
+ */
+publicRouter.get('/system-mode', (req, res) => {
+  res.json({
+    success: true,
+    isTest: config.isTest,
+    dataDirName: path.basename(config.dataDir),
+    dataDir: config.dataDir,
+    centralDbPath: config.centralDbPath,
+    academiesDir: config.academiesDir
+  });
+});
 
 /**
  * GET /api/public/tenant-info

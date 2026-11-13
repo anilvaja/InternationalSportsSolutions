@@ -113,3 +113,4 @@ BEGIN
   THEN RAISE(ABORT, 'Overlapping employee shift slots are strictly prohibited')
   END;
 END;
+

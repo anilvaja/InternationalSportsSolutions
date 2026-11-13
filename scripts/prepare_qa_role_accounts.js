@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { getCentralDb } from '../src/db/centralDb.js';
-import { getTenantDbById } from '../src/db/connectionManager.js';
+import { getTenantDbById, getAcademyDbPath } from '../src/db/connectionManager.js';
 import { DEFAULT_ACADEMY_ROLES } from '../src/config/permissions.js';
 
 export function prepareQaRoleAccounts() {
@@ -30,11 +30,12 @@ export function prepareQaRoleAccounts() {
   `).run(saPw);
 
   // Ensure Pratik Karate Academy exists in centralDb
+  const tenant1DbPath = getAcademyDbPath(1);
   centralDb.prepare(`
     INSERT INTO academies (id, name, slug, contact_email, status, plan, max_branches, max_students, max_coaches, db_path)
-    VALUES (1, 'Pratik Karate Academy', 'pratik-karate-academy', 'admin@pratikkarate.com', 'active', 'enterprise', 10, 500, 50, 'data/academies/academy_1.db')
-    ON CONFLICT(id) DO UPDATE SET name = 'Pratik Karate Academy', slug = 'pratik-karate-academy', contact_email = 'admin@pratikkarate.com', status = 'active'
-  `).run();
+    VALUES (1, 'Pratik Karate Academy', 'pratik-karate-academy', 'admin@pratikkarate.com', 'active', 'enterprise', 10, 500, 50, ?)
+    ON CONFLICT(id) DO UPDATE SET name = 'Pratik Karate Academy', slug = 'pratik-karate-academy', contact_email = 'admin@pratikkarate.com', status = 'active', db_path = excluded.db_path
+  `).run(tenant1DbPath);
 
   // 2. Staff Roles in Tenant 1 DB
   const staffAccounts = [

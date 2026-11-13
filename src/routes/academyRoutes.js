@@ -7948,6 +7948,12 @@ academyRouter.put('/settings/profile', (req, res) => {
 academyRouter.get('/settings/policy', (req, res) => {
   try {
     const db = req.tenantDb;
+    const userRole = req.user.role;
+    const userPerms = req.user.permissions || [];
+    if (userRole !== 'academy_admin' && !req.user.isSuperAdmin && !userPerms.includes('view_academy_settings') && !userPerms.includes('all')) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to view academy policy settings.' });
+    }
+
     const policy = OvertimeService.getAcademyPolicy(db, req.academy.id);
     res.json({ success: true, policy });
   } catch (err) {
@@ -7961,7 +7967,9 @@ academyRouter.get('/settings/policy', (req, res) => {
 academyRouter.put('/settings/policy', (req, res) => {
   try {
     const db = req.tenantDb;
-    if (req.user.role !== 'academy_admin' && !req.user.isSuperAdmin) {
+    const userRole = req.user.role;
+    const userPerms = req.user.permissions || [];
+    if (userRole !== 'academy_admin' && !req.user.isSuperAdmin && !userPerms.includes('edit_academy_settings') && !userPerms.includes('all')) {
       return res.status(403).json({ success: false, error: 'Only Academy Admins may update policy settings.' });
     }
 
@@ -7979,9 +7987,132 @@ academyRouter.put('/settings/policy', (req, res) => {
       custom_divisor_value,
       paid_leave_policy,
       short_attendance_policy,
+      reset_to_defaults,
     } = req.body;
 
+    const previousPolicy = OvertimeService.getAcademyPolicy(db, req.academy.id);
+
+    // If reset requested
+    if (reset_to_defaults) {
+      db.prepare(`
+        INSERT INTO academy_policy_settings (
+          academy_id, attendance_cutoff_days, overtime_threshold_minutes,
+          statement_visibility_day, expected_payday, overtime_compensation_mode,
+          timezone, allow_future_attendance, default_color_theme,
+          default_salary_divisor, custom_divisor_value, paid_leave_policy, short_attendance_policy, updated_at
+        ) VALUES (?, 2, 30, 25, 1, 'standard_rate', 'Asia/Kolkata', 0, 'blue', 'actual_scheduled_minutes', NULL, 'credit_scheduled_minutes', 'deduct_proportionate_minutes', CURRENT_TIMESTAMP)
+        ON CONFLICT(academy_id) DO UPDATE SET
+          attendance_cutoff_days = 2,
+          overtime_threshold_minutes = 30,
+          statement_visibility_day = 25,
+          expected_payday = 1,
+          overtime_compensation_mode = 'standard_rate',
+          timezone = 'Asia/Kolkata',
+          allow_future_attendance = 0,
+          default_color_theme = 'blue',
+          default_salary_divisor = 'actual_scheduled_minutes',
+          custom_divisor_value = NULL,
+          paid_leave_policy = 'credit_scheduled_minutes',
+          short_attendance_policy = 'deduct_proportionate_minutes',
+          updated_at = CURRENT_TIMESTAMP
+      `).run(req.academy.id);
+
+      const resetPolicy = OvertimeService.getAcademyPolicy(db, req.academy.id);
+
+      try {
+        db.prepare(`
+          INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, entity_id, details, ip_address, created_at)
+          VALUES (?, ?, ?, 'RESET_POLICY_SETTINGS', 'academy_policy_settings', ?, ?, ?, CURRENT_TIMESTAMP)
+        `).run(
+          req.user.id || req.user.userId || 1,
+          req.user.name || 'Administrator',
+          req.user.role || 'academy_admin',
+          req.academy.id,
+          JSON.stringify({ previous: previousPolicy, action: 'RESET_TO_DEFAULTS' }),
+          req.ip || '::1'
+        );
+      } catch (_) {}
+
+      return res.json({ success: true, message: 'Policy settings reset to system recommended defaults', policy: resetPolicy });
+    }
+
+    // Input Validation
+    if (attendance_cutoff_days !== undefined && attendance_cutoff_days !== null) {
+      const days = Number(attendance_cutoff_days);
+      if (isNaN(days) || !Number.isInteger(days) || days < 0 || days > 14) {
+        return res.status(400).json({ success: false, error: 'attendance_cutoff_days must be an integer between 0 and 14 days.' });
+      }
+    }
+
+    if (overtime_threshold_minutes !== undefined && overtime_threshold_minutes !== null) {
+      const ot = Number(overtime_threshold_minutes);
+      if (isNaN(ot) || !Number.isInteger(ot) || ot < 5 || ot > 240) {
+        return res.status(400).json({ success: false, error: 'overtime_threshold_minutes must be an integer between 5 and 240 minutes.' });
+      }
+    }
+
+    if (statement_visibility_day !== undefined && statement_visibility_day !== null) {
+      const vis = Number(statement_visibility_day);
+      if (isNaN(vis) || !Number.isInteger(vis) || vis < 1 || vis > 31) {
+        return res.status(400).json({ success: false, error: 'statement_visibility_day must be an integer between 1 and 31.' });
+      }
+    }
+
+    if (expected_payday !== undefined && expected_payday !== null) {
+      const pay = Number(expected_payday);
+      if (isNaN(pay) || !Number.isInteger(pay) || pay < 1 || pay > 31) {
+        return res.status(400).json({ success: false, error: 'expected_payday must be an integer between 1 and 31.' });
+      }
+    }
+
+    const validOtModes = ['standard_rate', 'overtime_rate', 'none'];
+    if (overtime_compensation_mode && !validOtModes.includes(overtime_compensation_mode)) {
+      return res.status(400).json({ success: false, error: `Invalid overtime_compensation_mode: ${overtime_compensation_mode}. Allowed: ${validOtModes.join(', ')}` });
+    }
+
+    if (timezone) {
+      try {
+        new Intl.DateTimeFormat(undefined, { timeZone: timezone });
+      } catch (_) {
+        return res.status(400).json({ success: false, error: `Invalid timezone identifier: '${timezone}'. Must be a valid IANA timezone (e.g. 'Asia/Kolkata', 'UTC').` });
+      }
+    }
+
     const resolvedDivisor = default_salary_divisor || monthly_salary_divisor || undefined;
+    const validDivisors = [
+      'actual_scheduled_minutes',
+      'actual_scheduled_days',
+      'working_days',
+      'fixed_26',
+      'calendar_days',
+      'custom',
+      'academy_defined'
+    ];
+    if (resolvedDivisor && !validDivisors.includes(resolvedDivisor)) {
+      return res.status(400).json({ success: false, error: `Invalid default_salary_divisor: ${resolvedDivisor}. Allowed: ${validDivisors.join(', ')}` });
+    }
+
+    if ((resolvedDivisor === 'custom' || resolvedDivisor === 'academy_defined')) {
+      const customVal = Number(custom_divisor_value);
+      if (isNaN(customVal) || customVal <= 0 || customVal > 365) {
+        return res.status(400).json({ success: false, error: 'custom_divisor_value must be a positive number between 1 and 365 when custom divisor is selected.' });
+      }
+    }
+
+    const validPaidLeave = ['credit_scheduled_minutes', 'employee_policy'];
+    if (paid_leave_policy && !validPaidLeave.includes(paid_leave_policy)) {
+      return res.status(400).json({ success: false, error: `Invalid paid_leave_policy: ${paid_leave_policy}. Allowed: ${validPaidLeave.join(', ')}` });
+    }
+
+    const validShortAttendance = ['deduct_proportionate_minutes', 'daily_deduction', 'employee_policy'];
+    if (short_attendance_policy && !validShortAttendance.includes(short_attendance_policy)) {
+      return res.status(400).json({ success: false, error: `Invalid short_attendance_policy: ${short_attendance_policy}. Allowed: ${validShortAttendance.join(', ')}` });
+    }
+
+    const validThemes = ['blue', 'emerald', 'amber', 'rose', 'purple', 'cyan', 'orange', 'slate'];
+    if (default_color_theme && !validThemes.includes(default_color_theme)) {
+      return res.status(400).json({ success: false, error: `Invalid default_color_theme: ${default_color_theme}. Allowed: ${validThemes.join(', ')}` });
+    }
 
     db.prepare(`
       INSERT INTO academy_policy_settings (
@@ -8021,6 +8152,22 @@ academyRouter.put('/settings/policy', (req, res) => {
     );
 
     const updated = OvertimeService.getAcademyPolicy(db, req.academy.id);
+
+    // Audit Log
+    try {
+      db.prepare(`
+        INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, entity_id, details, ip_address, created_at)
+        VALUES (?, ?, ?, 'UPDATE_POLICY_SETTINGS', 'academy_policy_settings', ?, ?, ?, CURRENT_TIMESTAMP)
+      `).run(
+        req.user.id || req.user.userId || 1,
+        req.user.name || 'Administrator',
+        req.user.role || 'academy_admin',
+        req.academy.id,
+        JSON.stringify({ previous: previousPolicy, updated }),
+        req.ip || '::1'
+      );
+    } catch (_) {}
+
     res.json({ success: true, message: 'Academy policy settings updated successfully', policy: updated });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
