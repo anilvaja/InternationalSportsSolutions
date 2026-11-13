@@ -138,9 +138,9 @@ test('Academy Setup Wizard — 10-Step Guided Onboarding & Setup Completeness En
     assert.equal(salaryProfile.base_rate, 32000);
 
     // 5. Smart Attendance settings persisted
-    const attSettings = tenantDb.prepare('SELECT duplicate_cooldown_mins, enabled_modes FROM smart_attendance_settings LIMIT 1').get();
+    const attSettings = tenantDb.prepare('SELECT duplicate_cooldown_mins, default_mode FROM smart_attendance_settings LIMIT 1').get();
     assert.equal(attSettings.duplicate_cooldown_mins, 20);
-    assert.ok(attSettings.enabled_modes.includes('qr'));
+    assert.equal(attSettings.default_mode, 'qr');
 
     // 6. Setup Completeness Score
     const audit = AcademySetupWizardService.getAcademySetupCompleteness(tenantDb, createdAcademyId);
@@ -171,3 +171,4 @@ test('Academy Setup Wizard — 10-Step Guided Onboarding & Setup Completeness En
     centralDb.prepare('DELETE FROM academies WHERE id = ?').run(incId);
   });
 });
+

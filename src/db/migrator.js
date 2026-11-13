@@ -47,9 +47,9 @@ export function runMigrations(db, type) {
             if (obj && obj.type === 'view') {
               db.exec('DROP VIEW IF EXISTS student_batches;');
             }
-          } catch (_) {}
+          } catch (_) { }
         }
-        
+
         try {
           db.exec(sql);
         } catch (err) {

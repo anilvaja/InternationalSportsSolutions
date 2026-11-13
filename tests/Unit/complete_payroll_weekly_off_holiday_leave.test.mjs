@@ -384,7 +384,7 @@ test('Complete Employee Payroll, Weekly Off, Holiday & Leave Management (All 20 
     const period = PayrollService.getOrCreatePeriod(db, 1, testMonth);
 
     const daysToWork = ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06',
-                        '2026-03-09', '2026-03-10', '2026-03-11', '2026-03-12', '2026-03-13'];
+      '2026-03-09', '2026-03-10', '2026-03-11', '2026-03-12', '2026-03-13'];
     for (const date of daysToWork) {
       db.prepare(`
         INSERT INTO staff_time_punches (

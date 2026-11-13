@@ -255,8 +255,10 @@ export class AcademySetupWizardService {
       INSERT INTO sports (name, description, is_active)
       VALUES (?, ?, 1)
     `);
+    const updSport = db.prepare(`
+      UPDATE sports SET description = ?, is_active = 1 WHERE id = ?
+    `);
 
-    const selCat = db.prepare('SELECT id FROM syllabus_categories WHERE academy_id = ? AND sport_id = ? AND LOWER(name) = LOWER(?)');
     const insCat = db.prepare(`
       INSERT INTO syllabus_categories (academy_id, sport_id, name, display_order)
       VALUES (?, ?, ?, ?)
@@ -267,10 +269,10 @@ export class AcademySetupWizardService {
       const desc = sp.description || `${sName} Training Program`;
       
       let sportId;
-      const existingSport = selSport.get(sName);
-      if (existingSport) {
-        sportId = existingSport.id;
-        db.prepare('UPDATE sports SET description = ?, is_active = 1 WHERE id = ?').run(desc, sportId);
+      const existing = selSport.get(sName);
+      if (existing) {
+        sportId = existing.id;
+        updSport.run(desc, sportId);
       } else {
         const sRes = insSport.run(sName, desc);
         sportId = Number(sRes.lastInsertRowid);
@@ -280,11 +282,7 @@ export class AcademySetupWizardService {
       // Seed standard categories for this sport
       const cats = sp.defaultCategories || ['Beginner Fundamentals', 'Intermediate Techniques', 'Advanced Mastery'];
       for (let cIdx = 0; cIdx < cats.length; cIdx++) {
-        const catName = cats[cIdx];
-        const existingCat = selCat.get(academyId, sportId, catName);
-        if (!existingCat) {
-          insCat.run(academyId, sportId, catName, cIdx + 1);
-        }
+        insCat.run(academyId, sportId, cats[cIdx], cIdx + 1);
       }
     }
 
@@ -361,21 +359,12 @@ export class AcademySetupWizardService {
     }
 
     // 7. Step 7: Smart Attendance Configuration
-    const attModes = [];
-    if (attendance_settings.is_qr_enabled !== 0) attModes.push('qr');
-    if (attendance_settings.is_face_enabled !== 0) attModes.push('face');
-    if (attendance_settings.is_nfc_enabled !== 0) attModes.push('nfc');
-    if (attendance_settings.is_gps_enabled !== 0) attModes.push('gps');
-    if (attendance_settings.is_coach_manual_enabled !== 0) attModes.push('coach_manual');
-
     SmartAttendanceEngine.saveSettings(db, academyId, null, {
-      enabled_modes: attModes.length > 0 ? attModes : ['qr', 'coach_manual', 'gps', 'nfc'],
-      default_mode: attendance_settings.default_attendance_mode || 'qr',
-      duplicate_cooldown_mins: Number(attendance_settings.duplicate_scan_cooldown_minutes || attendance_settings.duplicate_cooldown_mins || 15),
-      checkin_window_before_mins: Number(attendance_settings.early_checkin_window_minutes || 30),
-      late_threshold_mins: Number(attendance_settings.late_checkin_grace_minutes || 15),
+      default_mode: attendance_settings.default_attendance_mode || attendance_settings.default_mode || 'qr',
+      duplicate_cooldown_mins: attendance_settings.duplicate_scan_cooldown_minutes ?? attendance_settings.duplicate_cooldown_mins ?? 15,
+      checkin_window_before_mins: attendance_settings.early_checkin_window_minutes ?? attendance_settings.checkin_window_before_mins ?? 30,
+      late_threshold_mins: attendance_settings.late_checkin_grace_minutes ?? attendance_settings.late_threshold_mins ?? 15,
       face_liveness_required: 1,
-      face_confidence_threshold: 0.85,
     });
 
     // 8. Step 8: Salary Configuration

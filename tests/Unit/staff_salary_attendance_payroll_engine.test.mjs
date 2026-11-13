@@ -10,6 +10,7 @@ import { UserService } from '../../src/services/userService.js';
 test('Staff Salary Management & Attendance-Based Payroll Engine (38 Mandatory Calculation Tests)', async (t) => {
   const db = getTenantDbById(1);
   const centralDb = getCentralDb();
+  centralDb.prepare('UPDATE academies SET max_coaches = 9999 WHERE id = 1').run();
   LeaveService.ensureDefaultPolicies(db, 1);
 
   // Dedicated counter for unique test users

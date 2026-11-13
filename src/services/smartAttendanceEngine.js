@@ -591,7 +591,7 @@ export class SmartAttendanceEngine {
       // Auto-assign / progress active technique if syllabus is enabled
       try {
         SyllabusService.autoAssignDefaultTechniqueIfNone(db, targetAcademyId, resolvedStudent.id, operator_user_id || 1);
-      } catch (_) {}
+      } catch (_) { }
 
       // Sync batch_sessions table
       const session = db.prepare('SELECT id FROM batch_sessions WHERE batch_id = ? AND scheduled_date = ?').get(resolvedBatch.id, todayDate);
