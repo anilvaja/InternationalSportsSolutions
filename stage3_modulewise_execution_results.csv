@@ -1,0 +1,12 @@
+Module_ID,Module_Name,Key,Test_File,Duration_Sec,Status,Data_Environment,Screenshots_Dir
+"1","Module 01: Setup Wizard & Academy Onboarding","setup","tests/e2e/01-setup-and-onboarding.spec.mjs","14.5","PASS","data_test","tests/e2e/screenshots"
+"2","Module 02: Universal Auth, 8 Roles RBAC & Security","auth","tests/e2e/02-auth-and-rbac.spec.mjs","23.1","PASS","data_test","tests/e2e/screenshots"
+"3","Module 03: Central Platform Admin & Tenants","central","tests/e2e/03-central-platform.spec.mjs","18.8","PASS","data_test","tests/e2e/screenshots"
+"4","Module 04: Academy Core Ops (Branches, Sports, Batches)","academy","tests/e2e/04-academy-operations.spec.mjs","17.3","PASS","data_test","tests/e2e/screenshots"
+"5","Module 05: Student Lifecycle, Admissions & Syllabus","students","tests/e2e/05-students-and-admissions.spec.mjs","19.1","PASS","data_test","tests/e2e/screenshots"
+"6","Module 06: Smart Attendance Engine (QR, Face, Kiosk)","attendance","tests/e2e/06-smart-attendance.spec.mjs","19.5","PASS","data_test","tests/e2e/screenshots"
+"7","Module 07: Staff, Multi-Shifts & Overlap Guard","staff","tests/e2e/07-staff-and-shifts.spec.mjs","14.4","PASS","data_test","tests/e2e/screenshots"
+"8","Module 08: Salary, Attendance & Payroll Engine","payroll","tests/e2e/08-salary-and-payroll.spec.mjs","18.2","PASS","data_test","tests/e2e/screenshots"
+"9","Module 09: Fee Management, Invoicing & Quick Pay","fees","tests/e2e/09-fees-and-invoicing.spec.mjs","13.7","PASS","data_test","tests/e2e/screenshots"
+"10","Module 10: Inventory, Equipment & Events","events","tests/e2e/10-inventory-and-events.spec.mjs","11.2","PASS","data_test","tests/e2e/screenshots"
+"11","Module 11: Student Self-Service Portal","student-portal","tests/e2e/11-student-portal.spec.mjs","17.0","PASS","data_test","tests/e2e/screenshots"

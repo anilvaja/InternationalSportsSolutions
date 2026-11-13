@@ -54,7 +54,7 @@ test.describe('Module 04: Academy Core Operations (Branches, Sports, Batches)', 
     // Verify sports table
     const sportsTable = page.locator('#sports-table, table').first();
     await expect(sportsTable).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Karate').first()).toBeVisible();
+    await expect(sportsTable.locator('td:has-text("Karate"), span:has-text("Karate")').first()).toBeVisible({ timeout: 10000 });
 
     await captureScreenshot(page, 'mod04_sports_list.png');
   });

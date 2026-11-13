@@ -1,0 +1,5 @@
+Bug_ID,Module,Severity,Role,Defect_Description,Root_Cause,Remediation_Applied,Verification_Status
+"BUG-01","Smart Attendance","High","student","Student QR token exposed without scope validation","Missing role filter on attendance scan","Added strict session and role validation in smartAttendanceEngine.js","VERIFIED_FIXED"
+"BUG-02","Staff & Shifts","Medium","coach","Shift overlap validation skipped when is_working_day undefined","Undefined value treated as falsy skip in scheduleService.js","Patched validateShifts to strictly treat omission as active shift","VERIFIED_FIXED"
+"BUG-03","Central Platform","High","academy_admin","Cross-tenant header injection attempt","X-Academy-Id was unchecked against JWT academyId","Added tenant cross-check returning HTTP 403 in tenantResolver.js","VERIFIED_FIXED"
+"BUG-04","Public Portal","Low","anonymous","CORS wildcard on public inquiries","Permissive origin allowed","Scoped CORS origin strictly to authorized domains","VERIFIED_FIXED"

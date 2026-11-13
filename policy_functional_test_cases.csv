@@ -32,3 +32,4 @@
 "TC-POL-031","Branding & Regional","timezone","Invalid/Fake_Zone","Rejected with HTTP 400 validation error (Invalid IANA timezone format)","HTTP 400 'Invalid IANA timezone identifier'","Backend Route Validation (academyRoutes.js)","PASS"
 "TC-POL-032","Branding & Regional","default_color_theme","emerald","Sets primary UI color theme for all academy staff and portals","Saved as emerald; UI dynamically swaps brand hex codes","Frontend CSS variables + app.js","PASS"
 "TC-POL-033","System Reset","reset_to_defaults","true","Reverts all 24 academy policy keys to platform standard baseline values","All settings restored to system defaults; toast displayed","Backend academyRoutes.js + tenant_settings DB","PASS"
+

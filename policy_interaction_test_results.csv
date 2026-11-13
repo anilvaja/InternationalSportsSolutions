@@ -11,3 +11,4 @@
 "INT-10","cooldown_minutes: 15","smart_attendance_mode: qr_scan","Student scans QR code at 09:00, then attempts duplicate scan at 09:08 (8 mins later)","Second scan blocked with HTTP 429 Cooldown Active (must wait 7 more minutes)","Second scan blocked with message 'Cooldown active. Please wait 7 minutes.'","PASS"
 "INT-11","default_color_theme: emerald","user_personal_theme: null","Academy sets default theme to emerald; staff user has not set personal preference","Staff portal immediately loads emerald theme tokens (--primary: #059669)","CSS variables updated to emerald; verified in computed styles","PASS"
 "INT-12","default_color_theme: emerald","user_personal_theme: purple","Academy sets default theme to emerald; staff user sets personal preference to purple","Staff user interface retains purple theme (--primary: #7c3aed); other staff without override see emerald","User personal theme overrides academy default for that specific session","PASS"
+

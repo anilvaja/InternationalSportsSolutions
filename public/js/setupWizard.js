@@ -158,7 +158,7 @@ const SetupWizardController = {
         </div>
         <div style="display: flex; gap: 8px;">
           ${step > 1 ? `
-            <button type="button" class="btn btn-secondary" onclick="SetupWizardController.prevStep()">
+            <button type="button" id="wiz-btn-prev" class="btn btn-secondary" onclick="SetupWizardController.prevStep()">
               <i class="fa-solid fa-arrow-left"></i> Previous
             </button>
           ` : `
@@ -167,7 +167,7 @@ const SetupWizardController = {
             </button>
           `}
           ${step < 10 ? `
-            <button type="button" class="btn btn-primary" onclick="SetupWizardController.nextStep()">
+            <button type="button" id="wiz-btn-next" class="btn btn-primary" onclick="SetupWizardController.nextStep()">
               Next <i class="fa-solid fa-arrow-right"></i>
             </button>
           ` : `
@@ -849,4 +849,10 @@ const SetupWizardController = {
 };
 
 window.SetupWizardController = SetupWizardController;
+if (window.app) {
+  window.app.openAcademySetupWizard = function(draft) {
+    return window.SetupWizardController.open(draft);
+  };
+}
+
 

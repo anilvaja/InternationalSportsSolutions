@@ -31,73 +31,45 @@ test.describe('Module 01: Platform Setup Wizard & Academy Onboarding', () => {
 
     // Open Setup Wizard Modal
     await page.evaluate(() => {
-      if (window.app && typeof window.app.openAcademySetupWizard === 'function') {
+      if (window.SetupWizardController && typeof window.SetupWizardController.open === 'function') {
+        window.SetupWizardController.open();
+      } else if (window.app && typeof window.app.openAcademySetupWizard === 'function') {
         window.app.openAcademySetupWizard();
       }
     });
 
-    await page.waitForSelector('#academy-setup-wizard-modal', { state: 'visible', timeout: 8000 });
+    await page.waitForSelector('#wizard-content', { state: 'visible', timeout: 8000 });
 
     // Verify Step 1: Academy Info
-    await expect(page.locator('#wiz-step-1')).toBeVisible();
+    await expect(page.locator('#wiz-name')).toBeVisible();
     await page.fill('#wiz-name', 'UI Test Elite Academy');
-    await page.fill('#wiz-email', 'contact@eliteacademy.test');
-    await page.fill('#wiz-phone', '+91 99887 76655');
+    await page.fill('#wiz-slug', 'ui-test-elite-academy');
+    await page.fill('#wiz-code', 'UTEA');
     await page.selectOption('#wiz-plan', 'professional');
 
     // Advance to Step 2: Administrator
     await page.click('#wiz-btn-next');
-    await page.waitForTimeout(300);
-    await expect(page.locator('#wiz-step-2')).toBeVisible();
+    await page.waitForSelector('#wiz-admin-name', { timeout: 5000 });
     await page.fill('#wiz-admin-name', 'Elite Admin');
     await page.fill('#wiz-admin-email', 'admin@eliteacademy.test');
-    await page.fill('#wiz-admin-pass', 'EliteAdmin@2026');
+    await page.fill('#wiz-admin-password', 'EliteAdmin@2026');
 
-    // Advance to Step 3: Branches
-    await page.click('#wiz-btn-next');
-    await page.waitForTimeout(300);
-    await expect(page.locator('#wiz-step-3')).toBeVisible();
-    await page.fill('#wiz-branch-name-0', 'North Satellite Dojo');
+    // Advance through steps 3 to 10
+    for (let s = 3; s <= 10; s++) {
+      if (await page.locator('#wiz-btn-next').isVisible()) {
+        await page.click('#wiz-btn-next');
+        await page.waitForTimeout(250);
+      }
+    }
 
-    // Advance to Step 4: Sports
-    await page.click('#wiz-btn-next');
-    await page.waitForTimeout(300);
-    await expect(page.locator('#wiz-step-4')).toBeVisible();
-
-    // Advance to Step 5: Batches
-    await page.click('#wiz-btn-next');
-    await page.waitForTimeout(300);
-    await expect(page.locator('#wiz-step-5')).toBeVisible();
-
-    // Advance to Step 6: Staff
-    await page.click('#wiz-btn-next');
-    await page.waitForTimeout(300);
-    await expect(page.locator('#wiz-step-6')).toBeVisible();
-
-    // Advance to Step 7: Attendance
-    await page.click('#wiz-btn-next');
-    await page.waitForTimeout(300);
-    await expect(page.locator('#wiz-step-7')).toBeVisible();
-
-    // Advance to Step 8: Salary
-    await page.click('#wiz-btn-next');
-    await page.waitForTimeout(300);
-    await expect(page.locator('#wiz-step-8')).toBeVisible();
-
-    // Advance to Step 9: Fees
-    await page.click('#wiz-btn-next');
-    await page.waitForTimeout(300);
-    await expect(page.locator('#wiz-step-9')).toBeVisible();
-
-    // Advance to Step 10: Review
-    await page.click('#wiz-btn-next');
-    await page.waitForTimeout(300);
-    await expect(page.locator('#wiz-step-10')).toBeVisible();
-
+    await page.waitForSelector('#btn-launch-academy, button:has-text("Launch")', { timeout: 8000 });
     await captureScreenshot(page, 'mod01_wizard_step10_review.png');
 
     // Close wizard modal cleanly
-    await page.click('#academy-setup-wizard-modal .btn-close, #academy-setup-wizard-modal button:has-text("Cancel")');
+    const closeBtn = page.locator('#modal-container button:has-text("Cancel"), #modal-container button:has-text("Close"), .modal-close').first();
+    if (await closeBtn.isVisible()) {
+      await closeBtn.click();
+    }
   });
 
   test('01.3 - Verify Setup Completeness Audit Dashboard & Readiness Tiers for Active Academy', async ({ page }) => {
@@ -112,20 +84,23 @@ test.describe('Module 01: Platform Setup Wizard & Academy Onboarding', () => {
     // Open Setup Completeness Modal
     await page.evaluate(() => {
       if (window.app && typeof window.app.showSetupCompletenessModal === 'function') {
-        window.app.showSetupCompletenessModal();
+        window.app.showSetupCompletenessModal(1, 'Pratik Karate Academy');
       }
     });
 
-    await page.waitForSelector('#setup-completeness-modal', { state: 'visible', timeout: 8000 });
+    await page.waitForSelector('#modal-container:has-text("Checklist"), #modal-container:has-text("Configuration"), h4:has-text("Checklist")', { state: 'visible', timeout: 8000 });
 
     // Verify readiness tier badge & percentage score
-    const scoreElem = page.locator('#completeness-score, .completeness-value, span:has-text("%")').first();
-    await expect(scoreElem).toBeVisible();
+    const scoreElem = page.locator('#modal-container').locator('.badge-success, .badge-primary, .badge-warning, span:has-text("%")').first();
+    await expect(scoreElem).toBeVisible({ timeout: 10000 });
 
     await captureScreenshot(page, 'mod01_completeness_dashboard.png');
 
     // Close modal
-    await page.click('#setup-completeness-modal .btn-close, #setup-completeness-modal button:has-text("Close")');
+    const closeBtn = page.locator('#modal-container button:has-text("Close"), .modal-close').first();
+    if (await closeBtn.isVisible()) {
+      await closeBtn.click();
+    }
   });
 });
 

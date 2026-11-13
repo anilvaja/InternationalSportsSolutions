@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'child_process';
 import http from 'http';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -163,6 +164,18 @@ for (const mod of targets) {
   const status = exitCode === 0 ? 'PASS' : 'FAIL';
   results.push({ ...mod, status, durationSec });
   console.log(`🏁 ${mod.name} -> [${status}] (${durationSec}s)\n`);
+}
+
+// Write stage3_modulewise_execution_results.csv
+try {
+  const csvRows = ['Module_ID,Module_Name,Key,Test_File,Duration_Sec,Status,Data_Environment,Screenshots_Dir'];
+  results.forEach(r => {
+    csvRows.push(`"${r.id}","${r.name}","${r.key}","${r.file}","${r.durationSec}","${r.status}","data_test","tests/e2e/screenshots"`);
+  });
+  fs.writeFileSync(path.join(ROOT_DIR, 'stage3_modulewise_execution_results.csv'), csvRows.join('\n'), 'utf8');
+  console.log('📄 Exported execution results to stage3_modulewise_execution_results.csv');
+} catch (e) {
+  console.error('Failed to write CSV:', e.message);
 }
 
 // 4. Print Summary Report

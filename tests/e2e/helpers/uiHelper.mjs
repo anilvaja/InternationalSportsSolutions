@@ -66,8 +66,12 @@ export async function logout(page) {
  */
 export async function navigateToTab(page, tabId) {
   await page.evaluate((t) => {
-    if (window.app && typeof window.app.navigateToTab === 'function') {
-      window.app.navigateToTab(t);
+    if (window.app) {
+      if (typeof window.app.navigate === 'function') {
+        window.app.navigate(t);
+      } else if (typeof window.app.navigateToTab === 'function') {
+        window.app.navigateToTab(t);
+      }
     }
   }, tabId);
   await page.waitForTimeout(600);

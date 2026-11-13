@@ -33,6 +33,8 @@ describe('Attendance Scheduling, Overtime Approval, and Attendance-Based Staff P
     // Reset payroll tables so section 4 tests live calculation before section 5 finalizes
     academy1Db.prepare("DELETE FROM staff_salary_statements").run();
     academy1Db.prepare("DELETE FROM staff_payroll_periods").run();
+    academy1Db.prepare("DELETE FROM employee_schedule_shifts WHERE user_id = 1").run();
+    academy1Db.prepare("DELETE FROM employee_work_schedules WHERE user_id = 1").run();
     academy2Db.prepare("DELETE FROM staff_salary_statements").run();
     academy2Db.prepare("DELETE FROM staff_payroll_periods").run();
 

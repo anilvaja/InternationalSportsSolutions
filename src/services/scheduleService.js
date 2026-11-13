@@ -24,7 +24,7 @@ export class ScheduleService {
   static validateShifts(shifts) {
     const shiftsByDay = {};
     for (const s of shifts) {
-      if (!s.is_working_day) continue;
+      if (s.is_working_day === false || s.is_working_day === 0) continue;
       const day = s.day_of_week;
       if (!shiftsByDay[day]) shiftsByDay[day] = [];
       
@@ -742,7 +742,8 @@ export class ScheduleService {
       const dailyHoursMap = {};
 
       for (const s of shiftsData) {
-        if (s.is_working_day) {
+        const isWorking = s.is_working_day !== false && s.is_working_day !== 0;
+        if (isWorking) {
           const grossMinutes = this.timeToMinutes(s.end_time) - this.timeToMinutes(s.start_time);
           const breakDeduct = s.is_break_paid ? 0 : (s.break_duration_minutes || 0);
           const netHours = Math.max(0, (grossMinutes - breakDeduct) / 60);
@@ -803,6 +804,7 @@ export class ScheduleService {
       `);
 
       for (const s of shiftsData) {
+        const isWorking = s.is_working_day !== false && s.is_working_day !== 0;
         let grossMinutes = this.timeToMinutes(s.end_time) - this.timeToMinutes(s.start_time);
         if (grossMinutes < 0) grossMinutes += 1440;
         const breakDeduct = s.is_break_paid ? 0 : (s.break_duration_minutes || 0);
@@ -815,10 +817,10 @@ export class ScheduleService {
           s.shift_name || `Shift on Day ${s.day_of_week}`,
           s.start_time,
           s.end_time,
-          s.is_working_day ? netHours : 0,
+          isWorking ? netHours : 0,
           s.break_duration_minutes || 0,
           s.is_break_paid ? 1 : 0,
-          s.is_working_day ? 1 : 0,
+          isWorking ? 1 : 0,
           s.branch_id || scheduleData.branch_id || null,
           s.shift_type || 'regular',
           s.travel_buffer_minutes || 0

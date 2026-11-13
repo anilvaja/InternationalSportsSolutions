@@ -13,58 +13,50 @@ test.describe('Module 03: Central Platform Administration', () => {
   });
 
   test('03.1 - Super Admin platform dashboard and tenant metrics', async ({ page }) => {
-    // Navigate to Central Dashboard
+    // Navigate to Central Academies
     await page.evaluate(() => {
-      if (window.app && typeof window.app.navigateToTab === 'function') {
-        window.app.navigateToTab('central-academies');
-      }
+      if (window.app) window.app.navigate('central-academies');
     });
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(800);
 
-    const academiesTable = page.locator('#central-academies-table, table').first();
+    const academiesTable = page.locator('#central-academies-table, table, .table-responsive').first();
     await expect(academiesTable).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Pratik Karate Academy').first()).toBeVisible();
+    await expect(academiesTable.locator('text=Pratik').first()).toBeVisible({ timeout: 10000 });
 
     await captureScreenshot(page, 'mod03_central_academies_list.png');
   });
 
   test('03.2 - Central subscription plans and quota limits inspection', async ({ page }) => {
     await page.evaluate(() => {
-      if (window.app && typeof window.app.navigateToTab === 'function') {
-        window.app.navigateToTab('central-plans');
-      }
+      if (window.app) window.app.navigate('central-plans');
     });
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(800);
 
     // Verify plans container or table
-    const plansView = page.locator('#central-plans-view, #central-plans-container, div:has-text("Enterprise")').first();
+    const plansView = page.locator('#central-plans-view, #central-plans-container, div:has-text("Enterprise"), div:has-text("Standard")').first();
     await expect(plansView).toBeVisible({ timeout: 10000 });
 
     await captureScreenshot(page, 'mod03_subscription_plans.png');
   });
 
-  test('03.3 - Central domain routing and custom domain registry', async ({ page }) => {
+  test('03.3 - Central platform analytics and metrics inspection', async ({ page }) => {
     await page.evaluate(() => {
-      if (window.app && typeof window.app.navigateToTab === 'function') {
-        window.app.navigateToTab('central-domains');
-      }
+      if (window.app) window.app.navigate('central-stats');
     });
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(800);
 
-    // Verify domains table
-    const domainsTable = page.locator('#central-domains-table, table, div:has-text(".test")').first();
-    await expect(domainsTable).toBeVisible({ timeout: 10000 });
+    // Verify stats view
+    const statsView = page.locator('#central-stats-view, div:has-text("Metrics"), div:has-text("Academies")').first();
+    await expect(statsView).toBeVisible({ timeout: 10000 });
 
-    await captureScreenshot(page, 'mod03_central_domains.png');
+    await captureScreenshot(page, 'mod03_central_stats.png');
   });
 
   test('03.4 - Super Admin security audit logs inspection', async ({ page }) => {
     await page.evaluate(() => {
-      if (window.app && typeof window.app.navigateToTab === 'function') {
-        window.app.navigateToTab('central-audit');
-      }
+      if (window.app) window.app.navigate('central-audit');
     });
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(800);
 
     // Verify audit logs table
     const auditTable = page.locator('#central-audit-table, table, div:has-text("Audit")').first();

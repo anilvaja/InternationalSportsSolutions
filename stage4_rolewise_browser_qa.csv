@@ -1,0 +1,10 @@
+Role_Key,Role_Display_Name,Test_Type,Target_Endpoint,Expected_Result,Actual_Result,Status,Notes
+"super_admin","Super Admin","Authentication","/api/auth/login","HTTP 200 with JWT","HTTP 200 (JWT Issued)","PASS","User ID: 1"
+"academy_admin","Academy Admin","Authentication","/api/auth/login","HTTP 200 with JWT","HTTP 200 (JWT Issued)","PASS","User ID: 918"
+"head_coach","Head Coach","Authentication","/api/auth/login","HTTP 200 with JWT","HTTP 200 (JWT Issued)","PASS","User ID: 908"
+"coach","Coach","Authentication","/api/auth/login","HTTP 200 with JWT","HTTP 200 (JWT Issued)","PASS","User ID: 909"
+"finance_manager","Finance Manager","Authentication","/api/auth/login","HTTP 200 with JWT","HTTP 200 (JWT Issued)","PASS","User ID: 921"
+"front_desk","Front Desk","Authentication","/api/auth/login","HTTP 200 with JWT","HTTP 200 (JWT Issued)","PASS","User ID: 1054"
+"receptionist","Receptionist","Authentication","/api/auth/login","HTTP 200 with JWT","HTTP 200 (JWT Issued)","PASS","User ID: 1048"
+"academy_staff","Academy Staff","Authentication","/api/auth/login","HTTP 200 with JWT","HTTP 200 (JWT Issued)","PASS","User ID: 1049"
+"student","Student","Authentication","/api/auth/login","HTTP 200 with JWT","HTTP 200 (JWT Issued)","PASS","User ID: 10"

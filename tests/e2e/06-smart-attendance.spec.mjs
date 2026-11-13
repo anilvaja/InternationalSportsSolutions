@@ -50,23 +50,20 @@ test.describe('Module 06: Smart Attendance Engine (QR, Kiosk, Biometrics, Passes
 
   test('06.3 - Student ID Pass & Printable QR Badge generation', async ({ page }) => {
     await page.evaluate(() => {
-      if (window.app && typeof window.app.navigateToTab === 'function') {
-        window.app.navigateToTab('students');
-      }
+      if (window.app) window.app.navigate('smart-attendance');
     });
     await page.waitForTimeout(600);
 
-    // Look for ID Pass button
-    const idPassBtn = page.locator('button:has-text("ID Pass"), button:has-text("Pass"), button[title*="Pass" i]').first();
-    if (await idPassBtn.isVisible()) {
-      await idPassBtn.click();
-      await page.waitForSelector('#id-pass-modal, .modal.show, div:has-text("Attendance Pass")', { timeout: 6000 });
+    // Switch to Student ID Passes subtab
+    const idPassTab = page.locator('button:has-text("Student ID Passes")').first();
+    await expect(idPassTab).toBeVisible({ timeout: 10000 });
+    await idPassTab.click();
+    await page.waitForTimeout(600);
 
-      await captureScreenshot(page, 'mod06_id_pass_modal.png');
+    const passView = page.locator('#smart-att-subtab-container');
+    await expect(passView).toBeVisible({ timeout: 10000 });
 
-      const closeBtn = page.locator('#id-pass-modal .btn-close, .modal button:has-text("Close")').first();
-      if (await closeBtn.isVisible()) await closeBtn.click();
-    }
+    await captureScreenshot(page, 'mod06_id_pass_view.png');
   });
 
   test('06.4 - Facial Biometrics Consent & Photo Enrollment modal', async ({ page }) => {

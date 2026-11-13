@@ -13,7 +13,7 @@ test.describe('Module 11: Student Self-Service Portal (Attendance, Syllabus, Fee
   });
 
   test('11.1 - Student Dashboard: view enrolled batches and active disciplines', async ({ page }) => {
-    const studentContainer = page.locator('#student-portal-container, div:has-text("Student Portal"), h2:has-text("Welcome")').first();
+    const studentContainer = page.locator('#app-view #page-content, #page-content .stats-grid, #page-content h3:has-text("Attendance Rate")').first();
     await expect(studentContainer).toBeVisible({ timeout: 10000 });
 
     await captureScreenshot(page, 'mod11_student_dashboard.png');

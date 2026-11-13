@@ -9,3 +9,4 @@
 "academy_staff","Tenant Operations","DENY (403)","DENY (403)","DENY (403)","manage_academy_settings","Read/Write blocked; general academy staff cannot access policies","Blocked with 403 Forbidden"
 "student","Student Self-Service Portal","DENY (403)","DENY (403)","DENY (403)","None","Read/Write blocked; students strictly confined to student self-service routes","Blocked with 403 Forbidden"
 "unauthenticated","Public","DENY (401)","DENY (401)","DENY (401)","None","Authentication required","Blocked with 401 Unauthorized"
+

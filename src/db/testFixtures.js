@@ -39,6 +39,7 @@ export function seedUnitTestFixtures(db, academyId = 1) {
   insertSched.run(1, academyId, 1, 'Main Campus General Schedule', '2026-01-01', 1);
   insertSched.run(2, academyId, 2, 'East City Center Schedule', '2026-01-01', 1);
 
+  db.prepare('DELETE FROM branch_schedule_days WHERE branch_schedule_id IN (1, 2)').run();
   const insertDay = db.prepare(`
     INSERT OR IGNORE INTO branch_schedule_days (
       branch_schedule_id, day_of_week, shift_name, start_time, end_time, scheduled_hours, break_duration_minutes, is_break_paid, is_working_day

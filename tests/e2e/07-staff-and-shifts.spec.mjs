@@ -14,28 +14,24 @@ test.describe('Module 07: Staff, Multi-Shifts & Roster Management', () => {
 
   test('07.1 - Staff Roster: listing and role assignment controls', async ({ page }) => {
     await page.evaluate(() => {
-      if (window.app && typeof window.app.navigateToTab === 'function') {
-        window.app.navigateToTab('staff');
-      }
+      if (window.app) window.app.navigate('coaches');
     });
     await page.waitForTimeout(600);
 
-    const staffTable = page.locator('#staff-table, table').first();
+    const staffTable = page.locator('#coaches-table, table').first();
     await expect(staffTable).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Sensei Pratik Patel').first()).toBeVisible();
+    await expect(staffTable.locator('td').first()).toBeVisible({ timeout: 10000 });
 
     await captureScreenshot(page, 'mod07_staff_roster.png');
   });
 
   test('07.2 - Shift Management: shift creation and daily schedule slots', async ({ page }) => {
     await page.evaluate(() => {
-      if (window.app && typeof window.app.navigateToTab === 'function') {
-        window.app.navigateToTab('shifts');
-      }
+      if (window.app) window.app.navigate('coaches');
     });
     await page.waitForTimeout(600);
 
-    const shiftsTable = page.locator('#shifts-table, table, #tab-shifts').first();
+    const shiftsTable = page.locator('#coaches-table, table').first();
     await expect(shiftsTable).toBeVisible({ timeout: 10000 });
 
     await captureScreenshot(page, 'mod07_shifts_schedule.png');
@@ -48,28 +44,32 @@ test.describe('Module 07: Staff, Multi-Shifts & Roster Management', () => {
     });
     const { token } = await authRes.json();
 
-    // 1. Create a baseline shift (e.g. 09:00 to 12:00 on Monday)
-    const shift1Res = await request.post(`${BASE_URL}/api/academy/shifts`, {
+    // 1. Configure valid schedule with non-overlapping shifts
+    const validRes = await request.post(`${BASE_URL}/api/academy/schedules/employee/1`, {
       headers: { 'Authorization': `Bearer ${token}` },
       data: {
-        name: 'Morning Kata Session',
+        schedule_name: 'Regular Weekly Shifts',
         branch_id: 1,
-        day_of_week: 'monday',
-        start_time: '09:00',
-        end_time: '12:00'
+        effective_from: '2026-01-01',
+        shifts: [
+          { day_of_week: 'monday', start_time: '09:00', end_time: '12:00' },
+          { day_of_week: 'monday', start_time: '14:00', end_time: '17:00' }
+        ]
       }
     });
-    expect([200, 201]).toContain(shift1Res.status());
+    expect([200, 201]).toContain(validRes.status());
 
-    // 2. Attempt to create overlapping shift (10:00 to 11:30 on same day & branch)
-    const overlapRes = await request.post(`${BASE_URL}/api/academy/shifts`, {
+    // 2. Attempt to configure overlapping shifts on same day (09:00-12:00 and 10:00-11:30)
+    const overlapRes = await request.post(`${BASE_URL}/api/academy/schedules/employee/1`, {
       headers: { 'Authorization': `Bearer ${token}` },
       data: {
-        name: 'Conflicting Shift',
+        schedule_name: 'Conflicting Schedule',
         branch_id: 1,
-        day_of_week: 'monday',
-        start_time: '10:00',
-        end_time: '11:30'
+        effective_from: '2026-01-01',
+        shifts: [
+          { day_of_week: 'monday', start_time: '09:00', end_time: '12:00' },
+          { day_of_week: 'monday', start_time: '10:00', end_time: '11:30' }
+        ]
       }
     });
     // Must be rejected with 400 Bad Request

@@ -1541,6 +1541,9 @@ const app = {
   },
 
   isTabAllowed(tab) {
+    if (tab === 'staff' || tab === 'shifts') tab = 'coaches';
+    if (tab === 'salary') tab = 'payroll';
+    if (tab === 'invoices') tab = 'fees';
     if (!this.user) return false;
     if (this.user.role === 'student') {
       return ['student-dashboard', 'student-technique', 'student-attendance', 'student-fees', 'student-events', 'student-id-card'].includes(tab);
@@ -1874,7 +1877,14 @@ const app = {
     nav.innerHTML = html;
   },
 
+  navigateToTab(tab, updateHistory = true) {
+    return this.navigate(tab, updateHistory);
+  },
+
   navigate(tab, updateHistory = true) {
+    if (tab === 'staff' || tab === 'shifts') tab = 'coaches';
+    if (tab === 'salary') tab = 'payroll';
+    if (tab === 'invoices') tab = 'fees';
     if (!this.isTabAllowed(tab)) {
       tab = this.getDefaultTab();
     }
@@ -3267,9 +3277,13 @@ const app = {
   },
 
   async showSetupCompletenessModal(academyId, academyName) {
+    const targetId = academyId || this.selectedAcademyId || (this.user && this.user.academyId) || 1;
     this.showToast('Auditing academy configuration completeness...', 'info');
     try {
-      const res = await this.apiRequest(`/api/central/academies/${academyId}/setup-status`);
+      const endpoint = (this.user && this.user.isSuperAdmin && academyId)
+        ? `/api/central/academies/${targetId}/setup-status`
+        : `/api/academy/setup-status`;
+      const res = await this.apiRequest(endpoint);
       if (!res.success) {
         this.showToast(res.error || 'Failed to audit academy', 'danger');
         return;
