@@ -1,4 +1,6 @@
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import multer from 'multer';
 import sharp from 'sharp';
 import jsQR from 'jsqr';
@@ -450,6 +452,22 @@ smartAttendanceRouter.post('/students/:id/face/enroll', requirePerm(['manage_fac
   try {
     const db = req.tenantDb;
     const studentId = Number(req.params.id);
+
+    // Auto-record consent if student has signed photo_video_permission from admission or explicit consent passed
+    if (!FaceBiometricsService.hasActiveConsent(db, req.academy.id, studentId)) {
+      const student = db.prepare('SELECT first_name, last_name, guardian_name, father_name, mother_name, photo_video_permission FROM students WHERE id = ?').get(studentId);
+      if (req.body.consent_given || req.body.parent_consent || req.query.auto_consent || (student && student.photo_video_permission === 1)) {
+        const consentGivenBy = req.body.consent_given_by || (student ? (student.guardian_name || student.father_name || student.mother_name || `${student.first_name}'s Parent / Guardian`) : 'Parent / Guardian');
+        FaceBiometricsService.recordConsent(db, req.academy.id, studentId, {
+          consent_given_by: consentGivenBy,
+          guardian_relationship: req.body.guardian_relationship || 'parent',
+          consent_status: 'granted',
+          notes: 'Parental biometric consent granted during face vector enrollment',
+          ip_address: req.ip,
+        });
+      }
+    }
+
     const outcome = FaceBiometricsService.enrollFaceProfile(db, req.academy.id, studentId, {
       vector: req.body.vector,
       enrolled_by: req.user.userId,
@@ -478,8 +496,39 @@ smartAttendanceRouter.post('/students/:id/face/enroll-photo', requirePerm(['mana
       imageBuffer = Buffer.from(base64Data, 'base64');
     }
 
+    // Fallback: If no image payload provided in the request, try using the student's existing profile photo
+    if (!imageBuffer) {
+      const student = db.prepare('SELECT photo_url FROM students WHERE id = ?').get(studentId);
+      if (student && student.photo_url) {
+        if (student.photo_url.startsWith('data:image')) {
+          const b64 = student.photo_url.split('base64,')[1];
+          imageBuffer = Buffer.from(b64, 'base64');
+        } else if (student.photo_url.startsWith('/storage/') || student.photo_url.startsWith('storage/')) {
+          const localPath = path.resolve(student.photo_url.replace(/^\//, ''));
+          if (fs.existsSync(localPath)) {
+            imageBuffer = fs.readFileSync(localPath);
+          }
+        }
+      }
+    }
+
     if (!imageBuffer) {
       return res.status(400).json({ success: false, error: 'Face photo image is required' });
+    }
+
+    // Auto-record consent if student has signed photo_video_permission from admission or explicit consent passed
+    if (!FaceBiometricsService.hasActiveConsent(db, req.academy.id, studentId)) {
+      const student = db.prepare('SELECT first_name, last_name, guardian_name, father_name, mother_name, photo_video_permission FROM students WHERE id = ?').get(studentId);
+      if (req.body.consent_given || req.body.parent_consent || req.query.auto_consent || (student && student.photo_video_permission === 1)) {
+        const consentGivenBy = req.body.consent_given_by || (student ? (student.guardian_name || student.father_name || student.mother_name || `${student.first_name}'s Parent / Guardian`) : 'Parent / Guardian');
+        FaceBiometricsService.recordConsent(db, req.academy.id, studentId, {
+          consent_given_by: consentGivenBy,
+          guardian_relationship: req.body.guardian_relationship || 'parent',
+          consent_status: 'granted',
+          notes: 'Parental biometric consent granted during staff face photo enrollment',
+          ip_address: req.ip,
+        });
+      }
     }
 
     const outcome = await FaceBiometricsService.enrollFaceProfileFromImage(db, req.academy.id, studentId, {

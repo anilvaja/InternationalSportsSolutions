@@ -140,6 +140,19 @@ export class FaceBiometricsService {
   }
 
   /**
+   * Helper to record parental consent with defaults
+   */
+  static recordParentalConsent(db, academyId, studentId, params = {}) {
+    return this.recordConsent(db, academyId, studentId, {
+      consent_given_by: params.guardian_name || params.consent_given_by || 'Parent / Guardian',
+      guardian_relationship: params.relationship || params.guardian_relationship || 'parent',
+      consent_status: params.consent_given === 0 ? 'declined' : 'granted',
+      notes: params.notes || null,
+      ip_address: params.ip_address || null,
+    });
+  }
+
+  /**
    * Checks if student has active biometric consent.
    * 
    * @param {import('better-sqlite3').Database} db 
