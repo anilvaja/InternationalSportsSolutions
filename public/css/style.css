@@ -4521,27 +4521,18 @@ button, .btn, .nav-item, .action-btn {
 
 /* Digital ID Card Badge Preview */
 .id-card-badge {
-  width: 320px;
-  background: linear-gradient(145deg, #1e1b4b, #0f172a);
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #fff;
-  padding: 20px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  width: 440px;
+  max-width: 100%;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1.5px solid #cbd5e1;
+  color: #0f172a;
+  padding: 16px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
   margin: 0 auto;
   position: relative;
   overflow: hidden;
-}
-
-.id-card-badge::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 140px;
-  height: 140px;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, transparent 70%);
-  pointer-events: none;
+  box-sizing: border-box;
 }
 
 @media print {
@@ -4552,17 +4543,31 @@ button, .btn, .nav-item, .action-btn {
     visibility: visible;
   }
   .printable-id-card {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 85.6mm;
-    height: 53.98mm;
-    margin: 0;
-    padding: 10px;
-    box-sizing: border-box;
-    box-shadow: none;
-    border: 1px solid #ccc;
-    background: #fff !important;
-    color: #000 !important;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    width: 85.6mm !important;
+    min-height: 54mm !important;
+    height: auto !important;
+    margin: 20mm auto !important;
+    padding: 3mm 4mm !important;
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+    border: 1.5px solid #0f172a !important;
+    border-radius: 4mm !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .printable-id-card div,
+  .printable-id-card span,
+  .printable-id-card p {
+    color: #0f172a !important;
+  }
+  .printable-id-card .card-banner,
+  .printable-id-card .card-banner * {
+    background: #1e3a8a !important;
+    color: #ffffff !important;
   }
 }

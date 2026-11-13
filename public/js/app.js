@@ -20979,51 +20979,103 @@ const app = {
     `;
   },
 
+  renderStudentIdCardPreviewHtml(data) {
+    const student = data.student || {};
+    const qr = data.qr || {};
+    const academy = data.academy || {};
+
+    return `
+      <div class="id-card-badge printable-id-card" style="width: 440px; max-width: 100%; border-radius: 12px; background: #ffffff; color: #0f172a; border: 1.5px solid #cbd5e1; box-shadow: 0 10px 25px rgba(0,0,0,0.08); padding: 16px; margin: 0 auto; text-align: left; position: relative; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <!-- Header -->
+        <div class="card-banner" style="background: #1e3a8a; margin: -16px -16px 14px -16px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; color: #ffffff;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            ${academy.logo_url ? `<img src="${this.escapeHtml(academy.logo_url)}" style="width: 28px; height: 28px; object-fit: contain; border-radius: 4px; background: #fff; padding: 2px;">` : `<i class="fa-solid fa-medal" style="font-size: 20px; color: #f59e0b;"></i>`}
+            <div>
+              <div class="id-card-header-title" style="font-size: 13.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; line-height: 1.1; color: #ffffff;">
+                ${this.escapeHtml(academy.name || 'Sports Academy')}
+              </div>
+              <div class="id-card-subtitle" style="font-size: 9.5px; opacity: 0.9; font-weight: 500; text-transform: uppercase; margin-top: 2px; color: #e0e7ff;">
+                ${student.branch_name ? this.escapeHtml(student.branch_name) + ' &bull; ' : ''}Official Student Pass
+              </div>
+            </div>
+          </div>
+          <span style="font-size: 9px; font-weight: 700; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.3); color: #ffffff;">
+            CR80 PASS
+          </span>
+        </div>
+
+        <!-- Main Body -->
+        <div style="display: flex; gap: 14px; align-items: center;">
+          <!-- Photo -->
+          <div style="width: 80px; height: 96px; border-radius: 6px; border: 1.5px solid #e2e8f0; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            ${student.photo_url ? `<img src="${this.escapeHtml(student.photo_url)}" style="width: 100%; height: 100%; object-fit: cover;">` : `<span style="font-size: 32px; font-weight: 800; color: #94a3b8;">${this.escapeHtml((student.first_name || 'S')[0])}</span>`}
+          </div>
+
+          <!-- Details -->
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: 15px; font-weight: 800; color: #0f172a; line-height: 1.2;">
+              ${this.escapeHtml(student.full_name)}
+            </div>
+            <div style="font-size: 11px; color: #475569; margin-top: 4px;">
+              Student Code: <strong style="font-family: monospace; font-size: 11.5px; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</strong>
+            </div>
+            <div style="font-size: 11px; color: #475569; margin-top: 3px;">
+              Curriculum: <strong style="color: #0f172a;">${this.escapeHtml(student.active_belt || 'White Belt')}</strong>
+            </div>
+            <div style="font-size: 11px; color: #475569; margin-top: 3px;">
+              Blood Group: <strong style="color: #dc2626;">${this.escapeHtml(student.blood_group || 'N/A')}</strong>
+            </div>
+            ${student.guardian_phone ? `
+              <div style="font-size: 10.5px; color: #475569; margin-top: 3px;">
+                Emergency: <strong style="color: #0f172a;">${this.escapeHtml(student.guardian_phone)}</strong>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- QR -->
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0;">
+            ${SmartAttendanceController.renderQrSvg(qr.token, 84, 3)}
+            <span style="font-size: 8px; font-weight: 700; color: #475569; text-transform: uppercase; margin-top: 4px; letter-spacing: 0.3px;">
+              Scan to Attend
+            </span>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="margin-top: 12px; padding-top: 8px; border-top: 1px dashed #cbd5e1; display: flex; justify-content: space-between; align-items: center; font-size: 9.5px; color: #64748b;">
+          <div>
+            <i class="fa-solid fa-shield-halved" style="color: #10b981;"></i> Security Pass &bull; Ver ${qr.version || 1}
+          </div>
+          <div style="font-style: italic;">
+            ${this.escapeHtml(student.branch_city || academy.city || 'Academy HQ')}
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
   async showStudentIdCardModal(studentId) {
     try {
       const data = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/qr`);
       const student = data.student || {};
-      const qr = data.qr || {};
-      const academy = data.academy || {};
+      this._cachedStudentIdCardData = this._cachedStudentIdCardData || {};
+      this._cachedStudentIdCardData[studentId] = data;
 
       const modalHtml = `
         <div style="text-align: center; padding: 10px;">
-          <!-- Printable Badge Container -->
-          <div class="id-card-badge printable-id-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 8px; margin-bottom: 12px;">
-              <div style="text-align: left;">
-                <div style="font-size: 14px; font-weight: 800; color: #fff; text-transform: uppercase;">${academy.name || 'Sports Academy'}</div>
-                <div style="font-size: 10px; color: #a5b4fc;">Official Student Pass</div>
-              </div>
-              <i class="fa-solid fa-medal" style="font-size: 20px; color: #f59e0b;"></i>
-            </div>
+          ${this.renderStudentIdCardPreviewHtml(data)}
 
-            <div style="display: flex; gap: 14px; align-items: center; text-align: left; margin-bottom: 14px;">
-              <div style="width: 72px; height: 86px; border-radius: 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; color: #fff; flex-shrink: 0;">
-                ${student.photo_url ? `<img src="${student.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : (student.first_name || 'S').charAt(0)}
-              </div>
-              <div>
-                <div style="font-size: 16px; font-weight: 800; color: #fff;">${student.full_name}</div>
-                <div style="font-size: 11px; color: #a5b4fc; margin-top: 2px;">Code: <code>${student.student_code}</code></div>
-                <div style="font-size: 11px; color: #cbd5e1; margin-top: 2px;">Belt: <span class="badge badge-primary" style="font-size: 10px;">${student.active_belt || 'White Belt'}</span></div>
-                <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Blood: <strong>${student.blood_group || 'N/A'}</strong></div>
-              </div>
-            </div>
-
-            <div style="margin: 12px 0;">
-              ${SmartAttendanceController.renderQrSvg(qr.token, 130)}
-            </div>
-
-            <div style="font-size: 10px; color: #94a3b8; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 8px; margin-top: 8px;">
-              Emergency Guardian Contact: ${student.guardian_phone || 'Academy Office'}
-            </div>
-          </div>
-
-          <div style="margin-top: 18px; display: flex; gap: 10px; justify-content: center;">
-            <button class="btn btn-primary btn-sm" onclick="window.print()">
+          <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button class="btn btn-primary" onclick="app.printStudentIdCard(${studentId})">
               <i class="fa-solid fa-print"></i> Print ID Badge
             </button>
-            <button class="btn btn-secondary btn-sm" onclick="app.closeModal()">
+            <button class="btn btn-secondary" onclick="app.downloadStudentIdCardPdf(${studentId})">
+              <i class="fa-solid fa-file-pdf" style="color: #ef4444;"></i> Download PDF
+            </button>
+            <button class="btn btn-secondary" onclick="app.regenerateStudentQrModal(${studentId}, '${this.escapeJsString(student.full_name)}')">
+              <i class="fa-solid fa-rotate"></i> Re-Issue QR
+            </button>
+            <button class="btn btn-secondary" onclick="app.closeModal()">
               Close
             </button>
           </div>
@@ -21033,6 +21085,445 @@ const app = {
       this.showModal('Student Digital ID Pass', modalHtml);
     } catch (err) {
       this.showToast(err.message, 'danger');
+    }
+  },
+
+  async printStudentIdCard(studentId) {
+    try {
+      let data = (this._cachedStudentIdCardData && this._cachedStudentIdCardData[studentId]) || null;
+      if (!data) {
+        data = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/qr`);
+        this._cachedStudentIdCardData = this._cachedStudentIdCardData || {};
+        this._cachedStudentIdCardData[studentId] = data;
+      }
+      const student = data.student || {};
+      const qr = data.qr || {};
+      const academy = data.academy || {};
+
+      const printWindow = window.open('', '_blank', 'width=900,height=850');
+      if (!printWindow) {
+        this.showToast('Popup blocker prevented print window. Please allow popups for printing.', 'warning');
+        return;
+      }
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <title>Student ID Pass - ${this.escapeHtml(student.full_name)} (${this.escapeHtml(student.student_code)})</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 15mm;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              margin: 0;
+              padding: 20px;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              background: #f8fafc;
+              color: #0f172a;
+            }
+            .print-header {
+              text-align: center;
+              margin-bottom: 24px;
+            }
+            .print-header h2 {
+              margin: 0;
+              font-size: 18px;
+              color: #1e3a8a;
+            }
+            .print-header p {
+              margin: 4px 0 0;
+              font-size: 12px;
+              color: #64748b;
+            }
+            .print-actions {
+              margin-top: 12px;
+              display: flex;
+              gap: 8px;
+              justify-content: center;
+            }
+            .print-actions button {
+              padding: 8px 16px;
+              font-weight: 700;
+              border-radius: 6px;
+              cursor: pointer;
+              border: 1px solid #cbd5e1;
+            }
+            .btn-print {
+              background: #1e3a8a;
+              color: #ffffff;
+              border-color: #1e3a8a !important;
+            }
+            .btn-close {
+              background: #e2e8f0;
+              color: #334155;
+            }
+            .print-sheet {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 20px;
+            }
+            .cut-guide-container {
+              border: 1px dashed #94a3b8;
+              border-radius: 5mm;
+              padding: 3mm;
+              background: #ffffff;
+              display: inline-block;
+            }
+            .id-card-cr80 {
+              width: 85.6mm;
+              height: 54mm;
+              border: 1.5px solid #0f172a;
+              border-radius: 4mm;
+              padding: 3mm 4mm;
+              background: #ffffff;
+              position: relative;
+              overflow: hidden;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              box-sizing: border-box;
+            }
+            .card-banner {
+              background: #1e3a8a !important;
+              color: #ffffff !important;
+              margin: -3mm -4mm 2mm -4mm;
+              padding: 1.5mm 3.5mm;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-bottom: 1.5px solid #0f172a;
+            }
+            .card-banner .title {
+              font-size: 9pt;
+              font-weight: 800;
+              text-transform: uppercase;
+              letter-spacing: 0.3px;
+              color: #ffffff !important;
+              line-height: 1.1;
+            }
+            .card-banner .subtitle {
+              font-size: 6pt;
+              color: #e0e7ff !important;
+              font-weight: 500;
+              text-transform: uppercase;
+            }
+            .card-banner .tag {
+              font-size: 6pt;
+              font-weight: 700;
+              background: rgba(255,255,255,0.25);
+              border: 0.5px solid rgba(255,255,255,0.5);
+              padding: 0.5mm 1.5mm;
+              border-radius: 1mm;
+              color: #ffffff !important;
+              text-transform: uppercase;
+            }
+            .card-body {
+              display: flex;
+              gap: 2.5mm;
+              align-items: center;
+              flex: 1;
+              min-height: 0;
+            }
+            .student-photo-box {
+              width: 23mm;
+              height: 29mm;
+              border: 1px solid #cbd5e1;
+              border-radius: 1.5mm;
+              overflow: hidden;
+              background: #f8fafc;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+            }
+            .student-photo-box img {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+              display: block;
+            }
+            .student-info {
+              flex: 1;
+              min-width: 0;
+              line-height: 1.25;
+            }
+            .student-name {
+              font-size: 10pt;
+              font-weight: 800;
+              color: #0f172a;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .student-meta {
+              font-size: 7pt;
+              color: #475569;
+              margin-top: 0.5mm;
+            }
+            .student-meta strong {
+              color: #0f172a;
+            }
+            .qr-container {
+              width: 24mm;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+            }
+            .qr-container img {
+              width: 21mm;
+              height: 21mm;
+              display: block;
+              border: 0.5px solid #e2e8f0;
+              border-radius: 1mm;
+              padding: 0.5mm;
+              background: #ffffff;
+            }
+            .qr-label {
+              font-size: 5.5pt;
+              font-weight: 700;
+              color: #475569;
+              text-transform: uppercase;
+              margin-top: 0.5mm;
+              letter-spacing: 0.2px;
+              text-align: center;
+            }
+            .card-footer {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-top: 0.5px solid #cbd5e1;
+              padding-top: 1mm;
+              margin-top: 1mm;
+              font-size: 6pt;
+              color: #64748b;
+            }
+            .cut-instructions {
+              text-align: center;
+              font-size: 7.5pt;
+              color: #64748b;
+              margin-top: 2mm;
+              font-family: monospace;
+            }
+            @media print {
+              body {
+                background: #ffffff;
+                padding: 0;
+              }
+              .no-print {
+                display: none !important;
+              }
+              .cut-guide-container {
+                border-color: #94a3b8;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-header no-print">
+            <h2>Official Student Identity Pass</h2>
+            <p>CR80 Standard Card Size (85.6mm &times; 54mm) &bull; Optimized for ID Card and Document Printers</p>
+            <div class="print-actions">
+              <button class="btn-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print ID Pass</button>
+              <button class="btn-close" onclick="window.close()">Close Window</button>
+            </div>
+          </div>
+
+          <div class="print-sheet">
+            <!-- FRONT SIDE -->
+            <div>
+              <div class="cut-guide-container">
+                <div class="id-card-cr80">
+                  <div class="card-banner">
+                    <div>
+                      <div class="title">${this.escapeHtml(academy.name || 'Sports Academy')}</div>
+                      <div class="subtitle">${student.branch_name ? this.escapeHtml(student.branch_name) + ' Branch &bull; ' : ''}Student Pass</div>
+                    </div>
+                    <div class="tag">CR80 PASS</div>
+                  </div>
+                  <div class="card-body">
+                    <div class="student-photo-box">
+                      ${student.photo_url ? `<img src="${this.escapeHtml(student.photo_url)}">` : `<span style="font-size: 14pt; font-weight: 800; color: #94a3b8;">${this.escapeHtml((student.first_name || 'S')[0])}</span>`}
+                    </div>
+                    <div class="student-info">
+                      <div class="student-name">${this.escapeHtml(student.full_name)}</div>
+                      <div class="student-meta">ID: <strong style="font-family: monospace; font-size: 7.5pt; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</strong></div>
+                      <div class="student-meta">Curriculum: <strong>${this.escapeHtml(student.active_belt || 'White Belt')}</strong></div>
+                      <div class="student-meta">Blood Group: <strong style="color: #dc2626;">${this.escapeHtml(student.blood_group || 'N/A')}</strong></div>
+                      ${student.guardian_phone ? `<div class="student-meta">Emergency: <strong>${this.escapeHtml(student.guardian_phone)}</strong></div>` : ''}
+                    </div>
+                    <div class="qr-container">
+                      <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qr.token)}" alt="QR">
+                      <div class="qr-label">Scan to Attend</div>
+                    </div>
+                  </div>
+                  <div class="card-footer">
+                    <div>Security Pass &bull; Ver ${qr.version || 1}</div>
+                    <div style="font-style: italic;">International Sports Solutions</div>
+                  </div>
+                </div>
+              </div>
+              <div class="cut-instructions no-print">&uarr; Front Side (Cut along dashed line for standard badge holder) &uarr;</div>
+            </div>
+
+            <!-- BACK SIDE -->
+            <div style="margin-top: 10px;">
+              <div class="cut-guide-container">
+                <div class="id-card-cr80" style="background: #f8fafc; border-color: #64748b;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 1.5mm; margin-bottom: 2mm;">
+                    <div style="font-size: 8pt; font-weight: 800; color: #1e3a8a; text-transform: uppercase;">
+                      ${this.escapeHtml(academy.name || 'Sports Academy')}
+                    </div>
+                    <div style="font-size: 6pt; color: #64748b; font-weight: 700;">TERMS & CONDITIONS</div>
+                  </div>
+                  <div style="font-size: 6pt; color: #475569; line-height: 1.35; flex: 1;">
+                    <div>1. This pass is non-transferable and remains the property of the academy.</div>
+                    <div>2. Student must carry this card for all training sessions, gradings, and fixtures.</div>
+                    <div>3. If lost or damaged, report immediately to academy reception for re-issue.</div>
+                    <div>4. For medical emergencies or attendance queries, contact your branch coach.</div>
+                  </div>
+                  <div style="border-top: 0.5px solid #cbd5e1; padding-top: 1.5mm; margin-top: 1.5mm; display: flex; justify-content: space-between; align-items: center; font-size: 6pt; color: #334155;">
+                    <div><strong>Emergency:</strong> ${this.escapeHtml(student.guardian_phone || student.phone || 'Academy Reception')}</div>
+                    <div style="font-family: monospace; font-size: 6.5pt; font-weight: 700; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="cut-instructions no-print">&uarr; Back Side (Reverse / Terms) &uarr;</div>
+            </div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 400);
+            };
+          <\/script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch (err) {
+      this.showToast('Failed to open print preview: ' + err.message, 'danger');
+    }
+  },
+
+  async downloadStudentIdCardPdf(studentId) {
+    try {
+      this.showToast('Generating high-resolution ID Card PDF...', 'info');
+      let data = (this._cachedStudentIdCardData && this._cachedStudentIdCardData[studentId]) || null;
+      if (!data) {
+        data = await this.apiRequest(`/api/academy/smart-attendance/students/${studentId}/qr`);
+        this._cachedStudentIdCardData = this._cachedStudentIdCardData || {};
+        this._cachedStudentIdCardData[studentId] = data;
+      }
+      const student = data.student || {};
+      const qr = data.qr || {};
+      const academy = data.academy || {};
+
+      const container = document.createElement('div');
+      container.id = 'iss-idcard-pdf-staging';
+      container.style.position = 'fixed';
+      container.style.left = '0';
+      container.style.top = '0';
+      container.style.width = '210mm';
+      container.style.padding = '15mm';
+      container.style.background = '#ffffff';
+      container.style.zIndex = '-9999';
+      container.style.opacity = '0';
+      container.style.pointerEvents = 'none';
+
+      container.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 10mm; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <div style="text-align: center; margin-bottom: 2mm;">
+            <h2 style="margin: 0; font-size: 15pt; color: #1e3a8a;">${this.escapeHtml(academy.name || 'Sports Academy')}</h2>
+            <div style="font-size: 9pt; color: #64748b; margin-top: 1mm;">Official Student Identity & Attendance Pass &bull; CR80 Specification</div>
+          </div>
+
+          <!-- FRONT -->
+          <div style="border: 1px dashed #94a3b8; border-radius: 5mm; padding: 2.5mm; background: #ffffff;">
+            <div style="width: 85.6mm; height: 54mm; border: 1.5px solid #0f172a; border-radius: 4mm; padding: 3mm 4mm; background: #ffffff; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden;">
+              <div style="background: #1e3a8a; color: #ffffff; margin: -3mm -4mm 2mm -4mm; padding: 1.5mm 3.5mm; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-size: 9pt; font-weight: 800; text-transform: uppercase; color: #ffffff;">${this.escapeHtml(academy.name || 'Sports Academy')}</div>
+                  <div style="font-size: 6pt; color: #e0e7ff; text-transform: uppercase;">${student.branch_name ? this.escapeHtml(student.branch_name) + ' Branch &bull; ' : ''}Student Pass</div>
+                </div>
+                <div style="font-size: 6pt; font-weight: 700; background: rgba(255,255,255,0.25); padding: 0.5mm 1.5mm; border-radius: 1mm; color: #ffffff;">CR80 PASS</div>
+              </div>
+              <div style="display: flex; gap: 2.5mm; align-items: center; flex: 1;">
+                <div style="width: 23mm; height: 29mm; border: 1px solid #cbd5e1; border-radius: 1.5mm; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                  ${student.photo_url ? `<img src="${this.escapeHtml(student.photo_url)}" style="width: 100%; height: 100%; object-fit: cover;">` : `<span style="font-size: 14pt; font-weight: 800; color: #94a3b8;">${this.escapeHtml((student.first_name || 'S')[0])}</span>`}
+                </div>
+                <div style="flex: 1; min-width: 0; line-height: 1.25;">
+                  <div style="font-size: 10pt; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtml(student.full_name)}</div>
+                  <div style="font-size: 7pt; color: #475569; margin-top: 0.5mm;">ID: <strong style="font-family: monospace; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</strong></div>
+                  <div style="font-size: 7pt; color: #475569; margin-top: 0.5mm;">Curriculum: <strong>${this.escapeHtml(student.active_belt || 'White Belt')}</strong></div>
+                  <div style="font-size: 7pt; color: #475569; margin-top: 0.5mm;">Blood Group: <strong style="color: #dc2626;">${this.escapeHtml(student.blood_group || 'N/A')}</strong></div>
+                  ${student.guardian_phone ? `<div style="font-size: 7pt; color: #475569; margin-top: 0.5mm;">Emergency: <strong>${this.escapeHtml(student.guardian_phone)}</strong></div>` : ''}
+                </div>
+                <div style="width: 24mm; display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0;">
+                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qr.token)}" style="width: 21mm; height: 21mm; display: block; border: 0.5px solid #e2e8f0; border-radius: 1mm; padding: 0.5mm; background: #ffffff;">
+                  <div style="font-size: 5.5pt; font-weight: 700; color: #475569; text-transform: uppercase; margin-top: 0.5mm; text-align: center;">Scan to Attend</div>
+                </div>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; border-top: 0.5px solid #cbd5e1; padding-top: 1mm; margin-top: 1mm; font-size: 6pt; color: #64748b;">
+                <div>Security Pass &bull; Ver ${qr.version || 1}</div>
+                <div style="font-style: italic;">International Sports Solutions</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BACK -->
+          <div style="border: 1px dashed #94a3b8; border-radius: 5mm; padding: 2.5mm; background: #ffffff;">
+            <div style="width: 85.6mm; height: 54mm; border: 1.5px solid #64748b; border-radius: 4mm; padding: 3mm 4mm; background: #f8fafc; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 1.5mm; margin-bottom: 2mm;">
+                <div style="font-size: 8pt; font-weight: 800; color: #1e3a8a; text-transform: uppercase;">${this.escapeHtml(academy.name || 'Sports Academy')}</div>
+                <div style="font-size: 6pt; color: #64748b; font-weight: 700;">TERMS & CONDITIONS</div>
+              </div>
+              <div style="font-size: 6pt; color: #475569; line-height: 1.35; flex: 1;">
+                <div>1. This pass is non-transferable and remains the property of the academy.</div>
+                <div>2. Student must carry this card for all training sessions, gradings, and fixtures.</div>
+                <div>3. If lost or damaged, report immediately to academy reception for re-issue.</div>
+                <div>4. For medical emergencies or attendance queries, contact your branch coach.</div>
+              </div>
+              <div style="border-top: 0.5px solid #cbd5e1; padding-top: 1.5mm; margin-top: 1.5mm; display: flex; justify-content: space-between; align-items: center; font-size: 6pt; color: #334155;">
+                <div><strong>Emergency:</strong> ${this.escapeHtml(student.guardian_phone || student.phone || 'Academy Reception')}</div>
+                <div style="font-family: monospace; font-size: 6.5pt; font-weight: 700; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(container);
+
+      if (window.html2pdf) {
+        const opt = {
+          margin: 10,
+          filename: `ID-Card-${student.student_code || student.id}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        await window.html2pdf().set(opt).from(container).save();
+        this.showToast('ID Pass PDF downloaded successfully', 'success');
+      } else {
+        this.printStudentIdCard(studentId);
+      }
+
+      if (container.parentNode) container.parentNode.removeChild(container);
+    } catch (err) {
+      this.showToast('Error generating PDF: ' + err.message, 'danger');
     }
   },
 
@@ -21745,8 +22236,8 @@ const app = {
     try {
       const data = await this.apiRequest('/api/student/id-card');
       const student = data.student || {};
-      const qr = data.qr || {};
-      const academy = data.academy || {};
+      this._cachedStudentIdCardData = this._cachedStudentIdCardData || {};
+      if (student.id) this._cachedStudentIdCardData[student.id] = data;
 
       content.innerHTML = `
         <div class="content-card" style="max-width: 600px; margin: 0 auto; text-align: center;">
@@ -21754,39 +22245,14 @@ const app = {
             <h2 class="card-title"><i class="fa-solid fa-id-card"></i> My Official Digital ID Pass</h2>
           </div>
           <div style="padding: 24px;">
-            <div class="id-card-badge printable-id-card">
-              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 8px; margin-bottom: 12px;">
-                <div style="text-align: left;">
-                  <div style="font-size: 14px; font-weight: 800; color: #fff; text-transform: uppercase;">${academy.name || 'Sports Academy'}</div>
-                  <div style="font-size: 10px; color: #a5b4fc;">Official Student Pass</div>
-                </div>
-                <i class="fa-solid fa-medal" style="font-size: 20px; color: #f59e0b;"></i>
-              </div>
+            ${this.renderStudentIdCardPreviewHtml(data)}
 
-              <div style="display: flex; gap: 14px; align-items: center; text-align: left; margin-bottom: 14px;">
-                <div style="width: 72px; height: 86px; border-radius: 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; color: #fff; flex-shrink: 0;">
-                  ${student.photo_url ? `<img src="${student.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : (student.first_name || 'S').charAt(0)}
-                </div>
-                <div>
-                  <div style="font-size: 16px; font-weight: 800; color: #fff;">${student.full_name}</div>
-                  <div style="font-size: 11px; color: #a5b4fc; margin-top: 2px;">Code: <code>${student.student_code}</code></div>
-                  <div style="font-size: 11px; color: #cbd5e1; margin-top: 2px;">Belt: <span class="badge badge-primary" style="font-size: 10px;">${student.active_belt || 'White Belt'}</span></div>
-                  <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Blood: <strong>${student.blood_group || 'N/A'}</strong></div>
-                </div>
-              </div>
-
-              <div style="margin: 12px 0;">
-                ${SmartAttendanceController.renderQrSvg(qr.token, 150)}
-              </div>
-
-              <div style="font-size: 10px; color: #94a3b8; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 8px; margin-top: 8px;">
-                Show this QR pass at the entrance kiosk or to your coach for instant attendance check-in.
-              </div>
-            </div>
-
-            <div style="margin-top: 20px;">
-              <button class="btn btn-primary" onclick="window.print()">
+            <div style="margin-top: 24px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+              <button class="btn btn-primary" onclick="app.printStudentIdCard(${student.id})">
                 <i class="fa-solid fa-print"></i> Print ID Badge
+              </button>
+              <button class="btn btn-secondary" onclick="app.downloadStudentIdCardPdf(${student.id})">
+                <i class="fa-solid fa-file-pdf" style="color: #ef4444;"></i> Download PDF
               </button>
             </div>
           </div>

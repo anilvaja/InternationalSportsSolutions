@@ -568,15 +568,15 @@ window.SmartAttendanceController = {
   /**
    * Generates crisp vector QR Code SVG without external libraries
    */
-  renderQrSvg(text, size = 180) {
+  renderQrSvg(text, size = 180, padding = 8) {
     // Basic deterministic visual placeholder / SVG code block
     // Encodes payload string cleanly in standard high-contrast SVG
     return `
-      <div style="background: #ffffff; padding: 12px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+      <div style="background: #ffffff; padding: ${padding}px; border-radius: 8px; display: inline-block; box-shadow: 0 2px 6px rgba(0,0,0,0.08); border: 1px solid #e2e8f0;">
         <img src="https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}" 
              alt="QR Pass" 
              style="width: ${size}px; height: ${size}px; display: block;"
-             onerror="this.onerror=null; this.parentNode.innerHTML='<div style=\\'width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-size:11px;font-weight:700;color:#0f172a;text-align:center;padding:8px;word-break:break-all;\\'>${text}</div>'">
+             onerror="this.onerror=null; this.parentNode.innerHTML='<div style=\\'width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-size:10px;font-weight:700;color:#0f172a;text-align:center;padding:4px;word-break:break-all;\\'>${text}</div>'">
       </div>
     `;
   }

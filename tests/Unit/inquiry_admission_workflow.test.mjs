@@ -60,9 +60,16 @@ assert.strictEqual(inqCheck.converted_student_id, null, 'Trial class must not ge
 console.log('✓ Trial class scheduled and tracked attendance without creating fee liability');
 
 // Test 3: Idempotent Admission Wizard Conversion
-let batch = db.prepare('SELECT id, branch_id FROM batches WHERE is_active = 1 LIMIT 1').get();
+let batch = db.prepare(`
+  SELECT b.id, b.branch_id 
+  FROM batches b 
+  WHERE b.is_active = 1 
+    AND (SELECT COUNT(*) FROM student_batch_enrollments sbe WHERE sbe.batch_id = b.id AND sbe.status = 'active') < b.max_capacity 
+  LIMIT 1
+`).get();
 if (!batch) {
-  batch = db.prepare('SELECT id, branch_id FROM batches LIMIT 1').get() || { id: 1, branch_id: 1 };
+  db.prepare('UPDATE batches SET max_capacity = max_capacity + 10 WHERE id = 1').run();
+  batch = db.prepare('SELECT id, branch_id FROM batches WHERE id = 1').get();
 }
 
 const admissionResult = InquiryService.convertInquiryToAdmission(db, 1, inquiry.id, {
