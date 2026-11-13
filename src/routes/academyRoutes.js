@@ -1404,6 +1404,7 @@ academyRouter.post('/students', requirePermission(['create_students', 'manage_st
       branch_id,
       blood_group,
       batch_id,
+      photo_url,
     } = req.body;
 
     // Rule A & Cross-academy rejection
@@ -1438,8 +1439,8 @@ academyRouter.post('/students', requirePermission(['create_students', 'manage_st
       INSERT INTO students (
         student_code, first_name, last_name, email, password_hash, phone, date_of_birth,
         gender, guardian_name, guardian_phone, guardian_email, address,
-        branch_id, academy_id, blood_group, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+        branch_id, academy_id, blood_group, photo_url, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
     `);
 
     const result = insert.run(
@@ -1457,7 +1458,8 @@ academyRouter.post('/students', requirePermission(['create_students', 'manage_st
       address || null,
       branch_id ? Number(branch_id) : null,
       req.academy.id,
-      blood_group || null
+      blood_group || null,
+      photo_url || null
     );
 
     const newStudentId = result.lastInsertRowid;
@@ -2202,6 +2204,7 @@ academyRouter.put('/students/:id', (req, res) => {
       academy_id,
       batch_id,
       password,
+      photo_url,
     } = req.body;
 
     // Rule A & Cross-academy check
@@ -2243,6 +2246,7 @@ academyRouter.put('/students/:id', (req, res) => {
           address = COALESCE(?, address),
           branch_id = COALESCE(?, branch_id),
           blood_group = COALESCE(?, blood_group),
+          photo_url = CASE WHEN ? = 1 THEN ? ELSE photo_url END,
           status = COALESCE(?, status),
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
@@ -2259,6 +2263,8 @@ academyRouter.put('/students/:id', (req, res) => {
       address || null,
       branch_id ? Number(branch_id) : null,
       blood_group || null,
+      photo_url !== undefined ? 1 : 0,
+      photo_url || null,
       status || null,
       id
     );
@@ -2283,6 +2289,105 @@ academyRouter.put('/students/:id', (req, res) => {
     }
 
     res.json({ success: true, message: 'Student updated successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+const uploadStudentPhotoMiddleware = StorageService.getStudentPhotoUploadMiddleware().single('photo');
+
+/**
+ * POST /api/academy/students/upload-photo
+ * Uploads a student profile photo before or during enrollment
+ */
+academyRouter.post('/students/upload-photo', requirePermission(['create_students', 'manage_students', 'all']), (req, res) => {
+  uploadStudentPhotoMiddleware(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No photo file was uploaded.' });
+    }
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const publicUrl = `/storage/academies/${req.academy.id}/${today}/${req.file.filename}`;
+      res.json({
+        success: true,
+        photo_url: publicUrl,
+        filename: req.file.filename,
+        message: 'Student photo uploaded successfully',
+      });
+    } catch (e) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+});
+
+/**
+ * POST /api/academy/students/:id/photo
+ * Uploads and updates student profile photo for existing student
+ */
+academyRouter.post('/students/:id/photo', requirePermission(['manage_students', 'create_students', 'all']), (req, res) => {
+  const db = req.tenantDb;
+  const id = Number(req.params.id);
+  const student = db.prepare('SELECT id, first_name, last_name, photo_url FROM students WHERE id = ?').get(id);
+  if (!student) {
+    return res.status(404).json({ success: false, error: 'Student not found in this academy' });
+  }
+
+  uploadStudentPhotoMiddleware(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No photo file was uploaded.' });
+    }
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const publicUrl = `/storage/academies/${req.academy.id}/${today}/${req.file.filename}`;
+
+      db.prepare('UPDATE students SET photo_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(publicUrl, id);
+
+      // Audit log
+      try {
+        db.prepare(`
+          INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, details, ip_address)
+          VALUES (?, ?, ?, 'UPDATE_STUDENT_PHOTO', 'students', ?, ?)
+        `).run(
+          req.user.userId,
+          req.user.name,
+          req.user.role,
+          `Updated photo for student ${student.first_name} ${student.last_name} (ID: ${id})`,
+          req.ip
+        );
+      } catch (_) {}
+
+      res.json({
+        success: true,
+        photo_url: publicUrl,
+        message: 'Student photo updated successfully',
+      });
+    } catch (e) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+});
+
+/**
+ * DELETE /api/academy/students/:id/photo
+ * Removes student profile photo
+ */
+academyRouter.delete('/students/:id/photo', requirePermission(['manage_students', 'all']), (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const id = Number(req.params.id);
+    const student = db.prepare('SELECT id FROM students WHERE id = ?').get(id);
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found in this academy' });
+    }
+
+    db.prepare('UPDATE students SET photo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+    res.json({ success: true, message: 'Student photo removed successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

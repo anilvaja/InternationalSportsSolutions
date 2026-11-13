@@ -135,6 +135,7 @@ describe('Complete End-to-End Tenant Lifecycle & Feature Verification', () => {
         goals_notes TEXT,
         photo_video_permission INTEGER DEFAULT 1,
         competition_consent INTEGER DEFAULT 1,
+        photo_url TEXT,
         joining_fee_amount REAL DEFAULT 0,
         discount_percent REAL DEFAULT 0,
         discount_reason TEXT,

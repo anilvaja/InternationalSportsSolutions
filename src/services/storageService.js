@@ -118,4 +118,46 @@ export class StorageService {
       }
     });
   }
+
+  /**
+   * Returns a configured Multer instance for Student Photo uploads
+   */
+  static getStudentPhotoUploadMiddleware() {
+    const storage = multer.diskStorage({
+      destination: (req, file, cb) => {
+        try {
+          const academyId = (req.academy && req.academy.id) || (req.user && req.user.academyId) || req.params.academyId || 1;
+          const { fullPath } = StorageService.getAcademyStorageDir(academyId);
+          cb(null, fullPath);
+        } catch (err) {
+          cb(err);
+        }
+      },
+      filename: (req, file, cb) => {
+        const academyId = (req.academy && req.academy.id) || (req.user && req.user.academyId) || 1;
+        const studentId = req.params.id || req.body.student_id || 'new';
+        const ext = StorageService.cleanExtension(file.originalname, file.mimetype);
+        const timestamp = Date.now();
+        const filename = `student_photo_${academyId}_${studentId}_${timestamp}.${ext}`;
+        cb(null, filename);
+      }
+    });
+
+    const fileFilter = (req, file, cb) => {
+      const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+      if (allowedMimes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Invalid image format. Supported formats: PNG, JPG, JPEG, WEBP'), false);
+      }
+    };
+
+    return multer({
+      storage,
+      fileFilter,
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB max
+      }
+    });
+  }
 }

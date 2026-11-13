@@ -70,6 +70,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
     }
   }
 }));
+app.use('/storage', express.static(config.storageDir));
 app.use('/storage', express.static(path.join(__dirname, 'storage')));
 
 // API Routes
@@ -139,7 +140,7 @@ if (isDirectRun && process.env.NODE_ENV !== 'test') {
           console.warn(`[Port 80 Notice] ${err.message}`);
         }
       });
-    } catch (e) {}
+    } catch (e) { }
   }
 }
 
@@ -147,7 +148,7 @@ if (isDirectRun && process.env.NODE_ENV !== 'test') {
 function handleShutdown(signal) {
   console.log(`\nReceived ${signal}. Gracefully closing databases and server...`);
   if (serverPort80) {
-    try { serverPort80.close(); } catch (e) {}
+    try { serverPort80.close(); } catch (e) { }
   }
   if (server) {
     server.close(() => {

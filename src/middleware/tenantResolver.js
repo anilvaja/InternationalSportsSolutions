@@ -219,7 +219,7 @@ export function resolveTenant(req, res, next) {
       if (tenantLogo && tenantLogo.value) {
         req.academy.logo_url = tenantLogo.value;
       }
-    } catch (e) {}
+    } catch (e) { }
 
     next();
   } catch (err) {

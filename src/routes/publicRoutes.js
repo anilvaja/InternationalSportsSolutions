@@ -298,7 +298,7 @@ publicRouter.all('/setup', (req, res) => {
     try {
       rolesCount = centralDb.prepare('SELECT COUNT(*) as c FROM central_role_templates').get()?.c || 0;
       permsCount = centralDb.prepare('SELECT COUNT(*) as c FROM central_permissions').get()?.c || 0;
-    } catch (_) {}
+    } catch (_) { }
 
     if (checkOnly) {
       return res.json({

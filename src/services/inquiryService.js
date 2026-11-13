@@ -352,6 +352,7 @@ export class InquiryService {
       blood_group = null,
       nationality = null,
       preferred_language = null,
+      photo_url = null,
       // Guardian info
       guardian_name = null,
       guardian_phone = null,
@@ -496,7 +497,7 @@ export class InquiryService {
           school_college_name, grade_standard, education_board, academic_year, occupation,
           allergies, emergency_medical_instructions, injury_history, doctor_clinic_contact, medical_consent,
           branch_id, previous_sports_experience, previous_academy, goals_notes,
-          photo_video_permission, competition_consent,
+          photo_video_permission, competition_consent, photo_url,
           joining_fee_amount, discount_percent, discount_reason, discount_approved_by, discount_approved_at,
           status, enrolled_at, academy_id
         ) VALUES (
@@ -509,7 +510,7 @@ export class InquiryService {
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?,
-          ?, ?,
+          ?, ?, ?,
           ?, ?, ?, ?, ?,
           'active', ?, ?
         )
@@ -561,6 +562,7 @@ export class InquiryService {
         goals_notes || null,
         resolvedPhotoPermission,
         competition_consent ? 1 : 0,
+        photo_url || null,
         resolvedJoiningFee,
         resolvedDiscount,
         discount_reason || null,

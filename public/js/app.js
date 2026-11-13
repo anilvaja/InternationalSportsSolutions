@@ -7198,8 +7198,15 @@ const app = {
                     ` : ''}
                   </td>
                   <td>
-                    <strong>${this.escapeHtml(s.first_name || '')} ${this.escapeHtml(s.last_name || '')}</strong>
-                    <div style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(s.email || '-')}</div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <div style="width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(37,99,235,0.2)); border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 13px; font-weight: 700; color: var(--primary);">
+                        ${s.photo_url ? `<img src="${this.escapeHtml(s.photo_url)}" alt="photo" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"><span style="display: none;">${this.escapeHtml((s.first_name || 'S')[0])}</span>` : `<span>${this.escapeHtml((s.first_name || 'S')[0])}${this.escapeHtml((s.last_name || '')[0] || '')}</span>`}
+                      </div>
+                      <div>
+                        <strong>${this.escapeHtml(s.first_name || '')} ${this.escapeHtml(s.last_name || '')}</strong>
+                        <div style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(s.email || '-')}</div>
+                      </div>
+                    </div>
                   </td>
                   <td>
                     ${this.escapeHtml(s.guardian_name || s.father_name || s.mother_name || '-')}
@@ -7357,8 +7364,8 @@ const app = {
         <!-- Top Profile Banner & Key Metrics -->
         <div style="background: var(--bg-surface, #f8fafc); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between;">
           <div style="display: flex; gap: 14px; align-items: center;">
-            <div style="width: 58px; height: 58px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #6366f1); color: #fff; font-size: 22px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.12);">
-              ${this.escapeHtml(s.first_name ? s.first_name[0] : 'S')}${this.escapeHtml(s.last_name ? s.last_name[0] : '')}
+            <div style="width: 58px; height: 58px; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, var(--primary), #6366f1); color: #fff; font-size: 22px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.12); flex-shrink: 0;">
+              ${s.photo_url ? `<img src="${this.escapeHtml(s.photo_url)}" alt="photo" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"><span style="display: none;">${this.escapeHtml(s.first_name ? s.first_name[0] : 'S')}${this.escapeHtml(s.last_name ? s.last_name[0] : '')}</span>` : `${this.escapeHtml(s.first_name ? s.first_name[0] : 'S')}${this.escapeHtml(s.last_name ? s.last_name[0] : '')}`}
             </div>
             <div>
               <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
@@ -8807,6 +8814,36 @@ const app = {
       `Edit Student — ${s.first_name} ${s.last_name}`,
       `
         <form id="edit-student-form" onsubmit="event.preventDefault(); app.submitEditStudent(${studentId});">
+          <!-- Student Photo Upload Widget -->
+          <div class="student-photo-uploader" style="display: flex; align-items: center; gap: 16px; margin-bottom: 20px; padding: 14px 16px; background: var(--bg-surface, #f8fafc); border: 1px dashed var(--border); border-radius: 10px;">
+            <div style="position: relative; width: 72px; height: 72px; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(37,99,235,0.15)); border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: var(--shadow-sm);">
+              <img id="edit-stu-photo-preview-img" src="${s.photo_url || ''}" alt="Student photo" style="width: 100%; height: 100%; object-fit: cover; ${s.photo_url ? '' : 'display: none;'}">
+              <div id="edit-stu-photo-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); ${s.photo_url ? 'display: none;' : ''}">
+                <i class="fa-solid fa-camera" style="font-size: 22px; color: var(--primary);"></i>
+                <span style="font-size: 9px; font-weight: 600; text-transform: uppercase; margin-top: 2px;">Photo</span>
+              </div>
+            </div>
+            <div style="flex: 1;">
+              <div style="font-size: 13px; font-weight: 700; color: var(--text-heading); margin-bottom: 2px;">
+                Student Profile Photo
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">
+                JPG, PNG or WebP up to 5MB. Visible on student passes, ID cards, and attendance scans.
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <label class="btn btn-secondary btn-sm" style="cursor: pointer; margin: 0; display: inline-flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-cloud-arrow-up"></i>
+                  <span id="edit-stu-photo-btn-text">${s.photo_url ? 'Change Photo' : 'Upload Photo'}</span>
+                  <input type="file" id="edit-stu-photo-input" accept="image/jpeg,image/png,image/webp" style="display: none;" onchange="app.handleStudentPhotoSelect(event, 'edit-stu', ${studentId})">
+                </label>
+                <button type="button" id="edit-stu-photo-remove-btn" class="btn btn-outline-danger btn-sm" style="${s.photo_url ? '' : 'display: none;'}" onclick="app.removeStudentPhoto('edit-stu', ${studentId})">
+                  <i class="fa-solid fa-trash"></i> Remove
+                </button>
+                <input type="hidden" id="edit-stu-photo-url" value="${s.photo_url || ''}">
+              </div>
+            </div>
+          </div>
+
           <div class="form-grid">
             <div class="form-group">
               <label>First Name *</label>
@@ -8916,6 +8953,7 @@ const app = {
     const status = document.getElementById('edit-stu-status')?.value;
     const address = document.getElementById('edit-stu-address')?.value?.trim();
     const password = document.getElementById('edit-stu-password')?.value?.trim();
+    const photo_url = document.getElementById('edit-stu-photo-url')?.value;
 
     if (!first_name || !last_name) {
       this.showToast('First and last name are required', 'danger');
@@ -8942,6 +8980,9 @@ const app = {
       status,
       address,
     };
+    if (photo_url !== undefined) {
+      payload.photo_url = photo_url || null;
+    }
     if (password && password.length >= 4) {
       payload.password = password;
     }
@@ -8957,6 +8998,102 @@ const app = {
       this.renderStudents();
     } else {
       this.showToast(res.error || 'Failed to update student', 'danger');
+    }
+  },
+
+  async handleStudentPhotoSelect(event, prefix, studentId = null) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      this.showToast('Photo file size must not exceed 5MB', 'danger');
+      event.target.value = '';
+      return;
+    }
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      this.showToast('Invalid image format. Supported formats: JPG, PNG, WEBP', 'danger');
+      event.target.value = '';
+      return;
+    }
+
+    const previewImg = document.getElementById(`${prefix}-photo-preview-img`);
+    const placeholder = document.getElementById(`${prefix}-photo-placeholder`);
+    const removeBtn = document.getElementById(`${prefix}-photo-remove-btn`);
+    const btnText = document.getElementById(`${prefix}-photo-btn-text`);
+    const hiddenUrlInput = document.getElementById(`${prefix}-photo-url`);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (previewImg) {
+        previewImg.src = e.target.result;
+        previewImg.style.display = 'block';
+      }
+      if (placeholder) placeholder.style.display = 'none';
+      if (removeBtn) removeBtn.style.display = 'inline-flex';
+      if (btnText) btnText.textContent = 'Change Photo';
+    };
+    reader.readAsDataURL(file);
+
+    try {
+      if (btnText) btnText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
+      const formData = new FormData();
+      formData.append('photo', file);
+      if (studentId) formData.append('student_id', studentId);
+
+      const endpoint = studentId ? `/api/academy/students/${studentId}/photo` : '/api/academy/students/upload-photo';
+      
+      const token = this.token;
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (data.success && data.photo_url) {
+        if (hiddenUrlInput) hiddenUrlInput.value = data.photo_url;
+        if (btnText) btnText.innerHTML = '<i class="fa-solid fa-check" style="color: #10b981;"></i> Photo Ready';
+        this.showToast('Student photo uploaded successfully', 'success');
+      } else {
+        if (btnText) btnText.textContent = 'Upload Photo';
+        this.showToast(data.error || 'Failed to upload photo', 'danger');
+      }
+    } catch (err) {
+      if (btnText) btnText.textContent = 'Upload Photo';
+      this.showToast(`Upload error: ${err.message}`, 'danger');
+    }
+  },
+
+  async removeStudentPhoto(prefix, studentId = null) {
+    const previewImg = document.getElementById(`${prefix}-photo-preview-img`);
+    const placeholder = document.getElementById(`${prefix}-photo-placeholder`);
+    const removeBtn = document.getElementById(`${prefix}-photo-remove-btn`);
+    const btnText = document.getElementById(`${prefix}-photo-btn-text`);
+    const hiddenUrlInput = document.getElementById(`${prefix}-photo-url`);
+    const fileInput = document.getElementById(`${prefix}-photo-input`);
+
+    if (fileInput) fileInput.value = '';
+    if (previewImg) {
+      previewImg.src = '';
+      previewImg.style.display = 'none';
+    }
+    if (placeholder) placeholder.style.display = 'flex';
+    if (removeBtn) removeBtn.style.display = 'none';
+    if (btnText) btnText.textContent = 'Upload Photo';
+    if (hiddenUrlInput) hiddenUrlInput.value = '';
+
+    if (studentId) {
+      try {
+        const res = await this.apiRequest(`/api/academy/students/${studentId}/photo`, { method: 'DELETE' });
+        if (res.success) {
+          this.showToast('Student photo removed', 'success');
+        }
+      } catch (e) {}
     }
   },
 
@@ -9126,6 +9263,35 @@ const app = {
       'Enroll New Student',
       `
         <form id="add-student-form">
+          <!-- Student Photo Upload Widget -->
+          <div class="student-photo-uploader" style="display: flex; align-items: center; gap: 16px; margin-bottom: 20px; padding: 14px 16px; background: var(--bg-surface, #f8fafc); border: 1px dashed var(--border); border-radius: 10px;">
+            <div style="position: relative; width: 72px; height: 72px; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(37,99,235,0.15)); border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: var(--shadow-sm);">
+              <img id="add-stu-photo-preview-img" src="" alt="Student photo" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+              <div id="add-stu-photo-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted);">
+                <i class="fa-solid fa-camera" style="font-size: 22px; color: var(--primary);"></i>
+                <span style="font-size: 9px; font-weight: 600; text-transform: uppercase; margin-top: 2px;">Photo</span>
+              </div>
+            </div>
+            <div style="flex: 1;">
+              <div style="font-size: 13px; font-weight: 700; color: var(--text-heading); margin-bottom: 2px;">
+                Student Profile Photo
+              </div>
+              <div style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 8px;">
+                Upload a student passport photograph (JPG, PNG or WEBP up to 5MB).
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="file" id="add-stu-photo-input" accept="image/jpeg,image/png,image/webp" style="display: none;" onchange="app.handleStudentPhotoSelect(event, 'add-stu')">
+                <input type="hidden" id="add-stu-photo-url" value="">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('add-stu-photo-input').click()" style="padding: 4px 10px; font-size: 12px;">
+                  <i class="fa-solid fa-upload"></i> <span id="add-stu-photo-btn-text">Upload Photo</span>
+                </button>
+                <button type="button" id="add-stu-photo-remove-btn" class="btn btn-outline-danger btn-sm" onclick="app.removeStudentPhoto('add-stu')" style="display: none; padding: 4px 10px; font-size: 12px;">
+                  <i class="fa-solid fa-trash-can"></i> Remove
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="form-grid">
             <div class="form-group">
               <label>First Name *</label>
@@ -9214,6 +9380,7 @@ const app = {
     const date_of_birth = this.normalizeDateToIso(document.getElementById('stu-dob').value);
     const branch_id = document.getElementById('stu-branch') ? document.getElementById('stu-branch').value : null;
     const batch_id = document.getElementById('stu-batch') ? document.getElementById('stu-batch').value : null;
+    const photo_url = document.getElementById('add-stu-photo-url')?.value?.trim() || null;
 
     if (!first_name || !last_name) {
       this.showToast('First and last name are required', 'danger');
@@ -9238,6 +9405,7 @@ const app = {
         date_of_birth,
         branch_id: branch_id || null,
         batch_id: batch_id || null,
+        photo_url: photo_url || null,
       }),
     });
 
@@ -26009,6 +26177,34 @@ const app = {
           <!-- STEP 1: Personal Info -->
           <div class="wizard-step-pane ${s.currentStep === 1 ? 'active' : ''}" id="wiz-step-1">
             <h4 style="margin: 0 0 14px 0; color: var(--text-heading);"><i class="fa-solid fa-user"></i> Step 1: Student Personal Information</h4>
+            <!-- Student Photo Upload Widget -->
+            <div class="student-photo-uploader" style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px; padding: 12px 16px; background: var(--bg-surface, #f8fafc); border: 1px dashed var(--border); border-radius: 10px;">
+              <div style="position: relative; width: 68px; height: 68px; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(37,99,235,0.15)); border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: var(--shadow-sm);">
+                <img id="wiz-photo-preview-img" src="${d.photo_url || ''}" alt="Student photo" style="width: 100%; height: 100%; object-fit: cover; ${d.photo_url ? '' : 'display: none;'}">
+                <div id="wiz-photo-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); ${d.photo_url ? 'display: none;' : ''}">
+                  <i class="fa-solid fa-camera" style="font-size: 20px; color: var(--primary);"></i>
+                  <span style="font-size: 9px; font-weight: 600; text-transform: uppercase; margin-top: 2px;">Photo</span>
+                </div>
+              </div>
+              <div style="flex: 1;">
+                <div style="font-size: 13px; font-weight: 700; color: var(--text-heading); margin-bottom: 2px;">
+                  Student Profile Photo
+                </div>
+                <div style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 8px;">
+                  Upload a student passport photograph (JPG, PNG or WEBP up to 5MB).
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input type="file" id="wiz-photo-input" accept="image/jpeg,image/png,image/webp" style="display: none;" onchange="app.handleStudentPhotoSelect(event, 'wiz')">
+                  <input type="hidden" id="wiz-photo-url" value="${this.escapeHtml(d.photo_url || '')}">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('wiz-photo-input').click()" style="padding: 4px 10px; font-size: 12px;">
+                    <i class="fa-solid fa-upload"></i> <span id="wiz-photo-btn-text">${d.photo_url ? 'Change Photo' : 'Upload Photo'}</span>
+                  </button>
+                  <button type="button" id="wiz-photo-remove-btn" class="btn btn-outline-danger btn-sm" onclick="app.removeStudentPhoto('wiz')" style="${d.photo_url ? 'display: inline-flex;' : 'display: none;'} padding: 4px 10px; font-size: 12px;">
+                    <i class="fa-solid fa-trash-can"></i> Remove
+                  </button>
+                </div>
+              </div>
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
               <div class="form-group">
                 <label>First Name *</label>
@@ -26350,6 +26546,7 @@ const app = {
     // Step 1
     if (document.getElementById('wiz-first-name')) s.formData.first_name = getVal('wiz-first-name');
     if (document.getElementById('wiz-last-name')) s.formData.last_name = getVal('wiz-last-name');
+    if (document.getElementById('wiz-photo-url')) s.formData.photo_url = getVal('wiz-photo-url');
     if (document.getElementById('wiz-admission-number')) s.formData.admission_number = getVal('wiz-admission-number');
     if (document.getElementById('wiz-dob')) s.formData.date_of_birth = this.normalizeDateToIso(document.getElementById('wiz-dob').value);
     if (document.getElementById('wiz-gender')) s.formData.gender = getVal('wiz-gender');
@@ -26440,6 +26637,7 @@ const app = {
 
   validateWizardStep(stepNum) {
     this.clearWizardStepErrors(stepNum);
+    const s = this._wizardState || {};
     let isValid = true;
     let firstInvalidEl = null;
 
@@ -26694,6 +26892,7 @@ const app = {
       inquiry_id: s.inquiryId,
       first_name: d.first_name,
       last_name: d.last_name,
+      photo_url: d.photo_url || null,
       admission_number: d.admission_number,
       dob: d.date_of_birth,
       date_of_birth: d.date_of_birth,
@@ -26755,7 +26954,7 @@ const app = {
         { item: 'Signed Consent Waiver', status: document.getElementById('chk-doc-waiver')?.checked ? 'completed' : 'pending' },
         { item: 'Uniform & Kit Issued', status: document.getElementById('chk-doc-kit')?.checked ? 'completed' : 'pending' },
         { item: 'Rules Handbook Handover', status: document.getElementById('chk-doc-rules')?.checked ? 'completed' : 'pending' },
-        { item: 'Passport Size Photographs', status: document.getElementById('chk-doc-photo')?.checked ? 'completed' : 'pending' },
+        { item: 'Passport Size Photographs', status: (d.photo_url || document.getElementById('chk-doc-photo')?.checked) ? 'completed' : 'pending' },
       ],
     };
 
