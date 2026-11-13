@@ -405,7 +405,7 @@ export class AcademySetupWizardService {
         name,
         slug: resolvedSlug,
         plan,
-        primaryDomain: `${resolvedSlug}.internationalsportssolutions.test`,
+        primaryDomain: `${resolvedSlug}.${config.baseDomain || 'internationalsportssolutions.com'}`,
       },
       completeness,
       message: `Academy '${name}' fully provisioned and ready for operations (${completeness.score}% configured)`,

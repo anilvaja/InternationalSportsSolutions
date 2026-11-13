@@ -50,7 +50,11 @@ export function getTenantDbById(academyId) {
       try {
         centralDb.prepare(`
           INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
-          VALUES (1, 'pratik-karate-academy.internationalsportssolutions.test', 1, 0, 'active')
+          VALUES (1, ?, 1, 0, 'active')
+        `).run(`pratik-karate-academy.${config.baseDomain || 'internationalsportssolutions.com'}`);
+        centralDb.prepare(`
+          INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
+          VALUES (1, 'pratik-karate-academy.localhost', 0, 0, 'active')
         `).run();
       } catch (_) { }
       academy = centralDb.prepare('SELECT * FROM academies WHERE id = 1').get();
@@ -62,7 +66,11 @@ export function getTenantDbById(academyId) {
       try {
         centralDb.prepare(`
           INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
-          VALUES (2, 'phoenix-martial-arts.internationalsportssolutions.test', 1, 0, 'active')
+          VALUES (2, ?, 1, 0, 'active')
+        `).run(`phoenix-martial-arts.${config.baseDomain || 'internationalsportssolutions.com'}`);
+        centralDb.prepare(`
+          INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
+          VALUES (2, 'phoenix-martial-arts.localhost', 0, 0, 'active')
         `).run();
       } catch (_) { }
       academy = centralDb.prepare('SELECT * FROM academies WHERE id = 2').get();
@@ -259,15 +267,17 @@ export function provisionAcademyDb({
 
     // Register default platform subdomain & localhost alias in central domains table
     try {
+      const cleanSlug = slug.toLowerCase().trim();
       centralDb.prepare(`
         INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
         VALUES (?, ?, 1, 0, 'active')
-      `).run(newAcademyId, `${slug.toLowerCase().trim()}.internationalsportssolutions.test`);
+      `).run(newAcademyId, `${cleanSlug}.${config.baseDomain || 'internationalsportssolutions.com'}`);
 
       centralDb.prepare(`
         INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
         VALUES (?, ?, 0, 0, 'active')
-      `).run(newAcademyId, `${slug.toLowerCase().trim()}.localhost`);
+        ON CONFLICT(domain) DO NOTHING
+      `).run(newAcademyId, `${cleanSlug}.localhost`);
     } catch (e) {
       // Ignore if table not yet migrated
     }

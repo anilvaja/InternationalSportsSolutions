@@ -39,8 +39,18 @@ publicRouter.get('/tenant-info', (req, res) => {
     let matchedDomain = null;
 
     // 1. Check exact custom domain or host in domains table
+    const isPlatformRoot = (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === 'internationalsportssolutions.com' ||
+      host === 'www.internationalsportssolutions.com' ||
+      host === 'internationalsportssolutions.test' ||
+      host === 'www.internationalsportssolutions.test' ||
+      (config.baseDomain && (host === config.baseDomain || host === `www.${config.baseDomain}`))
+    );
+
     const targetDomain = queryDomain || (
-      host && host !== 'localhost' && host !== '127.0.0.1' && host !== 'internationalsportssolutions.test' ? host : null
+      host && !isPlatformRoot ? host : null
     );
 
     if (targetDomain) {
@@ -78,7 +88,9 @@ publicRouter.get('/tenant-info', (req, res) => {
           host.includes('railway.app') ||
           host === 'localhost' ||
           host === '127.0.0.1' ||
-          host === 'internationalsportssolutions.test'
+          host === 'internationalsportssolutions.com' ||
+          host === 'internationalsportssolutions.test' ||
+          (config.baseDomain && host === config.baseDomain)
         )
       );
       if (isCloudPreview) {

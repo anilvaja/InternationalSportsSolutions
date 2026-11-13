@@ -200,7 +200,7 @@ const SetupWizardController = {
             <label>URL Slug / Subdomain *</label>
             <input type="text" id="wiz-slug" class="form-input" value="${window.app.escapeHtml(d.slug)}" placeholder="champions-martial-arts" style="font-family: monospace;" required>
             <div style="font-size: 11px; color: var(--primary); margin-top: 4px;">
-              Route: <code><span id="wiz-slug-preview">${d.slug || 'slug'}</span>.internationalsportssolutions.test</code>
+              Route: <code><span id="wiz-slug-preview">${d.slug || 'slug'}</span>.internationalsportssolutions.com</code>
             </div>
           </div>
         </div>
@@ -573,7 +573,7 @@ const SetupWizardController = {
           <div style="background: var(--surface-hover); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
             <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Academy & Domain</div>
             <div style="font-size: 14px; font-weight: 700; color: var(--primary); margin-top: 4px;">${d.name || 'Untitled Academy'}</div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;"><code>${d.slug}.internationalsportssolutions.test</code></div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;"><code>${d.slug}.internationalsportssolutions.com</code></div>
             <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Plan: <strong>${d.plan.toUpperCase()}</strong></div>
           </div>
 

@@ -1,5 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { config } from '../../src/config/index.js';
 import { getCentralDb } from '../../src/db/centralDb.js';
 import { provisionAcademyDb, getTenantDbById } from '../../src/db/connectionManager.js';
 import { extractSubdomain, extractHost, resolveTenant } from '../../src/middleware/tenantResolver.js';
@@ -54,7 +55,7 @@ describe('Domain & Subdomain Management Architecture', () => {
 
     const primarySubdomain = domains.find(d => d.is_primary === 1);
     assert.ok(primarySubdomain, 'Primary domain must exist');
-    assert.equal(primarySubdomain.domain, 'e2e-domain-test-1.internationalsportssolutions.test');
+    assert.equal(primarySubdomain.domain, `e2e-domain-test-1.${config.baseDomain || 'internationalsportssolutions.com'}`);
     assert.equal(primarySubdomain.is_custom, 0);
 
     const localhostDomain = domains.find(d => d.domain === 'e2e-domain-test-1.localhost');

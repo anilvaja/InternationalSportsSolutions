@@ -189,7 +189,7 @@ export class TenantCleanupService {
       `).run(academy.address || 'Main Campus Ground', academy.city || 'Vadodara', id);
 
       // Re-seed primary admin user
-      const adminEmail = adminUser?.email || academy.contact_email || `admin@${academy.slug}.internationalsportssolutions.test`;
+      const adminEmail = adminUser?.email || academy.contact_email || `admin@${academy.slug}.${config.baseDomain || 'internationalsportssolutions.com'}`;
       const adminName = adminUser?.name || 'Academy Admin';
       const adminHash = adminUser?.password_hash || '$2a$10$wT5g8XfK0e3mYQ9yD9Kxe.4o1f9/h8H0A1vV2gJ6p.dO5l3/mZ6Oe'; // default password123
 

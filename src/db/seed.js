@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { config } from '../config/index.js';
 import { getCentralDb } from './centralDb.js';
 import { provisionAcademyDb, getTenantDbById } from './connectionManager.js';
 import { ALL_ACADEMY_PERMISSIONS, DEFAULT_ACADEMY_ROLES } from '../config/permissions.js';
@@ -251,7 +252,8 @@ export function runSeed(options = {}) {
         INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
         VALUES (?, ?, ?, ?, 'active')
       `);
-      insertDomain.run(academyId, `${pratikAcademyData.slug}.internationalsportssolutions.test`, 1, 0);
+      insertDomain.run(academyId, `${pratikAcademyData.slug}.${config.baseDomain || 'internationalsportssolutions.com'}`, 1, 0);
+      insertDomain.run(academyId, `${pratikAcademyData.slug}.internationalsportssolutions.test`, 0, 0);
       insertDomain.run(academyId, `${pratikAcademyData.slug}.localhost`, 0, 0);
       insertDomain.run(academyId, 'pratikkarate.com', 0, 1);
     } catch (_) {}

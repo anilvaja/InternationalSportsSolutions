@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import bcrypt from 'bcryptjs';
+import { config } from '../config/index.js';
 import { getCentralDb } from '../db/centralDb.js';
 import { provisionAcademyDb, getTenantDbById, closeTenantDb } from '../db/connectionManager.js';
 import { requireAuth, requireSuperAdmin } from '../middleware/auth.js';
@@ -870,7 +871,7 @@ centralRouter.get('/academies/:id/domains', (req, res) => {
     res.json({
       success: true,
       academy,
-      defaultSubdomain: `${academy.slug}.internationalsportssolutions.test`,
+      defaultSubdomain: `${academy.slug}.${config.baseDomain || 'internationalsportssolutions.com'}`,
       domains,
     });
   } catch (err) {
@@ -925,7 +926,7 @@ centralRouter.post('/academies/:id/domains', (req, res) => {
     const primaryFlag = is_primary ? 1 : 0;
     const customFlag = is_custom !== undefined
       ? (is_custom ? 1 : 0)
-      : (!cleanDomain.endsWith('.internationalsportssolutions.test') && !cleanDomain.endsWith('.localhost') ? 1 : 0);
+      : (!cleanDomain.endsWith(`.${config.baseDomain || 'internationalsportssolutions.com'}`) && !cleanDomain.endsWith('.internationalsportssolutions.test') && !cleanDomain.endsWith('.localhost') ? 1 : 0);
 
     let newDomainId;
     const tx = centralDb.transaction(() => {

@@ -123,7 +123,7 @@ if (isDirectRun && process.env.NODE_ENV !== 'test') {
     console.log(`\n======================================================`);
     console.log(` International Sports Solutions - Multi-Tenant Platform`);
     console.log(` Server running on http://localhost:${config.port}`);
-    console.log(` Base Domain URL: http://internationalsportssolutions.test:${config.port}`);
+    console.log(` Base Domain URL: http://${config.baseDomain || 'internationalsportssolutions.com'}:${config.port}`);
     console.log(` Database: Isolated SQLite per Tenant`);
     console.log(`======================================================\n`);
   });
@@ -132,7 +132,7 @@ if (isDirectRun && process.env.NODE_ENV !== 'test') {
   if (config.port !== 80) {
     try {
       serverPort80 = app.listen(80, () => {
-        console.log(`✔ Direct HTTP Port 80 Active: http://internationalsportssolutions.test/`);
+        console.log(`✔ Direct HTTP Port 80 Active: http://${config.baseDomain || 'internationalsportssolutions.com'}/`);
       });
       serverPort80.on('error', (err) => {
         if (err.code !== 'EADDRINUSE' && err.code !== 'EACCES') {

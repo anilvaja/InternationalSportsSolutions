@@ -1128,7 +1128,7 @@ const app = {
             <i class="fa-solid fa-building-circle-check" style="color: var(--primary); font-size: 16px;"></i>
             <div>
               <div style="font-weight: 700; color: var(--text-heading);">${this.tenantAcademy.name}</div>
-              <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${this.tenantAcademy.slug}.internationalsportssolutions.test</div>
+              <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${this.tenantAcademy.slug}.internationalsportssolutions.com</div>
             </div>
           </div>
           <span class="badge badge-success" style="font-size: 10px;">Academy Subdomain</span>
@@ -2094,7 +2094,7 @@ const app = {
                       <div>
                         <strong>${ac.name}</strong>
                         <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                          <i class="fa-solid fa-link" style="color: var(--primary);"></i> <code>${ac.slug}.internationalsportssolutions.test</code>
+                          <i class="fa-solid fa-link" style="color: var(--primary);"></i> <code>${ac.slug}.internationalsportssolutions.com</code>
                         </div>
                       </div>
                     </div>
@@ -2497,7 +2497,7 @@ const app = {
             </div>
             <div style="font-size: 11px; color: var(--text-dim); margin-top: 8px; line-height: 1.4;">
               <i class="fa-solid fa-circle-info" style="color: #3b82f6;"></i>
-              <strong>DNS Setup:</strong> Point your domain's CNAME record to <code>internationalsportssolutions.test</code> or your server IP. The system will automatically map incoming traffic to this academy database.
+              <strong>DNS Setup:</strong> Point your domain's CNAME record to <code>internationalsportssolutions.com</code> or your server IP. The system will automatically map incoming traffic to this academy database.
             </div>
           </div>
         </div>
@@ -2574,7 +2574,7 @@ const app = {
     const rows = this.currentCentralAcademies.map(ac => ({
       'ID': ac.id,
       'Academy Name': ac.name,
-      'Slug / Domain': `${ac.slug}.internationalsportssolutions.test`,
+      'Slug / Domain': `${ac.slug}.internationalsportssolutions.com`,
       'Contact Email': ac.contact_email || '',
       'Contact Phone': ac.contact_phone || '',
       'City': ac.city || '',
@@ -21925,65 +21925,75 @@ const app = {
           </div>
 
           <!-- Divisor & Calculation Engine Policy Banner -->
-          <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px;">
-              <span style="font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 6px;">
-                <i class="fa-solid fa-calculator" style="color: var(--primary);"></i> Divisor:
-              </span>
-              <span class="badge badge-purple" style="font-weight: 600;">${res.divisorLabel || 'Actual Scheduled Minutes'}</span>
-              <span style="color: var(--text-muted);">&bull;</span>
-              <span style="font-size: 12px; color: var(--text-muted);">
-                Formula: <code style="background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 4px; font-weight: 600;">${res.calculationFormula || 'M × min(1, (A + P + O) / S)'}</code>
-              </span>
+          <div class="salary-policy-banner">
+            <div class="policy-details">
+              <div class="policy-item">
+                <span class="policy-label"><i class="fa-solid fa-calculator" style="color: var(--primary);"></i> Divisor:</span>
+                <span class="badge badge-purple" style="font-weight: 600;">${res.divisorLabel || 'Actual Scheduled Minutes'}</span>
+              </div>
+              <span class="policy-divider"></span>
+              <div class="policy-item">
+                <span class="policy-label"><i class="fa-solid fa-square-root-variable" style="color: var(--primary);"></i> Formula:</span>
+                <code class="policy-code">${res.calculationFormula || 'M × min(1, (A + P + O) / S)'}</code>
+              </div>
             </div>
-            <div style="font-size: 12px; color: var(--text-muted);">
-              Cycle Bounds: <strong>${period.start_date}</strong> to <strong>${period.end_date}</strong>
+            <div class="policy-cycle">
+              <i class="fa-regular fa-calendar-days" style="color: var(--primary);"></i>
+              <span>Cycle Bounds: <strong>${this.formatDate(period.start_date)}</strong> to <strong>${this.formatDate(period.end_date)}</strong></span>
             </div>
           </div>
 
           <!-- 4 KPI Metrics Cards -->
-          <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-bottom: 24px;">
-            <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
-              <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
-                ${visibility.isProvisional ? 'Accrued MTD Earned' : 'Base Gross Earnings'}
-              </span>
-              <div style="font-size: 26px; font-weight: 800; color: var(--text-heading); margin-top: 4px;">
-                ₹${Number(visibility.isProvisional && res.accruedMtdEarned !== undefined ? res.accruedMtdEarned : (statement.gross_earnings || 0)).toLocaleString()}
+          <div class="salary-kpi-grid">
+            <div class="salary-kpi-card kpi-earned">
+              <div class="kpi-header">
+                <span class="kpi-label">${visibility.isProvisional ? 'Accrued MTD Earned' : 'Base Gross Earnings'}</span>
+                <div class="kpi-icon"><i class="fa-solid fa-coins"></i></div>
               </div>
-              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-                ${visibility.isProvisional ? `Earned for ${attendanceSummary.totalActualWorkedHours || 0}h worked to date` : `Mode: <span class="badge badge-purple">${statement.salary_mode}</span> &bull; Rate: ₹${statement.applicable_rate}`}
-              </div>
-            </div>
-
-            <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
-              <span style="font-size: 11px; text-transform: uppercase; color: #10b981; font-weight: 600;">Additions (Overtime / Bonus)</span>
-              <div style="font-size: 26px; font-weight: 800; color: #10b981; margin-top: 4px;">
-                +₹${Number(statement.total_additions || 0).toLocaleString()}
-              </div>
-              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-                ${approvedOvertime.length} approved overtime session(s)
+              <div class="kpi-body">
+                <div class="kpi-value">₹${Number(visibility.isProvisional && res.accruedMtdEarned !== undefined ? res.accruedMtdEarned : (statement.gross_earnings || 0)).toLocaleString()}</div>
+                <p class="kpi-subtext">
+                  ${visibility.isProvisional ? `Earned for ${attendanceSummary.totalActualWorkedHours || 0}h worked to date` : `Mode: <span class="badge badge-purple">${statement.salary_mode}</span> &bull; Rate: ₹${statement.applicable_rate}`}
+                </p>
               </div>
             </div>
 
-            <div class="stat-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;">
-              <span style="font-size: 11px; text-transform: uppercase; color: #ef4444; font-weight: 600;">Deductions (Absence / Leave)</span>
-              <div style="font-size: 26px; font-weight: 800; color: #ef4444; margin-top: 4px;">
-                -₹${Number(statement.total_deductions || 0).toLocaleString()}
+            <div class="salary-kpi-card kpi-additions">
+              <div class="kpi-header">
+                <span class="kpi-label">Additions (Overtime / Bonus)</span>
+                <div class="kpi-icon"><i class="fa-solid fa-circle-plus"></i></div>
               </div>
-              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-                Under-work & policy adjustments
+              <div class="kpi-body">
+                <div class="kpi-value">+₹${Number(statement.total_additions || 0).toLocaleString()}</div>
+                <p class="kpi-subtext">
+                  ${approvedOvertime.length} approved overtime session(s)
+                </p>
               </div>
             </div>
 
-            <div class="stat-card" style="background: var(--bg-card); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 18px;">
-              <span style="font-size: 11px; text-transform: uppercase; color: #10b981; font-weight: 700;">
-                ${visibility.isProvisional ? 'Projected Month-End Pay' : 'Net Payable Salary'}
-              </span>
-              <div style="font-size: 26px; font-weight: 800; color: #10b981; margin-top: 4px;">
-                ₹${Number(visibility.isProvisional && res.projectedNet !== undefined ? res.projectedNet : (statement.net_earnings || 0)).toLocaleString()}
+            <div class="salary-kpi-card kpi-deductions">
+              <div class="kpi-header">
+                <span class="kpi-label">Deductions (Absence / Leave)</span>
+                <div class="kpi-icon"><i class="fa-solid fa-circle-minus"></i></div>
               </div>
-              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-                ${visibility.isProvisional ? `Estimated if remaining ${Math.max(0, (attendanceSummary.totalScheduledHours || 0) - (attendanceSummary.totalActualWorkedHours || 0)).toFixed(1)}h attended` : `Outstanding: <strong>₹${Number(statement.balance_amount || 0).toLocaleString()}</strong> &bull; <span class="badge ${statement.payment_status === 'paid' ? 'badge-success' : 'badge-warning'}">${statement.payment_status}</span>`}
+              <div class="kpi-body">
+                <div class="kpi-value">-₹${Number(statement.total_deductions || 0).toLocaleString()}</div>
+                <p class="kpi-subtext">
+                  Under-work & policy adjustments
+                </p>
+              </div>
+            </div>
+
+            <div class="salary-kpi-card kpi-projected">
+              <div class="kpi-header">
+                <span class="kpi-label">${visibility.isProvisional ? 'Projected Month-End Pay' : 'Net Payable Salary'}</span>
+                <div class="kpi-icon"><i class="fa-solid fa-circle-check"></i></div>
+              </div>
+              <div class="kpi-body">
+                <div class="kpi-value">₹${Number(visibility.isProvisional && res.projectedNet !== undefined ? res.projectedNet : (statement.net_earnings || 0)).toLocaleString()}</div>
+                <p class="kpi-subtext">
+                  ${visibility.isProvisional ? `Estimated if remaining ${Math.max(0, (attendanceSummary.totalScheduledHours || 0) - (attendanceSummary.totalActualWorkedHours || 0)).toFixed(1)}h attended` : `Outstanding: <strong>₹${Number(statement.balance_amount || 0).toLocaleString()}</strong> &bull; <span class="badge ${statement.payment_status === 'paid' ? 'badge-success' : 'badge-warning'}">${statement.payment_status}</span>`}
+                </p>
               </div>
             </div>
           </div>
@@ -27085,7 +27095,7 @@ const app = {
                 <div>
                   <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-dim); letter-spacing: 0.5px;">Primary System Subdomain</div>
                   <div style="font-size: 15px; font-weight: 700; color: var(--primary); font-family: monospace; margin-top: 2px;">
-                    ${domainsRes && domainsRes.defaultSubdomain ? domainsRes.defaultSubdomain : (p.slug ? `${p.slug}.internationalsportssolutions.test` : 'academy.internationalsportssolutions.test')}
+                    ${domainsRes && domainsRes.defaultSubdomain ? domainsRes.defaultSubdomain : (p.slug ? `${p.slug}.internationalsportssolutions.com` : 'academy.internationalsportssolutions.com')}
                   </div>
                 </div>
                 <div style="display: flex; gap: 8px;">

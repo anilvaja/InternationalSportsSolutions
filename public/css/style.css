@@ -1797,6 +1797,202 @@ select optgroup, .form-select optgroup, .filter-select optgroup, .custom-select 
 }
 
 /* ==========================================================================
+   Salary Statement KPI Cards & Policy Banner
+   ========================================================================== */
+.salary-policy-banner {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 14px 20px;
+  margin-bottom: 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.salary-policy-banner .policy-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.salary-policy-banner .policy-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.salary-policy-banner .policy-label {
+  font-weight: 700;
+  color: var(--text-heading);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.salary-policy-banner .policy-divider {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: var(--text-dim, #94a3b8);
+}
+
+.salary-policy-banner .policy-code {
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.05));
+  color: var(--primary, #2563eb);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
+
+.salary-policy-banner .policy-cycle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  background: var(--bg-subtle, #f8fafc);
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+}
+
+/* Salary KPI Cards Grid */
+.salary-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.salary-kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.salary-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-light, #cbd5e1);
+}
+
+.salary-kpi-card .kpi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.salary-kpi-card .kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.salary-kpi-card .kpi-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.salary-kpi-card .kpi-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.salary-kpi-card .kpi-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--text-heading);
+  letter-spacing: -0.5px;
+}
+
+.salary-kpi-card .kpi-subtext {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Accent Themes */
+.salary-kpi-card.kpi-earned {
+  border-top: 3px solid #3b82f6;
+}
+.salary-kpi-card.kpi-earned .kpi-icon {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+}
+
+.salary-kpi-card.kpi-additions {
+  border-top: 3px solid #10b981;
+}
+.salary-kpi-card.kpi-additions .kpi-icon {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+.salary-kpi-card.kpi-additions .kpi-value,
+.salary-kpi-card.kpi-additions .kpi-label {
+  color: #10b981;
+}
+
+.salary-kpi-card.kpi-deductions {
+  border-top: 3px solid #ef4444;
+}
+.salary-kpi-card.kpi-deductions .kpi-icon {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+.salary-kpi-card.kpi-deductions .kpi-value,
+.salary-kpi-card.kpi-deductions .kpi-label {
+  color: #ef4444;
+}
+
+.salary-kpi-card.kpi-projected {
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  border-top: 3px solid #10b981;
+  background: linear-gradient(180deg, var(--bg-card) 0%, rgba(16, 185, 129, 0.04) 100%);
+}
+.salary-kpi-card.kpi-projected .kpi-icon {
+  background: rgba(16, 185, 129, 0.18);
+  color: #10b981;
+}
+.salary-kpi-card.kpi-projected .kpi-value,
+.salary-kpi-card.kpi-projected .kpi-label {
+  color: #059669;
+}
+
+/* ==========================================================================
    Salary Attendance Calendar & List
    ========================================================================== */
 .salary-calendar-container {

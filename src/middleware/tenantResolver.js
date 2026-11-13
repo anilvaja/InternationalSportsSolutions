@@ -1,3 +1,4 @@
+import { config } from '../config/index.js';
 import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById, getTenantDbBySlug } from '../db/connectionManager.js';
 
@@ -69,8 +70,18 @@ export function resolveTenant(req, res, next) {
       )
     );
 
+    const isPlatformRootHost = (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === 'internationalsportssolutions.com' ||
+      host === 'www.internationalsportssolutions.com' ||
+      host === 'internationalsportssolutions.test' ||
+      host === 'www.internationalsportssolutions.test' ||
+      (config.baseDomain && (host === config.baseDomain || host === `www.${config.baseDomain}`))
+    );
+
     const domainCandidate = customDomainQuery || (
-      host && host !== 'localhost' && host !== '127.0.0.1' && host !== 'internationalsportssolutions.test' && !isCloudPreviewHost
+      host && !isPlatformRootHost && !isCloudPreviewHost
         ? host
         : null
     );
@@ -136,7 +147,9 @@ export function resolveTenant(req, res, next) {
         const isDefaultHost = (
           host === 'localhost' ||
           host === '127.0.0.1' ||
+          host === 'internationalsportssolutions.com' ||
           host === 'internationalsportssolutions.test' ||
+          (config.baseDomain && host === config.baseDomain) ||
           isCloudPreviewHost ||
           (req.user && req.user.isSuperAdmin)
         );

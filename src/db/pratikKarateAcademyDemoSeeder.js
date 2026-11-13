@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { config } from '../config/index.js';
 import { getCentralDb } from './centralDb.js';
 import { getTenantDbById } from './connectionManager.js';
 import { DateUtils } from '../utils/dateUtils.js';
@@ -167,7 +168,8 @@ export class PratikKarateAcademyDemoSeeder {
     }
 
     // Ensure domains
-    const primaryDomain = `${slug}.internationalsportssolutions.test`;
+    const primaryDomain = `${slug}.${config.baseDomain || 'internationalsportssolutions.com'}`;
+    const testDomain = `${slug}.internationalsportssolutions.test`;
     const localhostDomain = `${slug}.localhost`;
 
     centralDb.prepare(`
@@ -175,6 +177,12 @@ export class PratikKarateAcademyDemoSeeder {
       VALUES (?, ?, 1, 0, 'active')
       ON CONFLICT(domain) DO UPDATE SET is_primary = 1, status = 'active'
     `).run(academy.id, primaryDomain);
+
+    centralDb.prepare(`
+      INSERT INTO domains (academy_id, domain, is_primary, is_custom, status)
+      VALUES (?, ?, 0, 0, 'active')
+      ON CONFLICT(domain) DO UPDATE SET is_primary = 0, status = 'active'
+    `).run(academy.id, testDomain);
 
     centralDb.prepare(`
       INSERT INTO domains (academy_id, domain, is_primary, is_custom, status)

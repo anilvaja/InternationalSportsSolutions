@@ -10,6 +10,8 @@ const ROOT_DIR = path.resolve(__dirname, '../../');
 
 export const config = {
   port: process.env.PORT || 3005,
+  baseDomain: process.env.BASE_DOMAIN || 'internationalsportssolutions.com',
+  baseDomainTest: 'internationalsportssolutions.test',
   jwtSecret: process.env.JWT_SECRET || 'iss_sports_saas_super_secret_jwt_key_2026',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   cookieMaxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms

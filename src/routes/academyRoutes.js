@@ -1,4 +1,5 @@
 import express from 'express';
+import { config } from '../config/index.js';
 import { getCentralDb } from '../db/centralDb.js';
 import { resolveTenant } from '../middleware/tenantResolver.js';
 import { requireAuth, requireAcademyStaff } from '../middleware/auth.js';
@@ -6272,7 +6273,7 @@ academyRouter.get('/domains', (req, res) => {
         name: req.academy.name,
         slug: req.academy.slug,
       },
-      defaultSubdomain: `${req.academy.slug}.internationalsportssolutions.test`,
+      defaultSubdomain: `${req.academy.slug}.${config.baseDomain || 'internationalsportssolutions.com'}`,
       domains,
     });
   } catch (err) {
