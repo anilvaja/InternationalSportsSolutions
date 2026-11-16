@@ -1038,7 +1038,7 @@ const app = {
         if (!this.user.academyLogo && activeAc) {
           this.user.academyLogo = activeAc.logo_url;
         }
-        if (!this.tenantAcademy && activeAc) {
+        if (this.tenantSubdomain && !this.tenantAcademy && activeAc) {
           this.tenantAcademy = activeAc;
         }
       } else {
@@ -1113,24 +1113,23 @@ const app = {
     if (emailInput) emailInput.value = '';
     if (passwordInput) passwordInput.value = '';
 
-    // If on a tenant subdomain, customize branding
-    if (this.tenantAcademy) {
-      const headerTitle = loginView.querySelector('h2');
-      const headerSub = loginView.querySelector('p');
+    // Handle Branding (Tenant Subdomain vs Central Platform)
+    const headerTitle = loginView.querySelector('h2');
+    const headerSub = loginView.querySelector('p');
+    let banner = loginView.querySelector('#tenant-login-banner');
+    const iconDiv = loginView.querySelector('div[style*="width: 52px"]');
+
+    if (this.tenantAcademy && this.tenantSubdomain) {
       if (headerTitle) headerTitle.innerText = this.tenantAcademy.name;
       if (headerSub) headerSub.innerText = `${this.tenantAcademy.city ? this.tenantAcademy.city + ' — ' : ''}Staff & Student Portal`;
 
       // Update logo if provided
-      if (this.tenantAcademy.logo_url) {
-        const iconDiv = loginView.querySelector('div[style*="width: 52px"]');
-        if (iconDiv) {
-          iconDiv.innerHTML = `<img src="${this.tenantAcademy.logo_url}" style="width: 100%; height: 100%; object-fit: contain; border-radius: 12px;" alt="${this.tenantAcademy.name}">`;
-          iconDiv.style.background = 'transparent';
-        }
+      if (this.tenantAcademy.logo_url && iconDiv) {
+        iconDiv.innerHTML = `<img src="${this.tenantAcademy.logo_url}" style="width: 100%; height: 100%; object-fit: contain; border-radius: 12px;" alt="${this.tenantAcademy.name}">`;
+        iconDiv.style.background = 'transparent';
       }
 
       // Add Subdomain Banner
-      let banner = loginView.querySelector('#tenant-login-banner');
       if (!banner) {
         banner = document.createElement('div');
         banner.id = 'tenant-login-banner';
@@ -1147,6 +1146,15 @@ const app = {
         `;
         const form = loginView.querySelector('#login-form');
         if (form) form.parentNode.insertBefore(banner, form);
+      }
+    } else {
+      // Restore default Central SaaS Platform Branding
+      if (headerTitle) headerTitle.innerText = 'International Sports Solutions';
+      if (headerSub) headerSub.innerText = 'Multi-Tenant SaaS Portal (Database-per-Tenant)';
+      if (banner) banner.remove();
+      if (iconDiv) {
+        iconDiv.innerHTML = '<i class="fa-solid fa-trophy"></i>';
+        iconDiv.style.background = 'linear-gradient(135deg, #2563eb, #0ea5e9)';
       }
     }
   },

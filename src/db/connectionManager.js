@@ -362,7 +362,9 @@ export function closeTenantDb(academyId) {
   const id = Number(academyId);
   if (tenantDbMap.has(id)) {
     try {
-      tenantDbMap.get(id).close();
+      const db = tenantDbMap.get(id);
+      try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch (_) {}
+      db.close();
     } catch (e) {
       console.error(`Error closing DB for academy ${id}:`, e);
     }
@@ -376,6 +378,7 @@ export function closeTenantDb(academyId) {
 export function closeAllTenantDbs() {
   for (const [id, db] of tenantDbMap.entries()) {
     try {
+      try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch (_) {}
       db.close();
     } catch (e) {
       console.error(`Error closing DB for academy ${id}:`, e);

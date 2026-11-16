@@ -93,7 +93,10 @@ export function getCentralDb() {
 
 export function closeCentralDb() {
   if (centralDbInstance) {
-    try { centralDbInstance.close(); } catch (_) {}
+    try {
+      try { centralDbInstance.pragma('wal_checkpoint(TRUNCATE)'); } catch (_) {}
+      centralDbInstance.close();
+    } catch (_) {}
     centralDbInstance = null;
   }
 }

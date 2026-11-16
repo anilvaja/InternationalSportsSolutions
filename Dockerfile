@@ -25,6 +25,8 @@ COPY . .
 RUN mkdir -p data/academies storage/uploads storage/backups \
     && chown -R node:node /app
 
+VOLUME ["/app/data", "/app/storage"]
+
 USER node
 
 EXPOSE 3005

@@ -31,5 +31,7 @@ jobs:
             **/node_modules/**
             **/tests/**
             .env
+            data/**
+            storage/**
             database/database.sqlite
             storage/*.key

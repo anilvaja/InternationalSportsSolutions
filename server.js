@@ -36,8 +36,8 @@ if (process.env.NODE_ENV !== 'test') {
     const academiesCount = centralDb.prepare('SELECT COUNT(*) as c FROM academies').get()?.c || 0;
 
     if (superAdminCount === 0 || plansCount === 0 || academiesCount === 0) {
-      console.log(`[Auto-Init] Baseline platform data missing (SuperAdmins=${superAdminCount}, Plans=${plansCount}, Academies=${academiesCount}). Running baseline seeder...`);
-      runSeed({ includeDefaultAcademy: true });
+      console.log(`[Auto-Init] Baseline platform data missing (SuperAdmins=${superAdminCount}, Plans=${plansCount}, Academies=${academiesCount}). Running non-destructive platform seeder...`);
+      runSeed({ includeDefaultAcademy: academiesCount === 0 });
     }
   } catch (err) {
     console.warn('[Auto-Init] Warning during platform baseline check:', err.message);

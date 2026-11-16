@@ -1,6 +1,7 @@
 import { config } from '../config/index.js';
 import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById, getTenantDbBySlug } from '../db/connectionManager.js';
+import { runSeed } from '../db/seed.js';
 
 /**
  * Extracts normalized host (without port) from request
@@ -198,6 +199,20 @@ export function resolveTenant(req, res, next) {
     if (!academyRecord) {
       academyRecord = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get()
         || centralDb.prepare("SELECT * FROM academies ORDER BY id ASC LIMIT 1").get();
+    }
+
+    // Auto-heal empty central registry on fresh deployment
+    if (!academyRecord) {
+      try {
+        const academiesCount = centralDb.prepare('SELECT COUNT(*) as c FROM academies').get()?.c || 0;
+        if (academiesCount === 0) {
+          console.log('[TenantResolver] Central registry has 0 academies. Auto-seeding baseline default academy...');
+          runSeed({ includeDefaultAcademy: true });
+          academyRecord = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
+        }
+      } catch (seedErr) {
+        console.warn('[TenantResolver] Auto-seed failed:', seedErr.message);
+      }
     }
 
     if (!academyRecord) {

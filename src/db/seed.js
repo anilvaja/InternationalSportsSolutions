@@ -176,44 +176,25 @@ export function runSeed(options = {}) {
       console.log(`[Seed] Provisioning academy database for: ${pratikAcademyData.name} (${pratikAcademyData.slug})`);
       const provisioned = provisionAcademyDb(pratikAcademyData);
       academyId = provisioned.id;
-    } else {
-      academyId = pratikAc.id;
-      centralDb.prepare(`
-        UPDATE academies SET
-          name = ?, slug = ?, contact_email = ?, contact_phone = ?, address = ?, city = ?, plan = ?
-        WHERE id = ?
-      `).run(
-        pratikAcademyData.name,
-        pratikAcademyData.slug,
-        pratikAcademyData.contact_email,
-        pratikAcademyData.contact_phone,
-        pratikAcademyData.address,
-        pratikAcademyData.city,
-        pratikAcademyData.plan,
-        academyId
-      );
-    }
 
-    const tenantDb = getTenantDbById(academyId);
-    const insertRole = tenantDb.prepare(`
-      INSERT OR REPLACE INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
+      const tenantDb = getTenantDbById(academyId);
+      const insertRole = tenantDb.prepare(`
+        INSERT OR REPLACE INTO academy_roles (name, display_name, description, permissions, is_system, theme_color)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
 
-    for (const role of DEFAULT_ACADEMY_ROLES) {
-      insertRole.run(
-        role.name,
-        role.display_name,
-        role.description,
-        JSON.stringify(role.permissions),
-        role.is_system,
-        role.theme_color
-      );
-    }
+      for (const role of DEFAULT_ACADEMY_ROLES) {
+        insertRole.run(
+          role.name,
+          role.display_name,
+          role.description,
+          JSON.stringify(role.permissions),
+          role.is_system,
+          role.theme_color
+        );
+      }
 
-    const adminPassHash = bcrypt.hashSync(pratikAcademyData.admin_password, 10);
-    const existingAdmin = tenantDb.prepare('SELECT id FROM users WHERE email = ?').get(pratikAcademyData.admin_email);
-    if (!existingAdmin) {
+      const adminPassHash = bcrypt.hashSync(pratikAcademyData.admin_password, 10);
       tenantDb.prepare(`
         INSERT INTO users (name, email, password_hash, role, phone, status)
         VALUES (?, ?, ?, 'academy_admin', ?, 'active')
@@ -223,40 +204,30 @@ export function runSeed(options = {}) {
         adminPassHash,
         pratikAcademyData.contact_phone
       );
-    } else {
-      tenantDb.prepare(`
-        UPDATE users SET name = ?, password_hash = ?, role = 'academy_admin', status = 'active'
-        WHERE id = ?
-      `).run(
-        pratikAcademyData.admin_name,
-        adminPassHash,
-        existingAdmin.id
-      );
-    }
 
-    centralDb.prepare(`
-      INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role)
-      VALUES (?, ?, 'academy_admin')
-    `).run(pratikAcademyData.admin_email, academyId);
+      centralDb.prepare(`
+        INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role)
+        VALUES (?, ?, 'academy_admin')
+      `).run(pratikAcademyData.admin_email, academyId);
 
-    const branchCount = tenantDb.prepare('SELECT count(*) as c FROM branches').get().c;
-    if (branchCount === 0) {
       tenantDb.prepare(`
         INSERT INTO branches (id, name, city, is_active, academy_id, geofence_radius_meters, is_geofence_enforced)
         VALUES (1, 'Main Campus Dojo', ?, 1, ?, 100, 1)
       `).run(pratikAcademyData.city || 'Ahmedabad', academyId);
-    }
 
-    try {
-      const insertDomain = centralDb.prepare(`
-        INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
-        VALUES (?, ?, ?, ?, 'active')
-      `);
-      insertDomain.run(academyId, `${pratikAcademyData.slug}.${config.baseDomain || 'internationalsportssolutions.com'}`, 1, 0);
-      insertDomain.run(academyId, `${pratikAcademyData.slug}.internationalsportssolutions.test`, 0, 0);
-      insertDomain.run(academyId, `${pratikAcademyData.slug}.localhost`, 0, 0);
-      insertDomain.run(academyId, 'pratikkarate.com', 0, 1);
-    } catch (_) {}
+      try {
+        const insertDomain = centralDb.prepare(`
+          INSERT OR IGNORE INTO domains (academy_id, domain, is_primary, is_custom, status)
+          VALUES (?, ?, ?, ?, 'active')
+        `);
+        insertDomain.run(academyId, `${pratikAcademyData.slug}.${config.baseDomain || 'internationalsportssolutions.com'}`, 1, 0);
+        insertDomain.run(academyId, `${pratikAcademyData.slug}.internationalsportssolutions.test`, 0, 0);
+        insertDomain.run(academyId, `${pratikAcademyData.slug}.localhost`, 0, 0);
+        insertDomain.run(academyId, 'pratikkarate.com', 0, 1);
+      } catch (_) {}
+    } else {
+      console.log(`[Seed] Academy #${pratikAc.id} ('${pratikAcademyData.name}') already exists in central registry. Preserving all tenant branches, batches, students, and settings intact.`);
+    }
   }
 
   const academiesCount = centralDb.prepare('SELECT COUNT(*) as c FROM academies').get()?.c || 0;
