@@ -1586,7 +1586,7 @@ academyRouter.post('/students/:id/transfer-batch', (req, res) => {
     // Enforce students_per_batch quota on destination batch
     QuotaService.assertCanCreate(req.academy.id, 'students_per_batch', 1, { batchId: targetBatch.id });
 
-    const effDate = effective_date || new Date().toISOString().split('T')[0];
+    const effDate = (effective_date ? normalizeDate(effective_date, 'effective_date') : null) || DateUtils.getTodayDate('Asia/Kolkata');
 
     // Atomic Transaction to execute transfer
     const executeTransfer = db.transaction(() => {
@@ -1604,7 +1604,13 @@ academyRouter.post('/students/:id/transfer-batch', (req, res) => {
       }
 
       // 2. Insert new active enrollment (enforces idx_student_single_active_batch constraint)
-      const actorUserId = db.prepare('SELECT id FROM users WHERE id = ?').get(req.user.userId)?.id || null;
+      let actorUserId = null;
+      if (req.user && req.user.userId) {
+        try {
+          const u = db.prepare('SELECT id FROM users WHERE id = ?').get(Number(req.user.userId));
+          if (u) actorUserId = u.id;
+        } catch (_) {}
+      }
 
       db.prepare(`
         INSERT INTO student_batch_enrollments (
@@ -1623,9 +1629,9 @@ academyRouter.post('/students/:id/transfer-batch', (req, res) => {
         INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, entity_id, details, ip_address)
         VALUES (?, ?, ?, 'BATCH_TRANSFER', 'students', ?, ?, ?)
       `).run(
-        req.user.userId,
-        req.user.name,
-        req.user.role,
+        actorUserId,
+        req.user ? req.user.name : 'System',
+        req.user ? req.user.role : 'admin',
         String(studentId),
         `Transferred student from '${currentActive ? currentActive.batch_name : 'None'}' to '${targetBatch.name}'. Reason: ${transfer_reason || 'None'}`,
         req.ip
@@ -1668,7 +1674,7 @@ academyRouter.post('/students/:id/unassign-batch', (req, res) => {
       return res.json({ success: true, message: 'Student is already not enrolled in any batch' });
     }
 
-    const effDate = effective_date || new Date().toISOString().split('T')[0];
+    const effDate = (effective_date ? normalizeDate(effective_date, 'effective_date') : null) || DateUtils.getTodayDate('Asia/Kolkata');
     db.prepare(`
       UPDATE student_batch_enrollments
       SET status = 'completed',
