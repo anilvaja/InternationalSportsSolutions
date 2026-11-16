@@ -79,20 +79,15 @@ publicRouter.get('/tenant-info', (req, res) => {
       }
     }
 
-    // 3. Fallback for cloud preview / development environments
-    if (!academy) {
+    // 3. Fallback only for preview subdomains / ephemeral preview deployments with explicit query
+    if (!academy && (querySlug || queryDomain)) {
       const isCloudPreview = (
         host && (
           host.includes('airoapp.ai') ||
           host.includes('preview') ||
           host.includes('vercel.app') ||
           host.includes('onrender.com') ||
-          host.includes('railway.app') ||
-          host === 'localhost' ||
-          host === '127.0.0.1' ||
-          host === 'internationalsportssolutions.com' ||
-          host === 'internationalsportssolutions.test' ||
-          (config.baseDomain && host === config.baseDomain)
+          host.includes('railway.app')
         )
       );
       if (isCloudPreview) {
