@@ -106,7 +106,8 @@ test('Stage 2 Acceptance Review & Investigation Suite (Part A Items 1-8)', async
     freshDb.pragma('foreign_keys = ON');
     runMigrations(freshDb, 'tenant');
     const migCount = freshDb.prepare('SELECT count(*) as c FROM _migrations').get();
-    assert.equal(migCount.c, 36, 'Fresh database must have all 36 migrations applied');
+    const totalTenantMigrations = fs.readdirSync(path.resolve(process.cwd(), 'src/db/migrations/tenant')).filter(f => f.endsWith('.sql')).length;
+    assert.equal(migCount.c, totalTenantMigrations, `Fresh database must have all ${totalTenantMigrations} migrations applied`);
     const fkCheck = freshDb.pragma('foreign_key_check');
     assert.equal(fkCheck.length, 0, 'Fresh migration replay must have 0 FK violations');
     freshDb.close();

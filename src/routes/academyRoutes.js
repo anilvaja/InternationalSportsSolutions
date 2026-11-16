@@ -25,6 +25,7 @@ import { StaffAvailabilityService } from '../services/staffAvailabilityService.j
 import { SecurityGuardService } from '../services/securityGuardService.js';
 import { smartAttendanceRouter } from './smartAttendanceRoutes.js';
 import { AcademySetupWizardService } from '../services/academySetupWizardService.js';
+import { FaceBiometricsService } from '../services/faceBiometricsService.js';
 
 export const academyRouter = express.Router();
 
@@ -2205,6 +2206,10 @@ academyRouter.put('/students/:id', (req, res) => {
       batch_id,
       password,
       photo_url,
+      allowed_attendance_modes,
+      biometric_consent_given,
+      parent_biometric_consent,
+      biometric_consent_by,
     } = req.body;
 
     // Rule A & Cross-academy check
@@ -2273,6 +2278,37 @@ academyRouter.put('/students/:id', (req, res) => {
     if (password && String(password).trim().length > 0) {
       const hash = bcrypt.hashSync(String(password).trim(), 10);
       db.prepare('UPDATE students SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hash, id);
+    }
+
+    // Update allowed attendance modes if provided by academy admin
+    if (allowed_attendance_modes !== undefined) {
+      let modes = ['qr', 'face'];
+      if (Array.isArray(allowed_attendance_modes)) {
+        modes = allowed_attendance_modes.filter(m => ['qr', 'face'].includes(m));
+        if (modes.length === 0) modes = ['qr'];
+      } else if (typeof allowed_attendance_modes === 'string') {
+        try {
+          const parsed = JSON.parse(allowed_attendance_modes);
+          if (Array.isArray(parsed)) modes = parsed.filter(m => ['qr', 'face'].includes(m));
+        } catch (_) {
+          if (['qr', 'face'].includes(allowed_attendance_modes)) modes = [allowed_attendance_modes];
+        }
+      }
+      db.prepare('UPDATE students SET allowed_attendance_modes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(JSON.stringify(modes), id);
+    }
+
+    // Update parent/guardian biometric consent if specified
+    if (biometric_consent_given !== undefined || parent_biometric_consent !== undefined) {
+      const isGranted = Boolean(biometric_consent_given || parent_biometric_consent);
+      const consentGivenBy = biometric_consent_by || guardian_name || `${first_name || 'Student'}'s Guardian`;
+      FaceBiometricsService.recordConsent(db, req.academy.id, id, {
+        consent_given_by: consentGivenBy,
+        guardian_relationship: req.body.guardian_relationship || 'parent',
+        consent_status: isGranted ? 'granted' : 'withdrawn',
+        notes: isGranted ? 'Biometric consent updated by administrator during profile edit' : 'Consent withdrawn by administrator',
+        ip_address: req.ip,
+      });
     }
 
     // Sync student email to central lookup
@@ -2479,6 +2515,15 @@ academyRouter.get('/students/:id', (req, res) => {
 
     student.has_password = Boolean(student.password_hash);
     delete student.password_hash;
+
+    try {
+      student.allowed_attendance_modes = student.allowed_attendance_modes
+        ? JSON.parse(student.allowed_attendance_modes)
+        : ['qr', 'face'];
+    } catch (_) {
+      student.allowed_attendance_modes = ['qr', 'face'];
+    }
+    student.face_consent_granted = FaceBiometricsService.hasActiveConsent(db, req.academy.id, id);
 
     // 1. Attendance Summary Stats
     const attStats = db.prepare(`

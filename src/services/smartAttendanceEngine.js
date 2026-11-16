@@ -58,7 +58,7 @@ export class SmartAttendanceEngine {
     return {
       academy_id: targetAcademyId,
       branch_id: branchId ? Number(branchId) : null,
-      enabled_modes: ['qr', 'coach_manual', 'gps', 'nfc', 'face'],
+      enabled_modes: ['qr', 'face'],
       default_mode: 'qr',
       qr_refresh_rate_seconds: 0,
       qr_allow_offline: 1,
@@ -403,6 +403,69 @@ export class SmartAttendanceEngine {
       resolvedStudent = student;
     } else {
       return { success: false, message: `Unsupported attendance mode: ${normalizedMode}`, code: 'INVALID_MODE' };
+    }
+
+    // 3.5. Enforce Student-Level Allowed Attendance Modes & Biometric Consent
+    if (resolvedStudent && resolvedStudent.id) {
+      const studentDbRecord = db.prepare('SELECT allowed_attendance_modes FROM students WHERE id = ?').get(resolvedStudent.id);
+      let studentAllowedModes = ['qr', 'face'];
+      if (studentDbRecord && studentDbRecord.allowed_attendance_modes) {
+        try {
+          const parsed = JSON.parse(studentDbRecord.allowed_attendance_modes);
+          if (Array.isArray(parsed) && parsed.length > 0) studentAllowedModes = parsed;
+        } catch (_) {}
+      }
+
+      // Check ID Card (QR) scan authorization for this student
+      if (normalizedMode === 'qr' && !studentAllowedModes.includes('qr')) {
+        return this._logAndReject(db, targetAcademyId, {
+          branch_id,
+          student_id: resolvedStudent.id,
+          mode: 'qr',
+          device_id: verifiedDeviceId,
+          operator_user_id,
+          ip_address,
+          user_agent,
+          result: 'permission_denied',
+          failure_reason: 'Student ID card scanning is not enabled for this student by academy administration',
+          message: 'Student ID card scanning is disabled for this student. Please use Facial Recognition.',
+        });
+      }
+
+      // Check Facial Recognition authorization & Biometric Consent for this student
+      if (normalizedMode === 'face') {
+        if (!studentAllowedModes.includes('face')) {
+          return this._logAndReject(db, targetAcademyId, {
+            branch_id,
+            student_id: resolvedStudent.id,
+            mode: 'face',
+            device_id: verifiedDeviceId,
+            operator_user_id,
+            ip_address,
+            user_agent,
+            result: 'permission_denied',
+            failure_reason: 'Facial recognition attendance is not enabled for this student by academy administration',
+            message: 'Face scanning attendance is disabled for this student. Please use Student ID card.',
+          });
+        }
+
+        // Biometric consent strictly required for face recognition
+        const hasConsent = FaceBiometricsService.hasActiveConsent(db, targetAcademyId, resolvedStudent.id);
+        if (!hasConsent) {
+          return this._logAndReject(db, targetAcademyId, {
+            branch_id,
+            student_id: resolvedStudent.id,
+            mode: 'face',
+            device_id: verifiedDeviceId,
+            operator_user_id,
+            ip_address,
+            user_agent,
+            result: 'permission_denied',
+            failure_reason: 'Explicit parental/guardian biometric consent is required before face scanning attendance can be accepted',
+            message: 'Biometric consent required: Parent/guardian consent has not been granted for facial recognition. Please check in with Student ID card.',
+          });
+        }
+      }
     }
 
     // Optional supporting signal: BLE proximity evaluation

@@ -11,7 +11,7 @@
         "db:reset": "node scripts/cleanup_all_academies.js",
         "db:clean": "node scripts/cleanup_all_academies.js",
         "test": "node --test --test-concurrency=1 tests/Unit/**/*.test.js tests/Unit/**/*.test.mjs",
-        "test:ui": "node tests/e2e/run_ui_tests.mjs",
+        "test:ui": "node scripts/open_ui_test_runner.js",
         "test:ui:all": "node tests/e2e/run_ui_tests.mjs --all",
         "test:ui:headed": "node tests/e2e/run_ui_tests.mjs --all --headed",
         "test:ui:setup": "node tests/e2e/run_ui_tests.mjs --module=setup",
@@ -30,7 +30,6 @@
         "mobile:web": "npm --prefix mobile run web",
         "push:ftp": "powershell -ExecutionPolicy Bypass -File scripts/local_ftp_push.ps1",
         "push:ftp:full": "powershell -ExecutionPolicy Bypass -File scripts/local_ftp_push.ps1 -FullUpload",
-        "test:ui": "node scripts/open_ui_test_runner.js",
         "test:ui:headless": "node scripts/open_ui_test_runner.js --headless",
         "test:e2e": "playwright test",
         "test:e2e:ui": "playwright test --ui",
@@ -58,6 +57,7 @@
         "jsonwebtoken": "^9.0.3",
         "jsqr": "^1.4.0",
         "multer": "^1.4.5-lts.2",
+        "qrcode": "^1.5.4",
         "sharp": "^0.35.5"
     },
     "allowScripts": {

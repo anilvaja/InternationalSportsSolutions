@@ -76,7 +76,7 @@ test('Smart Attendance Engine — Comprehensive Architectural Test Suite', async
     assert.equal(resolvedOld.reason, 'REVOKED_TOKEN');
 
     // Digital ID Card payload test
-    const idCard = QrAttendanceService.getStudentIdCardData(db, academyId, studentA.id, { name: 'Karate Academy' });
+    const idCard = await QrAttendanceService.getStudentIdCardData(db, academyId, studentA.id, { name: 'Karate Academy' });
     assert.equal(idCard.student.id, studentA.id);
     assert.equal(idCard.qr.token, tokenData2.token);
     assert.ok(Array.isArray(idCard.student.batches));

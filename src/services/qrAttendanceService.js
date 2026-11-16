@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import QRCode from 'qrcode';
 
 /**
  * QR Attendance Service
@@ -221,9 +222,9 @@ export class QrAttendanceService {
    * @param {number} academyId 
    * @param {number} studentId 
    * @param {object} academyInfo 
-   * @returns {object} ID Card payload
+   * @returns {Promise<object>} ID Card payload
    */
-  static getStudentIdCardData(db, academyId, studentId, academyInfo = {}) {
+  static async getStudentIdCardData(db, academyId, studentId, academyInfo = {}) {
     const targetAcademyId = Number(academyId);
     const targetStudentId = Number(studentId);
 
@@ -242,6 +243,7 @@ export class QrAttendanceService {
         s.photo_url,
         s.status,
         s.enrolled_at,
+        s.allowed_attendance_modes,
         b.name as branch_name,
         b.city as branch_city,
         b.address as branch_address
@@ -252,6 +254,18 @@ export class QrAttendanceService {
 
     if (!student) {
       throw new Error(`Student #${targetStudentId} not found`);
+    }
+
+    // Parse allowed attendance modes
+    let allowedModes = ['qr', 'face'];
+    if (student.allowed_attendance_modes) {
+      try {
+        allowedModes = typeof student.allowed_attendance_modes === 'string'
+          ? JSON.parse(student.allowed_attendance_modes)
+          : student.allowed_attendance_modes;
+      } catch (_) {
+        allowedModes = ['qr', 'face'];
+      }
     }
 
     // Active batches
@@ -275,6 +289,22 @@ export class QrAttendanceService {
 
     const tokenData = this.getOrCreateActiveToken(db, targetAcademyId, targetStudentId);
 
+    // Generate 100% offline vector SVG and base64 data URI
+    let qrSvg = '';
+    let qrDataUrl = '';
+    try {
+      qrSvg = await QRCode.toString(tokenData.token, {
+        type: 'svg',
+        margin: 1,
+        color: { dark: '#0f172a', light: '#ffffff' },
+      });
+      qrDataUrl = await QRCode.toDataURL(tokenData.token, {
+        margin: 1,
+        width: 240,
+        color: { dark: '#0f172a', light: '#ffffff' },
+      });
+    } catch (_) {}
+
     return {
       student: {
         id: student.id,
@@ -292,6 +322,7 @@ export class QrAttendanceService {
         branch_city: student.branch_city,
         enrolled_at: student.enrolled_at,
         status: student.status,
+        allowed_attendance_modes: allowedModes,
         active_belt: technique ? (technique.belt_level || technique.technique_name) : 'White Belt',
         batches: batches.map(b => {
           let days = [];
@@ -317,6 +348,8 @@ export class QrAttendanceService {
         token: tokenData.token,
         version: tokenData.version,
         generated_at: tokenData.generated_at,
+        svg: qrSvg,
+        data_url: qrDataUrl,
       },
       academy: {
         id: targetAcademyId,

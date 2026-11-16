@@ -53,7 +53,7 @@ export function runSeed(options = {}) {
         status: 'active',
         is_default: 1,
         limits: { branches: 1, coaches: 3, batches: 5, students: 75, students_per_batch: 25, users: 5 },
-        features: { syllabus: 1, facilities: 1, events: 0, payroll: 0 },
+        features: { syllabus: 1, facilities: 1, events: 0, payroll: 0, smart_attendance: 0, face_attendance: 0 },
       },
       {
         name: 'Standard',
@@ -65,7 +65,7 @@ export function runSeed(options = {}) {
         status: 'active',
         is_default: 0,
         limits: { branches: 3, coaches: 10, batches: 15, students: 250, students_per_batch: 30, users: 15 },
-        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1 },
+        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1, smart_attendance: 1, face_attendance: 1 },
       },
       {
         name: 'Professional',
@@ -77,7 +77,7 @@ export function runSeed(options = {}) {
         status: 'active',
         is_default: 0,
         limits: { branches: 8, coaches: 25, batches: 40, students: 800, students_per_batch: 40, users: 35 },
-        features: { syllabus: 1, features: 1, events: 1, payroll: 1 },
+        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1, smart_attendance: 1, face_attendance: 1 },
       },
       {
         name: 'Enterprise',
@@ -89,7 +89,7 @@ export function runSeed(options = {}) {
         status: 'active',
         is_default: 0,
         limits: { branches: 25, coaches: 100, batches: 150, students: 3000, students_per_batch: 60, users: 100 },
-        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1 },
+        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1, smart_attendance: 1, face_attendance: 1 },
       },
     ];
 
@@ -273,5 +273,5 @@ export function runSeed(options = {}) {
 
 // Execute if run directly from CLI
 if (process.argv[1] && process.argv[1].endsWith('seed.js')) {
-  runSeed();
+  runSeed({ includeDefaultAcademy: true });
 }

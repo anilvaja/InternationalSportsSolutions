@@ -9,9 +9,28 @@ import { QrAttendanceService } from '../services/qrAttendanceService.js';
 import { FaceBiometricsService } from '../services/faceBiometricsService.js';
 import { NfcReaderAdapter } from '../services/nfcReaderAdapter.js';
 import { EventPassService } from '../services/eventPassService.js';
+import { QuotaService } from '../services/quotaService.js';
 
 export const smartAttendanceRouter = express.Router();
 const memoryUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+function requirePlanFeature(featureKey = 'smart_attendance') {
+  return (req, res, next) => {
+    if (req.user?.isSuperAdmin) return next();
+    const academyId = req.academy?.id || req.user?.academyId;
+    if (!academyId) return next();
+
+    const isEnabled = QuotaService.isFeatureEnabled(academyId, featureKey);
+    if (!isEnabled) {
+      return res.status(403).json({
+        success: false,
+        code: 'PLAN_UPGRADE_REQUIRED',
+        error: `Smart attendance feature '${featureKey}' is not included in your academy's current subscription plan. Please contact your platform administrator or upgrade your subscription.`,
+      });
+    }
+    next();
+  };
+}
 
 function checkPermission(req, perm) {
   if (!req.user) return false;
@@ -56,7 +75,7 @@ function requirePerm(perms) {
 /**
  * GET /api/academy/smart-attendance/settings
  */
-smartAttendanceRouter.get('/settings', (req, res) => {
+smartAttendanceRouter.get('/settings', requirePlanFeature('smart_attendance'), (req, res) => {
   try {
     const db = req.tenantDb;
     const branchId = req.query.branch_id ? Number(req.query.branch_id) : null;
@@ -70,7 +89,7 @@ smartAttendanceRouter.get('/settings', (req, res) => {
 /**
  * PUT /api/academy/smart-attendance/settings
  */
-smartAttendanceRouter.put('/settings', requirePerm(['manage_smart_attendance', 'edit_academy_settings', 'all']), (req, res) => {
+smartAttendanceRouter.put('/settings', requirePerm(['manage_smart_attendance', 'edit_academy_settings', 'all']), requirePlanFeature('smart_attendance'), (req, res) => {
   try {
     const db = req.tenantDb;
     const branchId = req.body.branch_id ? Number(req.body.branch_id) : null;
@@ -85,7 +104,7 @@ smartAttendanceRouter.put('/settings', requirePerm(['manage_smart_attendance', '
  * POST /api/academy/smart-attendance/verify
  * Central attendance verification and recording endpoint
  */
-smartAttendanceRouter.post('/verify', requirePerm(['scan_attendance', 'mark_attendance', 'view_kiosk', 'all']), async (req, res) => {
+smartAttendanceRouter.post('/verify', requirePerm(['scan_attendance', 'mark_attendance', 'view_kiosk', 'all']), requirePlanFeature('smart_attendance'), async (req, res) => {
   try {
     const db = req.tenantDb;
     let payload = { ...req.body };
@@ -121,7 +140,7 @@ smartAttendanceRouter.post('/verify', requirePerm(['scan_attendance', 'mark_atte
  * POST /api/academy/smart-attendance/scan-card-photo
  * Decodes QR code or identifies student from an uploaded/captured card photo
  */
-smartAttendanceRouter.post('/scan-card-photo', requirePerm(['scan_attendance', 'mark_attendance', 'view_kiosk', 'all']), memoryUpload.single('photo'), async (req, res) => {
+smartAttendanceRouter.post('/scan-card-photo', requirePerm(['scan_attendance', 'mark_attendance', 'view_kiosk', 'all']), requirePlanFeature('smart_attendance'), memoryUpload.single('photo'), async (req, res) => {
   try {
     const db = req.tenantDb;
     let imageBuffer = req.file ? req.file.buffer : null;
@@ -367,11 +386,11 @@ smartAttendanceRouter.put('/devices/:id/revoke', requirePerm(['manage_attendance
  * GET /api/academy/smart-attendance/students/:id/qr
  * Retrieves printable digital ID card data with QR token
  */
-smartAttendanceRouter.get('/students/:id/qr', (req, res) => {
+smartAttendanceRouter.get('/students/:id/qr', requirePlanFeature('smart_attendance'), async (req, res) => {
   try {
     const db = req.tenantDb;
     const studentId = Number(req.params.id);
-    const cardData = QrAttendanceService.getStudentIdCardData(db, req.academy.id, studentId, req.academy);
+    const cardData = await QrAttendanceService.getStudentIdCardData(db, req.academy.id, studentId, req.academy);
     res.json({ success: true, ...cardData });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -381,7 +400,7 @@ smartAttendanceRouter.get('/students/:id/qr', (req, res) => {
 /**
  * POST /api/academy/smart-attendance/students/:id/qr/regenerate
  */
-smartAttendanceRouter.post('/students/:id/qr/regenerate', requirePerm(['manage_student_qr', 'manage_smart_attendance', 'all']), (req, res) => {
+smartAttendanceRouter.post('/students/:id/qr/regenerate', requirePerm(['manage_student_qr', 'manage_smart_attendance', 'all']), requirePlanFeature('smart_attendance'), (req, res) => {
   try {
     const db = req.tenantDb;
     const studentId = Number(req.params.id);
@@ -431,7 +450,7 @@ smartAttendanceRouter.post('/students/:id/nfc/revoke', requirePerm(['manage_nfc_
 /**
  * POST /api/academy/smart-attendance/students/:id/face/consent
  */
-smartAttendanceRouter.post('/students/:id/face/consent', requirePerm(['manage_face_enrollment', 'manage_smart_attendance', 'all']), (req, res) => {
+smartAttendanceRouter.post('/students/:id/face/consent', requirePerm(['manage_face_enrollment', 'manage_smart_attendance', 'all']), requirePlanFeature('face_attendance'), (req, res) => {
   try {
     const db = req.tenantDb;
     const studentId = Number(req.params.id);
@@ -448,7 +467,7 @@ smartAttendanceRouter.post('/students/:id/face/consent', requirePerm(['manage_fa
 /**
  * POST /api/academy/smart-attendance/students/:id/face/enroll
  */
-smartAttendanceRouter.post('/students/:id/face/enroll', requirePerm(['manage_face_enrollment', 'manage_smart_attendance', 'all']), (req, res) => {
+smartAttendanceRouter.post('/students/:id/face/enroll', requirePerm(['manage_face_enrollment', 'manage_smart_attendance', 'all']), requirePlanFeature('face_attendance'), (req, res) => {
   try {
     const db = req.tenantDb;
     const studentId = Number(req.params.id);
@@ -483,7 +502,7 @@ smartAttendanceRouter.post('/students/:id/face/enroll', requirePerm(['manage_fac
  * POST /api/academy/smart-attendance/students/:id/face/enroll-photo
  * Enrolls face directly from webcam photo or uploaded image
  */
-smartAttendanceRouter.post('/students/:id/face/enroll-photo', requirePerm(['manage_face_enrollment', 'manage_smart_attendance', 'all']), memoryUpload.single('photo'), async (req, res) => {
+smartAttendanceRouter.post('/students/:id/face/enroll-photo', requirePerm(['manage_face_enrollment', 'manage_smart_attendance', 'all']), requirePlanFeature('face_attendance'), memoryUpload.single('photo'), async (req, res) => {
   try {
     const db = req.tenantDb;
     const studentId = Number(req.params.id);
@@ -550,7 +569,7 @@ smartAttendanceRouter.post('/students/:id/face/enroll-photo', requirePerm(['mana
  * POST /api/academy/smart-attendance/face/auto-enroll-all
  * Batch auto-enrolls all students with photos in the academy
  */
-smartAttendanceRouter.post('/face/auto-enroll-all', requirePerm(['manage_face_enrollment', 'manage_smart_attendance', 'all']), async (req, res) => {
+smartAttendanceRouter.post('/face/auto-enroll-all', requirePerm(['manage_face_enrollment', 'manage_smart_attendance', 'all']), requirePlanFeature('face_attendance'), async (req, res) => {
   try {
     const db = req.tenantDb;
     const outcome = await FaceBiometricsService.autoEnrollFromProfilePhotos(db, req.academy.id, req.user.userId);

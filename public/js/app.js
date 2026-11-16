@@ -8929,6 +8929,45 @@ const app = {
               </button>
             </div>
           </div>
+
+          <!-- Attendance Authorization & Biometric Policy Controls -->
+          <div class="form-group" style="margin-top: 14px; border-top: 1px dashed var(--border, #cbd5e1); padding-top: 12px;">
+            <label style="font-size: 13px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-id-badge" style="color: var(--primary);"></i> Attendance Check-in Modes Authorized
+            </label>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">
+              Configure which attendance modes this student is permitted to use for daily check-in (Academy Admin Controlled).
+            </div>
+            <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px;">
+              <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12.5px; font-weight: 600;">
+                <input type="checkbox" id="edit-stu-mode-qr" value="qr" ${(s.allowed_attendance_modes || ['qr', 'face']).includes('qr') ? 'checked' : ''}>
+                <i class="fa-solid fa-qrcode" style="color: #2563eb;"></i> Student ID Pass (QR Code)
+              </label>
+              <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12.5px; font-weight: 600;">
+                <input type="checkbox" id="edit-stu-mode-face" value="face" ${(s.allowed_attendance_modes || ['qr', 'face']).includes('face') ? 'checked' : ''}>
+                <i class="fa-solid fa-face-smile" style="color: #10b981;"></i> Facial Biometric Recognition
+              </label>
+            </div>
+
+            <!-- Biometric Parent Consent Box -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-top: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 700; color: #0f172a; margin: 0;">
+                  <input type="checkbox" id="edit-stu-biometric-consent" ${s.face_consent_granted ? 'checked' : ''}>
+                  Parent / Guardian Biometric Consent Granted
+                </label>
+                <span class="badge ${s.face_consent_granted ? 'badge-success' : 'badge-warning'}" style="font-size: 10px;">
+                  ${s.face_consent_granted ? 'Consent Active' : 'Consent Pending'}
+                </span>
+              </div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+                Mandatory legal requirement: Facial recognition check-in strictly requires active parental/guardian authorization. ID Card scanning does not require biometric consent.
+              </div>
+              <div style="margin-top: 8px; display: flex; gap: 10px; align-items: center;">
+                <input type="text" id="edit-stu-consent-by" class="form-input form-input-sm" style="flex: 1; font-size: 11px;" placeholder="Authorized By (e.g. ${this.escapeHtml(s.guardian_name || 'Father / Mother / Guardian')})" value="${this.escapeHtml(s.guardian_name || '')}">
+              </div>
+            </div>
+          </div>
         </form>
       `,
       `
@@ -8985,6 +9024,26 @@ const app = {
     }
     if (password && password.length >= 4) {
       payload.password = password;
+    }
+
+    // Attendance mode authorization
+    const modeQr = document.getElementById('edit-stu-mode-qr')?.checked;
+    const modeFace = document.getElementById('edit-stu-mode-face')?.checked;
+    let allowedModes = [];
+    if (modeQr) allowedModes.push('qr');
+    if (modeFace) allowedModes.push('face');
+    if (allowedModes.length === 0) allowedModes = ['qr'];
+    payload.allowed_attendance_modes = allowedModes;
+
+    // Parent/guardian biometric consent
+    const consentEl = document.getElementById('edit-stu-biometric-consent');
+    if (consentEl) {
+      payload.biometric_consent_given = Boolean(consentEl.checked);
+      payload.parent_biometric_consent = Boolean(consentEl.checked);
+      const consentBy = document.getElementById('edit-stu-consent-by')?.value?.trim();
+      if (consentBy) {
+        payload.biometric_consent_by = consentBy;
+      }
     }
 
     const res = await this.apiRequest(`/api/academy/students/${studentId}`, {
@@ -20985,48 +21044,48 @@ const app = {
     const academy = data.academy || {};
 
     return `
-      <div class="id-card-badge printable-id-card" style="width: 440px; max-width: 100%; border-radius: 12px; background: #ffffff; color: #0f172a; border: 1.5px solid #cbd5e1; box-shadow: 0 10px 25px rgba(0,0,0,0.08); padding: 16px; margin: 0 auto; text-align: left; position: relative; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+      <div class="id-card-badge printable-id-card" style="width: 440px; max-width: 100%; border-radius: 12px; background: #ffffff; color: #0f172a; border: 1.5px solid #cbd5e1; box-shadow: 0 10px 25px rgba(0,0,0,0.08); padding: 14px 16px; margin: 0 auto; text-align: left; position: relative; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
         <!-- Header -->
-        <div class="card-banner" style="background: #1e3a8a; margin: -16px -16px 14px -16px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; color: #ffffff;">
+        <div class="card-banner" style="background: #1e3a8a; margin: -14px -16px 12px -16px; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; color: #ffffff; border-bottom: 2px solid #0f172a;">
           <div style="display: flex; align-items: center; gap: 10px;">
-            ${academy.logo_url ? `<img src="${this.escapeHtml(academy.logo_url)}" style="width: 28px; height: 28px; object-fit: contain; border-radius: 4px; background: #fff; padding: 2px;">` : `<i class="fa-solid fa-medal" style="font-size: 20px; color: #f59e0b;"></i>`}
+            ${academy.logo_url ? `<img src="${this.escapeHtml(academy.logo_url)}" style="width: 26px; height: 26px; object-fit: contain; border-radius: 4px; background: #fff; padding: 2px;">` : `<i class="fa-solid fa-medal" style="font-size: 18px; color: #f59e0b;"></i>`}
             <div>
-              <div class="id-card-header-title" style="font-size: 13.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; line-height: 1.1; color: #ffffff;">
+              <div class="id-card-header-title" style="font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; line-height: 1.1; color: #ffffff;">
                 ${this.escapeHtml(academy.name || 'Sports Academy')}
               </div>
-              <div class="id-card-subtitle" style="font-size: 9.5px; opacity: 0.9; font-weight: 500; text-transform: uppercase; margin-top: 2px; color: #e0e7ff;">
+              <div class="id-card-subtitle" style="font-size: 9px; opacity: 0.92; font-weight: 600; text-transform: uppercase; margin-top: 2px; color: #e0e7ff;">
                 ${student.branch_name ? this.escapeHtml(student.branch_name) + ' &bull; ' : ''}Official Student Pass
               </div>
             </div>
           </div>
-          <span style="font-size: 9px; font-weight: 700; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.3); color: #ffffff;">
+          <span class="cr80-tag" style="font-size: 9px; font-weight: 700; background: rgba(255,255,255,0.22); padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.35); color: #ffffff;">
             CR80 PASS
           </span>
         </div>
 
         <!-- Main Body -->
-        <div style="display: flex; gap: 14px; align-items: center;">
+        <div class="card-body-row" style="display: flex; flex-direction: row; flex-wrap: nowrap; gap: 12px; align-items: center; justify-content: space-between;">
           <!-- Photo -->
-          <div style="width: 80px; height: 96px; border-radius: 6px; border: 1.5px solid #e2e8f0; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-            ${student.photo_url ? `<img src="${this.escapeHtml(student.photo_url)}" style="width: 100%; height: 100%; object-fit: cover;">` : `<span style="font-size: 32px; font-weight: 800; color: #94a3b8;">${this.escapeHtml((student.first_name || 'S')[0])}</span>`}
+          <div class="student-photo-wrapper" style="width: 76px; height: 92px; border-radius: 6px; border: 1.5px solid #cbd5e1; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            ${student.photo_url ? `<img src="${this.escapeHtml(student.photo_url)}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<span style="font-size: 30px; font-weight: 800; color: #94a3b8;">${this.escapeHtml((student.first_name || 'S')[0])}</span>`}
           </div>
 
           <!-- Details -->
-          <div style="flex: 1; min-width: 0;">
-            <div style="font-size: 15px; font-weight: 800; color: #0f172a; line-height: 1.2;">
+          <div class="student-details-wrapper" style="flex: 1; min-width: 0; line-height: 1.25;">
+            <div class="student-name-text" style="font-size: 14.5px; font-weight: 800; color: #0f172a; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
               ${this.escapeHtml(student.full_name)}
             </div>
-            <div style="font-size: 11px; color: #475569; margin-top: 4px;">
+            <div class="student-meta-item" style="font-size: 11px; color: #475569; margin-top: 3px;">
               Student Code: <strong style="font-family: monospace; font-size: 11.5px; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</strong>
             </div>
-            <div style="font-size: 11px; color: #475569; margin-top: 3px;">
+            <div class="student-meta-item" style="font-size: 11px; color: #475569; margin-top: 2.5px;">
               Curriculum: <strong style="color: #0f172a;">${this.escapeHtml(student.active_belt || 'White Belt')}</strong>
             </div>
-            <div style="font-size: 11px; color: #475569; margin-top: 3px;">
+            <div class="student-meta-item" style="font-size: 11px; color: #475569; margin-top: 2.5px;">
               Blood Group: <strong style="color: #dc2626;">${this.escapeHtml(student.blood_group || 'N/A')}</strong>
             </div>
             ${student.guardian_phone ? `
-              <div style="font-size: 10.5px; color: #475569; margin-top: 3px;">
+              <div class="student-meta-item" style="font-size: 10.5px; color: #475569; margin-top: 2.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                 Emergency: <strong style="color: #0f172a;">${this.escapeHtml(student.guardian_phone)}</strong>
               </div>
             ` : ''}
@@ -21034,15 +21093,17 @@ const app = {
 
           <!-- QR -->
           <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0;">
-            ${SmartAttendanceController.renderQrSvg(qr.token, 84, 3)}
-            <span style="font-size: 8px; font-weight: 700; color: #475569; text-transform: uppercase; margin-top: 4px; letter-spacing: 0.3px;">
+            <div class="qr-card-wrapper" style="width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px; box-sizing: border-box; overflow: hidden;">
+              ${qr.svg ? qr.svg : (qr.data_url ? `<img src="${qr.data_url}" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qr.token)}" style="width: 100%; height: 100%; object-fit: contain; display: block;">`)}
+            </div>
+            <span class="qr-scan-label" style="font-size: 8px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-top: 4px; letter-spacing: 0.3px;">
               Scan to Attend
             </span>
           </div>
         </div>
 
         <!-- Footer -->
-        <div style="margin-top: 12px; padding-top: 8px; border-top: 1px dashed #cbd5e1; display: flex; justify-content: space-between; align-items: center; font-size: 9.5px; color: #64748b;">
+        <div class="card-footer-row" style="margin-top: 10px; padding-top: 7px; border-top: 1px dashed #cbd5e1; display: flex; justify-content: space-between; align-items: center; font-size: 9px; color: #64748b;">
           <div>
             <i class="fa-solid fa-shield-halved" style="color: #10b981;"></i> Security Pass &bull; Ver ${qr.version || 1}
           </div>
@@ -21173,17 +21234,18 @@ const app = {
             }
             .cut-guide-container {
               border: 1px dashed #94a3b8;
-              border-radius: 5mm;
-              padding: 3mm;
+              border-radius: 4.5mm;
+              padding: 2.5mm;
               background: #ffffff;
               display: inline-block;
             }
             .id-card-cr80 {
               width: 85.6mm;
               height: 54mm;
+              max-height: 54mm;
               border: 1.5px solid #0f172a;
-              border-radius: 4mm;
-              padding: 3mm 4mm;
+              border-radius: 3.5mm;
+              padding: 2.5mm 3.5mm;
               background: #ffffff;
               position: relative;
               overflow: hidden;
@@ -21191,19 +21253,23 @@ const app = {
               flex-direction: column;
               justify-content: space-between;
               box-sizing: border-box;
+              page-break-inside: avoid;
+              break-inside: avoid;
             }
             .card-banner {
               background: #1e3a8a !important;
               color: #ffffff !important;
-              margin: -3mm -4mm 2mm -4mm;
-              padding: 1.5mm 3.5mm;
+              margin: -2.5mm -3.5mm 1.5mm -3.5mm;
+              padding: 1.2mm 3mm;
               display: flex;
               justify-content: space-between;
               align-items: center;
               border-bottom: 1.5px solid #0f172a;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
             .card-banner .title {
-              font-size: 9pt;
+              font-size: 8pt;
               font-weight: 800;
               text-transform: uppercase;
               letter-spacing: 0.3px;
@@ -21211,31 +21277,36 @@ const app = {
               line-height: 1.1;
             }
             .card-banner .subtitle {
-              font-size: 6pt;
+              font-size: 5.5pt;
               color: #e0e7ff !important;
               font-weight: 500;
               text-transform: uppercase;
             }
             .card-banner .tag {
-              font-size: 6pt;
+              font-size: 5.5pt;
               font-weight: 700;
               background: rgba(255,255,255,0.25);
               border: 0.5px solid rgba(255,255,255,0.5);
-              padding: 0.5mm 1.5mm;
+              padding: 0.4mm 1.5mm;
               border-radius: 1mm;
               color: #ffffff !important;
               text-transform: uppercase;
             }
             .card-body {
               display: flex;
-              gap: 2.5mm;
+              flex-direction: row;
+              flex-wrap: nowrap;
+              gap: 2mm;
               align-items: center;
+              justify-content: space-between;
               flex: 1;
               min-height: 0;
             }
             .student-photo-box {
-              width: 23mm;
-              height: 29mm;
+              width: 20mm;
+              height: 26mm;
+              max-width: 20mm;
+              max-height: 26mm;
               border: 1px solid #cbd5e1;
               border-radius: 1.5mm;
               overflow: hidden;
@@ -21255,46 +21326,66 @@ const app = {
               flex: 1;
               min-width: 0;
               line-height: 1.25;
+              overflow: hidden;
+              padding: 0 1mm;
             }
             .student-name {
-              font-size: 10pt;
+              font-size: 8.5pt;
               font-weight: 800;
               color: #0f172a;
               white-space: nowrap;
               overflow: hidden;
               text-overflow: ellipsis;
+              line-height: 1.15;
             }
             .student-meta {
-              font-size: 7pt;
+              font-size: 6pt;
               color: #475569;
-              margin-top: 0.5mm;
+              margin-top: 0.4mm;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
             }
             .student-meta strong {
               color: #0f172a;
             }
             .qr-container {
-              width: 24mm;
+              width: 21mm;
               display: flex;
               flex-direction: column;
               align-items: center;
               justify-content: center;
               flex-shrink: 0;
+              overflow: hidden;
             }
-            .qr-container img {
-              width: 21mm;
-              height: 21mm;
-              display: block;
-              border: 0.5px solid #e2e8f0;
-              border-radius: 1mm;
-              padding: 0.5mm;
+            .qr-svg-box {
+              width: 19mm;
+              height: 19mm;
+              display: flex;
+              align-items: center;
+              justify-content: center;
               background: #ffffff;
+              border: 0.5px solid #cbd5e1;
+              border-radius: 1mm;
+              padding: 0.4mm;
+              box-sizing: border-box;
+              overflow: hidden;
+            }
+            .qr-svg-box svg,
+            .qr-svg-box img {
+              width: 100% !important;
+              height: 100% !important;
+              max-width: 18.2mm !important;
+              max-height: 18.2mm !important;
+              display: block !important;
+              object-fit: contain !important;
             }
             .qr-label {
-              font-size: 5.5pt;
+              font-size: 4.8pt;
               font-weight: 700;
-              color: #475569;
+              color: #1e3a8a;
               text-transform: uppercase;
-              margin-top: 0.5mm;
+              margin-top: 0.4mm;
               letter-spacing: 0.2px;
               text-align: center;
             }
@@ -21303,9 +21394,9 @@ const app = {
               justify-content: space-between;
               align-items: center;
               border-top: 0.5px solid #cbd5e1;
-              padding-top: 1mm;
-              margin-top: 1mm;
-              font-size: 6pt;
+              padding-top: 0.8mm;
+              margin-top: 0.8mm;
+              font-size: 5pt;
               color: #64748b;
             }
             .cut-instructions {
@@ -21353,17 +21444,19 @@ const app = {
                   </div>
                   <div class="card-body">
                     <div class="student-photo-box">
-                      ${student.photo_url ? `<img src="${this.escapeHtml(student.photo_url)}">` : `<span style="font-size: 14pt; font-weight: 800; color: #94a3b8;">${this.escapeHtml((student.first_name || 'S')[0])}</span>`}
+                      ${student.photo_url ? `<img src="${this.escapeHtml(student.photo_url)}">` : `<span style="font-size: 13pt; font-weight: 800; color: #94a3b8;">${this.escapeHtml((student.first_name || 'S')[0])}</span>`}
                     </div>
                     <div class="student-info">
                       <div class="student-name">${this.escapeHtml(student.full_name)}</div>
-                      <div class="student-meta">ID: <strong style="font-family: monospace; font-size: 7.5pt; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</strong></div>
+                      <div class="student-meta">ID: <strong style="font-family: monospace; font-size: 6.5pt; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</strong></div>
                       <div class="student-meta">Curriculum: <strong>${this.escapeHtml(student.active_belt || 'White Belt')}</strong></div>
                       <div class="student-meta">Blood Group: <strong style="color: #dc2626;">${this.escapeHtml(student.blood_group || 'N/A')}</strong></div>
                       ${student.guardian_phone ? `<div class="student-meta">Emergency: <strong>${this.escapeHtml(student.guardian_phone)}</strong></div>` : ''}
                     </div>
                     <div class="qr-container">
-                      <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qr.token)}" alt="QR">
+                      <div class="qr-svg-box">
+                        ${qr.svg ? qr.svg : (qr.data_url ? `<img src="${qr.data_url}" alt="QR">` : `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qr.token)}" alt="QR">`)}
+                      </div>
                       <div class="qr-label">Scan to Attend</div>
                     </div>
                   </div>
@@ -21380,21 +21473,21 @@ const app = {
             <div style="margin-top: 10px;">
               <div class="cut-guide-container">
                 <div class="id-card-cr80" style="background: #f8fafc; border-color: #64748b;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 1.5mm; margin-bottom: 2mm;">
-                    <div style="font-size: 8pt; font-weight: 800; color: #1e3a8a; text-transform: uppercase;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 1.2mm; margin-bottom: 1.5mm;">
+                    <div style="font-size: 7.5pt; font-weight: 800; color: #1e3a8a; text-transform: uppercase;">
                       ${this.escapeHtml(academy.name || 'Sports Academy')}
                     </div>
-                    <div style="font-size: 6pt; color: #64748b; font-weight: 700;">TERMS & CONDITIONS</div>
+                    <div style="font-size: 5.5pt; color: #64748b; font-weight: 700;">TERMS & CONDITIONS</div>
                   </div>
-                  <div style="font-size: 6pt; color: #475569; line-height: 1.35; flex: 1;">
+                  <div style="font-size: 5.5pt; color: #475569; line-height: 1.35; flex: 1;">
                     <div>1. This pass is non-transferable and remains the property of the academy.</div>
                     <div>2. Student must carry this card for all training sessions, gradings, and fixtures.</div>
                     <div>3. If lost or damaged, report immediately to academy reception for re-issue.</div>
                     <div>4. For medical emergencies or attendance queries, contact your branch coach.</div>
                   </div>
-                  <div style="border-top: 0.5px solid #cbd5e1; padding-top: 1.5mm; margin-top: 1.5mm; display: flex; justify-content: space-between; align-items: center; font-size: 6pt; color: #334155;">
+                  <div style="border-top: 0.5px solid #cbd5e1; padding-top: 1.2mm; margin-top: 1.2mm; display: flex; justify-content: space-between; align-items: center; font-size: 5.5pt; color: #334155;">
                     <div><strong>Emergency:</strong> ${this.escapeHtml(student.guardian_phone || student.phone || 'Academy Reception')}</div>
-                    <div style="font-family: monospace; font-size: 6.5pt; font-weight: 700; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</div>
+                    <div style="font-family: monospace; font-size: 6pt; font-weight: 700; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</div>
                   </div>
                 </div>
               </div>
@@ -21451,32 +21544,34 @@ const app = {
           </div>
 
           <!-- FRONT -->
-          <div style="border: 1px dashed #94a3b8; border-radius: 5mm; padding: 2.5mm; background: #ffffff;">
-            <div style="width: 85.6mm; height: 54mm; border: 1.5px solid #0f172a; border-radius: 4mm; padding: 3mm 4mm; background: #ffffff; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden;">
-              <div style="background: #1e3a8a; color: #ffffff; margin: -3mm -4mm 2mm -4mm; padding: 1.5mm 3.5mm; display: flex; justify-content: space-between; align-items: center;">
+          <div style="border: 1px dashed #94a3b8; border-radius: 4.5mm; padding: 2.5mm; background: #ffffff;">
+            <div style="width: 85.6mm; height: 54mm; max-height: 54mm; border: 1.5px solid #0f172a; border-radius: 3.5mm; padding: 2.5mm 3.5mm; background: #ffffff; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden;">
+              <div style="background: #1e3a8a; color: #ffffff; margin: -2.5mm -3.5mm 1.5mm -3.5mm; padding: 1.2mm 3mm; display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid #0f172a;">
                 <div>
-                  <div style="font-size: 9pt; font-weight: 800; text-transform: uppercase; color: #ffffff;">${this.escapeHtml(academy.name || 'Sports Academy')}</div>
-                  <div style="font-size: 6pt; color: #e0e7ff; text-transform: uppercase;">${student.branch_name ? this.escapeHtml(student.branch_name) + ' Branch &bull; ' : ''}Student Pass</div>
+                  <div style="font-size: 8pt; font-weight: 800; text-transform: uppercase; color: #ffffff;">${this.escapeHtml(academy.name || 'Sports Academy')}</div>
+                  <div style="font-size: 5.5pt; color: #e0e7ff; text-transform: uppercase;">${student.branch_name ? this.escapeHtml(student.branch_name) + ' Branch &bull; ' : ''}Student Pass</div>
                 </div>
-                <div style="font-size: 6pt; font-weight: 700; background: rgba(255,255,255,0.25); padding: 0.5mm 1.5mm; border-radius: 1mm; color: #ffffff;">CR80 PASS</div>
+                <div style="font-size: 5.5pt; font-weight: 700; background: rgba(255,255,255,0.25); padding: 0.4mm 1.5mm; border-radius: 1mm; color: #ffffff;">CR80 PASS</div>
               </div>
-              <div style="display: flex; gap: 2.5mm; align-items: center; flex: 1;">
-                <div style="width: 23mm; height: 29mm; border: 1px solid #cbd5e1; border-radius: 1.5mm; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                  ${student.photo_url ? `<img src="${this.escapeHtml(student.photo_url)}" style="width: 100%; height: 100%; object-fit: cover;">` : `<span style="font-size: 14pt; font-weight: 800; color: #94a3b8;">${this.escapeHtml((student.first_name || 'S')[0])}</span>`}
+              <div style="display: flex; flex-direction: row; flex-wrap: nowrap; gap: 2mm; align-items: center; justify-content: space-between; flex: 1; min-height: 0;">
+                <div style="width: 20mm; height: 26mm; max-width: 20mm; max-height: 26mm; border: 1px solid #cbd5e1; border-radius: 1.5mm; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                  ${student.photo_url ? `<img src="${this.escapeHtml(student.photo_url)}" style="width: 100%; height: 100%; object-fit: cover;">` : `<span style="font-size: 13pt; font-weight: 800; color: #94a3b8;">${this.escapeHtml((student.first_name || 'S')[0])}</span>`}
                 </div>
-                <div style="flex: 1; min-width: 0; line-height: 1.25;">
-                  <div style="font-size: 10pt; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtml(student.full_name)}</div>
-                  <div style="font-size: 7pt; color: #475569; margin-top: 0.5mm;">ID: <strong style="font-family: monospace; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</strong></div>
-                  <div style="font-size: 7pt; color: #475569; margin-top: 0.5mm;">Curriculum: <strong>${this.escapeHtml(student.active_belt || 'White Belt')}</strong></div>
-                  <div style="font-size: 7pt; color: #475569; margin-top: 0.5mm;">Blood Group: <strong style="color: #dc2626;">${this.escapeHtml(student.blood_group || 'N/A')}</strong></div>
-                  ${student.guardian_phone ? `<div style="font-size: 7pt; color: #475569; margin-top: 0.5mm;">Emergency: <strong>${this.escapeHtml(student.guardian_phone)}</strong></div>` : ''}
+                <div style="flex: 1; min-width: 0; line-height: 1.25; overflow: hidden; padding: 0 1mm;">
+                  <div style="font-size: 8.5pt; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15;">${this.escapeHtml(student.full_name)}</div>
+                  <div style="font-size: 6pt; color: #475569; margin-top: 0.4mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">ID: <strong style="font-family: monospace; font-size: 6.5pt; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</strong></div>
+                  <div style="font-size: 6pt; color: #475569; margin-top: 0.4mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Curriculum: <strong>${this.escapeHtml(student.active_belt || 'White Belt')}</strong></div>
+                  <div style="font-size: 6pt; color: #475569; margin-top: 0.4mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Blood Group: <strong style="color: #dc2626;">${this.escapeHtml(student.blood_group || 'N/A')}</strong></div>
+                  ${student.guardian_phone ? `<div style="font-size: 6pt; color: #475569; margin-top: 0.4mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Emergency: <strong>${this.escapeHtml(student.guardian_phone)}</strong></div>` : ''}
                 </div>
-                <div style="width: 24mm; display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0;">
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qr.token)}" style="width: 21mm; height: 21mm; display: block; border: 0.5px solid #e2e8f0; border-radius: 1mm; padding: 0.5mm; background: #ffffff;">
-                  <div style="font-size: 5.5pt; font-weight: 700; color: #475569; text-transform: uppercase; margin-top: 0.5mm; text-align: center;">Scan to Attend</div>
+                <div style="width: 21mm; display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden;">
+                  <div style="width: 19mm; height: 19mm; display: flex; align-items: center; justify-content: center; background: #ffffff; border: 0.5px solid #cbd5e1; border-radius: 1mm; padding: 0.4mm; box-sizing: border-box; overflow: hidden;">
+                    ${qr.svg ? qr.svg : (qr.data_url ? `<img src="${qr.data_url}" style="width: 100%; height: 100%; max-width: 18.2mm; max-height: 18.2mm; display: block; object-fit: contain;">` : `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qr.token)}" style="width: 100%; height: 100%; max-width: 18.2mm; max-height: 18.2mm; display: block; object-fit: contain;">`)}
+                  </div>
+                  <div style="font-size: 4.8pt; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-top: 0.4mm; letter-spacing: 0.2px; text-align: center;">Scan to Attend</div>
                 </div>
               </div>
-              <div style="display: flex; justify-content: space-between; align-items: center; border-top: 0.5px solid #cbd5e1; padding-top: 1mm; margin-top: 1mm; font-size: 6pt; color: #64748b;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-top: 0.5px solid #cbd5e1; padding-top: 0.8mm; margin-top: 0.8mm; font-size: 5pt; color: #64748b;">
                 <div>Security Pass &bull; Ver ${qr.version || 1}</div>
                 <div style="font-style: italic;">International Sports Solutions</div>
               </div>
@@ -21484,9 +21579,24 @@ const app = {
           </div>
 
           <!-- BACK -->
-          <div style="border: 1px dashed #94a3b8; border-radius: 5mm; padding: 2.5mm; background: #ffffff;">
-            <div style="width: 85.6mm; height: 54mm; border: 1.5px solid #64748b; border-radius: 4mm; padding: 3mm 4mm; background: #f8fafc; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden;">
-              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 1.5mm; margin-bottom: 2mm;">
+          <div style="border: 1px dashed #94a3b8; border-radius: 4.5mm; padding: 2.5mm; background: #ffffff;">
+            <div style="width: 85.6mm; height: 54mm; max-height: 54mm; border: 1.5px solid #64748b; border-radius: 3.5mm; padding: 2.5mm 3.5mm; background: #f8fafc; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 1.2mm; margin-bottom: 1.5mm;">
+                <div style="font-size: 7.5pt; font-weight: 800; color: #1e3a8a; text-transform: uppercase;">${this.escapeHtml(academy.name || 'Sports Academy')}</div>
+                <div style="font-size: 5.5pt; color: #64748b; font-weight: 700;">TERMS & CONDITIONS</div>
+              </div>
+              <div style="font-size: 5.5pt; color: #475569; line-height: 1.35; flex: 1;">
+                <div>1. This pass is non-transferable and remains the property of the academy.</div>
+                <div>2. Student must carry this card for all training sessions, gradings, and fixtures.</div>
+                <div>3. If lost or damaged, report immediately to academy reception for re-issue.</div>
+                <div>4. For medical emergencies or attendance queries, contact your branch coach.</div>
+              </div>
+              <div style="border-top: 0.5px solid #cbd5e1; padding-top: 1.2mm; margin-top: 1.2mm; display: flex; justify-content: space-between; align-items: center; font-size: 5.5pt; color: #334155;">
+                <div><strong>Emergency:</strong> ${this.escapeHtml(student.guardian_phone || student.phone || 'Academy Reception')}</div>
+                <div style="font-family: monospace; font-size: 6pt; font-weight: 700; color: #1e3a8a;">${this.escapeHtml(student.student_code)}</div>
+              </div>
+            </div>
+          </div>
                 <div style="font-size: 8pt; font-weight: 800; color: #1e3a8a; text-transform: uppercase;">${this.escapeHtml(academy.name || 'Sports Academy')}</div>
                 <div style="font-size: 6pt; color: #64748b; font-weight: 700;">TERMS & CONDITIONS</div>
               </div>

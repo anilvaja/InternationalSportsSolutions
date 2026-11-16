@@ -37,7 +37,7 @@ window.SmartAttendanceController = {
       if (AudioCtx) this.audioContext = new AudioCtx();
     }
     if (this.audioContext && this.audioContext.state === 'suspended') {
-      this.audioContext.resume().catch(() => {});
+      this.audioContext.resume().catch(() => { });
     }
     return this.audioContext;
   },
@@ -87,7 +87,7 @@ window.SmartAttendanceController = {
         osc.start(now);
         osc.stop(now + 0.3);
       }
-    } catch (_) {}
+    } catch (_) { }
   },
 
   switchSubTab(tab) {
@@ -196,7 +196,7 @@ window.SmartAttendanceController = {
           if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
             detectedCode = barcodes[0].rawValue;
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       // 2. Pure JS canvas jsQR fallback (100% universal across all browsers)
@@ -216,7 +216,7 @@ window.SmartAttendanceController = {
           if (qr && qr.data) {
             detectedCode = qr.data;
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       if (detectedCode && !this.isProcessingScan) {
@@ -508,7 +508,7 @@ window.SmartAttendanceController = {
       existing.push(scanItem);
       localStorage.setItem(this.offlineQueueKey, JSON.stringify(existing));
       this.updateOfflineBadge();
-    } catch (_) {}
+    } catch (_) { }
   },
 
   getOfflineScans() {

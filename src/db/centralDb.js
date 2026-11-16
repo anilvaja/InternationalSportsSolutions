@@ -56,10 +56,10 @@ export function getCentralDb() {
     const starterPlan = centralDbInstance.prepare("SELECT id FROM subscription_plans WHERE slug = 'starter'").get();
     if (!starterPlan) {
       const plansToSeed = [
-        { id: 1, name: 'Starter', slug: 'starter', description: 'Starter Tier', price: 999, trial_days: 14, is_default: 1, limits: { branches: 1, coaches: 3, batches: 5, students: 75, students_per_batch: 25, users: 5 }, features: { syllabus: 1, facilities: 1, events: 0, payroll: 0 } },
-        { id: 2, name: 'Standard', slug: 'standard', description: 'Standard Tier', price: 2499, trial_days: 14, is_default: 0, limits: { branches: 3, coaches: 10, batches: 15, students: 250, students_per_batch: 30, users: 15 }, features: { syllabus: 1, facilities: 1, events: 1, payroll: 1 } },
-        { id: 3, name: 'Professional', slug: 'professional', description: 'Professional Tier', price: 4999, trial_days: 30, is_default: 0, limits: { branches: 8, coaches: 25, batches: 40, students: 800, students_per_batch: 40, users: 35 }, features: { syllabus: 1, facilities: 1, events: 1, payroll: 1 } },
-        { id: 4, name: 'Enterprise', slug: 'enterprise', description: 'Enterprise Tier', price: 9999, trial_days: 30, is_default: 0, limits: { branches: 25, coaches: 100, batches: 150, students: 3000, students_per_batch: 60, users: 100 }, features: { syllabus: 1, facilities: 1, events: 1, payroll: 1 } },
+        { id: 1, name: 'Starter', slug: 'starter', description: 'Starter Tier', price: 999, trial_days: 14, is_default: 1, limits: { branches: 1, coaches: 3, batches: 5, students: 75, students_per_batch: 25, users: 5 }, features: { syllabus: 1, facilities: 1, events: 0, payroll: 0, smart_attendance: 0, face_attendance: 0 } },
+        { id: 2, name: 'Standard', slug: 'standard', description: 'Standard Tier', price: 2499, trial_days: 14, is_default: 0, limits: { branches: 3, coaches: 10, batches: 15, students: 250, students_per_batch: 30, users: 15 }, features: { syllabus: 1, facilities: 1, events: 1, payroll: 1, smart_attendance: 1, face_attendance: 1 } },
+        { id: 3, name: 'Professional', slug: 'professional', description: 'Professional Tier', price: 4999, trial_days: 30, is_default: 0, limits: { branches: 8, coaches: 25, batches: 40, students: 800, students_per_batch: 40, users: 35 }, features: { syllabus: 1, facilities: 1, events: 1, payroll: 1, smart_attendance: 1, face_attendance: 1 } },
+        { id: 4, name: 'Enterprise', slug: 'enterprise', description: 'Enterprise Tier', price: 9999, trial_days: 30, is_default: 0, limits: { branches: 25, coaches: 100, batches: 150, students: 3000, students_per_batch: 60, users: 100 }, features: { syllabus: 1, facilities: 1, events: 1, payroll: 1, smart_attendance: 1, face_attendance: 1 } },
       ];
       for (const p of plansToSeed) {
         centralDbInstance.prepare(`

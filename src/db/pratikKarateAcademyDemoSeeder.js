@@ -190,6 +190,22 @@ export class PratikKarateAcademyDemoSeeder {
       ON CONFLICT(domain) DO NOTHING
     `).run(academy.id, localhostDomain);
 
+    // Ensure academy subscription in centralDb
+    const sub = centralDb.prepare('SELECT id FROM academy_subscriptions WHERE academy_id = ?').get(academy.id);
+    if (!sub) {
+      const plan = centralDb.prepare("SELECT id FROM subscription_plans WHERE slug = 'enterprise'").get() || { id: 4 };
+      centralDb.prepare(`
+        INSERT INTO academy_subscriptions (academy_id, plan_id, status, starts_at)
+        VALUES (?, ?, 'active', CURRENT_TIMESTAMP)
+      `).run(academy.id, plan.id);
+    }
+
+    // Ensure default academy admin user lookup
+    centralDb.prepare(`
+      INSERT OR REPLACE INTO academy_users_lookup (email, academy_id, role)
+      VALUES ('admin@pratikkarate.com', ?, 'academy_admin')
+    `).run(academy.id);
+
     return academy;
   }
 

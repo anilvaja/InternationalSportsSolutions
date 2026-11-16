@@ -127,7 +127,7 @@ studentRouter.get('/attendance', (req, res) => {
  * GET /api/student/id-card
  * Self-service digital ID pass with QR code
  */
-studentRouter.get('/id-card', (req, res) => {
+studentRouter.get('/id-card', async (req, res) => {
   try {
     const db = req.tenantDb;
     let studentId = req.user.role === 'student' ? req.user.userId : Number(req.query.student_id);
@@ -141,7 +141,7 @@ studentRouter.get('/id-card', (req, res) => {
       return res.status(404).json({ success: false, error: 'Student profile not found' });
     }
 
-    const cardData = QrAttendanceService.getStudentIdCardData(db, req.academy.id, studentId, req.academy);
+    const cardData = await QrAttendanceService.getStudentIdCardData(db, req.academy.id, studentId, req.academy);
     res.json({ success: true, ...cardData });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
