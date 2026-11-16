@@ -428,6 +428,13 @@ export class FeeService {
     let invoiceNumber = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
     const feeTitle = title || `${months}-Month Coaching (${periodStart} to ${periodEnd})`;
 
+    // Validate collected_by foreign key against tenant users table (SuperAdmin is in central super_admins, not tenant users)
+    let validCollectedBy = null;
+    if (collected_by) {
+      const u = db.prepare('SELECT id FROM users WHERE id = ?').get(Number(collected_by));
+      if (u) validCollectedBy = u.id;
+    }
+
     let resultPayload = null;
 
     // Database transaction
@@ -527,7 +534,7 @@ export class FeeService {
           discountCalc.presetPercentage + discountCalc.manualPercentage,
           discount_type,
           discount_reason,
-          collected_by,
+          validCollectedBy,
           nextInstallmentDate
         );
 
@@ -551,7 +558,7 @@ export class FeeService {
           payment_mode,
           transaction_reference,
           notes,
-          collected_by
+          validCollectedBy
         );
         paymentId = insertPayment.lastInsertRowid;
       }
@@ -574,7 +581,7 @@ export class FeeService {
         baseFee,
         status === 'paid' ? periodEnd : null,
         feeTitle,
-        collected_by
+        validCollectedBy
       );
 
       // Discount entry if applicable
@@ -595,7 +602,7 @@ export class FeeService {
           netAmount,
           status === 'paid' ? periodEnd : null,
           `Discount applied: ${discount_type} (${discount_reason || 'Academy approved'})`,
-          collected_by
+          validCollectedBy
         );
       }
 
@@ -618,7 +625,7 @@ export class FeeService {
           balanceAmount,
           status === 'paid' ? periodEnd : null,
           `Payment received via ${payment_mode} (Ref: ${receiptNumber})`,
-          collected_by
+          validCollectedBy
         );
       }
 

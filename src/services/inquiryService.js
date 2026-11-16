@@ -429,6 +429,15 @@ export class InquiryService {
       throw new Error('Student first name and contact phone are required');
     }
 
+    // Resolve actor user ID safely for tenant DB foreign keys (e.g. Super Admin operates across tenants but is not in tenant's `users` table)
+    let actorTenantUserId = null;
+    if (currentUser && currentUser.userId) {
+      const tenantUser = db.prepare('SELECT id FROM users WHERE id = ?').get(Number(currentUser.userId));
+      if (tenantUser) {
+        actorTenantUserId = tenantUser.id;
+      }
+    }
+
     if (!branch_id) {
       throw new Error('A valid branch must be selected for admission');
     }
@@ -566,7 +575,7 @@ export class InquiryService {
         resolvedJoiningFee,
         resolvedDiscount,
         discount_reason || null,
-        resolvedDiscount > 0 ? (currentUser ? currentUser.userId : null) : null,
+        resolvedDiscount > 0 ? actorTenantUserId : null,
         resolvedDiscount > 0 ? new Date().toISOString() : null,
         effectiveJoiningDate,
         Number(academyId)
@@ -609,7 +618,7 @@ export class InquiryService {
           INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
           VALUES (?, ?, ?, 'active', ?)
         `);
-        const resEnrollment = insEnrollment.run(studentId, batch.id, effectiveJoiningDate, currentUser ? currentUser.userId : null);
+        const resEnrollment = insEnrollment.run(studentId, batch.id, effectiveJoiningDate, actorTenantUserId);
         enrollmentRecord = db.prepare('SELECT * FROM student_batch_enrollments WHERE id = ?').get(resEnrollment.lastInsertRowid);
       }
 
@@ -688,7 +697,7 @@ export class InquiryService {
             initialPaid,
             resolvedPaymentMethod,
             payment_notes || 'Admission initial payment',
-            currentUser ? currentUser.userId : null
+            actorTenantUserId
           );
           paymentRecord = db.prepare('SELECT * FROM fee_payments WHERE id = ?').get(resPay.lastInsertRowid);
 
@@ -698,7 +707,7 @@ export class InquiryService {
               student_id, student_fee_id, fee_payment_id, entry_type, charge_type,
               period_start, period_end, months_count, debit, credit, running_balance, created_by
             ) VALUES (?, ?, ?, 'payment', 'tuition', ?, ?, 1, 0, ?, ?, ?)
-          `).run(studentId, feeLiability.id, paymentRecord.id, effectiveJoiningDate, endDateStr, initialPaid, initialBalance, currentUser ? currentUser.userId : null);
+          `).run(studentId, feeLiability.id, paymentRecord.id, effectiveJoiningDate, endDateStr, initialPaid, initialBalance, actorTenantUserId);
         }
       }
 
@@ -741,7 +750,7 @@ export class InquiryService {
           item.name,
           item.mandatory,
           isCompleted,
-          isCompleted ? (currentUser ? currentUser.userId : null) : null,
+          isCompleted ? actorTenantUserId : null,
           isCompleted ? new Date().toISOString() : null
         );
       }
@@ -791,6 +800,14 @@ export class InquiryService {
     } = rejoinData;
 
     const effectiveRejoinDate = rejoin_date || new Date().toISOString().split('T')[0];
+
+    let actorTenantUserId = null;
+    if (currentUser && currentUser.userId) {
+      const tenantUser = db.prepare('SELECT id FROM users WHERE id = ?').get(Number(currentUser.userId));
+      if (tenantUser) {
+        actorTenantUserId = tenantUser.id;
+      }
+    }
 
     const tx = db.transaction(() => {
       // 1. Reactivate student status
@@ -866,7 +883,7 @@ export class InquiryService {
               initialPaid,
               payment_method || 'cash',
               notes || 'Rejoining initial payment',
-              currentUser ? currentUser.userId : null
+              actorTenantUserId
             );
 
             db.prepare(`
@@ -874,7 +891,7 @@ export class InquiryService {
                 student_id, student_fee_id, fee_payment_id, entry_type, charge_type,
                 period_start, period_end, months_count, debit, credit, running_balance, created_by
               ) VALUES (?, ?, ?, 'payment', 'tuition', ?, ?, 1, 0, ?, ?, ?)
-            `).run(student.id, resFee.lastInsertRowid, resPay.lastInsertRowid, effectiveRejoinDate, endDateStr, initialPaid, initialBalance, currentUser ? currentUser.userId : null);
+            `).run(student.id, resFee.lastInsertRowid, resPay.lastInsertRowid, effectiveRejoinDate, endDateStr, initialPaid, initialBalance, actorTenantUserId);
           }
         }
       }
