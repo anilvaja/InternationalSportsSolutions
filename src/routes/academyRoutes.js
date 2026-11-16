@@ -1496,10 +1496,12 @@ academyRouter.post('/students', requirePermission(['create_students', 'manage_st
       // Enforce students_per_batch quota
       QuotaService.assertCanCreate(req.academy.id, 'students_per_batch', 1, { batchId: batch.id });
 
+      const actorUserId = db.prepare('SELECT id FROM users WHERE id = ?').get(req.user.userId)?.id || null;
+
       db.prepare(`
         INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
         VALUES (?, ?, DATE('now'), 'active', ?)
-      `).run(newStudentId, batch.id, req.user.userId);
+      `).run(newStudentId, batch.id, actorUserId);
     }
 
     // Assign initial syllabus technique (Rule 3)
@@ -1602,11 +1604,13 @@ academyRouter.post('/students/:id/transfer-batch', (req, res) => {
       }
 
       // 2. Insert new active enrollment (enforces idx_student_single_active_batch constraint)
+      const actorUserId = db.prepare('SELECT id FROM users WHERE id = ?').get(req.user.userId)?.id || null;
+
       db.prepare(`
         INSERT INTO student_batch_enrollments (
           student_id, batch_id, start_date, status, assigned_by
         ) VALUES (?, ?, ?, 'active', ?)
-      `).run(studentId, targetBatch.id, effDate, req.user.userId);
+      `).run(studentId, targetBatch.id, effDate, actorUserId);
 
       // 3. Update student's branch if the new batch belongs to a different branch
       if (targetBatch.branch_id && targetBatch.branch_id !== student.branch_id) {
@@ -1733,6 +1737,8 @@ academyRouter.post('/students/bulk-enroll', (req, res) => {
             continue;
           }
 
+          const actorUserId = db.prepare('SELECT id FROM users WHERE id = ?').get(req.user.userId)?.id || null;
+
           // Force transfer atomically
           db.prepare(`
             UPDATE student_batch_enrollments
@@ -1743,7 +1749,7 @@ academyRouter.post('/students/bulk-enroll', (req, res) => {
           db.prepare(`
             INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
             VALUES (?, ?, DATE('now'), 'active', ?)
-          `).run(student.id, batch.id, req.user.userId);
+          `).run(student.id, batch.id, actorUserId);
 
           if (batch.branch_id && batch.branch_id !== student.branch_id) {
             db.prepare('UPDATE students SET branch_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(batch.branch_id, student.id);
@@ -1752,10 +1758,12 @@ academyRouter.post('/students/bulk-enroll', (req, res) => {
           results.transferred.push(student.id);
         } else {
           // No current active batch, enroll directly
+          const actorUserId = db.prepare('SELECT id FROM users WHERE id = ?').get(req.user.userId)?.id || null;
+
           db.prepare(`
             INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
             VALUES (?, ?, DATE('now'), 'active', ?)
-          `).run(student.id, batch.id, req.user.userId);
+          `).run(student.id, batch.id, actorUserId);
 
           if (batch.branch_id && !student.branch_id) {
             db.prepare('UPDATE students SET branch_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(batch.branch_id, student.id);
@@ -1920,10 +1928,11 @@ academyRouter.post('/students/import', requirePermission(['import_students', 'ma
 
         if (batchId) {
           try {
+            const actorUserId = db.prepare('SELECT id FROM users WHERE id = ?').get(req.user.userId)?.id || null;
             db.prepare(`
               INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
               VALUES (?, ?, DATE('now'), 'active', ?)
-            `).run(newId, batchId, req.user.userId);
+            `).run(newId, batchId, actorUserId);
           } catch (e) {}
         }
 
