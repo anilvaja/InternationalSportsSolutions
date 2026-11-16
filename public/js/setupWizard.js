@@ -119,9 +119,9 @@ const SetupWizardController = {
     const stepperHtml = `
       <div class="wizard-stepper-wrap" style="display: flex; gap: 4px; overflow-x: auto; padding-bottom: 12px; margin-bottom: 18px; border-bottom: 1px solid var(--border);">
         ${this.steps.map(s => {
-          const isActive = s.num === step;
-          const isDone = s.num < step;
-          return `
+      const isActive = s.num === step;
+      const isDone = s.num < step;
+      return `
             <div onclick="SetupWizardController.goToStep(${s.num})" style="flex: 1; min-width: 80px; text-align: center; cursor: pointer; padding: 6px 4px; border-radius: 6px; background: ${isActive ? 'rgba(99,102,241,0.15)' : (isDone ? 'rgba(16,185,129,0.08)' : 'transparent')}; border: 1px solid ${isActive ? 'var(--primary)' : (isDone ? '#10b981' : 'var(--border)')};">
               <div style="font-size: 11px; font-weight: 700; color: ${isActive ? 'var(--primary)' : (isDone ? '#10b981' : 'var(--text-muted)')};">
                 <i class="fa-solid ${isDone ? 'fa-check' : s.icon}"></i> ${s.num}
@@ -131,7 +131,7 @@ const SetupWizardController = {
               </div>
             </div>
           `;
-        }).join('')}
+    }).join('')}
       </div>
     `;
 
@@ -349,8 +349,8 @@ const SetupWizardController = {
 
         <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;">
           ${sportsList.map(sp => {
-            const isChecked = currentSelected.includes(sp.name.toLowerCase());
-            return `
+      const isChecked = currentSelected.includes(sp.name.toLowerCase());
+      return `
               <label style="display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid ${isChecked ? 'var(--primary)' : 'var(--border)'}; border-radius: 8px; background: ${isChecked ? 'rgba(99,102,241,0.08)' : 'var(--surface-hover)'}; cursor: pointer;">
                 <input type="checkbox" class="wiz-sport-checkbox" value="${sp.name}" ${isChecked ? 'checked' : ''} onchange="SetupWizardController.toggleSport('${sp.name}', this.checked)" style="margin-top: 3px;">
                 <div>
@@ -359,7 +359,7 @@ const SetupWizardController = {
                 </div>
               </label>
             `;
-          }).join('')}
+    }).join('')}
         </div>
       </div>
     `;
@@ -851,7 +851,7 @@ const SetupWizardController = {
 
 window.SetupWizardController = SetupWizardController;
 if (window.app) {
-  window.app.openAcademySetupWizard = function(draft) {
+  window.app.openAcademySetupWizard = function (draft) {
     return window.SetupWizardController.open(draft);
   };
 }

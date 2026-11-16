@@ -27,6 +27,23 @@ app.set('trust proxy', true);
 // Initialize Central Database & check migrations
 const centralDb = getCentralDb();
 
+// Self-Healing Platform Baseline Seeder: Automatically initializes Super Admin, Subscription Plans,
+// Permissions, and Default Academy (Pratik Karate Academy) if platform databases are fresh or unseeded.
+if (process.env.NODE_ENV !== 'test') {
+  try {
+    const superAdminCount = centralDb.prepare('SELECT COUNT(*) as c FROM super_admins').get()?.c || 0;
+    const plansCount = centralDb.prepare('SELECT COUNT(*) as c FROM subscription_plans').get()?.c || 0;
+    const academiesCount = centralDb.prepare('SELECT COUNT(*) as c FROM academies').get()?.c || 0;
+
+    if (superAdminCount === 0 || plansCount === 0 || academiesCount === 0) {
+      console.log(`[Auto-Init] Baseline platform data missing (SuperAdmins=${superAdminCount}, Plans=${plansCount}, Academies=${academiesCount}). Running baseline seeder...`);
+      runSeed({ includeDefaultAcademy: true });
+    }
+  } catch (err) {
+    console.warn('[Auto-Init] Warning during platform baseline check:', err.message);
+  }
+}
+
 // Middlewares
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '10mb' }));

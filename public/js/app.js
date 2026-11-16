@@ -980,7 +980,16 @@ const app = {
         };
       }
 
-      return await res.json();
+      const json = await res.json();
+      if (!json.success && json.error && (json.error.includes('not found in central registry') || json.code === 'NO_ACADEMY_FOUND')) {
+        localStorage.removeItem('selectedAcademyId');
+        this.selectedAcademyId = null;
+        if (this.user && this.user.isSuperAdmin && this.currentTab && !this.currentTab.startsWith('central-')) {
+          console.warn('[App] Academy context invalid. Redirecting Super Admin to central registry.');
+          this.navigate('central-academies');
+        }
+      }
+      return json;
     } catch (err) {
       console.error('API Request failed:', err);
       return { success: false, error: err.message || 'Network error' };
@@ -1032,6 +1041,9 @@ const app = {
         if (!this.tenantAcademy && activeAc) {
           this.tenantAcademy = activeAc;
         }
+      } else {
+        this.selectedAcademyId = null;
+        localStorage.removeItem('selectedAcademyId');
       }
 
       this.showApp();
@@ -1153,7 +1165,12 @@ const app = {
     this.renderSidebarBrand();
 
     const urlTab = this.getTabForPath(window.location.pathname);
-    const targetTab = (urlTab && this.isTabAllowed(urlTab)) ? urlTab : this.getDefaultTab();
+    let targetTab = (urlTab && this.isTabAllowed(urlTab)) ? urlTab : this.getDefaultTab();
+    if (this.user.isSuperAdmin && (!this.selectedAcademyId || (this.accessibleAcademies && this.accessibleAcademies.length === 0))) {
+      if (!targetTab.startsWith('central-')) {
+        targetTab = 'central-academies';
+      }
+    }
     this.navigate(targetTab, true);
   },
 
@@ -4452,6 +4469,27 @@ const app = {
 
   async renderAcademyOverview() {
     try {
+      if (this.user && this.user.isSuperAdmin && (!this.selectedAcademyId || (this.accessibleAcademies && this.accessibleAcademies.length === 0))) {
+        const content = document.getElementById('page-content');
+        if (content) {
+          content.innerHTML = `
+            <div style="padding: 40px 20px; text-align: center; background: var(--bg-card); border-radius: var(--radius-lg); border: 1px solid var(--border-color); margin: 24px auto; max-width: 600px; box-shadow: var(--shadow-sm);">
+              <div style="width: 56px; height: 56px; margin: 0 auto 16px auto; border-radius: 50%; background: rgba(37,99,235,0.1); display: flex; align-items: center; justify-content: center;">
+                <i class="fa-solid fa-building-circle-exclamation" style="font-size: 24px; color: var(--primary);"></i>
+              </div>
+              <h2 style="font-size: 19px; font-weight: 700; margin-bottom: 8px;">No Academy Selected</h2>
+              <p style="color: var(--text-muted); font-size: 14px; line-height: 1.5; margin-bottom: 24px;">
+                You are currently viewing in Super Admin mode, but no operational academy is selected in your session context.
+              </p>
+              <button class="btn btn-primary" onclick="app.navigate('central-academies')">
+                <i class="fa-solid fa-list-check"></i> Manage Academies Registry
+              </button>
+            </div>
+          `;
+        }
+        return;
+      }
+
       const [data, upcomingRes, setupRes] = await Promise.all([
         this.apiRequest('/api/academy/dashboard'),
         this.apiRequest('/api/academy/dashboard/upcoming-events'),

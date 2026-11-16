@@ -196,6 +196,47 @@ export class InquiryService {
     const resolvedDob = this.normalizeDate(date_of_birth || data.dob || null);
     const resolvedFollowup = this.normalizeDate(next_followup_date) || null;
 
+    // Validate foreign key references against tenant database
+    let validUserId = null;
+    if (currentUserId) {
+      try {
+        const u = db.prepare('SELECT id FROM users WHERE id = ?').get(currentUserId);
+        if (u) validUserId = u.id;
+      } catch (_) {}
+    }
+
+    let validBranchId = null;
+    if (branch_id) {
+      try {
+        const b = db.prepare('SELECT id FROM branches WHERE id = ?').get(Number(branch_id));
+        if (b) validBranchId = b.id;
+      } catch (_) {}
+    }
+
+    let validSportId = null;
+    if (sport_id) {
+      try {
+        const s = db.prepare('SELECT id FROM sports WHERE id = ?').get(Number(sport_id));
+        if (s) validSportId = s.id;
+      } catch (_) {}
+    }
+
+    let validBatchId = null;
+    if (preferred_batch_id) {
+      try {
+        const bt = db.prepare('SELECT id FROM batches WHERE id = ?').get(Number(preferred_batch_id));
+        if (bt) validBatchId = bt.id;
+      } catch (_) {}
+    }
+
+    let validAssignedUserId = null;
+    if (assigned_to_user_id) {
+      try {
+        const au = db.prepare('SELECT id FROM users WHERE id = ?').get(Number(assigned_to_user_id));
+        if (au) validAssignedUserId = au.id;
+      } catch (_) {}
+    }
+
     const ins = db.prepare(`
       INSERT INTO inquiries (
         academy_id, student_name, guardian_name, guardian_relation, phone, email,
@@ -213,14 +254,14 @@ export class InquiryService {
       email ? email.trim() : null,
       resolvedDob,
       gender || null,
-      branch_id ? Number(branch_id) : null,
-      sport_id ? Number(sport_id) : null,
-      preferred_batch_id ? Number(preferred_batch_id) : null,
+      validBranchId,
+      validSportId,
+      validBatchId,
       source,
       notes || null,
-      assigned_to_user_id ? Number(assigned_to_user_id) : null,
+      validAssignedUserId,
       resolvedFollowup,
-      currentUserId
+      validUserId
     );
 
     return db.prepare('SELECT * FROM inquiries WHERE id = ?').get(result.lastInsertRowid);
@@ -247,6 +288,39 @@ export class InquiryService {
       throw new Error('Trial date is required');
     }
 
+    // Validate foreign key references
+    let validBranchId = null;
+    if (branch_id) {
+      try {
+        const b = db.prepare('SELECT id FROM branches WHERE id = ?').get(Number(branch_id));
+        if (b) validBranchId = b.id;
+      } catch (_) {}
+    }
+
+    let validSportId = null;
+    if (sport_id) {
+      try {
+        const s = db.prepare('SELECT id FROM sports WHERE id = ?').get(Number(sport_id));
+        if (s) validSportId = s.id;
+      } catch (_) {}
+    }
+
+    let validBatchId = null;
+    if (batch_id) {
+      try {
+        const bt = db.prepare('SELECT id FROM batches WHERE id = ?').get(Number(batch_id));
+        if (bt) validBatchId = bt.id;
+      } catch (_) {}
+    }
+
+    let validCoachId = null;
+    if (coach_id) {
+      try {
+        const c = db.prepare('SELECT id FROM coaches WHERE id = ?').get(Number(coach_id));
+        if (c) validCoachId = c.id;
+      } catch (_) {}
+    }
+
     const ins = db.prepare(`
       INSERT INTO inquiry_trials (
         inquiry_id, branch_id, sport_id, batch_id, coach_id,
@@ -256,10 +330,10 @@ export class InquiryService {
 
     const result = ins.run(
       Number(inquiryId),
-      branch_id ? Number(branch_id) : null,
-      sport_id ? Number(sport_id) : null,
-      batch_id ? Number(batch_id) : null,
-      coach_id ? Number(coach_id) : null,
+      validBranchId,
+      validSportId,
+      validBatchId,
+      validCoachId,
       trial_date,
       start_time || null,
       end_time || null,
@@ -826,7 +900,7 @@ export class InquiryService {
         db.prepare(`
           INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
           VALUES (?, ?, ?, 'active', ?)
-        `).run(student.id, batch.id, effectiveRejoinDate, currentUser ? currentUser.userId : null);
+        `).run(student.id, batch.id, effectiveRejoinDate, actorTenantUserId);
 
         // 4. Calculate fees from new effective rejoin date
         const baseFee = (fee_override_amount !== undefined && fee_override_amount !== null && fee_override_amount !== '')

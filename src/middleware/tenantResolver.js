@@ -194,14 +194,16 @@ export function resolveTenant(req, res, next) {
       academyRecord = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
     }
 
-    // Ultimate graceful fallback if any active academy exists
+    // Ultimate graceful fallback: match any active academy, or first available academy
     if (!academyRecord) {
-      academyRecord = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
+      academyRecord = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get()
+        || centralDb.prepare("SELECT * FROM academies ORDER BY id ASC LIMIT 1").get();
     }
 
     if (!academyRecord) {
       return res.status(404).json({
         success: false,
+        code: 'NO_ACADEMY_FOUND',
         error: `Academy context '${academySlug || academyId || 'unknown'}' not found in central registry.`,
       });
     }
