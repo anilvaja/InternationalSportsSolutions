@@ -2069,9 +2069,6 @@ const app = {
             <a href="/api/central/backup" class="btn btn-secondary btn-sm" download>
               <i class="fa-solid fa-file-zipper"></i> Full Platform ZIP
             </a>
-            <button class="btn btn-warning btn-sm" onclick="app.confirmRunPratikDemoSeeder()" title="Run dedicated Pratik Karate Academy demo seeder" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; font-weight: 600; border: none; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.25);">
-              <i class="fa-solid fa-bolt"></i> Run Pratik Karate Demo Seeder
-            </button>
             <button class="btn btn-primary btn-sm" onclick="SetupWizardController.open()">
               <i class="fa-solid fa-wand-magic-sparkles"></i> Guided Academy Setup Wizard
             </button>
