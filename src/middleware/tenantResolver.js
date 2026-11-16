@@ -1,7 +1,6 @@
 import { config } from '../config/index.js';
 import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById, getTenantDbBySlug } from '../db/connectionManager.js';
-import { PratikKarateAcademyDemoSeeder } from '../db/pratikKarateAcademyDemoSeeder.js';
 
 /**
  * Extracts normalized host (without port) from request
@@ -193,14 +192,6 @@ export function resolveTenant(req, res, next) {
     // Cloud preview / Staging graceful fallback if still unmapped
     if (!academyRecord && isCloudPreviewHost) {
       academyRecord = centralDb.prepare("SELECT * FROM academies WHERE status = 'active' ORDER BY id ASC LIMIT 1").get();
-    }
-
-    // Auto-Recovery / Self-Healing for default or requested Academy 1
-    if (!academyRecord && (academyId === 1 || academySlug === 'pratik-karate-academy' || isDefaultHost)) {
-      try {
-        PratikKarateAcademyDemoSeeder.seedCentralAcademy(centralDb, 1, 'pratik-karate-academy');
-        academyRecord = centralDb.prepare('SELECT * FROM academies WHERE id = 1').get();
-      } catch (_) {}
     }
 
     // Ultimate graceful fallback if any active academy exists

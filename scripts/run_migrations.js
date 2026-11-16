@@ -1,7 +1,6 @@
 import { getCentralDb } from '../src/db/centralDb.js';
 import { runMigrations } from '../src/db/migrator.js';
 import { getTenantDbById } from '../src/db/connectionManager.js';
-import { PratikKarateAcademyDemoSeeder } from '../src/db/pratikKarateAcademyDemoSeeder.js';
 
 async function migrate() {
   console.log('=== Starting Database Migrations ===\n');
@@ -11,14 +10,6 @@ async function migrate() {
   console.log('[Central DB] Running pending migrations...');
   runMigrations(centralDb, 'central');
   console.log('[Central DB] Migrations up to date.\n');
-
-  // Ensure Academy 1 (Pratik Karate Academy) exists in central registry
-  const academyOne = centralDb.prepare('SELECT id FROM academies WHERE id = 1').get();
-  if (!academyOne) {
-    console.log('[Migrations] Academy 1 not registered. Auto-registering Pratik Karate Academy in central.db...');
-    PratikKarateAcademyDemoSeeder.seedCentralAcademy(centralDb, 1, 'pratik-karate-academy');
-    console.log('[Migrations] Pratik Karate Academy registered successfully (ID: 1).\n');
-  }
 
   // 2. Tenant Database Migrations
   const academies = centralDb.prepare('SELECT id, name, slug FROM academies').all();

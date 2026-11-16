@@ -1,10 +1,12 @@
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
+import bcrypt from 'bcryptjs';
 import { config } from '../config/index.js';
-import { getCentralDb } from '../db/centralDb.js';
-import { getTenantDbById } from '../db/connectionManager.js';
+import { getCentralDb, closeCentralDb, resetCentralDbInstance } from '../db/centralDb.js';
+import { getTenantDbById, closeAllTenantDbs, provisionAcademyDb } from '../db/connectionManager.js';
 import { extractSubdomain, extractHost } from '../middleware/tenantResolver.js';
-import { runSeed } from '../db/seed.js';
+import { ALL_ACADEMY_PERMISSIONS, DEFAULT_ACADEMY_ROLES } from '../config/permissions.js';
 
 export const publicRouter = express.Router();
 
@@ -277,20 +279,21 @@ publicRouter.post('/pay', (req, res) => {
 });
 
 /**
- * GET & POST /api/public/setup
- * Initializes the platform:
- * - Creates primary Super Admin: anilvaja.007@gmail.com
- * - Auto-generates standard 8 academy operational roles and assigns all module permissions
- * - Sets up subscription plans (Starter, Standard, Professional, Enterprise)
- * - Zero academies or users created (clean state)
+ * GET /api/public/setup
+ * Returns setup status (whether platform has any super admin)
+ *
+ * POST /api/public/setup
+ * Factory Reset & Platform Initialization:
+ * 1. Closes connections and completely drops/wipes central.db and all academy_*.db files.
+ * 2. Re-runs migrations to recreate pristine central.db.
+ * 3. Creates ONLY the requested Super Admin user (custom name, email, password from form input).
+ * 4. Seeds configuration, system settings, subscription plans, central permissions, and academy role templates.
+ * 5. Provisions ONLY 1 default academy: "Pratik Karate Academy" (bare academy, no branches, batches, students, coaches, or demo data).
  */
-publicRouter.all('/setup', (req, res) => {
+publicRouter.get('/setup', (req, res) => {
   try {
     const centralDb = getCentralDb();
     const existingSuperAdmin = centralDb.prepare('SELECT email FROM super_admins LIMIT 1').get();
-    const force = req.query.force === 'true' || req.body?.force === true;
-    const checkOnly = req.query.check === 'true' || req.query.status === 'true';
-
     const academiesCount = centralDb.prepare('SELECT COUNT(*) as c FROM academies').get()?.c || 0;
     const plansCount = centralDb.prepare('SELECT COUNT(*) as c FROM subscription_plans').get()?.c || 0;
     let rolesCount = 0;
@@ -300,49 +303,278 @@ publicRouter.all('/setup', (req, res) => {
       permsCount = centralDb.prepare('SELECT COUNT(*) as c FROM central_permissions').get()?.c || 0;
     } catch (_) { }
 
-    if (checkOnly) {
-      return res.json({
-        success: true,
-        initialized: !!existingSuperAdmin,
-        superAdminEmail: existingSuperAdmin?.email || null,
-        plansCount,
-        rolesCount,
-        permissionsCount: permsCount,
-        academiesCount,
-        loginUrl: '/',
-      });
-    }
-
-    if (existingSuperAdmin && !force) {
-      return res.json({
-        success: true,
-        message: 'Platform database is already active and initialized with Super Admin, standard roles, and permissions.',
-        initialized: true,
-        superAdminEmail: existingSuperAdmin.email,
-        plansCount,
-        rolesCount,
-        permissionsCount: permsCount,
-        academiesCount,
-        loginUrl: '/',
-      });
-    }
-
-    // Run clean seeder (DO NOT create academy or users; only Super Admin, subscription plans, roles & permissions)
-    const seedResult = runSeed({ includeDefaultAcademy: false });
-
     return res.json({
       success: true,
-      message: 'Platform successfully initialized with Super Admin (anilvaja.007@gmail.com), central plans, and standard academy roles with assigned permissions.',
-      initialized: true,
-      superAdminEmail: 'anilvaja.007@gmail.com',
-      rolesCount: seedResult.rolesCount,
-      permissionsCount: seedResult.permissionsCount,
-      academiesCount: 0,
+      initialized: !!existingSuperAdmin,
+      superAdminEmail: existingSuperAdmin?.email || null,
+      plansCount,
+      rolesCount,
+      permissionsCount: permsCount,
+      academiesCount,
       loginUrl: '/',
     });
   } catch (err) {
-    console.error('[Public Setup Error]', err);
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+publicRouter.post('/setup', (req, res) => {
+  const steps = [];
+  try {
+    const { confirm, admin_name, admin_email, admin_password } = req.body || {};
+
+    if (confirm !== 'RESET') {
+      return res.status(400).json({
+        success: false,
+        error: 'Confirmation failed. Please type "RESET" to confirm complete database wipe.'
+      });
+    }
+
+    if (!admin_name || !admin_email || !admin_password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Super Admin name, email, and password are required.'
+      });
+    }
+
+    if (admin_password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 6 characters.'
+      });
+    }
+
+    // Step 1: Close all tenant databases and central database
+    closeAllTenantDbs();
+    closeCentralDb();
+    resetCentralDbInstance();
+    steps.push('Closed all active database connections');
+
+    // Step 2: Wipe all tenant database files
+    let academyDbsDeleted = 0;
+    if (fs.existsSync(config.academiesDir)) {
+      const files = fs.readdirSync(config.academiesDir);
+      for (const file of files) {
+        if (file.endsWith('.db') || file.endsWith('.db-wal') || file.endsWith('.db-shm')) {
+          try {
+            fs.unlinkSync(path.join(config.academiesDir, file));
+            academyDbsDeleted++;
+          } catch (e) {
+            console.warn(`Could not delete ${file}:`, e.message);
+          }
+        }
+      }
+    }
+    steps.push(`Deleted ${academyDbsDeleted} academy database file(s)`);
+
+    // Step 3: Wipe central database files
+    const centralFiles = [
+      config.centralDbPath,
+      `${config.centralDbPath}-wal`,
+      `${config.centralDbPath}-shm`
+    ];
+    for (const f of centralFiles) {
+      if (fs.existsSync(f)) {
+        try {
+          fs.unlinkSync(f);
+        } catch (e) {
+          console.warn(`Could not delete ${f}:`, e.message);
+        }
+      }
+    }
+    steps.push('Completely dropped and removed central.db');
+
+    // Step 4: Re-initialize fresh central database & execute central migrations
+    resetCentralDbInstance();
+    const centralDb = getCentralDb();
+    steps.push('Recreated pristine central database with latest schema migrations');
+
+    // Step 5: Setup Super Admin from user input (NOT auto-configured)
+    const saltRounds = 10;
+    const passwordHash = bcrypt.hashSync(admin_password, saltRounds);
+    centralDb.prepare(`
+      INSERT INTO super_admins (name, email, password_hash, status)
+      VALUES (?, ?, ?, 'active')
+    `).run(admin_name.trim(), admin_email.trim().toLowerCase(), passwordHash);
+    steps.push(`Created Super Admin user: ${admin_email.trim().toLowerCase()}`);
+
+    // Step 6: Platform Configuration / Settings
+    const insertSetting = centralDb.prepare('INSERT OR REPLACE INTO central_settings (key, value) VALUES (?, ?)');
+    insertSetting.run('platform_name', 'International Sports Solutions');
+    insertSetting.run('currency_symbol', '₹');
+    insertSetting.run('currency_code', 'INR');
+    insertSetting.run('support_email', admin_email.trim().toLowerCase());
+    insertSetting.run('enable_registrations', 'true');
+    steps.push('Configured central platform settings');
+
+    // Step 7: Seed Subscription Plans & Limits
+    const plansToSeed = [
+      {
+        name: 'Starter',
+        slug: 'starter',
+        description: 'Starter tier for single-branch sports clubs and individual dojos',
+        price: 999,
+        billing_interval: 'monthly',
+        trial_days: 14,
+        status: 'active',
+        is_default: 1,
+        limits: { branches: 1, coaches: 3, batches: 5, students: 75, students_per_batch: 25, users: 5 },
+        features: { syllabus: 1, facilities: 1, events: 0, payroll: 0, smart_attendance: 0, face_attendance: 0 },
+      },
+      {
+        name: 'Standard',
+        slug: 'standard',
+        description: 'Best for growing sports academies with multiple batches, schedules, and staff',
+        price: 2499,
+        billing_interval: 'monthly',
+        trial_days: 14,
+        status: 'active',
+        is_default: 0,
+        limits: { branches: 3, coaches: 10, batches: 15, students: 250, students_per_batch: 30, users: 15 },
+        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1, smart_attendance: 1, face_attendance: 1 },
+      },
+      {
+        name: 'Professional',
+        slug: 'professional',
+        description: 'High-capacity multi-campus academies with extensive payroll and event operations',
+        price: 4999,
+        billing_interval: 'monthly',
+        trial_days: 30,
+        status: 'active',
+        is_default: 0,
+        limits: { branches: 8, coaches: 25, batches: 40, students: 800, students_per_batch: 40, users: 35 },
+        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1, smart_attendance: 1, face_attendance: 1 },
+      },
+      {
+        name: 'Enterprise',
+        slug: 'enterprise',
+        description: 'Nationwide sports organizations and federations with priority SLA and scale',
+        price: 9999,
+        billing_interval: 'monthly',
+        trial_days: 30,
+        status: 'active',
+        is_default: 0,
+        limits: { branches: 25, coaches: 100, batches: 150, students: 3000, students_per_batch: 60, users: 100 },
+        features: { syllabus: 1, facilities: 1, events: 1, payroll: 1, smart_attendance: 1, face_attendance: 1 },
+      },
+    ];
+
+    for (const p of plansToSeed) {
+      const ins = centralDb.prepare(`
+        INSERT INTO subscription_plans (name, slug, description, price, billing_interval, trial_days, status, is_default)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(p.name, p.slug, p.description, p.price, p.billing_interval, p.trial_days, p.status, p.is_default);
+      const planId = Number(ins.lastInsertRowid);
+
+      for (const [qKey, qVal] of Object.entries(p.limits)) {
+        centralDb.prepare(`
+          INSERT INTO subscription_plan_limits (plan_id, quota_key, limit_value, counting_policy)
+          VALUES (?, ?, ?, 'active_only')
+        `).run(planId, qKey, qVal);
+      }
+
+      for (const [feat, isEn] of Object.entries(p.features)) {
+        centralDb.prepare(`
+          INSERT INTO subscription_plan_features (plan_id, feature_key, is_enabled)
+          VALUES (?, ?, ?)
+        `).run(planId, feat, isEn);
+      }
+    }
+    steps.push('Seeded 4 subscription tiers (Starter, Standard, Professional, Enterprise)');
+
+    // Step 8: Seed Permissions Catalog & Central Role Templates
+    const insertCentralPerm = centralDb.prepare(`
+      INSERT OR REPLACE INTO central_permissions (permission_key, category, description)
+      VALUES (?, ?, ?)
+    `);
+    for (const perm of ALL_ACADEMY_PERMISSIONS) {
+      const category = perm.split('_')[1] || 'general';
+      const description = `Permission to ${perm.replace(/_/g, ' ')}`;
+      insertCentralPerm.run(perm, category, description);
+    }
+
+    const insertCentralRole = centralDb.prepare(`
+      INSERT OR REPLACE INTO central_role_templates (name, display_name, description, permissions, is_system, theme_color)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    for (const role of DEFAULT_ACADEMY_ROLES) {
+      insertCentralRole.run(
+        role.name,
+        role.display_name,
+        role.description,
+        JSON.stringify(role.permissions),
+        role.is_system,
+        role.theme_color
+      );
+    }
+    steps.push(`Seeded ${ALL_ACADEMY_PERMISSIONS.length} permissions & ${DEFAULT_ACADEMY_ROLES.length} role templates`);
+
+    // Step 9: Seed ONLY 1 academy: "Pratik Karate Academy"
+    // Clean academy only: NO branches, NO batches, NO students, NO coaches, NO attendance, NO dummy data
+    const pratikAcademyData = {
+      id: 1,
+      name: 'Pratik Karate Academy',
+      slug: 'pratik-karate-academy',
+      contact_email: 'admin@pratikkarate.com',
+      contact_phone: '+91 98250 12345',
+      address: 'Dojo Complex, Navrangpura',
+      city: 'Ahmedabad',
+      plan: 'enterprise',
+      max_branches: 10,
+      max_students: 1500,
+      max_coaches: 80,
+    };
+
+    // Use provisionAcademyDb without admin_email to avoid creating unnecessary dummy admin, or pass base admin
+    const provisioned = provisionAcademyDb(pratikAcademyData);
+    const tenantDb = getTenantDbById(provisioned.id);
+
+    // Ensure tenant has NO demo records (branches, batches, students, coaches, attendance, fees, etc.)
+    tenantDb.exec(`
+      DELETE FROM branches;
+      DELETE FROM batches;
+      DELETE FROM students;
+      DELETE FROM student_batch_enrollments;
+      DELETE FROM student_attendance;
+      DELETE FROM coaches;
+      DELETE FROM users;
+      DELETE FROM sports;
+      DELETE FROM syllabus_categories;
+      DELETE FROM syllabus_techniques;
+      DELETE FROM student_fees;
+      DELETE FROM fee_payments;
+      DELETE FROM employment_records;
+      DELETE FROM staff_salary_profiles;
+      DELETE FROM staff_punches;
+      DELETE FROM academy_holidays;
+      DELETE FROM branch_work_schedules;
+    `);
+
+    // Ensure active subscription for Pratik Karate Academy
+    const entPlan = centralDb.prepare("SELECT id FROM subscription_plans WHERE slug = 'enterprise'").get();
+    if (entPlan) {
+      centralDb.prepare(`
+        INSERT OR REPLACE INTO academy_subscriptions (academy_id, plan_id, status, starts_at)
+        VALUES (?, ?, 'active', CURRENT_TIMESTAMP)
+      `).run(provisioned.id, entPlan.id);
+    }
+
+    steps.push('Provisioned empty "Pratik Karate Academy" (ID: 1) — clean slate without any branches, batches, or demo records');
+
+    return res.json({
+      success: true,
+      message: 'Platform factory reset and initialization completed successfully.',
+      superAdminEmail: admin_email.trim().toLowerCase(),
+      plansCount: plansToSeed.length,
+      rolesCount: DEFAULT_ACADEMY_ROLES.length,
+      permissionsCount: ALL_ACADEMY_PERMISSIONS.length,
+      academyName: 'Pratik Karate Academy',
+      academyDbsDeleted,
+      steps,
+    });
+  } catch (err) {
+    console.error('[Public Setup Error]', err);
+    return res.status(500).json({ success: false, error: err.message, steps });
   }
 });
 

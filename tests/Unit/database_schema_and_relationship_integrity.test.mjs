@@ -397,6 +397,6 @@ test('Stage 2 — Complete Database Schema & Relationship Integrity Verification
     assert.ok(totalTables >= 75, 'Tenant schema must provision all 75+ core multi-tenant tables');
 
     const appliedMigrations = db.prepare('SELECT count(*) as c FROM _migrations').get().c;
-    assert.equal(appliedMigrations, 36, 'All 36 tenant migrations must be recorded');
+    assert.equal(appliedMigrations, 37, 'All 37 tenant migrations must be recorded');
   });
 });

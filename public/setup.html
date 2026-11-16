@@ -8,300 +8,308 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="/css/style.css">
   <style>
+    * { box-sizing: border-box; }
     body {
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--bg-body, #f8fafc);
+      background: #f0f2f5;
       padding: 24px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
     }
     .setup-container {
-      background: var(--bg-card, #ffffff);
-      border: 1px solid var(--border, #e2e8f0);
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
       border-radius: 16px;
-      max-width: 620px;
+      max-width: 640px;
       width: 100%;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
       overflow: hidden;
     }
     .setup-header {
-      padding: 32px 32px 24px;
+      padding: 32px 32px 20px;
       text-align: center;
-      border-bottom: 1px solid var(--border, #e2e8f0);
-      background: linear-gradient(to bottom, #ffffff, #fcfcfd);
+      border-bottom: 1px solid #e2e8f0;
+      background: linear-gradient(135deg, #f8fafc, #eef2ff);
     }
     .setup-logo {
-      width: 56px;
-      height: 56px;
+      width: 56px; height: 56px;
       border-radius: 14px;
-      background: linear-gradient(135deg, #2563eb, #0ea5e9);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      color: #ffffff;
-      font-size: 26px;
-      margin-bottom: 16px;
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+      background: linear-gradient(135deg, #dc2626, #f97316);
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #ffffff; font-size: 26px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
     }
-    .setup-body {
-      padding: 28px 32px;
-    }
-    .item-card {
-      display: flex;
-      align-items: flex-start;
-      gap: 14px;
-      padding: 14px;
-      border: 1px solid var(--border, #e2e8f0);
+    .setup-header h1 { font-size: 22px; font-weight: 800; color: #0f172a; margin: 0 0 4px; }
+    .setup-header p { font-size: 13px; color: #64748b; margin: 0; }
+
+    .setup-body { padding: 24px 32px; }
+
+    .warning-banner {
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
       border-radius: 10px;
-      margin-bottom: 12px;
-      background: #fafbfc;
-      transition: all 0.2s ease;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      display: flex; gap: 10px; align-items: flex-start;
     }
-    .item-card:hover {
-      background: #f8fafc;
-      border-color: #cbd5e1;
+    .warning-banner i { color: #dc2626; margin-top: 2px; font-size: 16px; }
+    .warning-banner p { font-size: 12px; color: #991b1b; margin: 0; line-height: 1.5; }
+    .warning-banner strong { font-weight: 700; }
+
+    .section-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      color: #64748b; margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9;
     }
-    .item-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      font-size: 16px;
+
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 5px;
     }
-    .item-title {
-      font-weight: 700;
-      font-size: 14px;
-      color: #0f172a;
-      margin-bottom: 2px;
+    .form-group input {
+      width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px;
+      font-size: 14px; color: #1e293b; background: #fafbfc;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
-    .item-desc {
-      font-size: 12px;
-      color: #64748b;
-      line-height: 1.4;
+    .form-group input:focus {
+      outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
     }
-    .setup-actions {
-      padding: 20px 32px 32px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+    .form-group .hint { font-size: 11px; color: #94a3b8; margin-top: 3px; }
+
+    .checklist { margin: 20px 0 6px; }
+    .check-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 8px; margin-bottom: 6px;
+      background: #f8fafc; font-size: 13px; color: #334155;
     }
+    .check-item i.check { color: #10b981; font-size: 14px; width: 18px; text-align: center; }
+    .check-item i.warn { color: #f59e0b; font-size: 14px; width: 18px; text-align: center; }
+
+    .setup-actions { padding: 0 32px 32px; }
     .btn-setup {
-      background: #2563eb;
-      color: #ffffff;
-      border: none;
-      border-radius: 10px;
-      padding: 14px 20px;
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      transition: background 0.2s ease, transform 0.1s ease;
-      width: 100%;
+      background: #dc2626; color: #ffffff; border: none; border-radius: 10px;
+      padding: 14px 20px; font-size: 15px; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      transition: background 0.2s, transform 0.1s; width: 100%;
     }
-    .btn-setup:hover {
-      background: #1d4ed8;
-      transform: translateY(-1px);
-    }
-    .btn-setup:active {
-      transform: translateY(0);
-    }
-    .btn-setup:disabled {
-      background: #94a3b8;
-      cursor: not-allowed;
-      transform: none;
-    }
+    .btn-setup:hover { background: #b91c1c; transform: translateY(-1px); }
+    .btn-setup:active { transform: translateY(0); }
+    .btn-setup:disabled { background: #94a3b8; cursor: not-allowed; transform: none; }
+
     .status-alert {
-      padding: 16px;
-      border-radius: 10px;
-      font-size: 13px;
-      line-height: 1.5;
-      margin-bottom: 16px;
-      display: none;
+      padding: 16px; border-radius: 10px; font-size: 13px; line-height: 1.6;
+      margin-bottom: 16px; display: none;
     }
-    .status-alert.success {
-      background: rgba(16, 185, 129, 0.1);
-      border: 1px solid #10b981;
-      color: #065f46;
+    .status-alert.success { background: rgba(16,185,129,0.08); border: 1px solid #10b981; color: #065f46; }
+    .status-alert.error { background: rgba(239,68,68,0.08); border: 1px solid #ef4444; color: #991b1b; }
+    .status-alert.info { background: rgba(37,99,235,0.06); border: 1px solid #3b82f6; color: #1e40af; }
+
+    .progress-log {
+      margin-top: 12px; background: #1e293b; border-radius: 8px; padding: 12px 14px;
+      font-family: 'Fira Code', 'Cascadia Mono', monospace; font-size: 11px; color: #94a3b8;
+      max-height: 160px; overflow-y: auto; display: none; line-height: 1.7;
     }
-    .status-alert.info {
-      background: rgba(37, 99, 235, 0.08);
-      border: 1px solid #3b82f6;
-      color: #1e40af;
+    .progress-log .step { color: #cbd5e1; }
+    .progress-log .done { color: #34d399; }
+    .progress-log .fail { color: #f87171; }
+
+    .link-row {
+      display: flex; justify-content: flex-end; margin-top: 12px;
     }
-    .status-alert.error {
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid #ef4444;
-      color: #991b1b;
-    }
+    .link-row a { font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 600; }
+    .link-row a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
-
   <div class="setup-container">
     <div class="setup-header">
       <div class="setup-logo">
-        <i class="fa-solid fa-trophy"></i>
+        <i class="fa-solid fa-database"></i>
       </div>
-      <h1 style="font-size: 22px; font-weight: 800; color: #0f172a; margin: 0 0 6px;">
-        Platform Initial Setup
-      </h1>
-      <p style="font-size: 13px; color: #64748b; margin: 0;">
-        International Sports Solutions — Multi-Tenant Architecture
-      </p>
+      <h1>Platform Factory Reset & Setup</h1>
+      <p>International Sports Solutions — Complete Database Wipe & Re-initialization</p>
     </div>
 
     <div class="setup-body">
       <div id="status-box" class="status-alert"></div>
 
-      <p style="font-size: 13px; color: #334155; margin: 0 0 16px; line-height: 1.5;">
-        This automated wizard sets up the initial platform environment and database catalogs. No demo academies or dummy students will be created:
-      </p>
-
-      <div class="item-card">
-        <div class="item-icon" style="background: rgba(245, 158, 11, 0.12); color: #d97706;">
-          <i class="fa-solid fa-shield-halved"></i>
-        </div>
-        <div>
-          <div class="item-title">1. Super Admin Account</div>
-          <div class="item-desc">Creates or verifies primary Super Admin account (<code>anilvaja.007@gmail.com</code>) with full platform governance permissions.</div>
-        </div>
+      <div class="warning-banner">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <p>
+          <strong>Destructive Operation:</strong> This will permanently delete ALL databases —
+          central.db and every academy database. All existing data (students, staff, attendance,
+          fees, etc.) will be irreversibly lost. Only the super admin account, subscription plans,
+          roles/permissions, and a bare Pratik Karate Academy record will be created.
+        </p>
       </div>
 
-      <div class="item-card">
-        <div class="item-icon" style="background: rgba(37, 99, 235, 0.12); color: #2563eb;">
-          <i class="fa-solid fa-user-shield"></i>
-        </div>
-        <div>
-          <div class="item-title">2. Operational Roles & Permissions</div>
-          <div class="item-desc">Registers the standard 8 academy operational roles (Finance Manager, Front Desk, Head Coach, Receptionist, Academy Admin, Staff, Coach, Student) and assigns modules & permissions.</div>
-        </div>
+      <div class="section-label">Super Admin Account</div>
+
+      <div class="form-group">
+        <label for="admin-name">Full Name</label>
+        <input type="text" id="admin-name" placeholder="e.g. Anil Vaja" required>
+      </div>
+      <div class="form-group">
+        <label for="admin-email">Email Address</label>
+        <input type="email" id="admin-email" placeholder="e.g. admin@example.com" required>
+      </div>
+      <div class="form-group">
+        <label for="admin-password">Password</label>
+        <input type="password" id="admin-password" placeholder="Minimum 6 characters" required>
+        <div class="hint">This will be the only super admin login for the platform.</div>
       </div>
 
-      <div class="item-card">
-        <div class="item-icon" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">
-          <i class="fa-solid fa-layer-group"></i>
-        </div>
-        <div>
-          <div class="item-title">3. Subscription Tiers & System Quotas</div>
-          <div class="item-desc">Sets up subscription plans (Starter, Standard, Professional, Enterprise) with branch, coach, batch, and student quota limits.</div>
-        </div>
+      <div class="section-label" style="margin-top: 24px;">What Will Be Created</div>
+      <div class="checklist">
+        <div class="check-item"><i class="fa-solid fa-check check"></i> Super Admin account (your credentials above)</div>
+        <div class="check-item"><i class="fa-solid fa-check check"></i> 4 Subscription Plans (Starter, Standard, Professional, Enterprise)</div>
+        <div class="check-item"><i class="fa-solid fa-check check"></i> 8 Academy Role Templates with granular permissions</div>
+        <div class="check-item"><i class="fa-solid fa-check check"></i> Central permissions catalog (all platform modules)</div>
+        <div class="check-item"><i class="fa-solid fa-check check"></i> Pratik Karate Academy (academy record only — no branches, batches, students, or staff)</div>
+        <div class="check-item"><i class="fa-solid fa-triangle-exclamation warn"></i> <strong>No test/demo data will be created</strong></div>
       </div>
 
-      <div class="item-card">
-        <div class="item-icon" style="background: rgba(100, 116, 139, 0.12); color: #475569;">
-          <i class="fa-solid fa-broom"></i>
-        </div>
-        <div>
-          <div class="item-title">4. 100% Clean Tenant Slate</div>
-          <div class="item-desc">Zero academies or dummy records generated. You can create fresh academies anytime from the Super Admin portal.</div>
-        </div>
-      </div>
+      <div class="progress-log" id="progress-log"></div>
     </div>
 
     <div class="setup-actions">
-      <button type="button" id="btn-run-setup" class="btn-setup" onclick="runPlatformSetup()">
-        <i class="fa-solid fa-play"></i> Initialize Platform Setup
+      <button type="button" id="btn-run-setup" class="btn-setup" onclick="runFactoryReset()">
+        <i class="fa-solid fa-skull-crossbones"></i> Wipe All & Re-Initialize Platform
       </button>
-
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-        <label style="font-size: 12px; color: #64748b; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-          <input type="checkbox" id="chk-force"> Force re-initialization
-        </label>
-        <a href="/" style="font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 600;">
-          Back to Login →
-        </a>
+      <div class="link-row">
+        <a href="/">← Back to Login</a>
       </div>
     </div>
   </div>
 
   <script>
-    async function checkCurrentStatus() {
-      try {
-        const res = await fetch('/api/public/setup?check=true');
-        const data = await res.json();
-        const box = document.getElementById('status-box');
-        if (data.success && data.initialized) {
-          box.className = 'status-alert info';
-          box.style.display = 'block';
-          box.innerHTML = `
-            <div style="font-weight: 700; margin-bottom: 4px;">
-              <i class="fa-solid fa-circle-check" style="color: #2563eb;"></i> Platform is Already Initialized
-            </div>
-            <div>Super Admin <strong>${data.superAdminEmail}</strong> is active. Subscription plans (${data.plansCount}) and academy role templates (${data.rolesCount}) are registered.</div>
-            <div style="margin-top: 8px;">
-              <a href="/" style="display: inline-block; background: #2563eb; color: #fff; padding: 6px 14px; border-radius: 6px; font-weight: 600; text-decoration: none; font-size: 12px;">Sign In to Portal &rarr;</a>
-            </div>
-          `;
-          document.getElementById('btn-run-setup').innerHTML = '<i class="fa-solid fa-rotate-right"></i> Re-Run Platform Setup';
-        }
-      } catch (_) {}
+    const logEl = document.getElementById('progress-log');
+
+    function addLog(msg, type = 'step') {
+      logEl.style.display = 'block';
+      const line = document.createElement('div');
+      line.className = type;
+      line.textContent = `${type === 'done' ? '✓' : type === 'fail' ? '✗' : '→'} ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
     }
 
-    async function runPlatformSetup() {
+    async function runFactoryReset() {
+      const name = document.getElementById('admin-name').value.trim();
+      const email = document.getElementById('admin-email').value.trim();
+      const password = document.getElementById('admin-password').value;
       const btn = document.getElementById('btn-run-setup');
       const box = document.getElementById('status-box');
-      const force = document.getElementById('chk-force').checked;
 
+      // Validation
+      if (!name || !email || !password) {
+        box.className = 'status-alert error';
+        box.style.display = 'block';
+        box.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> Please fill in all Super Admin fields (Name, Email, Password).';
+        return;
+      }
+      if (password.length < 6) {
+        box.className = 'status-alert error';
+        box.style.display = 'block';
+        box.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> Password must be at least 6 characters.';
+        return;
+      }
+      if (!email.includes('@')) {
+        box.className = 'status-alert error';
+        box.style.display = 'block';
+        box.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> Please enter a valid email address.';
+        return;
+      }
+
+      // Confirmation
+      const confirmed = confirm(
+        '⚠️ FINAL WARNING\n\n' +
+        'This will PERMANENTLY DELETE:\n' +
+        '• central.db (all super admins, plans, academies)\n' +
+        '• ALL academy_*.db files (all student, staff, fee, attendance data)\n\n' +
+        'A fresh platform will be created with ONLY:\n' +
+        `• Super Admin: ${email}\n` +
+        '• Subscription plans & role templates\n' +
+        '• Pratik Karate Academy (empty record)\n\n' +
+        'Type OK in the next prompt to confirm.'
+      );
+      if (!confirmed) return;
+
+      const doubleConfirm = prompt('Type "RESET" to confirm complete database wipe:');
+      if (doubleConfirm !== 'RESET') {
+        box.className = 'status-alert info';
+        box.style.display = 'block';
+        box.innerHTML = '<i class="fa-solid fa-shield"></i> Reset cancelled. No changes were made.';
+        return;
+      }
+
+      // Execute
       btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Initializing Platform...';
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Wiping & Re-initializing...';
       box.style.display = 'none';
+      logEl.innerHTML = '';
+
+      addLog('Starting factory reset...');
+      addLog('Closing all database connections...');
 
       try {
-        const res = await fetch('/api/public/setup' + (force ? '?force=true' : ''), {
+        const res = await fetch('/api/public/setup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ force })
+          body: JSON.stringify({
+            confirm: 'RESET',
+            admin_name: name,
+            admin_email: email,
+            admin_password: password,
+          })
         });
         const data = await res.json();
 
         if (data.success) {
+          if (data.steps) {
+            data.steps.forEach(s => addLog(s, 'done'));
+          }
+          addLog('Factory reset completed successfully!', 'done');
+
           box.className = 'status-alert success';
           box.style.display = 'block';
           box.innerHTML = `
-            <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px;">
-              <i class="fa-solid fa-circle-check"></i> Platform Initialized Successfully!
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 8px;">
+              <i class="fa-solid fa-circle-check"></i> Platform Reset & Initialized Successfully!
             </div>
-            <div style="margin-bottom: 8px;">${data.message}</div>
-            <ul style="margin: 0 0 12px 18px; padding: 0; font-size: 12px;">
-              <li>Super Admin: <strong>${data.superAdminEmail || data.superAdmin || 'anilvaja.007@gmail.com'}</strong></li>
-              <li>Standard Academy Roles: <strong>${data.rolesCount || 8} roles registered</strong></li>
-              <li>Module Permissions: <strong>${data.permissionsCount || 'All'} permissions assigned</strong></li>
-              <li>Registered Academies: <strong>${data.academiesCount || 0} (Clean Slate)</strong></li>
+            <ul style="margin: 0 0 12px 18px; padding: 0; font-size: 12px; line-height: 1.8;">
+              <li>Super Admin: <strong>${data.superAdminEmail}</strong></li>
+              <li>Subscription Plans: <strong>${data.plansCount} plans</strong></li>
+              <li>Role Templates: <strong>${data.rolesCount} roles</strong></li>
+              <li>Permissions: <strong>${data.permissionsCount} permissions</strong></li>
+              <li>Academy: <strong>${data.academyName || 'Pratik Karate Academy'}</strong> (empty — no branches/batches/students)</li>
+              <li>Academy DB files removed: <strong>${data.academyDbsDeleted || 0}</strong></li>
             </ul>
-            <div>
-              <a href="/" style="display: inline-block; background: #10b981; color: #fff; padding: 8px 16px; border-radius: 6px; font-weight: 700; text-decoration: none; font-size: 13px;">
-                Proceed to Sign In &rarr;
-              </a>
-            </div>
+            <a href="/" style="display: inline-block; background: #10b981; color: #fff; padding: 10px 20px; border-radius: 8px; font-weight: 700; text-decoration: none; font-size: 13px;">
+              <i class="fa-solid fa-right-to-bracket"></i> Proceed to Sign In →
+            </a>
           `;
-          btn.innerHTML = '<i class="fa-solid fa-check"></i> Setup Completed';
+          btn.innerHTML = '<i class="fa-solid fa-check"></i> Reset Complete';
         } else {
+          addLog(data.error || 'Unknown error occurred', 'fail');
           box.className = 'status-alert error';
           box.style.display = 'block';
-          box.innerHTML = `<strong>Error during setup:</strong> ${data.error || 'Failed to initialize database'}`;
+          box.innerHTML = `<strong>Error:</strong> ${data.error || 'Failed to reset platform'}`;
           btn.disabled = false;
-          btn.innerHTML = '<i class="fa-solid fa-play"></i> Retry Setup';
+          btn.innerHTML = '<i class="fa-solid fa-skull-crossbones"></i> Retry Reset';
         }
       } catch (err) {
+        addLog(`Network Error: ${err.message}`, 'fail');
         box.className = 'status-alert error';
         box.style.display = 'block';
-        box.innerHTML = `<strong>Network or Server Error:</strong> ${err.message}`;
+        box.innerHTML = `<strong>Network Error:</strong> ${err.message}`;
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-play"></i> Retry Setup';
+        btn.innerHTML = '<i class="fa-solid fa-skull-crossbones"></i> Retry Reset';
       }
     }
-
-    // Auto-check on load
-    checkCurrentStatus();
   </script>
 </body>
 </html>
-

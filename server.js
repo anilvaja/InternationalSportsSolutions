@@ -15,7 +15,6 @@ import { studentRouter } from './src/routes/studentRoutes.js';
 import { publicRouter } from './src/routes/publicRoutes.js';
 import { staffRouter } from './src/routes/staffRoutes.js';
 import { runSeed } from './src/db/seed.js';
-import { PratikKarateAcademyDemoSeeder } from './src/db/pratikKarateAcademyDemoSeeder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,41 +26,6 @@ app.set('trust proxy', true);
 
 // Initialize Central Database & check migrations
 const centralDb = getCentralDb();
-
-// Self-healing Auto-Seed: If database has no super admin or Academy 1 is missing, seed default initial data
-try {
-  const superAdminCount = centralDb.prepare('SELECT COUNT(*) as count FROM super_admins').get()?.count || 0;
-  if (superAdminCount === 0) {
-    console.log('[Auto-Seed] Empty database detected on startup. Initializing default platform data and super admin...');
-    runSeed({ includeDefaultAcademy: true });
-    PratikKarateAcademyDemoSeeder.seedCentralAcademy(centralDb, 1, 'pratik-karate-academy');
-    console.log('[Auto-Seed] Database successfully initialized with Super Admin and Pratik Karate Academy.');
-  } else if (!config.isTest) {
-    const targetAdmin = centralDb.prepare('SELECT id, password_hash FROM super_admins WHERE email = ? COLLATE NOCASE').get('anilvaja.007@gmail.com');
-    if (!targetAdmin) {
-      const hash = bcrypt.hashSync('Iss@15890', 10);
-      centralDb.prepare(`
-        INSERT INTO super_admins (name, email, password_hash, status)
-        VALUES ('Anil Vaja', 'anilvaja.007@gmail.com', ?, 'active')
-      `).run(hash);
-      console.log('[Startup] Created Super Admin: anilvaja.007@gmail.com');
-    } else if (bcrypt.compareSync('password', targetAdmin.password_hash)) {
-      const hash = bcrypt.hashSync('Iss@15890', 10);
-      centralDb.prepare('UPDATE super_admins SET password_hash = ? WHERE id = ?').run(hash, targetAdmin.id);
-      console.log('[Startup] Upgraded legacy default Super Admin password for anilvaja.007@gmail.com');
-    }
-
-    // Ensure Academy 1 (Pratik Karate Academy) is ALWAYS registered in central registry
-    const academyOne = centralDb.prepare('SELECT id FROM academies WHERE id = 1').get();
-    if (!academyOne) {
-      console.log('[Auto-Seed] Academy 1 missing from central registry on startup. Restoring Pratik Karate Academy in central.db...');
-      PratikKarateAcademyDemoSeeder.seedCentralAcademy(centralDb, 1, 'pratik-karate-academy');
-      console.log('[Auto-Seed] Pratik Karate Academy successfully restored in central registry (ID: 1).');
-    }
-  }
-} catch (seedErr) {
-  console.warn('[Auto-Seed] Automatic seed check warning:', seedErr.message);
-}
 
 // Middlewares
 app.use(cors({ origin: true, credentials: true }));
