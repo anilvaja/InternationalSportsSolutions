@@ -183,7 +183,8 @@ const SetupWizardController = {
       `<i class="fa-solid fa-wand-magic-sparkles" style="color: var(--primary);"></i> Guided Academy Onboarding Wizard — Step ${step} of 10: ${this.steps[step - 1].title}`,
       stepperHtml + `<div id="wizard-content" style="max-height: 60vh; overflow-y: auto; padding-right: 6px;">${stepHtml}</div>`,
       footerHtml,
-      '840px'
+      '840px',
+      { preventBackdropClose: true }
     );
   },
 

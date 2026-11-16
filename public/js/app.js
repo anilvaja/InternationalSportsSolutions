@@ -27089,7 +27089,7 @@ const app = {
 
     const modalFooter = `
       <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-        <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+        <button type="button" class="btn btn-secondary" onclick="app.closeAdmissionWizard()">Cancel</button>
         <div style="display: flex; gap: 8px;">
           <button type="button" class="btn btn-secondary" id="wiz-btn-back" style="display: ${s.currentStep > 1 ? 'inline-flex' : 'none'};" onclick="app.prevWizardStep()">
             <i class="fa-solid fa-arrow-left"></i> Back
@@ -27104,7 +27104,26 @@ const app = {
       </div>
     `;
 
-    this.openModal(`Student Admission Wizard — Step ${s.currentStep} of ${s.totalSteps}`, modalBody, modalFooter);
+    this.openModal(`Student Admission Wizard — Step ${s.currentStep} of ${s.totalSteps}`, modalBody, modalFooter, '880px', { preventBackdropClose: true });
+  },
+
+  closeAdmissionWizard() {
+    this.collectWizardFormData();
+    const hasData = this._wizardState?.formData && (
+      this._wizardState.formData.first_name ||
+      this._wizardState.formData.last_name ||
+      this._wizardState.formData.contact_email ||
+      this._wizardState.formData.father_phone ||
+      this._wizardState.formData.mother_phone
+    );
+
+    if (hasData) {
+      if (!confirm('You have unsaved changes in the admission wizard. Are you sure you want to discard them and close?')) {
+        return;
+      }
+    }
+    this._wizardState = null;
+    this.closeModal();
   },
 
   collectWizardFormData() {
@@ -27687,7 +27706,7 @@ const app = {
   // MODAL UTILITIES
   // ==========================================
 
-  openModal(title, bodyHtml, footerHtml = '', maxWidth = null) {
+  openModal(title, bodyHtml, footerHtml = '', maxWidth = null, options = {}) {
     const titleEl = document.getElementById('modal-title');
     if (titleEl) titleEl.innerHTML = title;
     const bodyEl = document.getElementById('modal-body');
@@ -27714,6 +27733,11 @@ const app = {
 
     if (overlay) {
       overlay.classList.add('active');
+      if (options.preventBackdropClose) {
+        overlay.setAttribute('data-prevent-backdrop-close', 'true');
+      } else {
+        overlay.removeAttribute('data-prevent-backdrop-close');
+      }
     }
 
     setTimeout(() => {
@@ -27722,8 +27746,8 @@ const app = {
     }, 0);
   },
 
-  showModal(title, bodyHtml, footerHtml = '', maxWidth = null) {
-    return this.openModal(title, bodyHtml, footerHtml, maxWidth);
+  showModal(title, bodyHtml, footerHtml = '', maxWidth = null, options = {}) {
+    return this.openModal(title, bodyHtml, footerHtml, maxWidth, options);
   },
 
   closeModal() {
@@ -27737,6 +27761,7 @@ const app = {
 
     if (overlay) {
       overlay.classList.remove('active');
+      overlay.removeAttribute('data-prevent-backdrop-close');
     }
     if (wrapper) {
       wrapper.style.maxWidth = '';
@@ -28862,6 +28887,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' || e.key === 'Esc' || e.keyCode === 27) {
     const overlay = document.getElementById('modal-container');
     if (overlay && overlay.classList.contains('active')) {
+      if (overlay.getAttribute('data-prevent-backdrop-close') === 'true') {
+        return; // Prevent accidental close on multi-step wizard
+      }
       if (window.app && typeof window.app.closeModal === 'function') {
         window.app.closeModal();
       }
@@ -28875,6 +28903,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (overlay) {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
+        if (overlay.getAttribute('data-prevent-backdrop-close') === 'true') {
+          return; // Prevent accidental loss of multi-tab filled data
+        }
         if (window.app && typeof window.app.closeModal === 'function') {
           window.app.closeModal();
         }
