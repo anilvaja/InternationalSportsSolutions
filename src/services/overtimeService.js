@@ -17,6 +17,16 @@ export class OvertimeService {
         custom_divisor_value: settings.custom_divisor_value !== undefined && settings.custom_divisor_value !== null ? Number(settings.custom_divisor_value) : null,
         paid_leave_policy: settings.paid_leave_policy || 'credit_scheduled_minutes',
         short_attendance_policy: settings.short_attendance_policy || 'deduct_proportionate_minutes',
+        fee_grace_period_days: settings.fee_grace_period_days ?? 7,
+        allow_fee_pauses: settings.allow_fee_pauses !== undefined ? settings.allow_fee_pauses : 1,
+        default_currency: settings.default_currency || 'INR',
+        standard_shift_hours: settings.standard_shift_hours ?? 8.0,
+        late_attendance_threshold_mins: settings.late_attendance_threshold_mins ?? 15,
+        checkin_window_before_mins: settings.checkin_window_before_mins ?? 30,
+        checkin_window_after_mins: settings.checkin_window_after_mins ?? 60,
+        allow_wrong_batch_checkin: settings.allow_wrong_batch_checkin !== undefined ? settings.allow_wrong_batch_checkin : 0,
+        auto_approve_corrections: settings.auto_approve_corrections !== undefined ? settings.auto_approve_corrections : 0,
+        allow_student_portal_leaves: settings.allow_student_portal_leaves !== undefined ? settings.allow_student_portal_leaves : 1,
       };
     }
     return {
@@ -33,6 +43,16 @@ export class OvertimeService {
       custom_divisor_value: null,
       paid_leave_policy: 'credit_scheduled_minutes',
       short_attendance_policy: 'deduct_proportionate_minutes',
+      fee_grace_period_days: 7,
+      allow_fee_pauses: 1,
+      default_currency: 'INR',
+      standard_shift_hours: 8.0,
+      late_attendance_threshold_mins: 15,
+      checkin_window_before_mins: 30,
+      checkin_window_after_mins: 60,
+      allow_wrong_batch_checkin: 0,
+      auto_approve_corrections: 0,
+      allow_student_portal_leaves: 1,
     };
   }
 

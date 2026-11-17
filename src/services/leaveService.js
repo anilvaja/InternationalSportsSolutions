@@ -119,6 +119,14 @@ export class LeaveService {
   }
 
   /**
+   * Deactivates or removes a leave policy
+   */
+  static deletePolicy(db, academyId, policyId) {
+    const id = Number(policyId);
+    return db.prepare('UPDATE leave_policies SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND academy_id = ?').run(id, academyId);
+  }
+
+  /**
    * Initializes or returns leave balances for an employee for a specific year
    */
   static initializeBalancesForUser(db, academyIdOrUserId, userIdOrYear, maybeYear) {
@@ -279,20 +287,72 @@ export class LeaveService {
       throw new Error(`Start date (${DateUtils.formatDisplayDate(normStart)}) cannot be after end date (${DateUtils.formatDisplayDate(normEnd)})`);
     }
 
-    const effectiveUserId = Number(user_id || applicant_id || actorId);
-    if (!effectiveUserId) {
-      throw new Error('Valid employee/user ID is required for leave request');
+    const isStudent = applicant_type === 'student';
+    const isCoach = applicant_type === 'coach';
+
+    let effectiveApplicantId = Number(applicant_id || user_id || actorId);
+    let targetUserId = null;
+    let finalApplicantName = applicant_name;
+
+    if (isStudent) {
+      if (!effectiveApplicantId) {
+        throw new Error('Valid student ID is required for student leave request');
+      }
+      const student = db.prepare('SELECT id, first_name, last_name FROM students WHERE id = ?').get(effectiveApplicantId);
+      if (!student) {
+        throw new Error(`Student #${effectiveApplicantId} was not found in this academy. Please select a valid student.`);
+      }
+      finalApplicantName = finalApplicantName || `${student.first_name} ${student.last_name || ''}`.trim();
+      targetUserId = null; // Students do not have rows in tenant users table
+    } else if (isCoach) {
+      if (!effectiveApplicantId) {
+        throw new Error('Valid coach ID is required for coach leave request');
+      }
+      // Check if effectiveApplicantId matches a coach in coaches table
+      const coach = db.prepare('SELECT id, user_id, name FROM coaches WHERE id = ?').get(effectiveApplicantId);
+      if (coach) {
+        finalApplicantName = finalApplicantName || coach.name;
+        if (coach.user_id) {
+          targetUserId = coach.user_id;
+        } else {
+          const directUser = db.prepare('SELECT id, name FROM users WHERE id = ?').get(effectiveApplicantId);
+          if (directUser) targetUserId = directUser.id;
+        }
+      } else {
+        const directUser = db.prepare('SELECT id, name FROM users WHERE id = ?').get(effectiveApplicantId);
+        if (directUser) {
+          targetUserId = directUser.id;
+          finalApplicantName = finalApplicantName || directUser.name;
+        } else {
+          throw new Error(`Coach/Staff member #${effectiveApplicantId} was not found in this academy. Super Admin accounts do not have personal employee rosters in tenant academies; please select an existing Coach or Staff member.`);
+        }
+      }
+    } else {
+      // Staff applicant
+      if (!effectiveApplicantId) {
+        throw new Error('Valid staff/employee ID is required for leave request');
+      }
+      const directUser = db.prepare('SELECT id, name FROM users WHERE id = ?').get(effectiveApplicantId);
+      if (directUser) {
+        targetUserId = directUser.id;
+        finalApplicantName = finalApplicantName || directUser.name;
+      } else {
+        throw new Error(`User #${effectiveApplicantId} was not found in this academy's staff roster. Super Admin accounts do not have personal employee rosters in tenant academies; please select an existing Coach or Staff member.`);
+      }
     }
 
     // 1. Prevent Overlapping Leave Requests for the same applicant
     const overlap = db.prepare(`
       SELECT id, start_date, end_date, status, leave_type
       FROM leave_requests
-      WHERE (user_id = ? OR applicant_id = ?)
+      WHERE (
+        (applicant_type = ? AND applicant_id = ?)
+        OR (? IS NOT NULL AND user_id = ?)
+      )
         AND status IN ('approved', 'pending')
         AND NOT (end_date < ? OR start_date > ?)
       LIMIT 1
-    `).get(effectiveUserId, effectiveUserId, normStart, normEnd);
+    `).get(applicant_type, effectiveApplicantId, targetUserId, targetUserId, normStart, normEnd);
 
     if (overlap) {
       throw new Error(`Overlapping leave request exists (ID #${overlap.id}, ${DateUtils.formatDisplayDate(overlap.start_date)} to ${DateUtils.formatDisplayDate(overlap.end_date)}, status: ${overlap.status}). Cannot submit duplicate request.`);
@@ -300,7 +360,7 @@ export class LeaveService {
 
     // 2. Calculate chargeable days count
     const daysCount = this.calculateLeaveDays(
-      db, effectiveUserId, leave_type, normStart, normEnd, day_part, academyId
+      db, targetUserId || effectiveApplicantId, leave_type, normStart, normEnd, day_part, academyId
     );
 
     // 3. Balance verification for paid leave types
@@ -308,13 +368,22 @@ export class LeaveService {
     const policy = db.prepare('SELECT is_paid FROM leave_policies WHERE academy_id = ? AND leave_type = ? LIMIT 1').get(academyId, leave_type);
     const isPaid = policy ? policy.is_paid : (leave_type !== 'unpaid' ? 1 : 0);
 
+    // Validate reviewer ID against users table to prevent FOREIGN KEY constraint violation
+    let validReviewerId = null;
+    if (actorId) {
+      const reviewerUser = db.prepare('SELECT id FROM users WHERE id = ?').get(Number(actorId));
+      if (reviewerUser) {
+        validReviewerId = reviewerUser.id;
+      }
+    }
+
     return db.transaction(() => {
-      if (isPaid) {
-        this.initializeBalancesForUser(db, academyId, effectiveUserId, year);
+      if (isPaid && targetUserId) {
+        this.initializeBalancesForUser(db, academyId, targetUserId, year);
         const balance = db.prepare(`
           SELECT remaining FROM employee_leave_balances
           WHERE user_id = ? AND leave_type = ? AND year = ?
-        `).get(effectiveUserId, leave_type, year);
+        `).get(targetUserId, leave_type, year);
 
         const currentRemaining = balance ? Number(balance.remaining || 0) : 0;
         if (currentRemaining < daysCount && leave_type !== 'unpaid') {
@@ -333,10 +402,10 @@ export class LeaveService {
       `).run(
         academyId,
         branch_id,
-        effectiveUserId,
+        targetUserId,
         applicant_type,
-        effectiveUserId,
-        applicant_name || 'Staff Member',
+        effectiveApplicantId,
+        finalApplicantName || 'Staff Member',
         leave_type,
         normStart,
         normEnd,
@@ -345,20 +414,20 @@ export class LeaveService {
         isPaid ? 1 : 0,
         reason,
         initialStatus,
-        initialStatus === 'approved' ? actorId : null,
+        initialStatus === 'approved' ? validReviewerId : null,
         initialStatus === 'approved' ? new Date().toISOString() : null,
-        initialStatus === 'approved' ? (reviewer_comments || 'Approved by Academy Administrator') : null
+        initialStatus === 'approved' ? (reviewer_comments || (validReviewerId ? 'Approved by Academy Administrator' : 'Approved by Platform Super Admin')) : null
       );
 
       const leaveId = ins.lastInsertRowid;
 
-      // If pre-approved immediately, deduct balance
-      if (initialStatus === 'approved' && isPaid) {
+      // If pre-approved immediately and has valid employee user ID, deduct balance
+      if (initialStatus === 'approved' && isPaid && targetUserId) {
         db.prepare(`
           UPDATE employee_leave_balances
           SET used = used + ?, remaining = remaining - ?, updated_at = CURRENT_TIMESTAMP
           WHERE user_id = ? AND leave_type = ? AND year = ?
-        `).run(daysCount, daysCount, effectiveUserId, leave_type, year);
+        `).run(daysCount, daysCount, targetUserId, leave_type, year);
       }
 
       // Record Audit Log
@@ -369,7 +438,7 @@ export class LeaveService {
         academyId,
         leaveId,
         initialStatus === 'approved' ? 'approve' : 'create',
-        actorId || effectiveUserId,
+        actorId || targetUserId || effectiveApplicantId,
         `Leave request for ${daysCount} day(s) (${leave_type}) from ${start_date} to ${end_date}`,
         reason
       );
@@ -406,31 +475,48 @@ export class LeaveService {
       const daysCount = Number(leave.days_count || 1.0);
       const isPaid = !!leave.is_paid;
 
-      if (newStatus === 'approved' && isPaid) {
-        this.initializeBalancesForUser(db, academyId, userId, year);
-        const bal = db.prepare(`
-          SELECT remaining FROM employee_leave_balances
-          WHERE user_id = ? AND leave_type = ? AND year = ?
-        `).get(userId, leave.leave_type, year);
-
-        const remaining = bal ? Number(bal.remaining || 0) : 0;
-        if (remaining < daysCount && leave.leave_type !== 'unpaid') {
-          throw new Error(`Cannot approve leave: insufficient balance (${remaining} remaining, requires ${daysCount})`);
+      // Validate reviewer against users table
+      let validReviewerId = null;
+      if (reviewerId) {
+        const reviewerUser = db.prepare('SELECT id FROM users WHERE id = ?').get(Number(reviewerId));
+        if (reviewerUser) {
+          validReviewerId = reviewerUser.id;
         }
+      }
 
-        // Deduct from balance
-        db.prepare(`
-          UPDATE employee_leave_balances
-          SET used = used + ?, remaining = remaining - ?, updated_at = CURRENT_TIMESTAMP
-          WHERE user_id = ? AND leave_type = ? AND year = ?
-        `).run(daysCount, daysCount, userId, leave.leave_type, year);
+      if (newStatus === 'approved' && isPaid && userId) {
+        const userExists = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+        if (userExists) {
+          this.initializeBalancesForUser(db, academyId, userId, year);
+          const bal = db.prepare(`
+            SELECT remaining FROM employee_leave_balances
+            WHERE user_id = ? AND leave_type = ? AND year = ?
+          `).get(userId, leave.leave_type, year);
+
+          const remaining = bal ? Number(bal.remaining || 0) : 0;
+          if (remaining < daysCount && leave.leave_type !== 'unpaid') {
+            throw new Error(`Cannot approve leave: insufficient balance (${remaining} remaining, requires ${daysCount})`);
+          }
+
+          // Deduct from balance
+          db.prepare(`
+            UPDATE employee_leave_balances
+            SET used = used + ?, remaining = remaining - ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND leave_type = ? AND year = ?
+          `).run(daysCount, daysCount, userId, leave.leave_type, year);
+        }
       }
 
       db.prepare(`
         UPDATE leave_requests
         SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP, reviewer_comments = ?
         WHERE id = ?
-      `).run(newStatus, reviewerId, comments || (newStatus === 'approved' ? 'Approved by Reviewer' : 'Rejected by Reviewer'), leaveId);
+      `).run(
+        newStatus,
+        validReviewerId,
+        comments || (newStatus === 'approved' ? (validReviewerId ? 'Approved by Reviewer' : 'Approved by Platform Super Admin') : 'Rejected by Reviewer'),
+        leaveId
+      );
 
       // Audit Log
       db.prepare(`
@@ -440,7 +526,7 @@ export class LeaveService {
         academyId,
         leaveId,
         newStatus,
-        reviewerId,
+        reviewerId || validReviewerId || 1,
         `Leave status changed from pending to ${newStatus}`,
         comments
       );
@@ -470,12 +556,15 @@ export class LeaveService {
       const isPaid = !!leave.is_paid;
 
       // Restore leave balance if previously approved & paid
-      if (wasApproved && isPaid) {
-        db.prepare(`
-          UPDATE employee_leave_balances
-          SET used = MAX(0, used - ?), remaining = remaining + ?, updated_at = CURRENT_TIMESTAMP
-          WHERE user_id = ? AND leave_type = ? AND year = ?
-        `).run(daysCount, daysCount, userId, leave.leave_type, year);
+      if (wasApproved && isPaid && userId) {
+        const userExists = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+        if (userExists) {
+          db.prepare(`
+            UPDATE employee_leave_balances
+            SET used = MAX(0, used - ?), remaining = remaining + ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND leave_type = ? AND year = ?
+          `).run(daysCount, daysCount, userId, leave.leave_type, year);
+        }
       }
 
       db.prepare(`

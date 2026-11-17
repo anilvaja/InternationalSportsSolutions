@@ -16197,6 +16197,8 @@ const app = {
     if (this.leaveFilters.status) params.set('status', this.leaveFilters.status);
     if (this.leaveFilters.applicant_type) params.set('applicant_type', this.leaveFilters.applicant_type);
 
+    const isSuperAdmin = !!(this.user && (this.user.isSuperAdmin || this.user.role === 'super_admin'));
+
     const [data, balancesData] = await Promise.all([
       this.apiRequest(`/api/academy/leaves?${params.toString()}`),
       this.apiRequest('/api/academy/leaves/my-balances').catch(() => ({ balances: [] }))
@@ -16254,18 +16256,18 @@ const app = {
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
             <div>
               <h3 style="font-size: 16px; font-weight: 700; color: var(--text-heading); margin: 0; display: flex; align-items: center; gap: 8px;">
-                <i class="fa-solid fa-umbrella-beach" style="color: var(--primary);"></i> My Annual Leave Entitlement (${new Date().getFullYear()})
+                <i class="fa-solid fa-umbrella-beach" style="color: var(--primary);"></i> ${isSuperAdmin ? 'Academy Leave Entitlement Overview' : 'My Annual Leave Entitlement'} (${new Date().getFullYear()})
               </h3>
               <p style="font-size: 12px; color: var(--text-muted); margin: 3px 0 0 0;">
-                Annual quotas, accrued days, and real-time available balances for current calendar year
+                ${isSuperAdmin ? 'Standard annual quotas and leave balances for academy staff & coaches' : 'Annual quotas, accrued days, and real-time available balances for current calendar year'}
               </p>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
-              <span class="badge badge-success" style="font-size: 11px;">
-                <i class="fa-solid fa-shield-halved"></i> Active Policies
+              <span class="badge ${isSuperAdmin ? 'badge-warning' : 'badge-success'}" style="font-size: 11px;">
+                <i class="fa-solid ${isSuperAdmin ? 'fa-crown' : 'fa-shield-halved'}"></i> ${isSuperAdmin ? 'Platform Super Admin' : 'Active Policies'}
               </span>
               <span style="font-size: 12px; color: var(--text-muted);">
-                Employee: <strong>${this.escapeHtml(this.user?.name || 'Staff')}</strong>
+                ${isSuperAdmin ? 'Account: <strong>Super Admin (Platform)</strong>' : `Employee: <strong>${this.escapeHtml(this.user?.name || 'Staff')}</strong>`}
               </span>
             </div>
           </div>
@@ -16548,6 +16550,7 @@ const app = {
 
   async showApplyLeaveModal() {
     const today = new Date().toISOString().split('T')[0];
+    const isSuperAdmin = !!(this.user && (this.user.isSuperAdmin || this.user.role === 'super_admin'));
 
     // Fetch coaches and students in parallel to populate selectors
     const [coachesRes, studentsRes] = await Promise.all([
@@ -16575,12 +16578,18 @@ const app = {
               Leave Application For:
             </label>
             <div style="display: flex; gap: 16px; margin-bottom: 10px; flex-wrap: wrap;">
+              ${isSuperAdmin ? `
+                <div style="width: 100%; margin-bottom: 6px; padding: 6px 10px; font-size: 11px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px;">
+                  <i class="fa-solid fa-crown"></i> <strong>Super Admin Mode:</strong> Super Admins do not have personal employee rosters in tenant academies. Select an academy coach, staff member, or student below.
+                </div>
+              ` : `
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                  <input type="radio" name="leave_for" value="myself" checked onchange="app.onLeaveTargetChange('myself')">
+                  <span>Myself (${this.escapeHtml(currentUserName)})</span>
+                </label>
+              `}
               <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
-                <input type="radio" name="leave_for" value="myself" checked onchange="app.onLeaveTargetChange('myself')">
-                <span>Myself (${this.escapeHtml(currentUserName)})</span>
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
-                <input type="radio" name="leave_for" value="coach" onchange="app.onLeaveTargetChange('coach')">
+                <input type="radio" name="leave_for" value="coach" ${isSuperAdmin ? 'checked' : ''} onchange="app.onLeaveTargetChange('coach')">
                 <span>Coach / Staff Member</span>
               </label>
               <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
@@ -16591,7 +16600,7 @@ const app = {
           </div>
 
           <!-- Dynamic Target Person Selector -->
-          <div id="leave-person-picker-container" style="display: none; margin-bottom: 14px;">
+          <div id="leave-person-picker-container" style="display: ${isSuperAdmin ? 'block' : 'none'}; margin-bottom: 14px;">
             <label id="leave-person-picker-label" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-heading);">
               Select Person:
             </label>
@@ -16688,6 +16697,10 @@ const app = {
         </button>
       `
     );
+
+    if (isSuperAdmin) {
+      setTimeout(() => this.onLeaveTargetChange('coach'), 20);
+    }
   },
 
   onLeaveTargetChange(target) {
@@ -16703,14 +16716,14 @@ const app = {
       label.textContent = 'Select Coach / Staff:';
       const coaches = this.leaveModalCoaches || [];
       select.innerHTML = coaches.length === 0
-        ? '<option value="">No coaches found</option>'
+        ? '<option value="">No coaches found in this academy</option>'
         : coaches.map(c => `<option value="${c.id}" data-name="${this.escapeHtml(c.name)}">${this.escapeHtml(c.name)} (${c.sport_name || 'Coach'})</option>`).join('');
     } else if (target === 'student') {
       container.style.display = 'block';
       label.textContent = 'Select Student:';
       const students = this.leaveModalStudents || [];
       select.innerHTML = students.length === 0
-        ? '<option value="">No students found</option>'
+        ? '<option value="">No students found in this academy</option>'
         : students.map(s => `<option value="${s.id}" data-name="${this.escapeHtml(s.first_name + ' ' + (s.last_name || ''))}">${this.escapeHtml(s.first_name + ' ' + (s.last_name || ''))} (Adm: ${s.admission_number || s.id})</option>`).join('');
     }
   },
@@ -16742,7 +16755,14 @@ const app = {
   },
 
   async submitLeaveRequest() {
-    const target = document.querySelector('input[name="leave_for"]:checked')?.value || 'myself';
+    const isSuperAdmin = !!(this.user && (this.user.isSuperAdmin || this.user.role === 'super_admin'));
+    const target = document.querySelector('input[name="leave_for"]:checked')?.value || (isSuperAdmin ? 'coach' : 'myself');
+
+    if (target === 'myself' && isSuperAdmin) {
+      this.showToast('Super Admin accounts do not have a personal staff roster in tenant academies. Please select a Coach or Staff member.', 'warning');
+      return;
+    }
+
     const sInput = document.getElementById('leave-start-date');
     const eInput = document.getElementById('leave-end-date');
     const startDate = sInput?.dataset?.iso || this.normalizeDateToIso(sInput?.value) || sInput?.value;
@@ -16778,12 +16798,20 @@ const app = {
       applicantType = 'coach';
       const select = document.getElementById('leave-person-id');
       applicantId = Number(select?.value);
+      if (!applicantId) {
+        this.showToast('Please select a Coach / Staff member', 'warning');
+        return;
+      }
       const selectedOption = select?.options[select.selectedIndex];
       applicantName = selectedOption?.getAttribute('data-name') || selectedOption?.textContent || 'Coach';
     } else if (target === 'student') {
       applicantType = 'student';
       const select = document.getElementById('leave-person-id');
       applicantId = Number(select?.value);
+      if (!applicantId) {
+        this.showToast('Please select a Student', 'warning');
+        return;
+      }
       const selectedOption = select?.options[select.selectedIndex];
       applicantName = selectedOption?.getAttribute('data-name') || selectedOption?.textContent || 'Student';
     }
@@ -16798,8 +16826,22 @@ const app = {
       end_date: endDate,
       reason: `${category}: ${reasonDetail}`,
       status: status,
-      reviewer_comments: status === 'approved' ? `Approved by ${this.user?.name || 'Academy Admin'}` : null
+      reviewer_comments: status === 'approved' ? `Approved by ${this.user?.name || 'Academy Admin'}${isSuperAdmin ? ' (Platform Super Admin)' : ''}` : null
     };
+
+    const res = await this.apiRequest('/api/academy/leaves', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (res.success) {
+      this.closeModal();
+      this.showToast(res.message || 'Leave applied successfully', 'success');
+      this.renderLeaves();
+    } else {
+      this.showToast(res.error || 'Failed to submit leave request', 'danger');
+    }
+  },
 
     const res = await this.apiRequest('/api/academy/leaves', {
       method: 'POST',
@@ -23994,7 +24036,11 @@ const app = {
     const content = document.getElementById('page-content');
     content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
 
-    const res = await this.apiRequest('/api/academy/settings/policy');
+    const [res, leaveRes] = await Promise.all([
+      this.apiRequest('/api/academy/settings/policy'),
+      this.apiRequest('/api/academy/leaves/policies').catch(() => ({ policies: [] }))
+    ]);
+
     if (!res.success) {
       content.innerHTML = `<div class="toast danger">${res.error}</div>`;
       return;
@@ -24002,6 +24048,8 @@ const app = {
 
     const p = res.policy || {};
     this.currentPolicyData = p;
+    const leavePolicies = (leaveRes && leaveRes.policies) || [];
+    this.currentLeavePolicies = leavePolicies;
 
     // Helper date calculations for dynamic preview
     const now = new Date();
@@ -24013,6 +24061,26 @@ const app = {
     const payDay = p.expected_payday ?? 1;
     const tz = p.timezone || 'Asia/Kolkata';
     const allowFuture = !!p.allow_future_attendance;
+
+    // Additional governance policies
+    const feeGraceDays = p.fee_grace_period_days ?? 7;
+    const allowFeePauses = p.allow_fee_pauses !== undefined ? !!p.allow_fee_pauses : true;
+    const defaultCurrency = p.default_currency || 'INR';
+    const standardShiftHrs = p.standard_shift_hours ?? 8.0;
+    const lateThreshMins = p.late_attendance_threshold_mins ?? 15;
+    const checkinBeforeMins = p.checkin_window_before_mins ?? 30;
+    const checkinAfterMins = p.checkin_window_after_mins ?? 60;
+    const allowWrongBatch = !!p.allow_wrong_batch_checkin;
+    const autoApproveCorrections = !!p.auto_approve_corrections;
+    const allowStudentLeaves = p.allow_student_portal_leaves !== undefined ? !!p.allow_student_portal_leaves : true;
+
+    const LEAVE_ICONS = {
+      casual: { icon: 'fa-umbrella-beach', color: '#2563eb', bg: 'rgba(37, 99, 235, 0.1)' },
+      sick: { icon: 'fa-notes-medical', color: '#dc2626', bg: 'rgba(220, 38, 38, 0.1)' },
+      earned: { icon: 'fa-award', color: '#059669', bg: 'rgba(5, 150, 105, 0.1)' },
+      half_day: { icon: 'fa-hourglass-half', color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.1)' },
+      unpaid: { icon: 'fa-calendar-xmark', color: '#475569', bg: 'rgba(71, 85, 105, 0.1)' },
+    };
 
     content.innerHTML = `
       <div class="policy-settings-container">
@@ -24032,7 +24100,7 @@ const app = {
                   </span>
                 </div>
                 <p style="font-size: 13px; color: var(--text-muted); margin: 4px 0 0;">
-                  Configure operational thresholds, attendance backdating limits, overtime approval boundaries, and payroll schedules.
+                  Configure operational thresholds, attendance backdating limits, leave policies & quotas, billing rules, and payroll schedules.
                 </p>
               </div>
             </div>
@@ -24138,6 +24206,68 @@ const app = {
                   <div style="font-size: 11px; color: var(--text-dim); margin-top: 10px;">
                     <i class="fa-solid fa-circle-info"></i> Keeping this disabled ensures students cannot be marked present before training occurs.
                   </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 1.5: SMART ATTENDANCE ARRIVAL WINDOWS & ACCESS GOVERNANCE -->
+          <div class="policy-section-card" style="margin-bottom: 22px;">
+            <div class="policy-section-header">
+              <div class="policy-section-title">
+                <div class="policy-section-icon" style="background: rgba(14, 165, 233, 0.12); color: #0ea5e9;"><i class="fa-solid fa-qrcode"></i></div>
+                <div>
+                  <div>Smart Attendance Arrival Windows & Access Governance</div>
+                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
+                    Enforces arrival time validity, punch windows around scheduled sessions, and late check-in tags.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="policy-section-body">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px;">
+                
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-weight: 700; color: var(--text-heading); margin-bottom: 6px; display: block;">
+                    Arrival Window Before Batch (Mins)
+                  </label>
+                  <input type="number" id="setting-checkin-before" class="form-input" min="0" max="180" value="${checkinBeforeMins}" style="width: 100%; font-weight: 700;">
+                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">
+                    How early students or coaches can check in before batch start time.
+                  </div>
+                </div>
+
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-weight: 700; color: var(--text-heading); margin-bottom: 6px; display: block;">
+                    Departure Window After Batch (Mins)
+                  </label>
+                  <input type="number" id="setting-checkin-after" class="form-input" min="0" max="240" value="${checkinAfterMins}" style="width: 100%; font-weight: 700;">
+                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">
+                    Grace period after session end for checkout or late check-in.
+                  </div>
+                </div>
+
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-weight: 700; color: var(--text-heading); margin-bottom: 6px; display: block;">
+                    Late Arrival Tag Threshold (Mins)
+                  </label>
+                  <input type="number" id="setting-late-threshold" class="form-input" min="0" max="180" value="${lateThreshMins}" style="width: 100%; font-weight: 700;">
+                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">
+                    Arrivals past this threshold after start time are flagged as Late.
+                  </div>
+                </div>
+
+                <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;">
+                  <div>
+                    <strong style="font-size: 13px; color: var(--text-heading); display: block;">Alternate Batch Check-in</strong>
+                    <span style="font-size: 11.5px; color: var(--text-muted);">Allow student to scan in to alternate batch</span>
+                  </div>
+                  <label class="policy-toggle-switch">
+                    <input type="checkbox" id="setting-allow-wrong-batch" ${allowWrongBatch ? 'checked' : ''}>
+                    <span class="policy-toggle-slider"></span>
+                  </label>
                 </div>
 
               </div>
@@ -24472,7 +24602,232 @@ const app = {
             </div>
           </div>
 
-          <!-- SECTION 4: TIMEZONE & LOCALIZATION -->
+          <!-- SECTION 4: CONFIGURE STAFF LEAVE POLICIES & ANNUAL QUOTAS -->
+          <div class="policy-section-card" style="margin-bottom: 22px;">
+            <div class="policy-section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div class="policy-section-title">
+                <div class="policy-section-icon" style="background: rgba(37, 99, 235, 0.12); color: #2563eb;">
+                  <i class="fa-solid fa-umbrella-beach"></i>
+                </div>
+                <div>
+                  <div>Staff Annual Leave Policies & Quotas</div>
+                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
+                    Define annual quotas, monthly accrual rates, half-day allowances, and carry-forward rules for employee leaves.
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" onclick="app.showAddLeavePolicyModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-plus"></i> Add Custom Policy
+              </button>
+            </div>
+
+            <div class="policy-section-body" style="padding: 0 20px 20px 20px;">
+              
+              <div class="table-responsive" style="margin-top: 10px;">
+                <table class="custom-table" style="font-size: 13px;">
+                  <thead>
+                    <tr>
+                      <th style="min-width: 170px;">Leave Type</th>
+                      <th style="min-width: 100px;">Annual Quota</th>
+                      <th style="min-width: 100px;">Monthly Accrual</th>
+                      <th style="min-width: 110px;">Classification</th>
+                      <th style="min-width: 90px; text-align: center;">Half-Day</th>
+                      <th style="min-width: 130px;">Carry Forward</th>
+                      <th style="min-width: 90px; text-align: center;">Sandwich Rule</th>
+                      <th style="width: 60px; text-align: center;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${leavePolicies.length === 0 ? `
+                      <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">No leave policies configured. Baseline defaults will be applied on startup.</td></tr>
+                    ` : leavePolicies.map(pol => {
+                      const iconConf = LEAVE_ICONS[pol.leave_type] || { icon: 'fa-calendar-check', color: '#6366f1', bg: 'rgba(99, 102, 241, 0.1)' };
+                      const isCore = ['casual', 'sick', 'earned', 'half_day', 'unpaid'].includes(pol.leave_type);
+                      return `
+                        <tr>
+                          <td>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                              <div style="width: 32px; height: 32px; border-radius: 8px; background: ${iconConf.bg}; color: ${iconConf.color}; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;">
+                                <i class="fa-solid ${iconConf.icon}"></i>
+                              </div>
+                              <div>
+                                <input type="text" id="leave-name-${pol.id || pol.leave_type}" value="${this.escapeHtml(pol.name)}" class="form-input" style="padding: 4px 8px; font-weight: 700; font-size: 13px; width: 100%; min-width: 140px;">
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;"><code>${this.escapeHtml(pol.leave_type)}</code></div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                              <input type="number" id="leave-quota-${pol.id || pol.leave_type}" value="${pol.annual_quota ?? 12}" min="0" max="365" class="form-input" style="width: 65px; font-weight: 700; text-align: center;">
+                              <span style="font-size: 11px; color: var(--text-muted);">days</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                              <input type="number" id="leave-accrual-${pol.id || pol.leave_type}" value="${pol.monthly_accrual ?? 1.0}" min="0" max="30" step="0.25" class="form-input" style="width: 65px; text-align: center;">
+                              <span style="font-size: 11px; color: var(--text-muted);">/mo</span>
+                            </div>
+                          </td>
+                          <td>
+                            <select id="leave-paid-${pol.id || pol.leave_type}" class="form-select" style="padding: 4px 8px; font-size: 12px; font-weight: 600;">
+                              <option value="1" ${pol.is_paid ? 'selected' : ''}>Paid Leave</option>
+                              <option value="0" ${!pol.is_paid ? 'selected' : ''}>Unpaid (LWP)</option>
+                            </select>
+                          </td>
+                          <td style="text-align: center;">
+                            <input type="checkbox" id="leave-halfday-${pol.id || pol.leave_type}" ${pol.allow_half_day ? 'checked' : ''} style="accent-color: var(--primary); transform: scale(1.15); cursor: pointer;">
+                          </td>
+                          <td>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                              <input type="checkbox" id="leave-carry-${pol.id || pol.leave_type}" ${pol.allow_carry_forward ? 'checked' : ''} style="accent-color: var(--primary); transform: scale(1.15); cursor: pointer;" title="Allow carry forward to next year">
+                              <input type="number" id="leave-maxcarry-${pol.id || pol.leave_type}" value="${pol.max_carry_forward || 0}" min="0" max="100" class="form-input" style="width: 55px; font-size: 11px; text-align: center;" placeholder="Max">
+                            </div>
+                          </td>
+                          <td style="text-align: center;">
+                            <input type="checkbox" id="leave-sandwich-${pol.id || pol.leave_type}" ${pol.sandwich_rule ? 'checked' : ''} style="accent-color: var(--primary); transform: scale(1.15); cursor: pointer;" title="Count holidays between leaves">
+                          </td>
+                          <td style="text-align: center;">
+                            ${!isCore ? `
+                              <button type="button" class="btn btn-danger btn-sm" onclick="app.deleteLeavePolicy(${pol.id}, '${this.escapeHtml(pol.name)}')" style="padding: 4px 8px;" title="Deactivate Policy">
+                                <i class="fa-solid fa-trash"></i>
+                              </button>
+                            ` : `
+                              <span class="badge badge-secondary" style="font-size: 10px;">Core</span>
+                            `}
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 10px;">
+                <i class="fa-solid fa-circle-info" style="color: var(--primary);"></i> Changes to annual quotas immediately update employee leave balances on the <a href="javascript:void(0)" onclick="app.navigate('leaves')" style="color: var(--primary); font-weight: 600;">Leaves Portal</a>.
+              </div>
+
+            </div>
+          </div>
+
+          <!-- SECTION 5: STUDENT FEE INVOICING, GRACE PERIODS & BILLING GOVERNANCE -->
+          <div class="policy-section-card" style="margin-bottom: 22px;">
+            <div class="policy-section-header">
+              <div class="policy-section-title">
+                <div class="policy-section-icon" style="background: rgba(16, 185, 129, 0.12); color: #10b981;"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+                <div>
+                  <div>Student Fee Invoicing, Grace Periods & Billing Governance</div>
+                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
+                    Sets invoice due grace periods, fee freeze/pause policies, and academy base billing currency.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="policy-section-body">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+                
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-weight: 700; color: var(--text-heading); margin-bottom: 6px; display: block;">
+                    Fee Payment Grace Period (Days)
+                  </label>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="setting-fee-grace-period" class="form-input" min="0" max="60" value="${feeGraceDays}" style="width: 100px; font-weight: 700;">
+                    <span style="font-size: 12px; color: var(--text-muted);">days after invoice due date</span>
+                  </div>
+                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 6px;">
+                    Invoices unpaid after grace period trigger automated overdue indicators.
+                  </div>
+                </div>
+
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-weight: 700; color: var(--text-heading); margin-bottom: 6px; display: block;">
+                    Academy Base Currency
+                  </label>
+                  <select id="setting-default-currency" class="form-select" style="width: 100%;">
+                    <option value="INR" ${defaultCurrency === 'INR' ? 'selected' : ''}>INR (₹ — Indian Rupee)</option>
+                    <option value="USD" ${defaultCurrency === 'USD' ? 'selected' : ''}>USD ($ — US Dollar)</option>
+                    <option value="AED" ${defaultCurrency === 'AED' ? 'selected' : ''}>AED (د.إ — UAE Dirham)</option>
+                    <option value="EUR" ${defaultCurrency === 'EUR' ? 'selected' : ''}>EUR (€ — Euro)</option>
+                    <option value="GBP" ${defaultCurrency === 'GBP' ? 'selected' : ''}>GBP (£ — British Pound)</option>
+                    <option value="SGD" ${defaultCurrency === 'SGD' ? 'selected' : ''}>SGD (S$ — Singapore Dollar)</option>
+                    <option value="AUD" ${defaultCurrency === 'AUD' ? 'selected' : ''}>AUD (A$ — Australian Dollar)</option>
+                  </select>
+                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">
+                    Currency symbol applied to tuition invoices, salary vouchers, and reports.
+                  </div>
+                </div>
+
+                <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;">
+                  <div>
+                    <strong style="font-size: 13px; color: var(--text-heading); display: block;">Student Fee Pause / Freeze</strong>
+                    <span style="font-size: 11.5px; color: var(--text-muted);">Allow temporary tuition freezes for travel/exams</span>
+                  </div>
+                  <label class="policy-toggle-switch">
+                    <input type="checkbox" id="setting-allow-fee-pauses" ${allowFeePauses ? 'checked' : ''}>
+                    <span class="policy-toggle-slider"></span>
+                  </label>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 6: STAFF SHIFTS & OPERATIONAL GOVERNANCE -->
+          <div class="policy-section-card" style="margin-bottom: 22px;">
+            <div class="policy-section-header">
+              <div class="policy-section-title">
+                <div class="policy-section-icon" style="background: rgba(168, 85, 247, 0.12); color: #a855f7;"><i class="fa-solid fa-business-time"></i></div>
+                <div>
+                  <div>Staff Shifts & Operational Governance</div>
+                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
+                    Controls expected full-time shift durations, auto-approval thresholds, and self-service student portals.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="policy-section-body">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+                
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-weight: 700; color: var(--text-heading); margin-bottom: 6px; display: block;">
+                    Standard Daily Shift (Hours)
+                  </label>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="setting-standard-shift-hours" class="form-input" min="1" max="24" step="0.5" value="${standardShiftHrs}" style="width: 100px; font-weight: 700;">
+                    <span style="font-size: 12px; color: var(--text-muted);">hours/day (Standard: 8.0)</span>
+                  </div>
+                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 6px;">
+                    Baseline full shift denominator for daily rate calculations and checkouts.
+                  </div>
+                </div>
+
+                <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;">
+                  <div>
+                    <strong style="font-size: 13px; color: var(--text-heading); display: block;">Student Self-Service Leaves</strong>
+                    <span style="font-size: 11.5px; color: var(--text-muted);">Permit students to apply for absence in portal</span>
+                  </div>
+                  <label class="policy-toggle-switch">
+                    <input type="checkbox" id="setting-allow-student-portal-leaves" ${allowStudentLeaves ? 'checked' : ''}>
+                    <span class="policy-toggle-slider"></span>
+                  </label>
+                </div>
+
+                <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;">
+                  <div>
+                    <strong style="font-size: 13px; color: var(--text-heading); display: block;">Auto-Approve Low-Risk Corrections</strong>
+                    <span style="font-size: 11.5px; color: var(--text-muted);">Auto-accept corrections within cutoff days</span>
+                  </div>
+                  <label class="policy-toggle-switch">
+                    <input type="checkbox" id="setting-auto-approve-corrections" ${autoApproveCorrections ? 'checked' : ''}>
+                    <span class="policy-toggle-slider"></span>
+                  </label>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 7: TIMEZONE & LOCALIZATION -->
           <div class="policy-section-card" style="margin-bottom: 24px;">
             <div class="policy-section-header">
               <div class="policy-section-title">
@@ -24524,54 +24879,11 @@ const app = {
             </div>
           </div>
 
-          <!-- SECTION 5: ACADEMY BRAND IDENTITY & DEFAULT COLOR THEME -->
-          <div class="policy-section-card" style="margin-bottom: 24px;">
-            <div class="policy-section-header">
-              <div class="policy-section-title">
-                <div class="policy-section-icon" style="background: rgba(236, 72, 153, 0.12); color: #ec4899;"><i class="fa-solid fa-palette"></i></div>
-                <div>
-                  <div>Academy Brand Identity & Default Color Theme</div>
-                  <div style="font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px;">
-                    Sets the default brand appearance across portal navigation, buttons, and accents for all academy staff and students.
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="policy-section-body">
-              <label style="font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 8px;">
-                Select Academy Default Theme Accent
-              </label>
-              <div class="theme-swatch-grid">
-                ${this.colorThemes.map(t => {
-                  const isDefault = (p.default_color_theme || 'blue') === t.id;
-                  return `
-                    <div class="theme-swatch-card ${isDefault ? 'active' : ''}" id="policy-swatch-${t.id}" onclick="app.selectDefaultPolicyTheme('${t.id}')">
-                      <div class="theme-swatch-preview" style="background: ${t.hex};"></div>
-                      <div style="flex: 1; overflow: hidden;">
-                        <div style="font-weight: 700; font-size: 12px; color: var(--text-heading); white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">
-                          ${t.name}
-                        </div>
-                        <div style="font-size: 10px; color: var(--text-muted);" id="policy-swatch-sub-${t.id}">
-                          ${isDefault ? 'Selected Default' : t.id}
-                        </div>
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-              <input type="hidden" id="setting-default-theme" value="${p.default_color_theme || 'blue'}">
-              <div style="font-size: 11px; color: var(--text-dim); margin-top: 10px;">
-                <i class="fa-solid fa-circle-info"></i> Individual users with the <code>customize_theme</code> permission can personalize their own theme from the header switcher.
-              </div>
-            </div>
-          </div>
-
           <!-- FORM SUBMISSION FOOTER -->
-          <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-sm);">
+          <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-sm); flex-wrap: wrap; gap: 14px;">
             <div style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
               <i class="fa-solid fa-circle-check" style="color: #10b981;"></i>
-              <span>Changes take effect immediately across all sessions, coaching logs, and invoices.</span>
+              <span>All governance thresholds and leave policy quotas take effect immediately.</span>
             </div>
             
             <div style="display: flex; gap: 10px;">
@@ -24777,7 +25089,7 @@ const app = {
   },
 
   resetPolicyDefaults() {
-    if (!confirm('Reset all policy rules to system recommended defaults? (Cutoff: 2 Days, Overtime: 30 Mins, Future Attendance: Prohibited)')) {
+    if (!confirm('Reset all policy rules to system recommended defaults? (Cutoff: 2 Days, Overtime: 30 Mins, Future Attendance: Prohibited, Grace: 7 Days)')) {
       return;
     }
 
@@ -24798,7 +25110,27 @@ const app = {
       this.handleTimezoneSelect('Asia/Kolkata');
     }
 
-    this.selectDefaultPolicyTheme('blue');
+    const feeGrace = document.getElementById('setting-fee-grace-period');
+    const feePauses = document.getElementById('setting-allow-fee-pauses');
+    const currency = document.getElementById('setting-default-currency');
+    const shiftHours = document.getElementById('setting-standard-shift-hours');
+    const checkinBefore = document.getElementById('setting-checkin-before');
+    const checkinAfter = document.getElementById('setting-checkin-after');
+    const lateThresh = document.getElementById('setting-late-threshold');
+    const wrongBatch = document.getElementById('setting-allow-wrong-batch');
+    const autoCorr = document.getElementById('setting-auto-approve-corrections');
+    const studLeaves = document.getElementById('setting-allow-student-portal-leaves');
+
+    if (feeGrace) feeGrace.value = 7;
+    if (feePauses) feePauses.checked = true;
+    if (currency) currency.value = 'INR';
+    if (shiftHours) shiftHours.value = 8.0;
+    if (checkinBefore) checkinBefore.value = 30;
+    if (checkinAfter) checkinAfter.value = 60;
+    if (lateThresh) lateThresh.value = 15;
+    if (wrongBatch) wrongBatch.checked = false;
+    if (autoCorr) autoCorr.checked = false;
+    if (studLeaves) studLeaves.checked = true;
 
     this.updatePolicyLivePreview();
     this.showToast('Reset to recommended best-practice defaults. Click "Save & Enforce Policy" to apply.', 'info');
@@ -24825,41 +25157,213 @@ const app = {
     const timezone = this.getEffectiveTimezone();
     const futureToggle = document.getElementById('setting-future-attendance');
     const allow_future_attendance = futureToggle ? (futureToggle.checked ? 1 : 0) : 0;
-    const default_color_theme = document.getElementById('setting-default-theme')?.value || 'blue';
 
     const default_salary_divisor = document.getElementById('setting-salary-divisor')?.value || 'actual_scheduled_minutes';
     const custom_divisor_value = Number(document.getElementById('setting-custom-divisor-val')?.value) || null;
     const paid_leave_policy = document.getElementById('setting-paid-leave-policy')?.value || 'credit_scheduled_minutes';
     const short_attendance_policy = document.getElementById('setting-short-attendance-policy')?.value || 'deduct_proportionate_minutes';
 
-    const res = await this.apiRequest('/api/academy/settings/policy', {
-      method: 'PUT',
-      body: JSON.stringify({
-        attendance_cutoff_days,
-        overtime_threshold_minutes,
-        statement_visibility_day,
-        expected_payday,
-        overtime_compensation_mode,
-        timezone,
-        allow_future_attendance,
-        default_color_theme,
-        default_salary_divisor,
-        custom_divisor_value,
-        paid_leave_policy,
-        short_attendance_policy,
+    const fee_grace_period_days = Number(document.getElementById('setting-fee-grace-period')?.value) ?? 7;
+    const allow_fee_pauses = document.getElementById('setting-allow-fee-pauses')?.checked ? 1 : 0;
+    const default_currency = document.getElementById('setting-default-currency')?.value || 'INR';
+    const standard_shift_hours = Number(document.getElementById('setting-standard-shift-hours')?.value) || 8.0;
+    const late_attendance_threshold_mins = Number(document.getElementById('setting-late-threshold')?.value) || 15;
+    const checkin_window_before_mins = Number(document.getElementById('setting-checkin-before')?.value) || 30;
+    const checkin_window_after_mins = Number(document.getElementById('setting-checkin-after')?.value) || 60;
+    const allow_wrong_batch_checkin = document.getElementById('setting-allow-wrong-batch')?.checked ? 1 : 0;
+    const auto_approve_corrections = document.getElementById('setting-auto-approve-corrections')?.checked ? 1 : 0;
+    const allow_student_portal_leaves = document.getElementById('setting-allow-student-portal-leaves')?.checked ? 1 : 0;
+
+    // Collect updated leave policies
+    const updatedPolicies = [];
+    if (this.currentLeavePolicies && this.currentLeavePolicies.length > 0) {
+      for (const pol of this.currentLeavePolicies) {
+        const quotaInput = document.getElementById(`leave-quota-${pol.id || pol.leave_type}`);
+        const accrualInput = document.getElementById(`leave-accrual-${pol.id || pol.leave_type}`);
+        const paidSelect = document.getElementById(`leave-paid-${pol.id || pol.leave_type}`);
+        const halfDayChk = document.getElementById(`leave-halfday-${pol.id || pol.leave_type}`);
+        const carryChk = document.getElementById(`leave-carry-${pol.id || pol.leave_type}`);
+        const maxCarryInput = document.getElementById(`leave-maxcarry-${pol.id || pol.leave_type}`);
+        const sandwichChk = document.getElementById(`leave-sandwich-${pol.id || pol.leave_type}`);
+        const nameInput = document.getElementById(`leave-name-${pol.id || pol.leave_type}`);
+
+        if (quotaInput) {
+          updatedPolicies.push({
+            id: pol.id,
+            leave_type: pol.leave_type,
+            name: nameInput ? nameInput.value.trim() : pol.name,
+            annual_quota: Number(quotaInput.value) || 0,
+            monthly_accrual: Number(accrualInput ? accrualInput.value : pol.monthly_accrual) || 0,
+            is_paid: paidSelect ? Number(paidSelect.value) : pol.is_paid,
+            allow_half_day: halfDayChk ? (halfDayChk.checked ? 1 : 0) : pol.allow_half_day,
+            allow_carry_forward: carryChk ? (carryChk.checked ? 1 : 0) : pol.allow_carry_forward,
+            max_carry_forward: maxCarryInput ? Number(maxCarryInput.value) || 0 : pol.max_carry_forward,
+            sandwich_rule: sandwichChk ? (sandwichChk.checked ? 1 : 0) : pol.sandwich_rule,
+            is_active: 1
+          });
+        }
+      }
+    }
+
+    const [policyRes, leavesRes] = await Promise.all([
+      this.apiRequest('/api/academy/settings/policy', {
+        method: 'PUT',
+        body: JSON.stringify({
+          attendance_cutoff_days,
+          overtime_threshold_minutes,
+          statement_visibility_day,
+          expected_payday,
+          overtime_compensation_mode,
+          timezone,
+          allow_future_attendance,
+          default_salary_divisor,
+          custom_divisor_value,
+          paid_leave_policy,
+          short_attendance_policy,
+          fee_grace_period_days,
+          allow_fee_pauses,
+          default_currency,
+          standard_shift_hours,
+          late_attendance_threshold_mins,
+          checkin_window_before_mins,
+          checkin_window_after_mins,
+          allow_wrong_batch_checkin,
+          auto_approve_corrections,
+          allow_student_portal_leaves,
+        }),
       }),
-    });
+      updatedPolicies.length > 0 ? this.apiRequest('/api/academy/leaves/policies', {
+        method: 'POST',
+        body: JSON.stringify({ policies: updatedPolicies })
+      }) : Promise.resolve({ success: true })
+    ]);
 
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save & Enforce Policy';
     }
 
-    if (res.success) {
-      this.showToast(res.message || 'Academy policy settings updated and enforced successfully', 'success');
+    if (policyRes.success && leavesRes.success) {
+      this.showToast('All academy governance rules and leave policies updated successfully', 'success');
       this.renderPolicySettings();
     } else {
-      this.showToast(res.error || 'Failed to update policy settings', 'danger');
+      this.showToast(policyRes.error || leavesRes.error || 'Failed to update policy settings', 'danger');
+    }
+  },
+
+  showAddLeavePolicyModal() {
+    const modalHtml = `
+      <div class="modal-overlay" id="add-leave-policy-modal" style="display: flex; align-items: center; justify-content: center; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1050; padding: 20px;">
+        <div class="modal-card" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); width: 100%; max-width: 520px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); overflow: hidden;">
+          <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-umbrella-beach" style="color: var(--primary);"></i> Add Custom Leave Policy
+            </h3>
+            <button class="btn-close" onclick="document.getElementById('add-leave-policy-modal').remove()" style="background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text-muted);">&times;</button>
+          </div>
+          <form onsubmit="event.preventDefault(); app.submitAddLeavePolicy();" style="padding: 20px;">
+            <div class="form-group" style="margin-bottom: 14px;">
+              <label style="font-weight: 700; font-size: 13px; display: block; margin-bottom: 5px;">Leave Category Name *</label>
+              <input type="text" id="new-policy-name" class="form-input" placeholder="e.g. Maternity / Paternity Leave, Bereavement" required style="width: 100%;">
+            </div>
+            <div class="form-group" style="margin-bottom: 14px;">
+              <label style="font-weight: 700; font-size: 13px; display: block; margin-bottom: 5px;">Leave Type Code *</label>
+              <input type="text" id="new-policy-code" class="form-input" placeholder="e.g. maternity, bereavement, comp_off" required style="width: 100%;">
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Unique lower-case identifier (letters, digits, underscores)</div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+              <div>
+                <label style="font-weight: 700; font-size: 13px; display: block; margin-bottom: 5px;">Annual Quota (Days)</label>
+                <input type="number" id="new-policy-quota" class="form-input" min="0" max="365" value="12" style="width: 100%;">
+              </div>
+              <div>
+                <label style="font-weight: 700; font-size: 13px; display: block; margin-bottom: 5px;">Monthly Accrual</label>
+                <input type="number" id="new-policy-accrual" class="form-input" min="0" max="30" step="0.25" value="1.0" style="width: 100%;">
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+              <div>
+                <label style="font-weight: 700; font-size: 13px; display: block; margin-bottom: 5px;">Classification</label>
+                <select id="new-policy-paid" class="form-select" style="width: 100%;">
+                  <option value="1">Paid Leave</option>
+                  <option value="0">Unpaid Leave</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-weight: 700; font-size: 13px; display: block; margin-bottom: 5px;">Max Carry-Forward</label>
+                <input type="number" id="new-policy-maxcarry" class="form-input" min="0" max="100" value="0" style="width: 100%;">
+              </div>
+            </div>
+            <div style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap;">
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                <input type="checkbox" id="new-policy-halfday" checked> Allow Half-Day
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                <input type="checkbox" id="new-policy-carry"> Allow Carry-Forward
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                <input type="checkbox" id="new-policy-sandwich"> Sandwich Rule
+              </label>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+              <button type="button" class="btn btn-secondary" onclick="document.getElementById('add-leave-policy-modal').remove()">Cancel</button>
+              <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Create Policy</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    const existing = document.getElementById('add-leave-policy-modal');
+    if (existing) existing.remove();
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+  },
+
+  async submitAddLeavePolicy() {
+    const name = document.getElementById('new-policy-name').value.trim();
+    const leave_type = document.getElementById('new-policy-code').value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    const annual_quota = Number(document.getElementById('new-policy-quota').value) || 0;
+    const monthly_accrual = Number(document.getElementById('new-policy-accrual').value) || 0;
+    const is_paid = Number(document.getElementById('new-policy-paid').value) || 0;
+    const max_carry_forward = Number(document.getElementById('new-policy-maxcarry').value) || 0;
+    const allow_half_day = document.getElementById('new-policy-halfday').checked ? 1 : 0;
+    const allow_carry_forward = document.getElementById('new-policy-carry').checked ? 1 : 0;
+    const sandwich_rule = document.getElementById('new-policy-sandwich').checked ? 1 : 0;
+
+    const res = await this.apiRequest('/api/academy/leaves/policies', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        leave_type,
+        annual_quota,
+        monthly_accrual,
+        is_paid,
+        max_carry_forward,
+        allow_half_day,
+        allow_carry_forward,
+        sandwich_rule,
+        is_active: 1
+      })
+    });
+
+    const modal = document.getElementById('add-leave-policy-modal');
+    if (modal) modal.remove();
+
+    if (res.success) {
+      this.showToast(`Leave policy "${name}" added successfully`, 'success');
+      this.renderPolicySettings();
+    } else {
+      this.showToast(res.error || 'Failed to add leave policy', 'danger');
+    }
+  },
+
+  async deleteLeavePolicy(policyId, policyName) {
+    if (!confirm(`Are you sure you want to deactivate or remove leave policy "${policyName}"?`)) return;
+    const res = await this.apiRequest(`/api/academy/leaves/policies/${policyId}`, { method: 'DELETE' });
+    if (res.success) {
+      this.showToast(`Leave policy "${policyName}" deactivated successfully`, 'success');
+      this.renderPolicySettings();
+    } else {
+      this.showToast(res.error || 'Failed to delete leave policy', 'danger');
     }
   },
 

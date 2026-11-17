@@ -4852,8 +4852,33 @@ academyRouter.post('/leaves/policies', (req, res) => {
     if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
       return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
     }
+    if (Array.isArray(req.body.policies)) {
+      const results = [];
+      for (const p of req.body.policies) {
+        results.push(LeaveService.savePolicy(db, req.academy.id, p, req.user.userId));
+      }
+      const updatedPolicies = LeaveService.getPolicies(db, req.academy.id);
+      return res.json({ success: true, message: 'All leave policies saved successfully', count: results.length, policies: updatedPolicies });
+    }
     const result = LeaveService.savePolicy(db, req.academy.id, req.body, req.user.userId);
     res.json({ success: true, message: 'Leave policy saved successfully', ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/academy/leaves/policies/:id
+ */
+academyRouter.delete('/leaves/policies/:id', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    if (!req.user.isSuperAdmin && req.user.role !== 'academy_admin') {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin privileges required.' });
+    }
+    const id = Number(req.params.id);
+    LeaveService.deletePolicy(db, req.academy.id, id);
+    res.json({ success: true, message: 'Leave policy removed successfully' });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
@@ -8139,12 +8164,17 @@ academyRouter.put('/settings/policy', (req, res) => {
       return res.status(403).json({ success: false, error: 'Only Academy Admins may update policy settings.' });
     }
 
-    const {
+    let {
       attendance_cutoff_days,
+      cutoff_days,
       overtime_threshold_minutes,
+      ot_threshold_minutes,
       statement_visibility_day,
+      statement_release_day,
       expected_payday,
+      payday_day,
       overtime_compensation_mode,
+      ot_rate_type,
       timezone,
       allow_future_attendance,
       default_color_theme,
@@ -8153,8 +8183,27 @@ academyRouter.put('/settings/policy', (req, res) => {
       custom_divisor_value,
       paid_leave_policy,
       short_attendance_policy,
+      fee_grace_period_days,
+      allow_fee_pauses,
+      default_currency,
+      standard_shift_hours,
+      late_attendance_threshold_mins,
+      checkin_window_before_mins,
+      checkin_window_after_mins,
+      allow_wrong_batch_checkin,
+      auto_approve_corrections,
+      allow_student_portal_leaves,
       reset_to_defaults,
     } = req.body;
+
+    // Support parameter aliases
+    if (attendance_cutoff_days === undefined && cutoff_days !== undefined) attendance_cutoff_days = cutoff_days;
+    if (overtime_threshold_minutes === undefined && ot_threshold_minutes !== undefined) overtime_threshold_minutes = ot_threshold_minutes;
+    if (statement_visibility_day === undefined && statement_release_day !== undefined) statement_visibility_day = statement_release_day;
+    if (expected_payday === undefined && payday_day !== undefined) expected_payday = payday_day;
+    if (overtime_compensation_mode === undefined && ot_rate_type !== undefined) {
+      overtime_compensation_mode = ot_rate_type === 'time_and_a_half' ? 'overtime_rate' : (ot_rate_type === 'standard' ? 'standard_rate' : ot_rate_type);
+    }
 
     const previousPolicy = OvertimeService.getAcademyPolicy(db, req.academy.id);
 
@@ -8165,8 +8214,11 @@ academyRouter.put('/settings/policy', (req, res) => {
           academy_id, attendance_cutoff_days, overtime_threshold_minutes,
           statement_visibility_day, expected_payday, overtime_compensation_mode,
           timezone, allow_future_attendance, default_color_theme,
-          default_salary_divisor, custom_divisor_value, paid_leave_policy, short_attendance_policy, updated_at
-        ) VALUES (?, 2, 30, 25, 1, 'standard_rate', 'Asia/Kolkata', 0, 'blue', 'actual_scheduled_minutes', NULL, 'credit_scheduled_minutes', 'deduct_proportionate_minutes', CURRENT_TIMESTAMP)
+          default_salary_divisor, custom_divisor_value, paid_leave_policy, short_attendance_policy,
+          fee_grace_period_days, allow_fee_pauses, default_currency, standard_shift_hours,
+          late_attendance_threshold_mins, checkin_window_before_mins, checkin_window_after_mins,
+          allow_wrong_batch_checkin, auto_approve_corrections, allow_student_portal_leaves, updated_at
+        ) VALUES (?, 2, 30, 25, 1, 'standard_rate', 'Asia/Kolkata', 0, 'blue', 'actual_scheduled_minutes', NULL, 'credit_scheduled_minutes', 'deduct_proportionate_minutes', 7, 1, 'INR', 8.0, 15, 30, 60, 0, 0, 1, CURRENT_TIMESTAMP)
         ON CONFLICT(academy_id) DO UPDATE SET
           attendance_cutoff_days = 2,
           overtime_threshold_minutes = 30,
@@ -8180,6 +8232,16 @@ academyRouter.put('/settings/policy', (req, res) => {
           custom_divisor_value = NULL,
           paid_leave_policy = 'credit_scheduled_minutes',
           short_attendance_policy = 'deduct_proportionate_minutes',
+          fee_grace_period_days = 7,
+          allow_fee_pauses = 1,
+          default_currency = 'INR',
+          standard_shift_hours = 8.0,
+          late_attendance_threshold_mins = 15,
+          checkin_window_before_mins = 30,
+          checkin_window_after_mins = 60,
+          allow_wrong_batch_checkin = 0,
+          auto_approve_corrections = 0,
+          allow_student_portal_leaves = 1,
           updated_at = CURRENT_TIMESTAMP
       `).run(req.academy.id);
 
@@ -8280,13 +8342,51 @@ academyRouter.put('/settings/policy', (req, res) => {
       return res.status(400).json({ success: false, error: `Invalid default_color_theme: ${default_color_theme}. Allowed: ${validThemes.join(', ')}` });
     }
 
+    if (fee_grace_period_days !== undefined && fee_grace_period_days !== null) {
+      const fg = Number(fee_grace_period_days);
+      if (isNaN(fg) || fg < 0 || fg > 90) {
+        return res.status(400).json({ success: false, error: 'fee_grace_period_days must be between 0 and 90 days.' });
+      }
+    }
+
+    if (standard_shift_hours !== undefined && standard_shift_hours !== null) {
+      const sh = Number(standard_shift_hours);
+      if (isNaN(sh) || sh < 1 || sh > 24) {
+        return res.status(400).json({ success: false, error: 'standard_shift_hours must be between 1 and 24 hours.' });
+      }
+    }
+
+    if (late_attendance_threshold_mins !== undefined && late_attendance_threshold_mins !== null) {
+      const lm = Number(late_attendance_threshold_mins);
+      if (isNaN(lm) || lm < 0 || lm > 180) {
+        return res.status(400).json({ success: false, error: 'late_attendance_threshold_mins must be between 0 and 180 minutes.' });
+      }
+    }
+
+    if (checkin_window_before_mins !== undefined && checkin_window_before_mins !== null) {
+      const wb = Number(checkin_window_before_mins);
+      if (isNaN(wb) || wb < 0 || wb > 180) {
+        return res.status(400).json({ success: false, error: 'checkin_window_before_mins must be between 0 and 180 minutes.' });
+      }
+    }
+
+    if (checkin_window_after_mins !== undefined && checkin_window_after_mins !== null) {
+      const wa = Number(checkin_window_after_mins);
+      if (isNaN(wa) || wa < 0 || wa > 240) {
+        return res.status(400).json({ success: false, error: 'checkin_window_after_mins must be between 0 and 240 minutes.' });
+      }
+    }
+
     db.prepare(`
       INSERT INTO academy_policy_settings (
         academy_id, attendance_cutoff_days, overtime_threshold_minutes,
         statement_visibility_day, expected_payday, overtime_compensation_mode,
         timezone, allow_future_attendance, default_color_theme,
-        default_salary_divisor, custom_divisor_value, paid_leave_policy, short_attendance_policy, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        default_salary_divisor, custom_divisor_value, paid_leave_policy, short_attendance_policy,
+        fee_grace_period_days, allow_fee_pauses, default_currency, standard_shift_hours,
+        late_attendance_threshold_mins, checkin_window_before_mins, checkin_window_after_mins,
+        allow_wrong_batch_checkin, auto_approve_corrections, allow_student_portal_leaves, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(academy_id) DO UPDATE SET
         attendance_cutoff_days = COALESCE(excluded.attendance_cutoff_days, attendance_cutoff_days),
         overtime_threshold_minutes = COALESCE(excluded.overtime_threshold_minutes, overtime_threshold_minutes),
@@ -8300,22 +8400,61 @@ academyRouter.put('/settings/policy', (req, res) => {
         custom_divisor_value = COALESCE(excluded.custom_divisor_value, custom_divisor_value),
         paid_leave_policy = COALESCE(excluded.paid_leave_policy, paid_leave_policy),
         short_attendance_policy = COALESCE(excluded.short_attendance_policy, short_attendance_policy),
+        fee_grace_period_days = COALESCE(excluded.fee_grace_period_days, fee_grace_period_days),
+        allow_fee_pauses = COALESCE(excluded.allow_fee_pauses, allow_fee_pauses),
+        default_currency = COALESCE(excluded.default_currency, default_currency),
+        standard_shift_hours = COALESCE(excluded.standard_shift_hours, standard_shift_hours),
+        late_attendance_threshold_mins = COALESCE(excluded.late_attendance_threshold_mins, late_attendance_threshold_mins),
+        checkin_window_before_mins = COALESCE(excluded.checkin_window_before_mins, checkin_window_before_mins),
+        checkin_window_after_mins = COALESCE(excluded.checkin_window_after_mins, checkin_window_after_mins),
+        allow_wrong_batch_checkin = COALESCE(excluded.allow_wrong_batch_checkin, allow_wrong_batch_checkin),
+        auto_approve_corrections = COALESCE(excluded.auto_approve_corrections, auto_approve_corrections),
+        allow_student_portal_leaves = COALESCE(excluded.allow_student_portal_leaves, allow_student_portal_leaves),
         updated_at = CURRENT_TIMESTAMP
     `).run(
       req.academy.id,
-      attendance_cutoff_days !== undefined ? Number(attendance_cutoff_days) : 2,
-      overtime_threshold_minutes !== undefined ? Number(overtime_threshold_minutes) : 30,
-      statement_visibility_day !== undefined ? Number(statement_visibility_day) : 25,
-      expected_payday !== undefined ? Number(expected_payday) : 1,
+      attendance_cutoff_days !== undefined && attendance_cutoff_days !== null ? Number(attendance_cutoff_days) : 2,
+      overtime_threshold_minutes !== undefined && overtime_threshold_minutes !== null ? Number(overtime_threshold_minutes) : 30,
+      statement_visibility_day !== undefined && statement_visibility_day !== null ? Number(statement_visibility_day) : 25,
+      expected_payday !== undefined && expected_payday !== null ? Number(expected_payday) : 1,
       overtime_compensation_mode || 'standard_rate',
       timezone || 'Asia/Kolkata',
-      allow_future_attendance !== undefined ? (allow_future_attendance ? 1 : 0) : 0,
+      allow_future_attendance !== undefined && allow_future_attendance !== null ? (allow_future_attendance ? 1 : 0) : 0,
       default_color_theme || 'blue',
       resolvedDivisor || 'actual_scheduled_minutes',
       custom_divisor_value !== undefined && custom_divisor_value !== null ? Number(custom_divisor_value) : null,
       paid_leave_policy || 'credit_scheduled_minutes',
-      short_attendance_policy || 'deduct_proportionate_minutes'
+      short_attendance_policy || 'deduct_proportionate_minutes',
+      fee_grace_period_days !== undefined && fee_grace_period_days !== null ? Number(fee_grace_period_days) : 7,
+      allow_fee_pauses !== undefined && allow_fee_pauses !== null ? (allow_fee_pauses ? 1 : 0) : 1,
+      default_currency || 'INR',
+      standard_shift_hours !== undefined && standard_shift_hours !== null ? Number(standard_shift_hours) : 8.0,
+      late_attendance_threshold_mins !== undefined && late_attendance_threshold_mins !== null ? Number(late_attendance_threshold_mins) : 15,
+      checkin_window_before_mins !== undefined && checkin_window_before_mins !== null ? Number(checkin_window_before_mins) : 30,
+      checkin_window_after_mins !== undefined && checkin_window_after_mins !== null ? Number(checkin_window_after_mins) : 60,
+      allow_wrong_batch_checkin !== undefined && allow_wrong_batch_checkin !== null ? (allow_wrong_batch_checkin ? 1 : 0) : 0,
+      auto_approve_corrections !== undefined && auto_approve_corrections !== null ? (auto_approve_corrections ? 1 : 0) : 0,
+      allow_student_portal_leaves !== undefined && allow_student_portal_leaves !== null ? (allow_student_portal_leaves ? 1 : 0) : 1
     );
+
+    // Sync with smart attendance default settings if table exists
+    try {
+      db.prepare(`
+        UPDATE smart_attendance_settings
+        SET checkin_window_before_mins = COALESCE(?, checkin_window_before_mins),
+            checkin_window_after_mins = COALESCE(?, checkin_window_after_mins),
+            late_threshold_mins = COALESCE(?, late_threshold_mins),
+            allow_wrong_batch_checkin = COALESCE(?, allow_wrong_batch_checkin),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE academy_id = ? AND branch_id IS NULL
+      `).run(
+        checkin_window_before_mins !== undefined ? Number(checkin_window_before_mins) : null,
+        checkin_window_after_mins !== undefined ? Number(checkin_window_after_mins) : null,
+        late_attendance_threshold_mins !== undefined ? Number(late_attendance_threshold_mins) : null,
+        allow_wrong_batch_checkin !== undefined ? (allow_wrong_batch_checkin ? 1 : 0) : null,
+        req.academy.id
+      );
+    } catch (_) {}
 
     const updated = OvertimeService.getAcademyPolicy(db, req.academy.id);
 
