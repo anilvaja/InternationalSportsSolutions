@@ -116,7 +116,11 @@ if (isDirectRun && process.env.NODE_ENV !== 'test') {
     console.log(` International Sports Solutions - Multi-Tenant Platform`);
     console.log(` Server running on http://localhost:${config.port}`);
     console.log(` Base Domain URL: http://${config.baseDomain || 'internationalsportssolutions.com'}:${config.port}`);
-    console.log(` Database: Isolated SQLite per Tenant`);
+    console.log(` Database Architecture: Isolated SQLite per Tenant`);
+    console.log(` Persistent Storage Base: ${config.dataDir}`);
+    console.log(` Central Database Path:   ${config.centralDbPath}`);
+    console.log(` Tenant Databases Dir:    ${config.academiesDir}`);
+    console.log(` Storage / Backups Dir:   ${config.backupsDir}`);
     console.log(`======================================================\n`);
   });
 

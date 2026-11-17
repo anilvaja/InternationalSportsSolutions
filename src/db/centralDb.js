@@ -17,6 +17,10 @@ export function getCentralDb() {
   }
 
   // Ensure directories exist
+  const centralParentDir = path.dirname(config.centralDbPath);
+  if (!fs.existsSync(centralParentDir)) {
+    fs.mkdirSync(centralParentDir, { recursive: true });
+  }
   if (!fs.existsSync(config.dataDir)) {
     fs.mkdirSync(config.dataDir, { recursive: true });
   }
@@ -28,6 +32,19 @@ export function getCentralDb() {
   }
   if (!fs.existsSync(config.backupsDir)) {
     fs.mkdirSync(config.backupsDir, { recursive: true });
+  }
+
+  // First-boot safe initialization for durable storage (/private or custom volume)
+  if (!config.isTest && !fs.existsSync(config.centralDbPath)) {
+    const templateDb = path.join(config.rootDir, 'data', 'central.db');
+    if (fs.existsSync(templateDb) && path.resolve(templateDb) !== path.resolve(config.centralDbPath)) {
+      try {
+        console.log(`[Storage] Initializing persistent central database from application baseline...`);
+        fs.copyFileSync(templateDb, config.centralDbPath);
+      } catch (err) {
+        console.warn('[Storage] Notice during baseline central copy:', err.message);
+      }
+    }
   }
 
   centralDbInstance = new Database(config.centralDbPath, {

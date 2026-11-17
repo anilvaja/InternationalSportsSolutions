@@ -15,7 +15,15 @@ const tenantDbMap = new Map();
  * Normalizes and formats the DB path for an academy
  */
 export function getAcademyDbPath(academyId) {
-  return path.join(config.academiesDir, `academy_${academyId}.db`);
+  const baseDir = config.academiesDir;
+  const sqlitePath = path.join(baseDir, `academy_${academyId}.sqlite`);
+  const dbPath = path.join(baseDir, `academy_${academyId}.db`);
+  if (fs.existsSync(sqlitePath)) return sqlitePath;
+  if (fs.existsSync(dbPath)) return dbPath;
+  if (process.env.TENANT_DATABASE_PATH || process.env.DATABASE_STORAGE_PATH) {
+    return sqlitePath;
+  }
+  return dbPath;
 }
 
 /**
@@ -84,12 +92,31 @@ export function getTenantDbById(academyId) {
     throw new Error(`Academy '${academy.name}' is currently suspended`);
   }
 
-  const dbPath = (config.isTest || process.env.DATA_DIR) ? getAcademyDbPath(id) : (academy.db_path || getAcademyDbPath(id));
+  // Resolve database path safely
+  let dbPath = getAcademyDbPath(id);
+  if (!config.isTest && academy.db_path && fs.existsSync(academy.db_path)) {
+    dbPath = academy.db_path;
+  } else if (academy.db_path !== dbPath) {
+    try {
+      centralDb.prepare('UPDATE academies SET db_path = ? WHERE id = ?').run(dbPath, id);
+    } catch (_) { }
+  }
 
   // Ensure directory exists
   const parentDir = path.dirname(dbPath);
   if (!fs.existsSync(parentDir)) {
     fs.mkdirSync(parentDir, { recursive: true });
+  }
+
+  // First-boot safe initialization for tenant DB if persistent copy does not exist yet
+  if (!config.isTest && !fs.existsSync(dbPath)) {
+    const templateTenantDb = path.join(config.rootDir, 'data', 'academies', `academy_${id}.db`);
+    if (fs.existsSync(templateTenantDb) && path.resolve(templateTenantDb) !== path.resolve(dbPath)) {
+      try {
+        console.log(`[Storage] Initializing persistent tenant DB for academy #${id} from baseline template...`);
+        fs.copyFileSync(templateTenantDb, dbPath);
+      } catch (_) {}
+    }
   }
 
   const db = new Database(dbPath);
