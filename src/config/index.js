@@ -115,8 +115,8 @@ export const config = {
     if (this.isTest) {
       return path.join(ROOT_DIR, 'storage_test');
     }
-    if (process.env.BACKUP_STORAGE_PATH) {
-      return path.resolve(process.env.BACKUP_STORAGE_PATH);
+    if (process.env.MEDIA_STORAGE_PATH) {
+      return path.resolve(process.env.MEDIA_STORAGE_PATH);
     }
     if (process.env.STORAGE_DIR) {
       return path.resolve(ROOT_DIR, process.env.STORAGE_DIR);

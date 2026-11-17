@@ -34,6 +34,22 @@ export function getCentralDb() {
     fs.mkdirSync(config.backupsDir, { recursive: true });
   }
 
+  // Ensure persistent media and uploads directory exists
+  const academiesStorageDir = path.join(config.storageDir, 'academies');
+  if (!fs.existsSync(academiesStorageDir)) {
+    fs.mkdirSync(academiesStorageDir, { recursive: true });
+    // First-boot copy of baseline uploaded files (e.g. logos) if running on durable storage
+    if (!config.isTest && path.resolve(config.storageDir) !== path.resolve(config.rootDir, 'storage')) {
+      const templateAcademiesStorage = path.join(config.rootDir, 'storage', 'academies');
+      if (fs.existsSync(templateAcademiesStorage)) {
+        try {
+          console.log(`[Storage] Initializing persistent storage assets at ${academiesStorageDir} from baseline...`);
+          fs.cpSync(templateAcademiesStorage, academiesStorageDir, { recursive: true });
+        } catch (_) {}
+      }
+    }
+  }
+
   // First-boot safe initialization for durable storage (/private or custom volume)
   if (!config.isTest && !fs.existsSync(config.centralDbPath)) {
     const templateDb = path.join(config.rootDir, 'data', 'central.db');
