@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { getCentralDb } from '../db/centralDb.js';
 import { getTenantDbById } from '../db/connectionManager.js';
 import { signToken } from '../middleware/auth.js';
+import { extractSubdomain, extractHost } from '../middleware/tenantResolver.js';
 import { config } from '../config/index.js';
 import { ALL_ACADEMY_PERMISSIONS } from '../config/permissions.js';
 
@@ -75,6 +76,25 @@ authRouter.post('/login', (req, res) => {
     if (academy_slug) {
       const academy = centralDb.prepare('SELECT id FROM academies WHERE slug = ? COLLATE NOCASE').get(academy_slug);
       if (academy) targetAcademyId = academy.id;
+    }
+
+    // Resolve from host or tenant subdomain context
+    if (!targetAcademyId) {
+      const sub = extractSubdomain(req);
+      if (sub) {
+        const academy = centralDb.prepare('SELECT id FROM academies WHERE slug = ? COLLATE NOCASE').get(sub);
+        if (academy) targetAcademyId = academy.id;
+      }
+    }
+
+    if (!targetAcademyId) {
+      const host = extractHost(req);
+      if (host) {
+        const domainMatch = centralDb.prepare(`
+          SELECT academy_id FROM domains WHERE domain = ? COLLATE NOCASE AND status = 'active'
+        `).get(host);
+        if (domainMatch) targetAcademyId = domainMatch.academy_id;
+      }
     }
 
     if (!targetAcademyId) {

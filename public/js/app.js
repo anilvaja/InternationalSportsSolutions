@@ -1060,9 +1060,14 @@ const app = {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Signing In...';
 
+    const loginPayload = { email, password };
+    if (this.tenantSubdomain) {
+      loginPayload.academy_slug = this.tenantSubdomain;
+    }
+
     const res = await this.apiRequest('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(loginPayload),
     });
 
     submitBtn.disabled = false;
@@ -1458,6 +1463,25 @@ const app = {
     for (const [tab, route] of Object.entries(this.routes)) {
       if (route.toLowerCase() === clean) return tab;
     }
+
+    if (clean.startsWith('/academy/students/')) {
+      const parts = clean.split('/');
+      const id = parts[3];
+      if (id && !isNaN(Number(id))) {
+        this._pendingUrlStudentId = Number(id);
+        return 'students';
+      }
+    }
+
+    try {
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const sid = urlParams.get('student_id') || urlParams.get('id');
+        if (sid && !isNaN(Number(sid))) {
+          this._pendingUrlStudentId = Number(sid);
+        }
+      }
+    } catch (e) {}
 
     const aliases = {
       '/central': 'central-academies',
@@ -1929,10 +1953,13 @@ const app = {
     const targetPath = this.getPathForTab(tab);
 
     if (updateHistory) {
+      const fullTargetPath = (window.location.pathname === targetPath && window.location.search)
+        ? `${targetPath}${window.location.search}`
+        : targetPath;
       if (window.location.pathname !== targetPath) {
-        window.history.pushState({ tab }, '', targetPath);
+        window.history.pushState({ tab }, '', fullTargetPath);
       } else {
-        window.history.replaceState({ tab }, '', targetPath);
+        window.history.replaceState({ tab }, '', fullTargetPath);
       }
     }
 
@@ -7255,7 +7282,9 @@ const app = {
                         ${s.photo_url ? `<img src="${this.escapeHtml(s.photo_url)}" alt="photo" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"><span style="display: none;">${this.escapeHtml((s.first_name || 'S')[0])}</span>` : `<span>${this.escapeHtml((s.first_name || 'S')[0])}${this.escapeHtml((s.last_name || '')[0] || '')}</span>`}
                       </div>
                       <div>
-                        <strong>${this.escapeHtml(s.first_name || '')} ${this.escapeHtml(s.last_name || '')}</strong>
+                        <a href="/academy/students?student_id=${s.id}" onclick="app.handleStudentLinkClick(event, ${s.id})" style="color: inherit; text-decoration: none; cursor: pointer;" title="View student profile (Ctrl/Cmd+Click to open in new tab)">
+                          <strong style="color: var(--primary);">${this.escapeHtml(s.first_name || '')} ${this.escapeHtml(s.last_name || '')}</strong>
+                        </a>
                         <div style="font-size: 11px; color: var(--text-muted);">${this.escapeHtml(s.email || '-')}</div>
                       </div>
                     </div>
@@ -7289,9 +7318,9 @@ const app = {
                   </td>
                   <td>
                     <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                      <button class="btn btn-secondary btn-sm" onclick="app.showStudentDetailsModal(${s.id})" title="View Complete Profile & Financial Ledger">
+                      <a href="/academy/students?student_id=${s.id}" onclick="app.handleStudentLinkClick(event, ${s.id})" class="btn btn-secondary btn-sm" role="button" title="View Complete Profile & Financial Ledger (Ctrl/Cmd+Click to open in new tab)">
                         <i class="fa-solid fa-eye" style="color: #3b82f6;"></i> View
-                      </button>
+                      </a>
                       <button class="btn btn-secondary btn-sm" onclick="app.showStudentIdCardModal(${s.id})" title="View Digital ID Pass & QR">
                         <i class="fa-solid fa-id-card" style="color: #6366f1;"></i> ID Pass
                       </button>
@@ -7348,6 +7377,18 @@ const app = {
     `;
 
     this.currentStudentsData = students;
+
+    // Check URL parameters or pending student ID for direct student inspection
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetStudentId = this._pendingUrlStudentId || urlParams.get('student_id') || urlParams.get('id');
+    this._pendingUrlStudentId = null;
+
+    if (targetStudentId && this._lastOpenedUrlStudentId !== String(targetStudentId)) {
+      this._lastOpenedUrlStudentId = String(targetStudentId);
+      setTimeout(() => {
+        this.showStudentDetailsModal(Number(targetStudentId));
+      }, 80);
+    }
   },
 
   applyStudentFilters() {
@@ -7380,6 +7421,17 @@ const app = {
     this.studentFilters.limit = l;
     this.studentFilters.page = 1;
     this.renderStudents();
+  },
+
+  handleStudentLinkClick(event, studentId) {
+    if (!event) return;
+    // Allow Ctrl+Click (Win/Linux), Cmd+Click (macOS), middle-click (button 1), or Shift+Click to open in new tab/window natively
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.button === 1) {
+      return;
+    }
+    // Left-click with no modifier keys: open interactive modal without full page reload
+    event.preventDefault();
+    this.showStudentDetailsModal(studentId);
   },
 
   async showStudentDetailsModal(studentId, initialTab = 'learning') {
@@ -21026,7 +21078,7 @@ const app = {
               ${roster.map(s => `
                 <tr>
                   <td>
-                    <a href="javascript:void(0)" onclick="app.showStudentDetailsModal(${s.student_id})" style="text-decoration: none; cursor: pointer; color: inherit; display: inline-flex; flex-direction: column;" title="View student details">
+                    <a href="/academy/students?student_id=${s.student_id}" onclick="app.handleStudentLinkClick(event, ${s.student_id})" style="text-decoration: none; cursor: pointer; color: inherit; display: inline-flex; flex-direction: column;" title="View student details (Ctrl/Cmd+Click to open in new tab)">
                       <strong style="color: var(--primary);">${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</strong>
                       <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${this.escapeHtml(s.student_code || '')}</div>
                     </a>
@@ -21771,7 +21823,7 @@ const app = {
               ${students.map(s => `
                 <tr>
                   <td>
-                    <a href="javascript:void(0)" onclick="app.showStudentDetailsModal(${s.student_id})" style="text-decoration: none; cursor: pointer; color: inherit; display: inline-flex; flex-direction: column;" title="View student details">
+                    <a href="/academy/students?student_id=${s.student_id}" onclick="app.handleStudentLinkClick(event, ${s.student_id})" style="text-decoration: none; cursor: pointer; color: inherit; display: inline-flex; flex-direction: column;" title="View student details (Ctrl/Cmd+Click to open in new tab)">
                       <strong style="color: var(--primary);">${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</strong>
                       <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${this.escapeHtml(s.student_code || '')}</div>
                     </a>
@@ -21885,7 +21937,7 @@ const app = {
               ${students.map(s => `
                 <tr>
                   <td>
-                    <a href="javascript:void(0)" onclick="app.showStudentDetailsModal(${s.student_id})" style="text-decoration: none; cursor: pointer; color: inherit; display: inline-flex; flex-direction: column;" title="View student details">
+                    <a href="/academy/students?student_id=${s.student_id}" onclick="app.handleStudentLinkClick(event, ${s.student_id})" style="text-decoration: none; cursor: pointer; color: inherit; display: inline-flex; flex-direction: column;" title="View student details (Ctrl/Cmd+Click to open in new tab)">
                       <strong style="color: var(--primary);">${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</strong>
                       <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${this.escapeHtml(s.student_code || '')}</div>
                     </a>
@@ -22448,7 +22500,7 @@ const app = {
                     </td>
                     <td>
                       ${l.student_id ? `
-                        <a href="javascript:void(0)" onclick="app.showStudentDetailsModal(${l.student_id})" style="text-decoration: none; cursor: pointer; display: inline-flex; flex-direction: column; gap: 3px;" title="Click to view 360° student profile & details">
+                        <a href="/academy/students?student_id=${l.student_id}" onclick="app.handleStudentLinkClick(event, ${l.student_id})" style="text-decoration: none; cursor: pointer; display: inline-flex; flex-direction: column; gap: 3px;" title="Click to view 360° student profile (Ctrl/Cmd+Click to open in new tab)">
                           <span style="font-weight: 700; color: var(--primary); font-size: 13.5px; display: inline-flex; align-items: center; gap: 5px;">
                             ${this.escapeHtml((l.first_name || 'Student') + ' ' + (l.last_name || ''))}
                             <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px; opacity: 0.65;"></i>
@@ -28408,6 +28460,15 @@ const app = {
       footerEl.innerHTML = '';
       footerEl.style.display = 'none';
     }
+
+    if (this._lastOpenedUrlStudentId) {
+      this._lastOpenedUrlStudentId = null;
+      if (typeof window !== 'undefined' && window.location && window.location.search && window.location.pathname === '/academy/students') {
+        try {
+          window.history.replaceState({ tab: 'students' }, '', '/academy/students');
+        } catch (e) {}
+      }
+    }
   },
 
   // ==========================================
@@ -28532,25 +28593,46 @@ const app = {
                     ${domainsRes && domainsRes.defaultSubdomain ? domainsRes.defaultSubdomain : (p.slug ? `${p.slug}.internationalsportssolutions.com` : 'academy.internationalsportssolutions.com')}
                   </div>
                 </div>
-                <div style="display: flex; gap: 8px;">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                   <button type="button" class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${domainsRes && domainsRes.defaultSubdomain ? domainsRes.defaultSubdomain : ''}'); app.showToast('Domain copied to clipboard', 'success');">
                     <i class="fa-solid fa-copy"></i> Copy Address
                   </button>
-                  <a href="http://${domainsRes && domainsRes.defaultSubdomain ? domainsRes.defaultSubdomain : ''}" target="_blank" class="btn btn-primary btn-sm">
-                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                  <a href="http://${p.slug || 'academy'}.localhost${(window.location.port && window.location.port !== '80' && window.location.port !== '443') ? ':' + window.location.port : ''}" target="_blank" class="btn btn-primary btn-sm" title="Open local subdomain (automatically resolved by all browsers)">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Local Dojo
+                  </a>
+                  <a href="http://${domainsRes && domainsRes.defaultSubdomain ? domainsRes.defaultSubdomain : ''}" target="_blank" class="btn btn-outline btn-sm" title="Open production address">
+                    <i class="fa-solid fa-globe"></i> Open Production
                   </a>
                 </div>
               </div>
 
               ${(domainsRes && domainsRes.domains && domainsRes.domains.length > 0) ? `
-                <div style="font-size: 12px; font-weight: 600; color: var(--text-heading); margin-bottom: 8px;">Configured Custom Domains:</div>
+                <div style="font-size: 12px; font-weight: 600; color: var(--text-heading); margin-bottom: 8px;">Configured Multi-Tenant Web Domains:</div>
                 <div style="display: flex; flex-direction: column; gap: 6px;">
-                  ${domainsRes.domains.map(d => `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
-                      <span style="font-family: monospace; font-weight: 600;">${this.escapeHtml(d.domain)}</span>
-                      <span class="badge ${d.is_primary ? 'badge-primary' : 'badge-secondary'}">${d.is_primary ? 'Primary Domain' : (d.status || 'Active')}</span>
-                    </div>
-                  `).join('')}
+                  ${domainsRes.domains.map(d => {
+                    const isLocal = d.domain.endsWith('.localhost') || d.domain.endsWith('.test');
+                    const portSuffix = (isLocal && window.location.port && window.location.port !== '80' && window.location.port !== '443') ? `:${window.location.port}` : '';
+                    const openUrl = `http://${d.domain}${portSuffix}`;
+                    const badgeLabel = d.is_primary ? 'Primary Production' : (d.domain.endsWith('.localhost') ? 'Local Subdomain' : (d.domain.endsWith('.test') ? 'Herd / Local .test' : (d.status || 'Active')));
+                    const badgeClass = d.is_primary ? 'badge-primary' : (d.domain.endsWith('.localhost') ? 'badge-success' : 'badge-secondary');
+                    return `
+                      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                          <i class="fa-solid fa-link" style="color: var(--primary); font-size: 12px;"></i>
+                          <span style="font-family: monospace; font-weight: 600;">${this.escapeHtml(d.domain)}</span>
+                          <span class="badge ${badgeClass}" style="font-size: 10px;">${badgeLabel}</span>
+                        </div>
+                        <div style="display: flex; gap: 6px;">
+                          <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 11px;" onclick="navigator.clipboard.writeText('${this.escapeJsString(openUrl)}'); app.showToast('Domain copied to clipboard', 'success');" title="Copy full URL">
+                            <i class="fa-solid fa-copy"></i>
+                          </button>
+                          <a href="${openUrl}" target="_blank" class="btn btn-primary btn-sm" style="padding: 2px 10px; font-size: 11px;">
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                          </a>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
                 </div>
               ` : `
                 <div style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
@@ -28558,6 +28640,31 @@ const app = {
                   <span>Custom domain routing (e.g. <code>academy.yourdomain.com</code>) can be mapped and managed centrally in Platform Admin.</span>
                 </div>
               `}
+
+              <!-- Domain & DNS Helper Card -->
+              <div style="margin-top: 14px; background: rgba(99, 102, 241, 0.04); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 12px 16px; font-size: 12px; line-height: 1.6;">
+                <div style="font-weight: 700; color: var(--text-heading); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-circle-info" style="color: #6366f1;"></i> Subdomain Access & DNS Configuration Guide:
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 8px;">
+                  <div style="background: var(--bg-surface); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
+                    <strong style="color: var(--primary);"><i class="fa-solid fa-laptop-code"></i> Instant Local Testing:</strong>
+                    <div style="color: var(--text-muted); margin-top: 2px;">
+                      Modern browsers (Chrome, Edge, Firefox) automatically resolve <code>*.localhost</code> to <code>127.0.0.1</code> with <strong>zero setup</strong>.
+                      <br>Direct fallback: <a href="/?academy_slug=${encodeURIComponent(p.slug || '')}" target="_blank" style="color: var(--primary); font-weight: 600;">/?academy_slug=${this.escapeHtml(p.slug || '')} →</a>
+                    </div>
+                  </div>
+                  <div style="background: var(--bg-surface); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
+                    <strong style="color: #10b981;"><i class="fa-solid fa-cloud"></i> GoDaddy / Production DNS Setup:</strong>
+                    <div style="color: var(--text-muted); margin-top: 2px;">
+                      To make <code>*.internationalsportssolutions.com</code> open publicly on the internet, add a <strong>Wildcard CNAME</strong> record in your GoDaddy DNS:
+                      <div style="font-family: monospace; font-size: 11px; margin-top: 4px; background: rgba(0,0,0,0.04); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border);">
+                        Type: <strong>CNAME</strong> | Name: <strong>*</strong> | Value: <strong>internationalsportssolutions.com</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
