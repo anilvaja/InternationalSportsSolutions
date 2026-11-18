@@ -5236,6 +5236,9 @@ const app = {
               </div>
             </div>
             <div class="pipeline-card-actions">
+              <button class="btn btn-primary btn-sm" onclick="app.showInquiryQrShareModal()" style="font-size: 11px; padding: 3px 8px;" title="View & Print Direct Admission QR Code / Share Link">
+                <i class="fa-solid fa-qrcode"></i> Public QR
+              </button>
               <button class="btn btn-secondary btn-sm" onclick="app.openNewInquiryModal()" style="font-size: 11px; padding: 3px 8px;">
                 <i class="fa-solid fa-plus"></i> Lead
               </button>
@@ -26472,6 +26475,9 @@ const app = {
             </p>
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-success btn-sm" onclick="app.showInquiryQrShareModal()" title="View & Print Direct Admission Inquiry QR Code & Link">
+              <i class="fa-solid fa-qrcode"></i> Public QR & Link
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="app.showImportInquiriesModal()">
               <i class="fa-solid fa-file-import"></i> Import CSV
             </button>
@@ -27290,6 +27296,348 @@ const app = {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     this.showToast(`Exported ${inquiries.length} inquiries to CSV!`, 'success');
+  },
+
+  // ==========================================
+  // PUBLIC ADMISSION INQUIRY QR & SHARE LINK
+  // ==========================================
+
+  async showInquiryQrShareModal() {
+    try {
+      this.showToast('Generating inquiry QR code and links...', 'info');
+      const res = await this.apiRequest('/api/academy/inquiries/qr-info');
+      if (!res || !res.success) {
+        this.showToast((res && res.error) || 'Failed to generate inquiry QR', 'danger');
+        return;
+      }
+
+      this.currentInquiryQrData = res;
+      const { academy, activeUrl, prodUrl, slugUrl, qrDataUrl } = res;
+      const shareUrl = activeUrl || slugUrl;
+      const academyName = academy.name || 'Sports Academy';
+
+      const whatsappText = encodeURIComponent(
+        `🥋 Join ${academyName}!\nRegister your student admission inquiry and book a free trial class online here:\n${shareUrl}`
+      );
+      const whatsappUrl = `https://api.whatsapp.com/send?text=${whatsappText}`;
+
+      const modalHtml = `
+        <div style="text-align: center; padding: 10px 0;">
+          <div style="background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(16,185,129,0.08)); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; margin-bottom: 20px;">
+            <div style="margin-bottom: 12px;">
+              <span class="badge badge-success" style="font-size: 12px; padding: 4px 12px;">
+                <i class="fa-solid fa-qrcode"></i> Prospective Student Self-Registration
+              </span>
+            </div>
+            
+            <h3 style="margin: 0 0 6px; font-size: 19px; font-weight: 700; color: var(--text-heading);">
+              ${this.escapeHtml(academyName)}
+            </h3>
+            <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 18px; max-width: 480px; margin-left: auto; margin-right: auto;">
+              Prospective students or parents can scan this QR code or open the link on their mobile phone to register their inquiry. Submissions instantly appear in your <strong>Inquiries & Leads</strong> list.
+            </p>
+
+            <!-- High-Res QR Code Preview -->
+            <div style="background: #ffffff; padding: 18px; border-radius: 16px; display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.15); margin-bottom: 18px;">
+              <img src="${qrDataUrl}" alt="Admission QR Code" style="width: 250px; height: 250px; display: block; border-radius: 8px;">
+            </div>
+
+            <!-- Action Buttons for Print & Download -->
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+              <button class="btn btn-primary" onclick="app.printInquiryDeskStandee()">
+                <i class="fa-solid fa-print"></i> Print Reception Desk Standee / Poster
+              </button>
+              <button class="btn btn-secondary" onclick="app.downloadInquiryQrPng('${qrDataUrl}', '${this.escapeJsString(academy.slug)}')">
+                <i class="fa-solid fa-download"></i> Download QR (PNG)
+              </button>
+            </div>
+          </div>
+
+          <!-- Direct Link Section -->
+          <div style="background: var(--bg-hover, #f8fafc); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; text-align: left; margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 6px;">
+              <i class="fa-solid fa-link"></i> Direct Online Registration Link
+            </label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="inquiry-share-url-input" class="form-input" value="${this.escapeHtml(shareUrl)}" readonly style="flex: 1; font-family: monospace; font-size: 13px; background: var(--bg-card);">
+              <button class="btn btn-secondary" onclick="app.copyInquiryShareUrl()" title="Copy Link to Clipboard">
+                <i class="fa-regular fa-copy"></i> Copy
+              </button>
+              <a href="${this.escapeHtml(shareUrl)}" target="_blank" class="btn btn-outline-primary" title="Preview Student Form">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+              </a>
+            </div>
+            ${prodUrl && prodUrl !== shareUrl ? `
+              <div style="margin-top: 10px; font-size: 12px; color: var(--text-muted);">
+                <i class="fa-solid fa-globe" style="color: #3b82f6;"></i> Primary Subdomain URL:
+                <a href="${this.escapeHtml(prodUrl)}" target="_blank" style="color: var(--primary); text-decoration: underline; font-family: monospace;">
+                  ${this.escapeHtml(prodUrl)}
+                </a>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- Quick WhatsApp Broadcast Share -->
+          <div style="display: flex; gap: 10px;">
+            <a href="${whatsappUrl}" target="_blank" class="btn btn-success" style="flex: 1; text-decoration: none; padding: 12px; font-weight: 600;">
+              <i class="fa-brands fa-whatsapp" style="font-size: 18px; margin-right: 6px;"></i> Send via WhatsApp to Parents / Students
+            </a>
+          </div>
+        </div>
+      `;
+
+      this.showModal('Student Admission Self-Registration Link & Desk QR', modalHtml, '', '600px');
+    } catch (err) {
+      console.error('Error loading inquiry QR info:', err);
+      this.showToast('Failed to load inquiry QR: ' + err.message, 'danger');
+    }
+  },
+
+  copyInquiryShareUrl() {
+    const input = document.getElementById('inquiry-share-url-input');
+    if (input) {
+      input.select();
+      navigator.clipboard.writeText(input.value).then(() => {
+        this.showToast('Registration link copied to clipboard!', 'success');
+      }).catch(() => {
+        document.execCommand('copy');
+        this.showToast('Registration link copied!', 'success');
+      });
+    }
+  },
+
+  downloadInquiryQrPng(dataUrl, slug) {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `${slug || 'academy'}-admission-inquiry-qr.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    this.showToast('Admission QR code downloaded!', 'success');
+  },
+
+  async printInquiryDeskStandee() {
+    try {
+      let data = this.currentInquiryQrData;
+      if (!data) {
+        data = await this.apiRequest('/api/academy/inquiries/qr-info');
+        this.currentInquiryQrData = data;
+      }
+      if (!data || !data.success) {
+        this.showToast('Could not load standee details', 'danger');
+        return;
+      }
+
+      const academy = data.academy || {};
+      const qrDataUrl = data.qrDataUrl;
+      const directUrl = data.activeUrl || data.prodUrl || data.slugUrl;
+      const branches = data.branches || [];
+
+      const printWindow = window.open('', '_blank', 'width=900,height=950');
+      if (!printWindow) {
+        this.showToast('Popup blocked. Please allow popups to print the counter standee.', 'warning');
+        return;
+      }
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <title>Admission Desk Standee - ${this.escapeHtml(academy.name)}</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 12mm;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              margin: 0;
+              padding: 20px;
+              font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+              background: #ffffff;
+              color: #0f172a;
+              text-align: center;
+            }
+            .standee-frame {
+              border: 3px solid #0f172a;
+              border-radius: 24px;
+              padding: 32px 28px;
+              max-width: 620px;
+              margin: 0 auto;
+              position: relative;
+              background: #ffffff;
+            }
+            .academy-emblem {
+              width: 80px;
+              height: 80px;
+              border-radius: 20px;
+              margin: 0 auto 12px;
+              object-fit: cover;
+              border: 2px solid #e2e8f0;
+            }
+            .academy-title {
+              font-size: 26px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.04em;
+              color: #0f172a;
+              margin: 0 0 4px 0;
+            }
+            .standee-badge {
+              display: inline-block;
+              background: #2563eb;
+              color: #ffffff;
+              font-weight: 700;
+              font-size: 13px;
+              letter-spacing: 0.08em;
+              text-transform: uppercase;
+              padding: 6px 18px;
+              border-radius: 9999px;
+              margin: 8px 0 16px 0;
+            }
+            .headline {
+              font-size: 20px;
+              font-weight: 800;
+              color: #1e293b;
+              margin: 0 0 6px 0;
+            }
+            .sub-headline {
+              font-size: 14px;
+              color: #64748b;
+              margin: 0 0 20px 0;
+            }
+            .qr-box {
+              background: #ffffff;
+              padding: 20px;
+              border-radius: 20px;
+              display: inline-block;
+              border: 3px solid #e2e8f0;
+              box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+              margin-bottom: 20px;
+            }
+            .qr-image {
+              width: 290px;
+              height: 290px;
+              display: block;
+            }
+            .steps-container {
+              display: grid;
+              grid-template-columns: 1fr 1fr 1fr;
+              gap: 12px;
+              text-align: center;
+              margin: 16px 0 24px 0;
+            }
+            .step-card {
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 12px;
+              padding: 12px 10px;
+            }
+            .step-number {
+              width: 26px;
+              height: 26px;
+              border-radius: 50%;
+              background: #0f172a;
+              color: #fff;
+              font-size: 13px;
+              font-weight: 800;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              margin-bottom: 6px;
+            }
+            .step-text {
+              font-size: 11px;
+              font-weight: 600;
+              color: #334155;
+              line-height: 1.3;
+            }
+            .contact-footer {
+              border-top: 2px dashed #cbd5e1;
+              padding-top: 16px;
+              margin-top: 10px;
+              font-size: 12px;
+              color: #475569;
+            }
+            .url-display {
+              font-family: monospace;
+              font-size: 12px;
+              font-weight: 700;
+              color: #2563eb;
+              margin-top: 4px;
+              word-break: break-all;
+            }
+            .print-btn-bar {
+              margin-bottom: 20px;
+            }
+            @media print {
+              .print-btn-bar { display: none; }
+              body { padding: 0; }
+              .standee-frame { border-width: 2px; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-btn-bar">
+            <button onclick="window.print()" style="background: #2563eb; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px;">
+              🖨️ Print Desk Standee Poster
+            </button>
+          </div>
+
+          <div class="standee-frame">
+            ${academy.logo_url ? `<img src="${this.escapeHtml(academy.logo_url)}" class="academy-emblem" alt="Logo">` : ''}
+            <div class="academy-title">${this.escapeHtml(academy.name)}</div>
+            <div class="standee-badge">Admissions & New Enrolments</div>
+
+            <div class="headline">SCAN TO JOIN / BOOK A TRIAL CLASS</div>
+            <div class="sub-headline">Instant mobile admission inquiry form for prospective students & parents</div>
+
+            <div class="qr-box">
+              <img src="${qrDataUrl}" class="qr-image" alt="Admission QR">
+            </div>
+
+            <div class="steps-container">
+              <div class="step-card">
+                <div class="step-number">1</div>
+                <div class="step-text">Open Camera or QR scanner on your phone</div>
+              </div>
+              <div class="step-card">
+                <div class="step-number">2</div>
+                <div class="step-text">Fill student details & preferred timing</div>
+              </div>
+              <div class="step-card">
+                <div class="step-number">3</div>
+                <div class="step-text">Our coaching team will schedule your trial!</div>
+              </div>
+            </div>
+
+            <div class="contact-footer">
+              ${academy.contact_phone ? `<div><strong>Phone / WhatsApp:</strong> ${this.escapeHtml(academy.contact_phone)}</div>` : ''}
+              ${branches && branches.length > 0 ? `<div><strong>Dojos / Branches:</strong> ${branches.map(b => this.escapeHtml(b.name)).join(' • ')}</div>` : ''}
+              <div class="url-display">${this.escapeHtml(directUrl)}</div>
+            </div>
+          </div>
+
+          <script>
+            window.addEventListener('load', () => {
+              setTimeout(() => { window.print(); }, 400);
+            });
+          </script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch (err) {
+      console.error('Error generating desk standee:', err);
+      this.showToast('Error generating standee: ' + err.message, 'danger');
+    }
   },
 
   // ==========================================

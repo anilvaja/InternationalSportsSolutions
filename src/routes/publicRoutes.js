@@ -7,6 +7,8 @@ import { getCentralDb, closeCentralDb, resetCentralDbInstance } from '../db/cent
 import { getTenantDbById, closeAllTenantDbs, provisionAcademyDb } from '../db/connectionManager.js';
 import { extractSubdomain, extractHost } from '../middleware/tenantResolver.js';
 import { ALL_ACADEMY_PERMISSIONS, DEFAULT_ACADEMY_ROLES } from '../config/permissions.js';
+import { InquiryService } from '../services/inquiryService.js';
+import QRCode from 'qrcode';
 
 export const publicRouter = express.Router();
 
@@ -267,6 +269,197 @@ publicRouter.post('/pay', (req, res) => {
         balance_amount: Math.max(0, invoice.net_amount - (invoice.paid_amount + payAmt)),
       },
       academy,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Helper to resolve academy for public prospective student endpoints
+ */
+function resolvePublicAcademy(req, centralDb) {
+  const querySlug = req.query.academy || req.query.slug || req.query.academy_slug || req.body?.academy_slug || req.body?.slug;
+  const queryId = req.query.academy_id || req.query.id || req.body?.academy_id;
+  const host = extractHost(req);
+  const sub = extractSubdomain(req);
+
+  let academy = null;
+
+  if (queryId) {
+    academy = centralDb.prepare("SELECT * FROM academies WHERE id = ? AND status = 'active'").get(Number(queryId));
+  } else if (querySlug) {
+    academy = centralDb.prepare("SELECT * FROM academies WHERE slug = ? COLLATE NOCASE AND status = 'active'").get(querySlug.trim());
+  } else if (sub) {
+    academy = centralDb.prepare("SELECT * FROM academies WHERE slug = ? COLLATE NOCASE AND status = 'active'").get(sub);
+  } else if (host) {
+    try {
+      const match = centralDb.prepare(`
+        SELECT a.* FROM domains d
+        JOIN academies a ON d.academy_id = a.id
+        WHERE d.domain = ? COLLATE NOCASE AND d.status = 'active'
+      `).get(host);
+      if (match) academy = match;
+    } catch (_) {}
+  }
+
+  if (!academy) {
+    const activeAcademies = centralDb.prepare("SELECT id, name, slug, logo_url, city, contact_phone, contact_email FROM academies WHERE status = 'active' ORDER BY name ASC").all();
+    if (activeAcademies.length === 1) {
+      academy = activeAcademies[0];
+    }
+  }
+
+  return academy;
+}
+
+/**
+ * GET /api/public/inquiry-form-meta
+ * Returns academy details, active branches, sports, and available batches
+ * for self-service student/parent admission registration
+ */
+publicRouter.get('/inquiry-form-meta', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const academy = resolvePublicAcademy(req, centralDb);
+
+    if (!academy) {
+      const activeAcademies = centralDb.prepare("SELECT id, name, slug, logo_url, city, contact_phone FROM academies WHERE status = 'active' ORDER BY name ASC").all();
+      return res.json({
+        success: true,
+        needsAcademySelection: true,
+        academies: activeAcademies
+      });
+    }
+
+    const tenantDb = getTenantDbById(academy.id);
+
+    // Fetch tenant-specific logo if configured
+    try {
+      const tLogo = tenantDb.prepare("SELECT value FROM tenant_settings WHERE key = 'logo_url'").get();
+      if (tLogo && tLogo.value) academy.logo_url = tLogo.value;
+    } catch (_) {}
+
+    const branches = tenantDb.prepare("SELECT id, name, city, address, phone FROM branches WHERE is_active = 1 ORDER BY name ASC").all();
+    const sports = tenantDb.prepare("SELECT id, name, description FROM sports WHERE is_active = 1 ORDER BY name ASC").all();
+    const batches = tenantDb.prepare(`
+      SELECT b.id, b.name, b.branch_id, b.sport_id, b.days_of_week, b.start_time, b.end_time, b.max_capacity,
+             br.name as branch_name, sp.name as sport_name
+      FROM batches b
+      LEFT JOIN branches br ON br.id = b.branch_id
+      LEFT JOIN sports sp ON sp.id = b.sport_id
+      WHERE b.is_active = 1
+      ORDER BY b.name ASC
+    `).all();
+
+    res.json({
+      success: true,
+      needsAcademySelection: false,
+      academy: {
+        id: academy.id,
+        name: academy.name,
+        slug: academy.slug,
+        logo_url: academy.logo_url,
+        city: academy.city,
+        address: academy.address,
+        contact_phone: academy.contact_phone,
+        contact_email: academy.contact_email
+      },
+      branches,
+      sports,
+      batches
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/public/inquiries
+ * Self-service student/parent admission inquiry submission
+ */
+publicRouter.post('/inquiries', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const academy = resolvePublicAcademy(req, centralDb);
+
+    if (!academy) {
+      return res.status(400).json({ success: false, error: 'Target sports academy could not be identified' });
+    }
+
+    const { student_name, phone } = req.body;
+    if (!student_name || !phone) {
+      return res.status(400).json({ success: false, error: 'Student name and contact phone number are required' });
+    }
+
+    const tenantDb = getTenantDbById(academy.id);
+    const inquiryData = {
+      ...req.body,
+      source: req.body.source || (req.body.is_qr ? 'qr_code' : 'online'),
+      status: 'new'
+    };
+
+    const inquiry = InquiryService.createInquiry(tenantDb, academy.id, inquiryData, null);
+
+    // Record central audit entry
+    try {
+      centralDb.prepare(`
+        INSERT INTO central_audit_logs (user_id, user_email, action, entity, details, ip_address)
+        VALUES (NULL, 'PUBLIC_INQUIRY', 'CREATE_INQUIRY', 'inquiries', ?, ?)
+      `).run(`Online student inquiry for '${student_name}' submitted to ${academy.name} (Ref #${inquiry.id})`, req.ip);
+    } catch (_) {}
+
+    res.status(201).json({
+      success: true,
+      message: 'Inquiry registered successfully! The academy will contact you shortly.',
+      inquiry: {
+        id: inquiry.id,
+        reference_no: `INQ-${String(inquiry.id).padStart(4, '0')}`,
+        student_name: inquiry.student_name,
+        created_at: inquiry.created_at
+      },
+      academy: {
+        name: academy.name,
+        contact_phone: academy.contact_phone
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/public/inquiry-qr
+ * Public QR code generator endpoint
+ */
+publicRouter.get('/inquiry-qr', async (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const academy = resolvePublicAcademy(req, centralDb);
+
+    if (!academy) {
+      return res.status(404).json({ success: false, error: 'Academy not found' });
+    }
+
+    const protocol = req.protocol || 'http';
+    const host = req.get('host') || 'localhost:3005';
+    const targetUrl = `${protocol}://${host}/inquiry.html?academy=${academy.slug}`;
+
+    const qrDataUrl = await QRCode.toDataURL(targetUrl, {
+      width: 400,
+      margin: 2,
+      errorCorrectionLevel: 'H'
+    });
+
+    res.json({
+      success: true,
+      targetUrl,
+      qrDataUrl,
+      academy: {
+        id: academy.id,
+        name: academy.name,
+        slug: academy.slug
+      }
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

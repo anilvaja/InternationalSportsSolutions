@@ -93,6 +93,16 @@ app.get(['/setup', '/setup.html'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'setup.html'));
 });
 
+// Dedicated Public Admission Inquiry & Self-Registration Route
+app.get(['/inquiry', '/inquiry.html', '/admission', '/join'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'inquiry.html'));
+});
+
+// Dedicated Quick-Pay Route
+app.get(['/pay', '/pay.html'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'pay.html'));
+});
+
 // Single Page Application Fallback
 app.get('*', (req, res, next) => {
   // If it's an API route or file with extension, don't serve index.html

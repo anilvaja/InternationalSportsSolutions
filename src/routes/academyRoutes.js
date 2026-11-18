@@ -14,6 +14,7 @@ import { FeeService } from '../services/feeService.js';
 import { ScheduleService } from '../services/scheduleService.js';
 import { UserService } from '../services/userService.js';
 import { InquiryService } from '../services/inquiryService.js';
+import QRCode from 'qrcode';
 import { AutoApprovalService } from '../services/autoApprovalService.js';
 import { StorageService } from '../services/storageService.js';
 import { LeaveService } from '../services/leaveService.js';
@@ -9977,6 +9978,82 @@ academyRouter.get('/inquiries/check-duplicates', (req, res) => {
       current_inquiry_id: current_inquiry_id ? Number(current_inquiry_id) : null,
     });
     res.json({ success: true, ...check });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/inquiries/qr-info
+ * Returns public inquiry / self-registration URL, pre-generated QR code, and academy branding
+ */
+academyRouter.get('/inquiries/qr-info', async (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const centralDb = getCentralDb();
+    const academy = centralDb.prepare('SELECT id, name, slug, logo_url, city, address, contact_phone, contact_email FROM academies WHERE id = ?').get(req.academy.id);
+
+    const protocol = req.protocol || 'http';
+    const host = req.get('host') || 'localhost:3005';
+    const baseDomain = config.baseDomain || 'internationalsportssolutions.com';
+
+    // 1. Primary public inquiry URL (subdomain-based for production)
+    const prodUrl = `https://${academy.slug}.${baseDomain}/inquiry.html`;
+    
+    // 2. Direct slug URL (works with or without wildcard DNS)
+    const slugUrl = `${protocol}://${host}/inquiry.html?academy=${academy.slug}`;
+
+    // 3. Local testing URL
+    const localUrl = `http://${academy.slug}.localhost${config.port !== 80 ? ':' + config.port : ''}/inquiry.html`;
+
+    // Active URL based on current context
+    let activeUrl = prodUrl;
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      activeUrl = localUrl;
+    } else if (host.includes(academy.slug)) {
+      activeUrl = `${protocol}://${host}/inquiry.html`;
+    } else {
+      activeUrl = slugUrl;
+    }
+
+    // Generate high-resolution QR code
+    const qrDataUrl = await QRCode.toDataURL(activeUrl, {
+      width: 450,
+      margin: 2,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      },
+      errorCorrectionLevel: 'H'
+    });
+
+    const qrSvg = await QRCode.toString(activeUrl, {
+      type: 'svg',
+      width: 450,
+      margin: 2,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      },
+      errorCorrectionLevel: 'H'
+    });
+
+    // Branches & Sports for quick reference
+    const branches = db.prepare("SELECT id, name, city, address FROM branches WHERE is_active = 1").all();
+    const sports = db.prepare("SELECT id, name, description FROM sports WHERE is_active = 1").all();
+
+    res.json({
+      success: true,
+      academy,
+      activeUrl,
+      prodUrl,
+      localUrl,
+      slugUrl,
+      qrDataUrl,
+      qrSvg,
+      branches,
+      sports
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
