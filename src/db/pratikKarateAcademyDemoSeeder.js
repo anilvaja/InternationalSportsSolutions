@@ -706,8 +706,9 @@ export class PratikKarateAcademyDemoSeeder {
     for (const s of studentDefs) {
       const branch = branches[s.branchIdx];
       const targetBatch = batches[s.batchIdx];
+      const studentEmail = `${s.first.toLowerCase()}.${s.last.toLowerCase()}@demostudent.iss`;
 
-      let student = db.prepare('SELECT * FROM students WHERE student_code = ?').get(s.code);
+      let student = db.prepare('SELECT * FROM students WHERE email = ? OR student_code = ?').get(studentEmail, s.code);
       if (!student) {
         const ins = db.prepare(`
           INSERT INTO students (
@@ -719,7 +720,7 @@ export class PratikKarateAcademyDemoSeeder {
           s.code,
           s.first,
           s.last,
-          `${s.first.toLowerCase()}.${s.last.toLowerCase()}@demostudent.iss`,
+          studentEmail,
           studentHash,
           s.phone,
           s.dob,

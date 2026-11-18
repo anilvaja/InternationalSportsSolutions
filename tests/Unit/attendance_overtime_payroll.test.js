@@ -35,8 +35,21 @@ describe('Attendance Scheduling, Overtime Approval, and Attendance-Based Staff P
     academy1Db.prepare("DELETE FROM staff_payroll_periods").run();
     academy1Db.prepare("DELETE FROM employee_schedule_shifts WHERE user_id = 1").run();
     academy1Db.prepare("DELETE FROM employee_work_schedules WHERE user_id = 1").run();
+    academy1Db.prepare("DELETE FROM attendance_corrections").run();
     academy2Db.prepare("DELETE FROM staff_salary_statements").run();
     academy2Db.prepare("DELETE FROM staff_payroll_periods").run();
+    academy2Db.prepare("DELETE FROM attendance_corrections").run();
+
+    // Ensure baseline policy defaults for attendance cutoff (2 days) and overtime threshold (30m)
+    try {
+      academy1Db.prepare(`
+        UPDATE academy_policy_settings
+        SET attendance_cutoff_days = 2,
+            overtime_threshold_minutes = 30,
+            allow_future_attendance = 0
+        WHERE academy_id = ?
+      `).run(ACADEMY_1_ID);
+    } catch (_) {}
 
     academyAdminToken = signToken({
       userId: 1,

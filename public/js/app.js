@@ -1460,6 +1460,13 @@ const app = {
     }
 
     const aliases = {
+      '/central': 'central-academies',
+      '/central/academies': 'central-academies',
+      '/central/plans': 'central-plans',
+      '/central/stats': 'central-stats',
+      '/central/analytics': 'central-stats',
+      '/central/audit': 'central-audit',
+      '/central/db-viewer': 'central-db-viewer',
       '/admin': 'central-academies',
       '/admin/academies': 'central-academies',
       '/admin/plans': 'central-plans',
@@ -7207,7 +7214,7 @@ const app = {
                 <th style="width: 40px; text-align: center;">
                   <input type="checkbox" id="students-select-all" onchange="app.toggleSelectAllRows('students', this.checked)">
                 </th>
-                <th>Code & Adm #</th>
+                <th style="min-width: 140px; white-space: nowrap;">Code & Adm #</th>
                 <th>Student Name</th>
                 <th>Guardian & Phone</th>
                 <th>Branch</th>
@@ -7230,15 +7237,17 @@ const app = {
                   <td style="text-align: center;">
                     <input type="checkbox" class="students-row-cb" value="${s.id}" onchange="app.onRowSelectionChange('students')">
                   </td>
-                  <td>
-                    <code>${this.escapeHtml(s.student_code || '')}</code>
-                    ${s.admission_number ? `
-                      <div style="margin-top: 2px;">
-                        <span class="badge badge-secondary" style="font-size: 10px; padding: 2px 5px;" title="Admission Number">
-                          Adm #${this.escapeHtml(s.admission_number)}
+                  <td style="white-space: nowrap;">
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                      <code style="font-size: 12.5px; font-weight: 700; color: var(--text-heading); letter-spacing: 0.3px; white-space: nowrap;">
+                        ${this.escapeHtml(s.student_code || s.admission_number || '-')}
+                      </code>
+                      ${s.admission_number && s.admission_number !== s.student_code ? `
+                        <span class="badge badge-secondary" style="font-size: 10px; padding: 1px 6px; width: fit-content;" title="Admission Number">
+                          Adm: ${this.escapeHtml(s.admission_number)}
                         </span>
-                      </div>
-                    ` : ''}
+                      ` : ''}
+                    </div>
                   </td>
                   <td>
                     <div style="display: flex; align-items: center; gap: 10px;">
@@ -16843,20 +16852,6 @@ const app = {
     }
   },
 
-    const res = await this.apiRequest('/api/academy/leaves', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-
-    if (res.success) {
-      this.closeModal();
-      this.showToast(res.message || 'Leave applied successfully', 'success');
-      this.renderLeaves();
-    } else {
-      this.showToast(res.error || 'Failed to submit leave request', 'danger');
-    }
-  },
-
   async deleteLeave(id) {
     if (!confirm('Are you sure you want to delete this leave request record?')) return;
     const res = await this.apiRequest(`/api/academy/leaves/${id}`, { method: 'DELETE' });
@@ -20775,7 +20770,8 @@ const app = {
               </div>
             </div>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-              <select id="smart-att-branch-select" class="form-select form-select-sm" style="width: auto; min-width: 160px;" onchange="app.onSmartAttendanceBranchChange(this.value)">
+              <select id="smart-att-branch-select" class="form-select form-select-sm" style="width: auto; min-width: 170px;" onchange="app.onSmartAttendanceBranchChange(this.value)">
+                <option value="" ${!currentBranchId ? 'selected' : ''}>All Branches</option>
                 ${branches.map(b => `<option value="${b.id}" ${b.id === currentBranchId ? 'selected' : ''}>${b.name}</option>`).join('')}
               </select>
               <button class="btn btn-secondary btn-sm" onclick="SmartAttendanceController.syncOfflineQueue()">
@@ -20788,32 +20784,34 @@ const app = {
           <!-- Sub-Tab Navigation Bar -->
           <div class="tabs" style="border-bottom: 1px solid var(--border); padding: 0 16px; background: rgba(255,255,255,0.01); display: flex; gap: 6px; overflow-x: auto;">
             <button class="tab-btn ${currentTab === 'kiosk' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('kiosk')">
-              <i class="fa-solid fa-tablet-screen-button"></i> Live Kiosk Scanner
+              <i class="fa-solid fa-qrcode"></i> Scanner with ID/QR Scanner
             </button>
             <button class="tab-btn ${currentTab === 'coach_scanner' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('coach_scanner')">
-              <i class="fa-solid fa-mobile-screen"></i> Coach Scanner
+              <i class="fa-solid fa-camera"></i> Coach Camera Scanner
             </button>
             <button class="tab-btn ${currentTab === 'student_qr' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('student_qr')">
               <i class="fa-solid fa-id-card"></i> Student ID Passes
             </button>
-            <button class="tab-btn ${currentTab === 'nfc' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('nfc')">
+            <button class="tab-btn ${currentTab === 'audit' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('audit')">
+              <i class="fa-solid fa-clock-rotate-left"></i> Scan Audit Logs
+            </button>
+
+            <!-- Background-retained options: hidden through code, preserved in background -->
+            <button class="tab-btn ${currentTab === 'nfc' ? 'active' : ''}" style="display: none;" onclick="SmartAttendanceController.switchSubTab('nfc')">
               <i class="fa-solid fa-wave-square"></i> NFC & Wristbands
             </button>
-            <button class="tab-btn ${currentTab === 'biometrics' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('biometrics')">
+            <button class="tab-btn ${currentTab === 'biometrics' ? 'active' : ''}" style="display: none;" onclick="SmartAttendanceController.switchSubTab('biometrics')">
               <i class="fa-solid fa-user-shield"></i> Face Biometrics & Consent
             </button>
-            <button class="tab-btn ${currentTab === 'exceptions' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('exceptions')">
+            <button class="tab-btn ${currentTab === 'exceptions' ? 'active' : ''}" style="display: none;" onclick="SmartAttendanceController.switchSubTab('exceptions')">
               <i class="fa-solid fa-clipboard-check"></i> Exceptions Queue
               ${pendingExceptions.length > 0 ? `<span class="badge badge-warning" style="margin-left: 4px;">${pendingExceptions.length}</span>` : ''}
             </button>
-            <button class="tab-btn ${currentTab === 'devices' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('devices')">
+            <button class="tab-btn ${currentTab === 'devices' ? 'active' : ''}" style="display: none;" onclick="SmartAttendanceController.switchSubTab('devices')">
               <i class="fa-solid fa-microchip"></i> Devices & Hardware
             </button>
-            <button class="tab-btn ${currentTab === 'settings' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('settings')">
+            <button class="tab-btn ${currentTab === 'settings' ? 'active' : ''}" style="display: none;" onclick="SmartAttendanceController.switchSubTab('settings')">
               <i class="fa-solid fa-sliders"></i> Policy Settings
-            </button>
-            <button class="tab-btn ${currentTab === 'audit' ? 'active' : ''}" onclick="SmartAttendanceController.switchSubTab('audit')">
-              <i class="fa-solid fa-clock-rotate-left"></i> Scan Audit Logs
             </button>
           </div>
 
@@ -20831,7 +20829,7 @@ const app = {
   },
 
   async onSmartAttendanceBranchChange(branchId) {
-    this._selectedSmartAttBranchId = Number(branchId);
+    this._selectedSmartAttBranchId = branchId ? Number(branchId) : null;
     await this.renderSmartAttendance();
   },
 
@@ -20870,12 +20868,12 @@ const app = {
       <div style="max-width: 800px; margin: 0 auto; text-align: center;">
         <div id="camera-error-banner" class="alert alert-warning" style="display: none; margin-bottom: 16px;"></div>
 
-        <!-- Mode Switcher: QR / Card Scan vs Face Biometrics -->
+        <!-- Mode Switcher: QR / Card Scanner (Face Biometrics hidden in background) -->
         <div style="display: flex; justify-content: center; gap: 8px; margin-bottom: 16px;">
           <button id="btn-scanmode-qr" class="btn btn-primary btn-sm" onclick="SmartAttendanceController.setScanMode('qr')">
-            <i class="fa-solid fa-qrcode"></i> QR / Card Scanner
+            <i class="fa-solid fa-qrcode"></i> Scanner with ID/QR Scanner
           </button>
-          <button id="btn-scanmode-face" class="btn btn-secondary btn-sm" onclick="SmartAttendanceController.setScanMode('face')">
+          <button id="btn-scanmode-face" class="btn btn-secondary btn-sm" style="display: none;" onclick="SmartAttendanceController.setScanMode('face')">
             <i class="fa-solid fa-face-smile"></i> Face Biometrics
           </button>
         </div>
@@ -21028,8 +21026,10 @@ const app = {
               ${roster.map(s => `
                 <tr>
                   <td>
-                    <strong>${s.first_name} ${s.last_name}</strong>
-                    <div style="font-size: 11px; color: var(--text-muted);">${s.student_code}</div>
+                    <a href="javascript:void(0)" onclick="app.showStudentDetailsModal(${s.student_id})" style="text-decoration: none; cursor: pointer; color: inherit; display: inline-flex; flex-direction: column;" title="View student details">
+                      <strong style="color: var(--primary);">${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</strong>
+                      <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${this.escapeHtml(s.student_code || '')}</div>
+                    </a>
                   </td>
                   <td>
                     <span class="badge ${s.status === 'present' ? 'badge-success' : (s.status === 'late' ? 'badge-warning' : 'badge-secondary')}">
@@ -21771,8 +21771,10 @@ const app = {
               ${students.map(s => `
                 <tr>
                   <td>
-                    <strong>${s.first_name} ${s.last_name}</strong>
-                    <div style="font-size: 11px; color: var(--text-muted);">${s.student_code}</div>
+                    <a href="javascript:void(0)" onclick="app.showStudentDetailsModal(${s.student_id})" style="text-decoration: none; cursor: pointer; color: inherit; display: inline-flex; flex-direction: column;" title="View student details">
+                      <strong style="color: var(--primary);">${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</strong>
+                      <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${this.escapeHtml(s.student_code || '')}</div>
+                    </a>
                   </td>
                   <td><code>04:A1:B2:${String(s.id).padStart(2, '0')}:9F</code></td>
                   <td>Blue Silicone Band #${s.id}</td>
@@ -21883,8 +21885,10 @@ const app = {
               ${students.map(s => `
                 <tr>
                   <td>
-                    <strong>${s.first_name} ${s.last_name}</strong>
-                    <div style="font-size: 11px; color: var(--text-muted);">${s.student_code}</div>
+                    <a href="javascript:void(0)" onclick="app.showStudentDetailsModal(${s.student_id})" style="text-decoration: none; cursor: pointer; color: inherit; display: inline-flex; flex-direction: column;" title="View student details">
+                      <strong style="color: var(--primary);">${this.escapeHtml(s.first_name)} ${this.escapeHtml(s.last_name)}</strong>
+                      <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${this.escapeHtml(s.student_code || '')}</div>
+                    </a>
                   </td>
                   <td><span class="badge badge-success">GRANTED (Parent)</span></td>
                   <td><span class="badge badge-primary">AES-256 Encrypted (v1_512d)</span></td>
@@ -22378,15 +22382,24 @@ const app = {
   },
 
   async renderScanAuditLogsView(branchId) {
-    const res = await this.apiRequest(`/api/academy/smart-attendance/logs?limit=50${branchId ? '&branch_id=' + branchId : ''}`);
+    const res = await this.apiRequest(`/api/academy/smart-attendance/logs?limit=100${branchId ? '&branch_id=' + branchId : ''}`);
     const logs = res.logs || [];
 
     return `
       <div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
           <div>
-            <h3 style="font-size: 16px; font-weight: 700; margin: 0;"><i class="fa-solid fa-clock-rotate-left"></i> Smart Attendance Scan Logs</h3>
-            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">Immutable security audit log of every check-in attempt</p>
+            <h3 style="font-size: 16px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-clock-rotate-left" style="color: var(--primary);"></i> Smart Attendance Scan Logs
+            </h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0;">
+              Real-time audit log of every check-in attempt with student identity, branch, batch, and verification result
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn btn-secondary btn-sm" onclick="SmartAttendanceController.switchSubTab('audit')" title="Refresh Scan Logs">
+              <i class="fa-solid fa-rotate"></i> Refresh Logs
+            </button>
           </div>
         </div>
 
@@ -22394,29 +22407,103 @@ const app = {
           <table class="custom-table">
             <thead>
               <tr>
-                <th>Time (IST)</th>
-                <th>Student</th>
-                <th>Method</th>
-                <th>Batch</th>
-                <th>Result</th>
-                <th>Details / Notes</th>
+                <th style="white-space: nowrap;">Time (IST)</th>
+                <th style="min-width: 170px;">Student & ID</th>
+                <th style="white-space: nowrap;">Branch</th>
+                <th style="white-space: nowrap;">Batch</th>
+                <th style="white-space: nowrap;">Method</th>
+                <th style="white-space: nowrap;">Attendance Status</th>
+                <th style="min-width: 180px;">Verification Result / Details</th>
               </tr>
             </thead>
             <tbody>
-              ${logs.map(l => `
+              ${logs.length === 0 ? `
                 <tr>
-                  <td>${new Date(l.scanned_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
-                  <td><strong>${l.first_name || 'N/A'} ${l.last_name || ''}</strong></td>
-                  <td><span class="badge badge-secondary">${l.check_in_mode.toUpperCase()}</span></td>
-                  <td>${l.batch_name || 'Unassigned'}</td>
-                  <td>
-                    <span class="badge ${l.result === 'success' ? 'badge-success' : (l.result === 'duplicate_rejected' ? 'badge-warning' : 'badge-danger')}">
-                      ${l.result.toUpperCase()}
-                    </span>
+                  <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 36px;">
+                    <i class="fa-solid fa-clock-rotate-left fa-2x" style="opacity: 0.3; margin-bottom: 8px; display: block;"></i>
+                    No attendance scan logs recorded yet. Use the Kiosk Scanner or Coach Camera Scanner to mark student attendance.
                   </td>
-                  <td style="font-size: 11px; color: var(--text-muted);">${l.failure_reason || 'Verified'}</td>
                 </tr>
-              `).join('')}
+              ` : logs.map(l => {
+                const scanDate = new Date(l.scanned_at);
+                const timeStr = !isNaN(scanDate.getTime()) ? scanDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : (l.scanned_at || '-');
+                const dateStr = !isNaN(scanDate.getTime()) ? scanDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
+                
+                let attStatusBadge = '';
+                if (l.attendance_status === 'present' || (!l.attendance_status && l.result === 'success')) {
+                  attStatusBadge = '<span class="badge badge-success" style="font-size: 11px;"><i class="fa-solid fa-circle-check"></i> Present</span>';
+                } else if (l.attendance_status === 'late') {
+                  attStatusBadge = '<span class="badge badge-warning" style="font-size: 11px;"><i class="fa-solid fa-clock"></i> Late</span>';
+                } else if (l.result === 'duplicate_rejected') {
+                  attStatusBadge = '<span class="badge badge-warning" style="font-size: 11px;"><i class="fa-solid fa-clone"></i> Cooldown (Dup)</span>';
+                } else {
+                  attStatusBadge = '<span class="badge badge-danger" style="font-size: 11px;"><i class="fa-solid fa-circle-xmark"></i> Rejected</span>';
+                }
+
+                return `
+                  <tr>
+                    <td style="white-space: nowrap;">
+                      <div style="font-weight: 600; color: var(--text-heading); font-size: 12.5px;">${timeStr}</div>
+                      ${dateStr ? `<div style="font-size: 10.5px; color: var(--text-muted);">${dateStr}</div>` : ''}
+                    </td>
+                    <td>
+                      ${l.student_id ? `
+                        <a href="javascript:void(0)" onclick="app.showStudentDetailsModal(${l.student_id})" style="text-decoration: none; cursor: pointer; display: inline-flex; flex-direction: column; gap: 3px;" title="Click to view 360° student profile & details">
+                          <span style="font-weight: 700; color: var(--primary); font-size: 13.5px; display: inline-flex; align-items: center; gap: 5px;">
+                            ${this.escapeHtml((l.first_name || 'Student') + ' ' + (l.last_name || ''))}
+                            <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px; opacity: 0.65;"></i>
+                          </span>
+                          <div style="display: flex; align-items: center; gap: 5px;">
+                            <code style="font-size: 11px; font-weight: 700; color: var(--text-heading); letter-spacing: 0.3px; background: rgba(0,0,0,0.04); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border);">
+                              ${this.escapeHtml(l.student_code || l.admission_number || ('#' + l.student_id))}
+                            </code>
+                            ${l.admission_number && l.admission_number !== l.student_code ? `
+                              <span class="badge badge-secondary" style="font-size: 9.5px; padding: 1px 5px;" title="Admission Number">
+                                Adm: ${this.escapeHtml(l.admission_number)}
+                              </span>
+                            ` : ''}
+                          </div>
+                        </a>
+                      ` : `
+                        <strong style="color: var(--text-muted);">${this.escapeHtml((l.first_name || 'Unassigned Card / Pass') + ' ' + (l.last_name || ''))}</strong>
+                      `}
+                    </td>
+                    <td style="white-space: nowrap;">
+                      <span style="font-weight: 600; color: var(--text-heading); font-size: 12.5px;">
+                        <i class="fa-solid fa-location-dot" style="font-size: 11px; color: var(--primary); margin-right: 4px;"></i>
+                        ${this.escapeHtml(l.branch_name || 'Main Campus')}
+                      </span>
+                    </td>
+                    <td style="white-space: nowrap;">
+                      ${l.batch_name ? `
+                        <span class="badge badge-info" style="font-size: 11px;">
+                          ${this.escapeHtml(l.batch_name)}
+                        </span>
+                      ` : '<span style="color: var(--text-muted); font-size: 11px;">Unassigned Batch</span>'}
+                    </td>
+                    <td style="white-space: nowrap;">
+                      <span class="badge badge-secondary" style="font-size: 11px; text-transform: uppercase;">
+                        ${l.check_in_mode === 'qr' ? '<i class="fa-solid fa-qrcode"></i> QR' : (l.check_in_mode === 'coach_manual' ? '<i class="fa-solid fa-camera"></i> Coach' : (l.check_in_mode === 'nfc' ? '<i class="fa-solid fa-wave-square"></i> NFC' : '<i class="fa-solid fa-user-shield"></i> Face'))}
+                      </span>
+                    </td>
+                    <td style="white-space: nowrap;">
+                      ${attStatusBadge}
+                    </td>
+                    <td>
+                      <div style="display: flex; flex-direction: column; gap: 2px;">
+                        <div>
+                          <span class="badge ${l.result === 'success' ? 'badge-success' : (l.result === 'duplicate_rejected' ? 'badge-warning' : 'badge-danger')}" style="font-size: 10px; font-weight: 700; text-transform: uppercase;">
+                            ${this.escapeHtml(l.result || 'UNKNOWN')}
+                          </span>
+                        </div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                          ${this.escapeHtml(l.failure_reason || 'Verified Session Attendance')}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>

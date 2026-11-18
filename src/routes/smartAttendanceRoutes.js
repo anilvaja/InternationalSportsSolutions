@@ -168,7 +168,7 @@ smartAttendanceRouter.post('/scan-card-photo', requirePerm(['scan_attendance', '
       if (code && code.data) {
         qrToken = code.data.trim();
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // If QR code found, process as QR check-in
     if (qrToken) {
@@ -212,7 +212,7 @@ smartAttendanceRouter.post('/scan-card-photo', requirePerm(['scan_attendance', '
           ...outcome,
         });
       }
-    } catch (_) {}
+    } catch (_) { }
 
     return res.status(422).json({
       success: false,
@@ -701,12 +701,15 @@ smartAttendanceRouter.get('/logs', requirePerm(['view_smart_attendance', 'view_a
         s.first_name,
         s.last_name,
         s.student_code,
+        s.admission_number,
         b.name as branch_name,
-        bat.name as batch_name
+        bat.name as batch_name,
+        sa.status as attendance_status
       FROM smart_attendance_logs sal
       LEFT JOIN students s ON s.id = sal.student_id
       LEFT JOIN branches b ON b.id = sal.branch_id
       LEFT JOIN batches bat ON bat.id = sal.batch_id
+      LEFT JOIN student_attendance sa ON sa.attendance_id = sal.attendance_id AND sa.student_id = sal.student_id
       WHERE sal.academy_id = ?
     `;
     const params = [req.academy.id];

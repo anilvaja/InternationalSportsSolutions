@@ -34,10 +34,16 @@ if (process.env.NODE_ENV !== 'test') {
     const superAdminCount = centralDb.prepare('SELECT COUNT(*) as c FROM super_admins').get()?.c || 0;
     const plansCount = centralDb.prepare('SELECT COUNT(*) as c FROM subscription_plans').get()?.c || 0;
     const academiesCount = centralDb.prepare('SELECT COUNT(*) as c FROM academies').get()?.c || 0;
+    const lookupCount = centralDb.prepare('SELECT COUNT(*) as c FROM academy_users_lookup').get()?.c || 0;
 
     if (superAdminCount === 0 || plansCount === 0 || academiesCount === 0) {
       console.log(`[Auto-Init] Baseline platform data missing (SuperAdmins=${superAdminCount}, Plans=${plansCount}, Academies=${academiesCount}). Running non-destructive platform seeder...`);
       runSeed({ includeDefaultAcademy: academiesCount === 0 });
+    }
+
+    if (lookupCount === 0 && academiesCount > 0) {
+      const { prepareQaRoleAccounts } = await import('./scripts/prepare_qa_role_accounts.js');
+      prepareQaRoleAccounts();
     }
   } catch (err) {
     console.warn('[Auto-Init] Warning during platform baseline check:', err.message);

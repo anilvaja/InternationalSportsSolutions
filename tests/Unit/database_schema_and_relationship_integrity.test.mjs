@@ -9,7 +9,7 @@ test('Stage 2 — Complete Database Schema & Relationship Integrity Verification
   // Provision a clean, isolated temporary tenant SQLite database
   const tempDbPath = path.resolve('data_test_temp_stage2.db');
   if (fs.existsSync(tempDbPath)) {
-    try { fs.unlinkSync(tempDbPath); } catch (_) {}
+    try { fs.unlinkSync(tempDbPath); } catch (_) { }
   }
 
   const db = new Database(tempDbPath);
@@ -22,10 +22,10 @@ test('Stage 2 — Complete Database Schema & Relationship Integrity Verification
   runMigrations(db, 'tenant');
 
   t.after(() => {
-    try { db.close(); } catch (_) {}
-    try { fs.unlinkSync(tempDbPath); } catch (_) {}
-    try { fs.unlinkSync(tempDbPath + '-wal'); } catch (_) {}
-    try { fs.unlinkSync(tempDbPath + '-shm'); } catch (_) {}
+    try { db.close(); } catch (_) { }
+    try { fs.unlinkSync(tempDbPath); } catch (_) { }
+    try { fs.unlinkSync(tempDbPath + '-wal'); } catch (_) { }
+    try { fs.unlinkSync(tempDbPath + '-shm'); } catch (_) { }
   });
 
   // Base fixtures for tests
@@ -397,6 +397,6 @@ test('Stage 2 — Complete Database Schema & Relationship Integrity Verification
     assert.ok(totalTables >= 75, 'Tenant schema must provision all 75+ core multi-tenant tables');
 
     const appliedMigrations = db.prepare('SELECT count(*) as c FROM _migrations').get().c;
-    assert.equal(appliedMigrations, 38, 'All 38 tenant migrations must be recorded');
+    assert.equal(appliedMigrations, 39, 'All 39 tenant migrations must be recorded');
   });
 });

@@ -376,36 +376,64 @@ export class InquiryService {
   }
 
   /**
-   * Generates hierarchical unique student code: [Academy Code]-[Branch Code]-[Year]-[Sequence]
-   * Example: GSA-BHL-26-0042
+   * Generates sequential, human-readable student identifier
+   * Standard format: <academy_id>-<4-digit-sequence> (e.g. 1-0001, 1-0002)
+   * Custom format: If tenant explicitly defines custom academy_code in tenant_settings, preserves [Code]-[Branch]-[Year]-[Seq]
    */
-  static generateStudentCode(db, targetBranchId = null) {
-    let acadCode = 'ISS';
+  static generateStudentCode(db, targetBranchId = null, academyId = null) {
+    let acadCode = null;
     try {
       const tenantSetting = db.prepare("SELECT value FROM tenant_settings WHERE key = 'academy_code'").get();
       if (tenantSetting && tenantSetting.value) {
         acadCode = tenantSetting.value.toUpperCase();
-      } else {
-        const row = db.prepare("SELECT value FROM tenant_settings WHERE key = 'academy_name'").get();
-        if (row && row.value) {
-          acadCode = row.value.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 4);
-        }
       }
     } catch (e) {}
 
-    let branchCode = 'MAIN';
-    if (targetBranchId) {
-      try {
-        const br = db.prepare('SELECT name, code FROM branches WHERE id = ?').get(targetBranchId);
-        if (br) {
-          branchCode = br.code || br.name.replace(/branch/i, '').trim().slice(0, 3).toUpperCase() || 'BR1';
-        }
-      } catch (e) {}
+    // If an explicit custom academy_code was set in tenant_settings, preserve hierarchical format
+    if (acadCode) {
+      let branchCode = 'MAIN';
+      if (targetBranchId) {
+        try {
+          const br = db.prepare('SELECT name, code FROM branches WHERE id = ?').get(targetBranchId);
+          if (br) {
+            branchCode = br.code || br.name.replace(/branch/i, '').trim().slice(0, 3).toUpperCase() || 'BR1';
+          }
+        } catch (e) {}
+      }
+      const count = db.prepare('SELECT COUNT(*) as c FROM students').get().c + 1;
+      const yr = String(new Date().getFullYear()).slice(-2);
+      return `${acadCode}-${branchCode}-${yr}-${String(count).padStart(4, '0')}`;
     }
 
-    const count = db.prepare('SELECT COUNT(*) as c FROM students').get().c + 1;
-    const yr = String(new Date().getFullYear()).slice(-2);
-    return `${acadCode}-${branchCode}-${yr}-${String(count).padStart(4, '0')}`;
+    // Default standard format: <academy_id>-<0001> (based on academy's students from 1 to n)
+    let acadId = academyId;
+    if (!acadId) {
+      try {
+        const row = db.prepare('SELECT academy_id FROM students WHERE academy_id IS NOT NULL LIMIT 1').get();
+        if (row && row.academy_id) acadId = row.academy_id;
+      } catch (e) {}
+    }
+    if (!acadId) {
+      acadId = 1;
+    }
+
+    let nextSeq = 1;
+    try {
+      const existingCodes = db.prepare("SELECT student_code FROM students WHERE student_code LIKE ?").all(`${acadId}-%`);
+      let maxNum = 0;
+      for (const row of existingCodes) {
+        const parts = (row.student_code || '').split('-');
+        if (parts.length === 2 && !isNaN(Number(parts[1]))) {
+          const n = Number(parts[1]);
+          if (n > maxNum) maxNum = n;
+        }
+      }
+      nextSeq = maxNum > 0 ? maxNum + 1 : (db.prepare('SELECT COUNT(*) as c FROM students').get().c + 1);
+    } catch (e) {
+      nextSeq = db.prepare('SELECT COUNT(*) as c FROM students').get().c + 1;
+    }
+
+    return `${acadId}-${String(nextSeq).padStart(4, '0')}`;
   }
 
   /**
@@ -557,7 +585,7 @@ export class InquiryService {
       // 1. Generate unique Admission / Student Code
       let finalStudentCode = student_code;
       if (!finalStudentCode) {
-        finalStudentCode = InquiryService.generateStudentCode(db, Number(branch_id));
+        finalStudentCode = InquiryService.generateStudentCode(db, Number(branch_id), academyId);
       }
 
       // Check if student with this code already exists

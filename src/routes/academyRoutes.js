@@ -1428,8 +1428,10 @@ academyRouter.post('/students', requirePermission(['create_students', 'manage_st
     // Enforce student quota via QuotaService
     QuotaService.assertCanCreate(req.academy.id, 'students', 1);
 
-    // Generate unique student code: STU-XXXX
-    const studentCode = req.body.student_code || `STU-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+    // Generate unique student code: <academy_id>-0001
+    const defaultStudentCode = InquiryService.generateStudentCode(db, req.body.branch_id, req.academy?.id || 1);
+    const studentCode = req.body.student_code || defaultStudentCode;
+    const admissionNumber = req.body.admission_number || studentCode;
 
     let passwordHash = null;
     if (req.body.password && String(req.body.password).trim().length >= 4) {
@@ -2492,6 +2494,21 @@ academyRouter.post('/students/:id/set-password', (req, res) => {
       success: true,
       message: `Password updated successfully for student ${student.first_name} ${student.last_name}`,
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/academy/students/next-admission-number
+ * Returns next sequential student admission number in <academy_id>-<0001> format
+ */
+academyRouter.get('/students/next-admission-number', (req, res) => {
+  try {
+    const db = req.tenantDb;
+    const academyId = req.academy?.id || 1;
+    const admissionNumber = InquiryService.generateStudentCode(db, null, academyId);
+    res.json({ success: true, admissionNumber, next_admission_number: admissionNumber });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -10388,21 +10405,6 @@ academyRouter.delete('/admission-checklist/templates/:id', requireRole('academy_
     db.prepare('UPDATE admission_checklist_templates SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND academy_id = ?')
       .run(id, req.academy.id);
     res.json({ success: true, message: 'Checklist template removed' });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-/**
- * GET /api/academy/students/next-admission-number
- */
-academyRouter.get('/students/next-admission-number', (req, res) => {
-  try {
-    const db = req.tenantDb;
-    const count = db.prepare('SELECT COUNT(*) as c FROM students').get().c + 1;
-    const year = new Date().getFullYear();
-    const admissionNumber = `STU-${year}-${String(count).padStart(4, '0')}`;
-    res.json({ success: true, admissionNumber, next_admission_number: admissionNumber });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
