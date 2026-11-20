@@ -54,6 +54,11 @@ document.addEventListener('DOMContentLoaded', () => {
       metaData = data;
 
       if (data.needsAcademySelection) {
+        if (data.academies && data.academies.length === 1) {
+          // Auto-select the only available academy directly!
+          loadInquiryMeta(data.academies[0].slug, null);
+          return;
+        }
         showAcademySelector(data.academies);
       } else {
         renderAcademyForm(data);
@@ -114,15 +119,21 @@ document.addEventListener('DOMContentLoaded', () => {
     academyContactChips.innerHTML = chipsHtml;
 
     // Branches
+    const branchParam = urlParams.get('branch') || urlParams.get('branch_id');
     inqBranch.innerHTML = '<option value="">-- Any / Nearest Dojo / Branch --</option>';
+    let branchMatched = false;
     if (data.branches && data.branches.length > 0) {
       data.branches.forEach(b => {
         const opt = document.createElement('option');
         opt.value = b.id;
         opt.textContent = `${b.name}${b.city ? ' (' + b.city + ')' : ''}`;
+        if (branchParam && (String(b.id) === String(branchParam) || b.name.toLowerCase().includes(String(branchParam).toLowerCase()))) {
+          opt.selected = true;
+          branchMatched = true;
+        }
         inqBranch.appendChild(opt);
       });
-      if (data.branches.length === 1) {
+      if (!branchMatched && data.branches.length === 1) {
         inqBranch.value = data.branches[0].id;
       }
     }

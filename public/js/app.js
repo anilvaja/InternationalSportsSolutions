@@ -4529,11 +4529,15 @@ const app = {
         return;
       }
 
-      const [data, upcomingRes, setupRes] = await Promise.all([
+      const [data, upcomingRes, setupRes, qrInfoRes] = await Promise.all([
         this.apiRequest('/api/academy/dashboard'),
         this.apiRequest('/api/academy/dashboard/upcoming-events'),
-        this.apiRequest('/api/academy/setup-status').catch(() => ({ success: false }))
+        this.apiRequest('/api/academy/setup-status').catch(() => ({ success: false })),
+        this.apiRequest('/api/academy/inquiries/qr-info').catch(() => null)
       ]);
+      if (qrInfoRes && qrInfoRes.success) {
+        this.currentInquiryQrData = qrInfoRes;
+      }
       const content = document.getElementById('page-content');
 
       if (!data || !data.success) {
@@ -5379,6 +5383,91 @@ const app = {
 
       <!-- Priority Actions Alert Strip -->
       ${priorityActionsHtml}
+
+      ${(this.hasPermission(['view_inquiries', 'manage_inquiries']) && this.currentInquiryQrData) ? `
+        <!-- Direct Student Admission QR (Walk-In Self-Registration) Card -->
+        <div class="content-card dashboard-admission-qr-card" style="margin-bottom: 24px; background: linear-gradient(135deg, rgba(37,99,235,0.04), rgba(16,185,129,0.04)); border: 1px solid rgba(59,130,246,0.25); border-radius: 16px; overflow: hidden;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background: rgba(37,99,235,0.06); padding: 14px 20px; border-bottom: 1px solid rgba(59,130,246,0.15);">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="badge badge-success" style="font-size: 11px; padding: 2px 8px;">
+                  <i class="fa-solid fa-bolt"></i> Walk-In Self-Registration
+                </span>
+                <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-heading);">
+                  <i class="fa-solid fa-qrcode" style="color: var(--primary);"></i> Student Admission QR — Scan to Register Directly
+                </h3>
+              </div>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 3px 0 0;">
+                Students & parents scan this QR code on their phone to fill out their own admission inquiry. Academy & branch are auto-selected!
+              </p>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <button class="btn btn-primary btn-sm" onclick="app.printInquiryDeskStandee()" title="Print counter-top acrylic desk standee or A4 poster for reception">
+                <i class="fa-solid fa-print"></i> Print Counter Standee
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="app.showInquiryQrShareModal()" title="Open Fullscreen QR & Share Options">
+                <i class="fa-solid fa-up-right-and-down-left-from-center"></i> Fullscreen & Share
+              </button>
+            </div>
+          </div>
+
+          <div style="padding: 18px 20px;">
+            <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
+              <!-- Crisp Live QR Code -->
+              <div style="background: #ffffff; padding: 12px; border-radius: 14px; border: 2px solid #e2e8f0; box-shadow: 0 4px 16px rgba(0,0,0,0.08); text-align: center; flex-shrink: 0;">
+                <img id="dash-qr-image" src="${this.currentInquiryQrData.qrDataUrl}" alt="Admission QR Code" style="width: 160px; height: 160px; display: block; border-radius: 6px;">
+                <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 6px;">
+                  <i class="fa-solid fa-camera"></i> Point Phone Camera
+                </div>
+              </div>
+
+              <!-- Controls: Branch Selection & Direct Links -->
+              <div style="flex: 1; min-width: 280px;">
+                <div style="margin-bottom: 12px;">
+                  <label style="font-size: 12px; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 6px; margin-bottom: 5px;">
+                    <i class="fa-solid fa-building" style="color: var(--primary);"></i> Pre-Select Branch / Dojo for this QR (Optional):
+                  </label>
+                  <select id="dash-qr-branch-select" class="form-select" style="max-width: 380px; font-size: 13px; padding: 7px 10px;" onchange="app.updateDashboardAdmissionQr(this.value)">
+                    <option value="">-- All Branches (Student chooses Dojo on phone) --</option>
+                    ${(this.currentInquiryQrData.branches || []).map(b => `
+                      <option value="${b.id}" ${String(this.currentInquiryQrData.selectedBranchId || '') === String(b.id) ? 'selected' : ''}>
+                        ${this.escapeHtml(b.name)}${b.city ? ' (' + this.escapeHtml(b.city) + ')' : ''}
+                      </option>
+                    `).join('')}
+                  </select>
+                  <span style="font-size: 11px; color: var(--text-muted); display: block; margin-top: 4px;">
+                    When selected, the student's phone automatically locks to this dojo with matching batches!
+                  </span>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                  <label style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                    <i class="fa-solid fa-link"></i> Direct Self-Registration Link:
+                  </label>
+                  <div style="display: flex; gap: 8px; max-width: 480px;">
+                    <input type="text" id="dash-qr-url-input" class="form-input" value="${this.escapeHtml(this.currentInquiryQrData.activeUrl)}" readonly style="font-family: monospace; font-size: 12px; background: var(--bg-card); flex: 1;">
+                    <button class="btn btn-secondary btn-sm" onclick="app.copyDashQrUrl()" title="Copy Link to Clipboard">
+                      <i class="fa-regular fa-copy"></i> Copy
+                    </button>
+                    <a id="dash-qr-open-btn" href="${this.escapeHtml(this.currentInquiryQrData.activeUrl)}" target="_blank" class="btn btn-outline-primary btn-sm" title="Preview Student Form">
+                      <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                    </a>
+                  </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                  <a id="dash-qr-wa-btn" href="https://api.whatsapp.com/send?text=${encodeURIComponent('Join ' + (this.currentInquiryQrData.academy?.name || 'our academy') + '! Submit your student admission inquiry directly online here:\n' + this.currentInquiryQrData.activeUrl)}" target="_blank" class="btn btn-success btn-sm" style="text-decoration: none;">
+                    <i class="fa-brands fa-whatsapp"></i> Send Link on WhatsApp
+                  </a>
+                  <button class="btn btn-secondary btn-sm" onclick="app.downloadInquiryQrPng('${this.currentInquiryQrData.qrDataUrl}', '${this.escapeJsString(this.currentInquiryQrData.academy?.slug || 'academy')}')">
+                    <i class="fa-solid fa-download"></i> Download QR Image
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
 
       <!-- 2-Column Operational Grid: Main Focus (Left) vs. Shift Clock & Birthdays (Right) -->
       <div class="two-col-ops-grid">
@@ -27637,6 +27726,50 @@ const app = {
     } catch (err) {
       console.error('Error generating desk standee:', err);
       this.showToast('Error generating standee: ' + err.message, 'danger');
+    }
+  },
+
+  async updateDashboardAdmissionQr(branchId) {
+    try {
+      const query = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : '';
+      const res = await this.apiRequest(`/api/academy/inquiries/qr-info${query}`);
+      if (!res || !res.success) return;
+
+      this.currentInquiryQrData = res;
+
+      // Update image
+      const img = document.getElementById('dash-qr-image');
+      if (img) img.src = res.qrDataUrl;
+
+      // Update URL input
+      const input = document.getElementById('dash-qr-url-input');
+      if (input) input.value = res.activeUrl;
+
+      // Update Open button
+      const openBtn = document.getElementById('dash-qr-open-btn');
+      if (openBtn) openBtn.href = res.activeUrl;
+
+      // Update WhatsApp link
+      const waBtn = document.getElementById('dash-qr-wa-btn');
+      if (waBtn) {
+        const text = encodeURIComponent(`Join ${res.academy?.name || 'our academy'}! Submit your student admission inquiry directly online here:\n${res.activeUrl}`);
+        waBtn.href = `https://api.whatsapp.com/send?text=${text}`;
+      }
+    } catch (err) {
+      console.error('Failed to update dashboard QR:', err);
+    }
+  },
+
+  copyDashQrUrl() {
+    const input = document.getElementById('dash-qr-url-input');
+    if (input) {
+      input.select();
+      navigator.clipboard.writeText(input.value).then(() => {
+        this.showToast('Admission registration link copied to clipboard!', 'success');
+      }).catch(() => {
+        document.execCommand('copy');
+        this.showToast('Admission registration link copied!', 'success');
+      });
     }
   },
 

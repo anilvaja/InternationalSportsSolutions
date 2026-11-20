@@ -1,4 +1,5 @@
 import express from 'express';
+import os from 'os';
 import { config } from '../config/index.js';
 import { getCentralDb } from '../db/centralDb.js';
 import { resolveTenant } from '../middleware/tenantResolver.js';
@@ -9997,21 +9998,45 @@ academyRouter.get('/inquiries/qr-info', async (req, res) => {
     const host = req.get('host') || 'localhost:3005';
     const baseDomain = config.baseDomain || 'internationalsportssolutions.com';
 
-    // 1. Primary public inquiry URL (subdomain-based for production)
-    const prodUrl = `https://${academy.slug}.${baseDomain}/inquiry.html`;
-    
-    // 2. Direct slug URL (works with or without wildcard DNS)
-    const slugUrl = `${protocol}://${host}/inquiry.html?academy=${academy.slug}`;
+    const branchId = req.query.branch_id || req.query.branch || null;
+    const branchParam = branchId ? `&branch=${encodeURIComponent(branchId)}` : '';
 
-    // 3. Local testing URL
-    const localUrl = `http://${academy.slug}.localhost${config.port !== 80 ? ':' + config.port : ''}/inquiry.html`;
+    // Find local LAN IPv4 for mobile phone camera scanning on local Wi-Fi
+    let lanIp = 'localhost';
+    try {
+      const nets = os.networkInterfaces();
+      for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+          if (net.family === 'IPv4' && !net.internal) {
+            lanIp = net.address;
+            break;
+          }
+        }
+        if (lanIp !== 'localhost') break;
+      }
+    } catch (_) {}
+
+    const portSuffix = (config.port && config.port !== 80) ? `:${config.port}` : '';
+
+    // 1. Production domain direct slug URL (works 100% reliably everywhere in the world)
+    const prodUrl = `https://${baseDomain}/inquiry.html?academy=${academy.slug}${branchParam}`;
+    
+    // 2. Production subdomain URL
+    const subdomainUrl = `https://${academy.slug}.${baseDomain}/inquiry.html${branchId ? '?branch=' + encodeURIComponent(branchId) : ''}`;
+
+    // 3. Local Wi-Fi LAN URL (scannable by any mobile phone connected to the same Wi-Fi)
+    const lanUrl = `http://${lanIp}${portSuffix}/inquiry.html?academy=${academy.slug}${branchParam}`;
+
+    // 4. Localhost URL
+    const slugUrl = `${protocol}://${host}/inquiry.html?academy=${academy.slug}${branchParam}`;
 
     // Active URL based on current context
     let activeUrl = prodUrl;
-    if (host.includes('localhost') || host.includes('127.0.0.1')) {
-      activeUrl = localUrl;
-    } else if (host.includes(academy.slug)) {
-      activeUrl = `${protocol}://${host}/inquiry.html`;
+    if (host.includes(baseDomain)) {
+      activeUrl = prodUrl;
+    } else if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      // Use LAN IP so mobile phones scanning the QR on screen can connect!
+      activeUrl = lanIp !== 'localhost' ? lanUrl : slugUrl;
     } else {
       activeUrl = slugUrl;
     }
@@ -10047,10 +10072,12 @@ academyRouter.get('/inquiries/qr-info', async (req, res) => {
       academy,
       activeUrl,
       prodUrl,
-      localUrl,
+      subdomainUrl,
+      lanUrl,
       slugUrl,
       qrDataUrl,
       qrSvg,
+      selectedBranchId: branchId,
       branches,
       sports
     });
