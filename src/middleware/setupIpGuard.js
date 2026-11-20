@@ -22,6 +22,11 @@ export function getClientIp(req) {
     ip = ip.substring(7);
   }
 
+  // Strip port if appended to IPv4 (e.g. 49.36.72.72:51234)
+  if (typeof ip === 'string' && ip.includes(':') && !ip.includes('::') && ip.indexOf(':') === ip.lastIndexOf(':')) {
+    ip = ip.split(':')[0];
+  }
+
   // Normalize IPv6 loopback
   if (ip === '::1' || ip === 'localhost') {
     ip = '127.0.0.1';
@@ -41,11 +46,28 @@ export function isSetupIpAllowed(req) {
   const allowedIps = new Set([
     '49.36.72.72',
     '127.0.0.1',
+    '::1',
+    'localhost',
     ...(process.env.SETUP_ALLOWED_IPS ? process.env.SETUP_ALLOWED_IPS.split(',').map(s => s.trim()) : [])
   ]);
 
+  if (allowedIps.has(clientIp)) {
+    return { allowed: true, clientIp };
+  }
+
+  // Allow local RFC1918 private subnets for local development / testing
+  if (
+    typeof clientIp === 'string' && (
+      clientIp.startsWith('192.168.') ||
+      clientIp.startsWith('10.') ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(clientIp)
+    )
+  ) {
+    return { allowed: true, clientIp };
+  }
+
   return {
-    allowed: allowedIps.has(clientIp),
+    allowed: false,
     clientIp
   };
 }
