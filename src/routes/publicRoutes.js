@@ -466,6 +466,155 @@ publicRouter.get('/inquiry-qr', async (req, res) => {
   }
 });
 
+// Rate limiting map for public sales inquiries: ip -> [timestamps]
+const salesInquiryRateLimit = new Map();
+function checkSalesInquiryRateLimit(ip) {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15 minutes
+  const maxRequests = 5;
+  const timestamps = salesInquiryRateLimit.get(ip) || [];
+  const validTimestamps = timestamps.filter(t => now - t < windowMs);
+  if (validTimestamps.length >= maxRequests) {
+    return false;
+  }
+  validTimestamps.push(now);
+  salesInquiryRateLimit.set(ip, validTimestamps);
+  return true;
+}
+
+/**
+ * GET /api/public/platform-plans
+ * Publicly returns active platform subscription plans with their quota limits
+ */
+publicRouter.get('/platform-plans', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const plans = centralDb.prepare(`
+      SELECT id, name, slug, description, price, billing_interval, trial_days, is_default
+      FROM subscription_plans
+      WHERE status = 'active'
+      ORDER BY price ASC
+    `).all();
+
+    const planLimits = centralDb.prepare(`
+      SELECT plan_id, quota_key, limit_value, counting_policy
+      FROM subscription_plan_limits
+    `).all();
+
+    const plansWithLimits = plans.map(p => ({
+      ...p,
+      limits: planLimits.filter(l => l.plan_id === p.id)
+    }));
+
+    res.json({ success: true, plans: plansWithLimits });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/public/sales-inquiries
+ * Public lead capture for prospective sports academy owners & clubs
+ */
+publicRouter.post('/sales-inquiries', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+
+    // 1. Honeypot check (bot protection: hp_website field must remain empty)
+    if (req.body.hp_website || req.body.hp_company) {
+      // Silently return success to fool bots
+      return res.status(201).json({
+        success: true,
+        message: 'Thank you for requesting a demo! Our team will contact you shortly.'
+      });
+    }
+
+    // 2. In-memory Rate Limiting
+    if (!checkSalesInquiryRateLimit(ip)) {
+      return res.status(429).json({
+        success: false,
+        error: 'Too many requests. Please wait a few minutes before submitting again.'
+      });
+    }
+
+    // 3. Server-side validation of required fields
+    const {
+      academy_name,
+      contact_name,
+      email,
+      phone,
+      city,
+      approx_students,
+      approx_branches,
+      interested_plan,
+      message
+    } = req.body;
+
+    if (!academy_name || !String(academy_name).trim()) {
+      return res.status(400).json({ success: false, error: 'Academy / Business name is required' });
+    }
+    if (!contact_name || !String(contact_name).trim()) {
+      return res.status(400).json({ success: false, error: 'Contact person name is required' });
+    }
+    if (!email || !String(email).trim()) {
+      return res.status(400).json({ success: false, error: 'Email address is required' });
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(String(email).trim())) {
+      return res.status(400).json({ success: false, error: 'Please provide a valid email address' });
+    }
+    if (!phone || !String(phone).trim()) {
+      return res.status(400).json({ success: false, error: 'Contact phone / WhatsApp number is required' });
+    }
+    const cleanPhone = String(phone).replace(/\D/g, '');
+    if (cleanPhone.length < 8) {
+      return res.status(400).json({ success: false, error: 'Please provide a valid phone number (at least 8 digits)' });
+    }
+
+    // 4. Insert into central platform_sales_inquiries
+    const insertStmt = centralDb.prepare(`
+      INSERT INTO platform_sales_inquiries (
+        academy_name, contact_name, email, phone, city,
+        approx_students, approx_branches, interested_plan, message,
+        status, ip_address
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)
+    `);
+
+    const result = insertStmt.run(
+      String(academy_name).trim(),
+      String(contact_name).trim(),
+      String(email).trim().toLowerCase(),
+      String(phone).trim(),
+      city ? String(city).trim() : null,
+      approx_students ? String(approx_students).trim() : null,
+      approx_branches ? String(approx_branches).trim() : null,
+      interested_plan ? String(interested_plan).trim() : null,
+      message ? String(message).trim() : null,
+      ip
+    );
+
+    // 5. Audit log in central
+    try {
+      centralDb.prepare(`
+        INSERT INTO central_audit_logs (user_id, user_email, action, entity, details, ip_address)
+        VALUES (NULL, 'SALES_LEAD', 'CREATE_SALES_INQUIRY', 'platform_sales_inquiries', ?, ?)
+      `).run(
+        `Sales inquiry from '${contact_name}' for academy '${academy_name}' (${email}, ${phone})`,
+        ip
+      );
+    } catch (_) {}
+
+    res.status(201).json({
+      success: true,
+      message: 'Thank you for requesting a demo! Our platform team will contact you shortly.',
+      inquiryId: result.lastInsertRowid
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 /**
  * GET /api/public/setup
  * Returns setup status (whether platform has any super admin)

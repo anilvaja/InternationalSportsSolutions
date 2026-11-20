@@ -255,7 +255,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Setup WhatsApp Action Button
       const academyPhone = (result.academy.contact_phone || '').replace(/\D/g, '');
       const btnWa = document.getElementById('btn-whatsapp-academy');
-      
+
       const waText = encodeURIComponent(
         `Hello ${result.academy.name}! I have submitted an admission inquiry for ${result.inquiry.student_name} (Reference #${result.inquiry.reference_no}). Could you please share the batch schedule, trial timing, and enrollment details?`
       );

@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -59,6 +60,7 @@ app.use(authenticateToken);
 
 // Serve Static Assets with no-cache in development to ensure client always gets latest frontend
 app.use(express.static(path.join(__dirname, 'public'), {
+  index: false,
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.js') || filePath.endsWith('.html') || filePath.endsWith('.css')) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -86,6 +88,48 @@ app.get('/api/health', (req, res) => {
     uptime: process.uptime(),
     architecture: 'Database-per-Tenant SQLite (better-sqlite3)',
   });
+});
+
+// Root ("/") Route: Marketing homepage for guests, portal SPA for authenticated users
+app.get('/', (req, res) => {
+  // If explicitly requesting home or preview
+  if (req.query.home !== undefined || req.query.preview !== undefined) {
+    return res.sendFile(path.join(__dirname, 'public', 'home.html'));
+  }
+  // If explicitly requesting portal or login
+  if (req.query.portal !== undefined || req.query.login !== undefined) {
+    return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
+
+  let isAuthenticated = false;
+  const token = (req.cookies && req.cookies.token) ||
+    (req.headers['authorization'] && req.headers['authorization'].startsWith('Bearer ') && req.headers['authorization'].substring(7));
+
+  if (token) {
+    try {
+      jwt.verify(token, config.jwtSecret);
+      isAuthenticated = true;
+    } catch (_) {
+      isAuthenticated = false;
+    }
+  }
+
+  if (isAuthenticated) {
+    return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
+
+  // Marketing homepage for prospective academy owners
+  res.sendFile(path.join(__dirname, 'public', 'home.html'));
+});
+
+// Dedicated Public Marketing Homepage Route
+app.get(['/home', '/home.html'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'home.html'));
+});
+
+// Dedicated Portal & Login Routes (Serves the SPA Application Shell)
+app.get(['/login', '/login.html', '/portal', '/portal.html', '/index', '/index.html'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Dedicated Platform Setup Route (https://internationalsportssolutions.com/setup)

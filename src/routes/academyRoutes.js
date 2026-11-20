@@ -56,7 +56,7 @@ academyRouter.use((req, res, next) => {
           req.user.role = userRow.role;
         }
         if (userRow.custom_permissions) {
-          try { perms = JSON.parse(userRow.custom_permissions); } catch (e) {}
+          try { perms = JSON.parse(userRow.custom_permissions); } catch (e) { }
         }
       }
       const roleRow = req.tenantDb.prepare('SELECT permissions FROM academy_roles WHERE name = ?').get(req.user.role);
@@ -64,13 +64,13 @@ academyRouter.use((req, res, next) => {
         try {
           const rolePerms = JSON.parse(roleRow.permissions);
           perms = Array.from(new Set([...perms, ...rolePerms]));
-        } catch (e) {}
+        } catch (e) { }
       }
       if (req.user.isSuperAdmin || req.user.role === 'academy_admin') {
         perms = Array.from(new Set([...perms, 'all', ...ALL_ACADEMY_PERMISSIONS]));
       }
       req.user.permissions = perms;
-    } catch (e) {}
+    } catch (e) { }
   }
   next();
 });
@@ -608,7 +608,7 @@ function fetchStaffAvailability(db, todayStr, scheduledBatches = []) {
     const conflicts = [];
     for (const b of scheduledBatches) {
       const isCoachOnLeave = (b.coach_id && onLeaveApplicantIds.has(Number(b.coach_id))) ||
-                             (b.coach_name && onLeaveNames.has((b.coach_name || '').toLowerCase().trim()));
+        (b.coach_name && onLeaveNames.has((b.coach_name || '').toLowerCase().trim()));
       if (isCoachOnLeave) {
         conflicts.push({
           batch_id: b.id,
@@ -967,7 +967,7 @@ academyRouter.get('/dashboard', (req, res) => {
           WHERE batch_id IN (${batchIdsToday.map(() => '?').join(',')}) AND status = 'active'
         `).get(...batchIdsToday).c;
       }
-    } catch (_e) {}
+    } catch (_e) { }
 
     const recentAbsences = db.prepare(`
       SELECT 
@@ -1093,7 +1093,7 @@ academyRouter.get('/dashboard/today-batches', (req, res) => {
     const dateParam = req.query.date || null;
     const now = dateParam ? new Date(dateParam + 'T12:00:00') : new Date();
     const todayStr = dateParam || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    
+
     const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayNamesFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const curDayShort = dayNamesShort[now.getDay()];
@@ -1194,7 +1194,7 @@ academyRouter.get('/dashboard/today-batches', (req, res) => {
       }
 
       const isCoachOnLeave = (batch.coach_id && leaveCoachIds.has(Number(batch.coach_id))) ||
-                             (batch.coach_name && leaveNames.has((batch.coach_name || '').toLowerCase().trim()));
+        (batch.coach_name && leaveNames.has((batch.coach_name || '').toLowerCase().trim()));
 
       return {
         ...batch,
@@ -1477,7 +1477,7 @@ academyRouter.post('/students', requirePermission(['create_students', 'manage_st
           VALUES (?, ?, 'student')
           ON CONFLICT(email, academy_id) DO UPDATE SET role = 'student'
         `).run(email.trim().toLowerCase(), req.academy.id);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // Optional initial batch enrollment (enforcing single active batch rule)
@@ -1613,7 +1613,7 @@ academyRouter.post('/students/:id/transfer-batch', (req, res) => {
         try {
           const u = db.prepare('SELECT id FROM users WHERE id = ?').get(Number(req.user.userId));
           if (u) actorUserId = u.id;
-        } catch (_) {}
+        } catch (_) { }
       }
 
       db.prepare(`
@@ -1943,7 +1943,7 @@ academyRouter.post('/students/import', requirePermission(['import_students', 'ma
               INSERT INTO student_batch_enrollments (student_id, batch_id, start_date, status, assigned_by)
               VALUES (?, ?, DATE('now'), 'active', ?)
             `).run(newId, batchId, actorUserId);
-          } catch (e) {}
+          } catch (e) { }
         }
 
         imported.push({ id: newId, student_code: studentCode, name: `${item.first_name} ${item.last_name}` });
@@ -2340,7 +2340,7 @@ academyRouter.put('/students/:id', (req, res) => {
           VALUES (?, ?, 'student')
           ON CONFLICT(email, academy_id) DO UPDATE SET role = 'student'
         `).run(updatedStudent.email.trim().toLowerCase(), req.academy.id);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     res.json({ success: true, message: 'Student updated successfully' });
@@ -2415,7 +2415,7 @@ academyRouter.post('/students/:id/photo', requirePermission(['manage_students', 
           `Updated photo for student ${student.first_name} ${student.last_name} (ID: ${id})`,
           req.ip
         );
-      } catch (_) {}
+      } catch (_) { }
 
       res.json({
         success: true,
@@ -2490,7 +2490,7 @@ academyRouter.post('/students/:id/set-password', (req, res) => {
         INSERT INTO audit_logs (user_id, user_name, user_role, action, entity, details, ip_address)
         VALUES (?, ?, ?, 'SET_PASSWORD', 'students', ?, ?)
       `).run(req.user.userId, req.user.name, req.user.role, `Set portal password for student #${id} (${student.first_name} ${student.last_name})`, req.ip);
-    } catch (e) {}
+    } catch (e) { }
 
     res.json({
       success: true,
@@ -2593,7 +2593,7 @@ academyRouter.get('/students/:id', (req, res) => {
         WHERE sf.student_id = ?
         ORDER BY sf.id DESC LIMIT 20
       `).all(id);
-    } catch (e) {}
+    } catch (e) { }
 
     let payments = [];
     try {
@@ -2604,7 +2604,7 @@ academyRouter.get('/students/:id', (req, res) => {
         WHERE sf.student_id = ?
         ORDER BY p.id DESC LIMIT 20
       `).all(id);
-    } catch (e) {}
+    } catch (e) { }
 
     // 3. Learning History (Which date, what learned, who trained, batch schedule timing & remarks)
     let learningHistory = [];
@@ -2655,7 +2655,7 @@ academyRouter.get('/students/:id', (req, res) => {
         ORDER BY sent_at DESC, id DESC
         LIMIT 50
       `).all(id);
-    } catch (e) {}
+    } catch (e) { }
 
     // 5. Batch Enrollment & Transfer History
     let enrollments = [];
@@ -2668,7 +2668,7 @@ academyRouter.get('/students/:id', (req, res) => {
         WHERE sbe.student_id = ?
         ORDER BY sbe.id DESC
       `).all(id);
-    } catch (e) {}
+    } catch (e) { }
 
     // 6. Events & Tournament Participation
     let events = [];
@@ -2680,7 +2680,7 @@ academyRouter.get('/students/:id', (req, res) => {
         WHERE ep.student_id = ?
         ORDER BY e.event_date DESC LIMIT 20
       `).all(id);
-    } catch (e) {}
+    } catch (e) { }
 
     res.json({
       success: true,
@@ -2899,8 +2899,8 @@ academyRouter.post('/coaches', (req, res) => {
     }
 
     // Auto-generate email if not provided for seamless onboarding
-    const userEmail = email && email.trim() 
-      ? email.trim() 
+    const userEmail = email && email.trim()
+      ? email.trim()
       : `${name.trim().toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@academy.internal`;
 
     const userRole = role || 'coach';
@@ -3005,12 +3005,12 @@ academyRouter.post('/users/:id/salary-revision', requirePermission('manage_staff
     const { compensation_mode, new_amount, effective_from, reason } = req.body;
     const result = UserService.createSalaryRevision(
       db, req.academy.id, Number(req.params.id), {
-        compensation_mode,
-        new_amount: Number(new_amount),
-        effective_from,
-        reason,
-        created_by: req.user?.userId,
-      }
+      compensation_mode,
+      new_amount: Number(new_amount),
+      effective_from,
+      reason,
+      created_by: req.user?.userId,
+    }
     );
     res.json({ success: true, ...result });
   } catch (err) {
@@ -3160,7 +3160,7 @@ academyRouter.put('/coaches/:id', (req, res) => {
     if (current.user_id && updatedJoiningDate) {
       try {
         db.prepare('UPDATE employment_records SET joining_date = ? WHERE user_id = ?').run(updatedJoiningDate, current.user_id);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     res.json({ success: true, message: 'Coach updated successfully' });
@@ -4394,7 +4394,7 @@ academyRouter.get('/fees/discount-presets', (req, res) => {
       if (!cols.some(c => c.name === 'plan_label')) {
         db.prepare("ALTER TABLE fee_discount_presets ADD COLUMN plan_label TEXT").run();
       }
-    } catch (e) {}
+    } catch (e) { }
     const presets = db.prepare('SELECT * FROM fee_discount_presets ORDER BY months ASC').all();
     res.json({ success: true, presets });
   } catch (err) {
@@ -4421,7 +4421,7 @@ academyRouter.put('/fees/discount-presets', (req, res) => {
       if (!cols.some(c => c.name === 'plan_label')) {
         db.prepare("ALTER TABLE fee_discount_presets ADD COLUMN plan_label TEXT").run();
       }
-    } catch (e) {}
+    } catch (e) { }
 
     const submittedMonths = [];
 
@@ -6687,7 +6687,7 @@ academyRouter.get('/payroll/statements/:id/payslip', (req, res) => {
     if (statement.calculation_snapshot) {
       try {
         snapshot = JSON.parse(statement.calculation_snapshot);
-      } catch (_) {}
+      } catch (_) { }
     }
 
     res.json({
@@ -7920,7 +7920,7 @@ academyRouter.get('/settings/profile', (req, res) => {
       for (const r of rows) {
         tenantSettings[r.key] = r.value;
       }
-    } catch (e) {}
+    } catch (e) { }
 
     const logo_url = tenantSettings.logo_url || (academy && academy.logo_url) || null;
     const profileData = {
@@ -8278,7 +8278,7 @@ academyRouter.put('/settings/policy', (req, res) => {
           JSON.stringify({ previous: previousPolicy, action: 'RESET_TO_DEFAULTS' }),
           req.ip || '::1'
         );
-      } catch (_) {}
+      } catch (_) { }
 
       return res.json({ success: true, message: 'Policy settings reset to system recommended defaults', policy: resetPolicy });
     }
@@ -8473,7 +8473,7 @@ academyRouter.put('/settings/policy', (req, res) => {
         allow_wrong_batch_checkin !== undefined ? (allow_wrong_batch_checkin ? 1 : 0) : null,
         req.academy.id
       );
-    } catch (_) {}
+    } catch (_) { }
 
     const updated = OvertimeService.getAcademyPolicy(db, req.academy.id);
 
@@ -8490,7 +8490,7 @@ academyRouter.put('/settings/policy', (req, res) => {
         JSON.stringify({ previous: previousPolicy, updated }),
         req.ip || '::1'
       );
-    } catch (_) {}
+    } catch (_) { }
 
     res.json({ success: true, message: 'Academy policy settings updated successfully', policy: updated });
   } catch (err) {
@@ -9180,7 +9180,7 @@ academyRouter.put('/roles/:id', requirePermission('manage_roles'), (req, res) =>
     });
 
     let prevPerms = [];
-    try { prevPerms = JSON.parse(existing.permissions || '[]'); } catch (_) {}
+    try { prevPerms = JSON.parse(existing.permissions || '[]'); } catch (_) { }
 
     db.prepare(`
       UPDATE academy_roles 
@@ -9448,7 +9448,7 @@ academyRouter.post('/users/:id/reset-password', (req, res) => {
     let userPermissions = [];
     try {
       userPermissions = Array.isArray(req.user.permissions) ? req.user.permissions : [];
-    } catch (e) {}
+    } catch (e) { }
 
     const hasPermission = isSuperAdmin || isAcademyAdmin || userPermissions.includes('all') || userPermissions.includes('manage_users');
     if (!hasPermission) {
@@ -9620,9 +9620,9 @@ academyRouter.post('/punches/in', (req, res) => {
     `).get(userId);
 
     if (existingActive) {
-      return res.status(400).json({ 
-        success: false, 
-        error: `Already punched in since ${existingActive.punch_in_time}. Please punch out first.` 
+      return res.status(400).json({
+        success: false,
+        error: `Already punched in since ${existingActive.punch_in_time}. Please punch out first.`
       });
     }
 
@@ -9699,7 +9699,7 @@ academyRouter.post('/punches/out', (req, res) => {
       overtimeMinutes = Math.max(0, totalOvertimeNow - priorOvertime);
     }
 
-    const appendNotes = req.body.notes 
+    const appendNotes = req.body.notes
       ? (activePunch.notes ? `${activePunch.notes} | ${req.body.notes}` : req.body.notes)
       : activePunch.notes;
 
@@ -10014,13 +10014,13 @@ academyRouter.get('/inquiries/qr-info', async (req, res) => {
         }
         if (lanIp !== 'localhost') break;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     const portSuffix = (config.port && config.port !== 80) ? `:${config.port}` : '';
 
     // 1. Production domain direct slug URL (works 100% reliably everywhere in the world)
     const prodUrl = `https://${baseDomain}/inquiry.html?academy=${academy.slug}${branchParam}`;
-    
+
     // 2. Production subdomain URL
     const subdomainUrl = `https://${academy.slug}.${baseDomain}/inquiry.html${branchId ? '?branch=' + encodeURIComponent(branchId) : ''}`;
 
@@ -11105,7 +11105,7 @@ academyRouter.get('/payroll/salary-breakdown/:userId', (req, res) => {
     if (statement.calculation_snapshot) {
       try {
         snapshot = JSON.parse(statement.calculation_snapshot);
-      } catch (_) {}
+      } catch (_) { }
     }
 
     res.json({

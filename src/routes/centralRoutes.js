@@ -1872,4 +1872,97 @@ centralRouter.post('/seed-pratik-demo', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/central/sales-inquiries
+ * Super-admin listing of prospective academy owner inquiries
+ */
+centralRouter.get('/sales-inquiries', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const { status, search, page = 1, limit = 20 } = req.query;
+
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+
+    if (status && status !== 'all') {
+      whereClause += ' AND status = ?';
+      params.push(status);
+    }
+
+    if (search && search.trim()) {
+      whereClause += ' AND (academy_name LIKE ? OR contact_name LIKE ? OR email LIKE ? OR phone LIKE ? OR city LIKE ?)';
+      const s = `%${search.trim()}%`;
+      params.push(s, s, s, s, s);
+    }
+
+    const countRow = centralDb.prepare(`SELECT COUNT(*) as count FROM platform_sales_inquiries ${whereClause}`).get(...params);
+    const total = countRow ? countRow.count : 0;
+
+    const parsedLimit = Math.max(1, Math.min(100, Number(limit) || 20));
+    const parsedPage = Math.max(1, Number(page) || 1);
+    const offset = (parsedPage - 1) * parsedLimit;
+
+    const inquiries = centralDb.prepare(`
+      SELECT * FROM platform_sales_inquiries
+      ${whereClause}
+      ORDER BY id DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, parsedLimit, offset);
+
+    res.json({
+      success: true,
+      inquiries,
+      total,
+      page: parsedPage,
+      limit: parsedLimit,
+      totalPages: Math.ceil(total / parsedLimit) || 1
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PUT /api/central/sales-inquiries/:id/status
+ * Super-admin update status of a sales inquiry
+ */
+centralRouter.put('/sales-inquiries/:id/status', (req, res) => {
+  try {
+    const centralDb = getCentralDb();
+    const id = Number(req.params.id);
+    const { status, notes } = req.body;
+
+    const allowed = ['new', 'contacted', 'demo_scheduled', 'converted', 'closed'];
+    if (status && !allowed.includes(status)) {
+      return res.status(400).json({ success: false, error: `Invalid status. Allowed: ${allowed.join(', ')}` });
+    }
+
+    const current = centralDb.prepare('SELECT id FROM platform_sales_inquiries WHERE id = ?').get(id);
+    if (!current) {
+      return res.status(404).json({ success: false, error: 'Sales inquiry not found' });
+    }
+
+    const updates = [];
+    const params = [];
+    if (status) {
+      updates.push('status = ?');
+      params.push(status);
+    }
+    if (notes !== undefined) {
+      updates.push('notes = ?');
+      params.push(notes);
+    }
+    updates.push("updated_at = datetime('now')");
+
+    if (updates.length > 1) {
+      params.push(id);
+      centralDb.prepare(`UPDATE platform_sales_inquiries SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    }
+
+    res.json({ success: true, message: 'Sales inquiry updated successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
