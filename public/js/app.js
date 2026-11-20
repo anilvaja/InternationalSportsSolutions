@@ -1177,6 +1177,16 @@ const app = {
     this.renderSidebar();
     this.renderSidebarBrand();
 
+    // Eagerly load unread platform sales inquiries count for Super Admin badge
+    if (this.user.isSuperAdmin) {
+      this.apiRequest('/api/central/sales-inquiries?limit=1').then(res => {
+        if (res && res.success) {
+          this.newInquiriesCount = (res.counts && res.counts.new) || 0;
+          this.renderSidebar();
+        }
+      }).catch(() => {});
+    }
+
     const urlTab = this.getTabForPath(window.location.pathname);
     let targetTab = (urlTab && this.isTabAllowed(urlTab)) ? urlTab : this.getDefaultTab();
     if (this.user.isSuperAdmin && (!this.selectedAcademyId || (this.accessibleAcademies && this.accessibleAcademies.length === 0))) {
@@ -2118,6 +2128,10 @@ const app = {
             <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Each academy is provisioned with a physically isolated SQLite database</p>
           </div>
           <div class="card-actions">
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('central-inquiries')">
+              <i class="fa-solid fa-envelope-open-text" style="color: var(--primary);"></i> Demo Inquiries
+              ${(this.newInquiriesCount && this.newInquiriesCount > 0) ? `<span class="badge badge-danger" style="margin-left: 4px; padding: 1px 6px;">${this.newInquiriesCount}</span>` : ''}
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="app.exportCentralAcademiesExcel()">
               <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Academies
             </button>
@@ -2129,6 +2143,18 @@ const app = {
             </button>
           </div>
         </div>
+
+        ${(this.newInquiriesCount && this.newInquiriesCount > 0) ? `
+          <div style="background: rgba(37,99,235,0.06); border: 1px solid rgba(37,99,235,0.25); border-radius: 10px; padding: 12px 16px; margin: 0 20px 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="badge badge-danger" style="font-size: 11px;"><i class="fa-solid fa-bell"></i> ${this.newInquiriesCount} New Lead${this.newInquiriesCount > 1 ? 's' : ''}</span>
+              <span style="font-size: 13px; font-weight: 600;">Prospective academy owners have submitted demo requests from the marketing homepage.</span>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="app.navigate('central-inquiries')">
+              <i class="fa-solid fa-eye"></i> View Inquiries & Leads
+            </button>
+          </div>
+        ` : ''}
 
         <div class="table-responsive">
           <table class="custom-table">
