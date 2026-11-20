@@ -8,6 +8,7 @@ import { getTenantDbById, closeAllTenantDbs, provisionAcademyDb } from '../db/co
 import { extractSubdomain, extractHost } from '../middleware/tenantResolver.js';
 import { ALL_ACADEMY_PERMISSIONS, DEFAULT_ACADEMY_ROLES } from '../config/permissions.js';
 import { InquiryService } from '../services/inquiryService.js';
+import { requireSetupIpForApi } from '../middleware/setupIpGuard.js';
 import QRCode from 'qrcode';
 
 export const publicRouter = express.Router();
@@ -627,7 +628,7 @@ publicRouter.post('/sales-inquiries', (req, res) => {
  * 4. Seeds configuration, system settings, subscription plans, central permissions, and academy role templates.
  * 5. Provisions ONLY 1 default academy: "Pratik Karate Academy" (bare academy, no branches, batches, students, coaches, or demo data).
  */
-publicRouter.get('/setup', (req, res) => {
+publicRouter.get('/setup', requireSetupIpForApi, (req, res) => {
   try {
     const centralDb = getCentralDb();
     const existingSuperAdmin = centralDb.prepare('SELECT email FROM super_admins LIMIT 1').get();
@@ -655,7 +656,7 @@ publicRouter.get('/setup', (req, res) => {
   }
 });
 
-publicRouter.post('/setup', (req, res) => {
+publicRouter.post('/setup', requireSetupIpForApi, (req, res) => {
   const steps = [];
   try {
     const { confirm, admin_name, admin_email, admin_password } = req.body || {};

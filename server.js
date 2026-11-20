@@ -16,6 +16,7 @@ import { studentRouter } from './src/routes/studentRoutes.js';
 import { publicRouter } from './src/routes/publicRoutes.js';
 import { staffRouter } from './src/routes/staffRoutes.js';
 import { runSeed } from './src/db/seed.js';
+import { requireSetupIpForHtml } from './src/middleware/setupIpGuard.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -132,8 +133,8 @@ app.get(['/login', '/login.html', '/portal', '/portal.html', '/index', '/index.h
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Dedicated Platform Setup Route (https://internationalsportssolutions.com/setup)
-app.get(['/setup', '/setup.html'], (req, res) => {
+// Dedicated Platform Setup & Reset Routes (Authorized Administrative IPs Only: 49.36.72.72 & Localhost)
+app.get(['/setup', '/setup.html', '/reset', '/reset.html', '/resetup', '/resetup.html'], requireSetupIpForHtml, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'setup.html'));
 });
 
