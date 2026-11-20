@@ -1376,6 +1376,7 @@ const app = {
   routes: {
     // Central SaaS Admin
     'central-academies': '/admin/academies',
+    'central-inquiries': '/admin/inquiries',
     'central-plans': '/admin/plans',
     'central-stats': '/admin/analytics',
     'central-audit': '/admin/audit',
@@ -1417,6 +1418,7 @@ const app = {
 
   tabTitles: {
     'central-academies': 'Academies & Databases',
+    'central-inquiries': 'Prospective Academy Inquiries & Demo Leads',
     'central-plans': 'Subscription Plans & Quota Management',
     'central-stats': 'Platform Metrics',
     'central-audit': 'Central Audit Trail',
@@ -1486,6 +1488,8 @@ const app = {
     const aliases = {
       '/central': 'central-academies',
       '/central/academies': 'central-academies',
+      '/central/inquiries': 'central-inquiries',
+      '/central/leads': 'central-inquiries',
       '/central/plans': 'central-plans',
       '/central/stats': 'central-stats',
       '/central/analytics': 'central-stats',
@@ -1493,6 +1497,8 @@ const app = {
       '/central/db-viewer': 'central-db-viewer',
       '/admin': 'central-academies',
       '/admin/academies': 'central-academies',
+      '/admin/inquiries': 'central-inquiries',
+      '/admin/leads': 'central-inquiries',
       '/admin/plans': 'central-plans',
       '/admin/dashboard': 'central-academies',
       '/admin/stats': 'central-stats',
@@ -1707,6 +1713,10 @@ const app = {
         <div class="nav-section-title">Central SaaS Admin</div>
         <a href="${this.getPathForTab('central-academies')}" class="nav-item ${this.currentTab === 'central-academies' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-academies')">
           <i class="fa-solid fa-server"></i> Academies & Databases
+        </a>
+        <a href="${this.getPathForTab('central-inquiries')}" class="nav-item ${this.currentTab === 'central-inquiries' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-inquiries')">
+          <i class="fa-solid fa-envelope-open-text"></i> Demo Leads & Inquiries
+          ${(this.newInquiriesCount && this.newInquiriesCount > 0) ? `<span class="badge badge-danger" style="margin-left: auto; font-size: 10px; padding: 2px 6px;">${this.newInquiriesCount}</span>` : ''}
         </a>
         <a href="${this.getPathForTab('central-plans')}" class="nav-item ${this.currentTab === 'central-plans' ? 'active' : ''}" onclick="event.preventDefault(); app.navigate('central-plans')">
           <i class="fa-solid fa-layer-group"></i> Subscription Plans & Limits
@@ -1977,6 +1987,9 @@ const app = {
     switch (tab) {
       case 'central-academies':
         this.renderCentralAcademies();
+        break;
+      case 'central-inquiries':
+        this.renderCentralInquiries();
         break;
       case 'central-plans':
         this.renderCentralPlans();
@@ -3508,6 +3521,311 @@ const app = {
         </div>
       </div>
     `;
+  },
+
+  // ==========================================
+  // SUPER ADMIN DEMO INQUIRIES & LEADS TRIAGE
+  // ==========================================
+  centralInquiriesState: {
+    status: 'all',
+    search: '',
+    page: 1,
+    limit: 20
+  },
+
+  async renderCentralInquiries(statusFilter, searchQuery, page) {
+    if (statusFilter !== undefined) this.centralInquiriesState.status = statusFilter;
+    if (searchQuery !== undefined) this.centralInquiriesState.search = searchQuery;
+    if (page !== undefined) this.centralInquiriesState.page = page;
+
+    const { status, search, page: pageNum, limit } = this.centralInquiriesState;
+    const params = new URLSearchParams();
+    if (status && status !== 'all') params.append('status', status);
+    if (search) params.append('search', search);
+    params.append('page', pageNum);
+    params.append('limit', limit);
+
+    const content = document.getElementById('page-content');
+    content.innerHTML = '<div style="padding: 40px; text-align: center;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+
+    try {
+      const data = await this.apiRequest(`/api/central/sales-inquiries?${params.toString()}`);
+      if (!data || !data.success) {
+        content.innerHTML = `<div class="toast danger">${(data && data.error) || 'Failed to load inquiries'}</div>`;
+        return;
+      }
+
+      const inquiries = data.inquiries || [];
+      const counts = data.counts || { all: data.total || 0, new: 0, contacted: 0, demo_scheduled: 0, converted: 0, closed: 0 };
+      const pagination = { total: data.total ?? (data.pagination?.total || 0), page: data.page || 1, totalPages: data.totalPages || 1 };
+      this.newInquiriesCount = counts.new || 0;
+      this.renderSidebar();
+
+      const getStatusBadge = (st) => {
+        switch (st) {
+          case 'new': return '<span class="badge badge-danger"><i class="fa-solid fa-bell"></i> New Lead</span>';
+          case 'contacted': return '<span class="badge badge-warning"><i class="fa-solid fa-phone"></i> Contacted</span>';
+          case 'demo_scheduled': return '<span class="badge badge-info"><i class="fa-solid fa-calendar-check"></i> Demo Scheduled</span>';
+          case 'converted': return '<span class="badge badge-success"><i class="fa-solid fa-circle-check"></i> Converted</span>';
+          case 'closed': return '<span class="badge" style="background: #94a3b8; color: #fff;"><i class="fa-solid fa-box-archive"></i> Closed</span>';
+          default: return `<span class="badge badge-secondary">${st}</span>`;
+        }
+      };
+
+      content.innerHTML = `
+        <div class="content-card">
+          <div class="card-header" style="flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between;">
+            <div>
+              <h2 class="card-title" style="display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-envelope-open-text" style="color: var(--primary);"></i> Prospective Academy Inquiries
+                <span class="badge badge-primary" style="font-size: 11px;">${counts.all || 0} Total</span>
+                ${counts.new > 0 ? `<span class="badge badge-danger" style="font-size: 11px;">${counts.new} New</span>` : ''}
+              </h2>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Prospective academy owners requesting a demo or expressing interest from the public marketing homepage.
+              </p>
+            </div>
+            <div class="card-actions" style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" onclick="app.renderCentralInquiries()">
+                <i class="fa-solid fa-arrows-rotate"></i> Refresh
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Status Tabs -->
+          <div style="display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px; border-bottom: 1px solid var(--border);">
+            ${[
+              { id: 'all', label: 'All Inquiries', count: counts.all, icon: 'fa-layer-group' },
+              { id: 'new', label: 'New', count: counts.new, icon: 'fa-bell', isNew: true },
+              { id: 'contacted', label: 'Contacted', count: counts.contacted, icon: 'fa-phone' },
+              { id: 'demo_scheduled', label: 'Demo Scheduled', count: counts.demo_scheduled, icon: 'fa-calendar-check' },
+              { id: 'converted', label: 'Converted', count: counts.converted, icon: 'fa-circle-check' },
+              { id: 'closed', label: 'Closed', count: counts.closed, icon: 'fa-box-archive' }
+            ].map(tabItem => `
+              <button class="btn btn-sm ${status === tabItem.id ? 'btn-primary' : 'btn-secondary'}" 
+                style="display: flex; align-items: center; gap: 6px; white-space: nowrap;"
+                onclick="app.renderCentralInquiries('${tabItem.id}', undefined, 1)">
+                <i class="fa-solid ${tabItem.icon}"></i> ${tabItem.label}
+                <span class="badge ${tabItem.isNew && tabItem.count > 0 ? 'badge-danger' : 'badge-secondary'}" style="font-size: 10px; padding: 1px 6px;">
+                  ${tabItem.count || 0}
+                </span>
+              </button>
+            `).join('')}
+          </div>
+
+          <!-- Search & Filter Bar -->
+          <div style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 260px; position: relative;">
+              <input type="text" id="sales-inquiry-search" class="form-control" 
+                placeholder="Search by academy, owner, email, phone, city..." 
+                value="${search ? search.replace(/"/g, '&quot;') : ''}" 
+                onkeydown="if(event.key==='Enter') app.renderCentralInquiries(undefined, this.value, 1)">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="app.renderCentralInquiries(undefined, document.getElementById('sales-inquiry-search').value, 1)">
+              <i class="fa-solid fa-magnifying-glass"></i> Search
+            </button>
+            ${search ? `
+              <button class="btn btn-secondary btn-sm" onclick="app.renderCentralInquiries(undefined, '', 1)">
+                <i class="fa-solid fa-xmark"></i> Clear
+              </button>
+            ` : ''}
+          </div>
+
+          <!-- Inquiries Table -->
+          <div class="table-responsive">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Academy / Business</th>
+                  <th>Contact Person</th>
+                  <th>Scope & Plan</th>
+                  <th>Message / Notes</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${inquiries.length === 0 ? `
+                  <tr>
+                    <td colspan="7" style="text-align: center; padding: 48px 16px; color: var(--text-muted);">
+                      <i class="fa-solid fa-inbox fa-3x" style="opacity: 0.3; margin-bottom: 12px; display: block;"></i>
+                      <strong>No inquiries found</strong>
+                      <p style="font-size: 12px; margin: 6px 0 0;">${search ? 'No inquiries matching your search.' : 'Prospective academy inquiries from the homepage demo form will appear here.'}</p>
+                    </td>
+                  </tr>
+                ` : inquiries.map(inq => {
+                  const dateStr = inq.created_at ? new Date(inq.created_at).toLocaleString('en-IN', {
+                    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                  }) : '-';
+                  return `
+                    <tr>
+                      <td style="white-space: nowrap; font-size: 12px; color: var(--text-muted);">
+                        ${dateStr}
+                      </td>
+                      <td>
+                        <strong style="color: var(--text-main); font-size: 14px;">${inq.academy_name}</strong>
+                        ${inq.city ? `<div style="font-size: 12px; color: var(--text-muted);"><i class="fa-solid fa-location-dot"></i> ${inq.city}</div>` : ''}
+                      </td>
+                      <td>
+                        <div style="font-weight: 600;">${inq.contact_name}</div>
+                        <div style="font-size: 12px;">
+                          <a href="mailto:${inq.email}" style="color: var(--primary); text-decoration: none;">
+                            <i class="fa-solid fa-envelope"></i> ${inq.email}
+                          </a>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-muted);">
+                          <a href="tel:${inq.phone}" style="color: inherit; text-decoration: none;">
+                            <i class="fa-solid fa-phone"></i> ${inq.phone}
+                          </a>
+                          <a href="https://wa.me/${inq.phone.replace(/[^0-9]/g, '')}" target="_blank" style="color: #10b981; margin-left: 6px;" title="WhatsApp">
+                            <i class="fa-brands fa-whatsapp"></i>
+                          </a>
+                        </div>
+                      </td>
+                      <td>
+                        <div style="font-size: 12px;">
+                          <strong>${inq.approx_students || '—'}</strong> students
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-muted);">
+                          <strong>${inq.approx_branches || '—'}</strong> branches
+                        </div>
+                        ${inq.interested_plan ? `
+                          <div style="margin-top: 4px;">
+                            <span class="badge badge-info" style="font-size: 11px;">Plan: ${inq.interested_plan}</span>
+                          </div>
+                        ` : ''}
+                      </td>
+                      <td style="max-width: 260px;">
+                        ${inq.message ? `
+                          <div style="font-size: 12px; color: var(--text-main); max-height: 48px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;" title="${inq.message.replace(/"/g, '&quot;')}">
+                            "${inq.message}"
+                          </div>
+                        ` : '<span style="color: var(--text-muted); font-size: 12px;">No note</span>'}
+                        ${inq.notes ? `
+                          <div style="font-size: 11px; color: var(--primary); margin-top: 4px;">
+                            <i class="fa-solid fa-comment-dots"></i> ${inq.notes}
+                          </div>
+                        ` : ''}
+                      </td>
+                      <td>
+                        ${getStatusBadge(inq.status)}
+                      </td>
+                      <td style="text-align: right; white-space: nowrap;">
+                        <button class="btn btn-secondary btn-sm" onclick='app.openTriageInquiryModal(${JSON.stringify(inq)})'>
+                          <i class="fa-solid fa-sliders"></i> Triage
+                        </button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          ${pagination.totalPages > 1 ? `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);">
+              <span style="font-size: 12px; color: var(--text-muted);">
+                Showing page ${pagination.page} of ${pagination.totalPages} (${pagination.total} total inquiries)
+              </span>
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-secondary btn-sm" ${pagination.page <= 1 ? 'disabled' : ''} onclick="app.renderCentralInquiries(undefined, undefined, ${pagination.page - 1})">
+                  Previous
+                </button>
+                <button class="btn btn-secondary btn-sm" ${pagination.page >= pagination.totalPages ? 'disabled' : ''} onclick="app.renderCentralInquiries(undefined, undefined, ${pagination.page + 1})">
+                  Next
+                </button>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    } catch (err) {
+      content.innerHTML = `<div class="toast danger">Error loading inquiries: ${err.message}</div>`;
+    }
+  },
+
+  openTriageInquiryModal(inquiry) {
+    this.openModal(
+      `<i class="fa-solid fa-sliders" style="color: var(--primary);"></i> Triage Inquiry #${inquiry.id}: ${inquiry.academy_name}`,
+      `
+        <div>
+          <div style="background: rgba(37, 99, 235, 0.05); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+            <div style="font-weight: 700; font-size: 15px; margin-bottom: 4px;">${inquiry.academy_name} ${inquiry.city ? `(${inquiry.city})` : ''}</div>
+            <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+              Contact: <strong>${inquiry.contact_name}</strong> • 
+              <a href="mailto:${inquiry.email}">${inquiry.email}</a> • 
+              <a href="tel:${inquiry.phone}">${inquiry.phone}</a>
+            </div>
+            <div style="display: flex; gap: 14px; font-size: 12px; flex-wrap: wrap;">
+              <span><strong>Students:</strong> ${inquiry.approx_students || 'N/A'}</span>
+              <span><strong>Branches:</strong> ${inquiry.approx_branches || 'N/A'}</span>
+              <span><strong>Plan:</strong> ${inquiry.interested_plan || 'N/A'}</span>
+            </div>
+            ${inquiry.message ? `
+              <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.06); font-size: 13px;">
+                <em>"${inquiry.message}"</em>
+              </div>
+            ` : ''}
+          </div>
+
+          <form id="triage-inquiry-form" onsubmit="event.preventDefault(); app.saveInquiryTriage(${inquiry.id});">
+            <div class="form-group" style="margin-bottom: 14px;">
+              <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Lead Status</label>
+              <select id="triage-status" class="form-control" style="width: 100%;">
+                <option value="new" ${inquiry.status === 'new' ? 'selected' : ''}>New (Not Contacted)</option>
+                <option value="contacted" ${inquiry.status === 'contacted' ? 'selected' : ''}>Contacted</option>
+                <option value="demo_scheduled" ${inquiry.status === 'demo_scheduled' ? 'selected' : ''}>Demo Scheduled</option>
+                <option value="converted" ${inquiry.status === 'converted' ? 'selected' : ''}>Converted (Ready to Onboard)</option>
+                <option value="closed" ${inquiry.status === 'closed' ? 'selected' : ''}>Closed (Not Interested / Ineligible)</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 20px;">
+              <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Super Admin Notes / Next Action</label>
+              <textarea id="triage-notes" class="form-control" rows="3" style="width: 100%;" placeholder="e.g. Called on 20th Nov, demo scheduled for Monday 11am on Google Meet...">${inquiry.notes ? inquiry.notes.replace(/</g, '&lt;') : ''}</textarea>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                ${(inquiry.status === 'converted' || inquiry.status === 'demo_scheduled') ? `
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal(); SetupWizardController.open();">
+                    <i class="fa-solid fa-plus-circle"></i> Onboard via Wizard
+                  </button>
+                ` : ''}
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Status</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      `
+    );
+  },
+
+  async saveInquiryTriage(id) {
+    const status = document.getElementById('triage-status').value;
+    const notes = document.getElementById('triage-notes').value.trim();
+
+    try {
+      const res = await this.apiRequest(`/api/central/sales-inquiries/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status, notes })
+      });
+
+      if (res && res.success) {
+        this.showToast(res.message || 'Inquiry updated successfully', 'success');
+        this.closeModal();
+        this.renderCentralInquiries();
+      } else {
+        this.showToast((res && res.error) || 'Failed to update inquiry', 'danger');
+      }
+    } catch (err) {
+      this.showToast('Error updating inquiry: ' + err.message, 'danger');
+    }
   },
 
   // ==========================================

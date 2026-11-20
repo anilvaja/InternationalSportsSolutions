@@ -1909,13 +1909,24 @@ centralRouter.get('/sales-inquiries', (req, res) => {
       LIMIT ? OFFSET ?
     `).all(...params, parsedLimit, offset);
 
+    // Compute status counts for quick tabs
+    const countsRows = centralDb.prepare(`
+      SELECT status, COUNT(*) as count FROM platform_sales_inquiries GROUP BY status
+    `).all();
+    const allCount = centralDb.prepare('SELECT COUNT(*) as count FROM platform_sales_inquiries').get()?.count || 0;
+    const counts = { all: allCount, new: 0, contacted: 0, demo_scheduled: 0, converted: 0, closed: 0 };
+    for (const r of countsRows) {
+      if (counts[r.status] !== undefined) counts[r.status] = r.count;
+    }
+
     res.json({
       success: true,
       inquiries,
       total,
       page: parsedPage,
       limit: parsedLimit,
-      totalPages: Math.ceil(total / parsedLimit) || 1
+      totalPages: Math.ceil(total / parsedLimit) || 1,
+      counts
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
